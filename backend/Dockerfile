@@ -15,5 +15,6 @@ RUN mkdir -p /app/data
 # Expose port (Railway sets PORT env var)
 EXPOSE 8080
 
-# Run with gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "120", "server:app"]
+# Single worker: intentional for SQLite (single-writer constraint).
+# Increase --workers when migrating to PostgreSQL.
+CMD gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 120 server:app

@@ -1,7 +1,9 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://gohirehumans.com/sitemap.xml
+# Note: App routes use hash fragments (#/login, #/dashboard, etc.)
+# which are invisible to crawlers. Only the landing page and /blog/
+# paths are indexable.
+Disallow: /cgi-bin/
 
-# GoHireHumans - Professional Services Marketplace
-# https://gohirehumans.com
+Sitemap: https://gohirehumans.com/sitemap.xml

@@ -13,10 +13,15 @@ from flask import Flask, request, Response
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}, r"/auth/*": {"origins": "*"}, r"/profile": {"origins": "*"}, r"/seed": {"origins": "*"}})
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+CORS(app, resources={
+    r"/api/*": {"origins": allowed_origins},
+    r"/auth/*": {"origins": allowed_origins},
+    r"/profile": {"origins": allowed_origins},
+})
+# /seed endpoint excluded from CORS — should only be called internally
 
 # ─── Import the CGI API module ────────────────────────────────────────────────
-# We load api.py as a module so we can call its functions directly
 spec = importlib.util.spec_from_file_location("api_module", os.path.join(os.path.dirname(__file__), "api_core.py"))
 api_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api_module)
@@ -34,29 +39,20 @@ def proxy(path):
     Proxy all requests to the CGI handler by simulating the CGI environment.
     """
     path_info = f"/{path}" if path else ""
-
-    # Build query string
     query_string = request.query_string.decode("utf-8")
-
-    # Get request body
     body = request.get_data(as_text=True) if request.method in ("POST", "PUT", "PATCH") else ""
 
-    # Set CGI environment variables
     os.environ["REQUEST_METHOD"] = request.method
     os.environ["PATH_INFO"] = path_info
     os.environ["QUERY_STRING"] = query_string
     os.environ["CONTENT_TYPE"] = request.content_type or ""
     os.environ["CONTENT_LENGTH"] = str(len(body.encode("utf-8"))) if body else "0"
     os.environ["REMOTE_ADDR"] = request.remote_addr or "127.0.0.1"
-    # HIGH-06/07: forward Authorization and X-API-Key headers for header-based auth
     os.environ["HTTP_AUTHORIZATION"] = request.headers.get("Authorization", "")
     os.environ["HTTP_X_API_KEY"] = request.headers.get("X-API-Key", "")
 
-    # Redirect stdin to provide the body
     old_stdin = sys.stdin
     sys.stdin = io.StringIO(body)
-
-    # Capture stdout
     old_stdout = sys.stdout
     sys.stdout = captured = io.StringIO()
 
@@ -65,7 +61,6 @@ def proxy(path):
     except Exception as e:
         sys.stdout = old_stdout
         sys.stdin = old_stdin
-        # LOW-04: return 500 (not 422) for unhandled exceptions; do not leak exception message to client
         import traceback
         print(f"ERROR in handle_request: {traceback.format_exc()}", file=sys.stderr)
         return Response(
@@ -76,10 +71,8 @@ def proxy(path):
 
     sys.stdout = old_stdout
     sys.stdin = old_stdin
-
     output = captured.getvalue()
 
-    # Parse CGI output (headers + body)
     status_code = 200
     content_type = "application/json"
     response_body = output
@@ -97,7 +90,6 @@ def proxy(path):
     elif output.strip().startswith("{") or output.strip().startswith("["):
         response_body = output.strip()
     else:
-        # Try to find headers without double newline (single \n separation)
         lines = output.split("\n")
         body_start = 0
         for i, line in enumerate(lines):

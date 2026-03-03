@@ -1,3 +1,7 @@
+// GoHireHumans Frontend Configuration
+// NOTE: This file is served publicly. Do not include secrets here.
+// The API URL is intentionally visible — it's a public endpoint.
+
 /**
  * GoHireHumans Frontend Configuration
  * 
