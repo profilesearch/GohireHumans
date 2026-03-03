@@ -1,16 +1,7 @@
 User-agent: *
 Allow: /
-Disallow: /api/
 
-# Crawl-delay for polite crawling
-User-agent: Bingbot
-Crawl-delay: 5
+Sitemap: https://gohirehumans.com/sitemap.xml
 
-User-agent: Yandex
-Crawl-delay: 5
-
-# Sitemap
-Sitemap: https://www.gohirehumans.com/sitemap.xml
-
-# Host
-Host: https://www.gohirehumans.com
+# GoHireHumans - Professional Services Marketplace
+# https://gohirehumans.com
