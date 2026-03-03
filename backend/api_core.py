@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Audit date: 2026-03-03 — fixes applied for CRITICAL, HIGH, and safe MEDIUM issues.
+# See backend_audit_report.md for full details.
 """
 GoHireHumans API - CGI Backend
 Handles all API routes for the AI-to-Human task marketplace.
@@ -14,8 +16,9 @@ import hmac
 import secrets
 import time
 import re
-import math
+import threading
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone, timedelta
 
 
@@ -266,6 +269,14 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
     CREATE INDEX IF NOT EXISTS idx_flags_status ON flags(status);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    );
     """)
     db.commit()
     db.close()
@@ -273,24 +284,27 @@ def init_db():
 # ─── Rate Limiter ─────────────────────────────────────────────────────────────
 
 _rate_limit_store = {}  # {ip: [timestamps]}
+_rate_limit_lock = threading.Lock()  # HIGH-09: thread-safe rate limiter
 
-def check_rate_limit():
-    """Check if the current IP has exceeded rate limits. Returns (allowed, error_response)."""
+def check_rate_limit() -> bool:
+    """Returns True if request is allowed, False if rate limit exceeded."""
+    # HIGH-09: use a lock to protect the shared dict under threaded gunicorn
     ip = os.environ.get("REMOTE_ADDR", "unknown")
     now = time.time()
     window = 60  # seconds
     limit = 60   # requests per window
 
-    # Clean up old entries
-    if ip in _rate_limit_store:
-        _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if now - t < window]
-    else:
-        _rate_limit_store[ip] = []
+    with _rate_limit_lock:
+        # Clean up old entries
+        if ip in _rate_limit_store:
+            _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if now - t < window]
+        else:
+            _rate_limit_store[ip] = []
 
-    if len(_rate_limit_store[ip]) >= limit:
-        return False
-    _rate_limit_store[ip].append(now)
-    return True
+        if len(_rate_limit_store[ip]) >= limit:
+            return False
+        _rate_limit_store[ip].append(now)
+        return True
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -362,7 +376,11 @@ def hash_password(password):
     return f"{salt}:{h.hex()}"
 
 def verify_password(password, stored):
-    salt, h = stored.split(':')
+    # MED-05: guard against malformed hash (no colon) instead of raising ValueError
+    parts = stored.split(':', 1)
+    if len(parts) != 2:
+        return False  # Malformed hash, never matches
+    salt, h = parts
     computed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return hmac.compare_digest(computed.hex(), h)
 
@@ -385,12 +403,16 @@ def error_response(message, status=400):
     json_response({"error": message}, status)
 
 def get_body():
+    # HIGH-01: catch only specific exceptions; return None on bad JSON so callers can return 400
     try:
-        length = int(os.environ.get("CONTENT_LENGTH", 0))
+        length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
         if length > 0:
-            return json.loads(sys.stdin.read(length))
-    except:
-        pass
+            raw = sys.stdin.read(length)
+            return json.loads(raw)
+    except json.JSONDecodeError:
+        return None  # Callers should check: if body is None: return error_response("Invalid JSON", 400)
+    except (ValueError, OSError):
+        return None
     return {}
 
 def get_query_params():
@@ -403,14 +425,17 @@ def row_to_dict(row):
     return dict(row)
 
 def authenticate_session(db):
-    """Authenticate via session token in Authorization header or query param."""
-    qs = os.environ.get("QUERY_STRING", "")
-    params = dict(urllib.parse.parse_qsl(qs))
-    token = params.get("token")
+    """Authenticate via session token in Authorization: Bearer header (preferred) or query param (legacy)."""
+    # HIGH-07: prefer Authorization header; fall back to query params for backward compatibility
+    token = None
+    auth_header = os.environ.get("HTTP_AUTHORIZATION", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
 
-    # Check Authorization header-style via query param (CGI limitation)
     if not token:
-        token = params.get("auth")
+        qs = os.environ.get("QUERY_STRING", "")
+        params = dict(urllib.parse.parse_qsl(qs))
+        token = params.get("token") or params.get("auth")
 
     if not token:
         return None
@@ -427,9 +452,12 @@ def authenticate_session(db):
     return None
 
 def authenticate_api_key(db):
-    """Authenticate via API key in query param."""
-    params = get_query_params()
-    api_key = params.get("api_key")
+    """Authenticate via API key in X-API-Key header (preferred) or query param (legacy)."""
+    # HIGH-06: prefer X-API-Key header; fall back to query param for backward compatibility
+    api_key = os.environ.get("HTTP_X_API_KEY", "").strip() or None
+    if not api_key:
+        params = get_query_params()
+        api_key = params.get("api_key")
     if not api_key:
         return None
 
@@ -509,19 +537,16 @@ def handle_request():
         print(json.dumps({"error": "Rate limit exceeded", "retry_after": 60}))
         return
 
-    # Ensure sessions table exists
+    # HIGH-03: sessions table is now created in init_db(), not here per-request
+    # HIGH-12: use try/finally to ensure db.close() on every code path
     db = get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id),
-            token TEXT UNIQUE NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-    """)
-    db.commit()
+    try:
+        _handle_routes(db)
+    finally:
+        db.close()
 
+
+def _handle_routes(db):
     method = os.environ.get("REQUEST_METHOD", "GET")
     path = os.environ.get("PATH_INFO", "").rstrip("/")
     params = get_query_params()
@@ -537,8 +562,8 @@ def handle_request():
 
         if not email or not password:
             return error_response("Email and password required")
-        if len(password) < 6:
-            return error_response("Password must be at least 6 characters")
+        if len(password) < 10:  # HIGH-05: increased from 6 to 10 characters
+            return error_response("Password must be at least 10 characters")
         if role not in ('worker', 'ai_client', 'admin'):
             return error_response("Invalid role")
 
@@ -700,6 +725,11 @@ def handle_request():
             db.execute("UPDATE users SET name = ?, updated_at = datetime('now') WHERE id = ?", [body['name'], user['id']])
 
         if user['role'] == 'worker':
+            # HIGH-04: screen bio for prohibited content before saving
+            if body.get('bio'):
+                safe, msg = check_content_safety(body['bio'])
+                if not safe:
+                    return error_response(f"Bio rejected: {msg}", 422)
             updates = []
             vals = []
             for field in ['skills', 'hourly_rate_min', 'hourly_rate_max', 'per_task_rate_min', 'per_task_rate_max', 'geography', 'timezone', 'bio', 'favorite_categories', 'notification_email']:
@@ -800,6 +830,13 @@ def handle_request():
         if body['budget_type'] not in ('flat_fee', 'hourly'):
             return error_response("Invalid budget_type")
 
+        # Validate budget amount (MED-09: add max cap)
+        budget = float(body['budget_amount'])
+        if budget <= 0:
+            return error_response("budget_amount must be positive")
+        if budget > 100000:
+            return error_response("budget_amount exceeds maximum allowed value ($100,000)")
+
         # Content safety
         safe, msg = check_content_safety(body['title'] + " " + body['description'])
         if not safe:
@@ -823,7 +860,7 @@ def handle_request():
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [user['id'], body['title'], body['description'], body['category'],
              body['location_type'], body.get('location_detail', ''),
-             body['budget_type'], float(body['budget_amount']),
+             body['budget_type'], budget,
              body.get('time_cap_hours'), body.get('due_by'),
              json.dumps(body.get('required_skills', [])),
              json.dumps(body.get('attachments', [])),
@@ -831,15 +868,21 @@ def handle_request():
         )
         task_id = cursor.lastrowid
 
-        # Debit client balance
-        profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
-        if profile:
-            new_balance = (profile['credit_balance'] or 0) - float(body['budget_amount'])
-            db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user['id']])
-            db.execute(
-                "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                [user['id'], task_id, 'debit', float(body['budget_amount']), new_balance, f"Task #{task_id}: {body['title']}"]
-            )
+        # CRIT-01: Atomic balance deduction — use UPDATE...WHERE >= to prevent race conditions / negative balance
+        rows_updated = db.execute(
+            "UPDATE ai_client_profiles SET credit_balance = credit_balance - ? "
+            "WHERE user_id = ? AND credit_balance >= ?",
+            [budget, user['id'], budget]
+        ).rowcount
+        if rows_updated == 0:
+            db.rollback()
+            return error_response("Insufficient credit balance", 402)
+        new_balance_row = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        new_balance = new_balance_row['credit_balance'] if new_balance_row else 0
+        db.execute(
+            "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+            [user['id'], task_id, 'debit', budget, new_balance, f"Task #{task_id}: {body['title']}"]
+        )
 
         # Queue webhook
         queue_webhook(db, user['id'], task_id, "task.created", {
@@ -965,15 +1008,19 @@ def handle_request():
         task = db.execute("SELECT * FROM tasks WHERE id = ?", [task_id]).fetchone()
         if not task:
             return error_response("Task not found", 404)
-        if task['status'] != 'open':
-            return error_response("Task is not available", 409)
 
-        # Reserve for 30 minutes
+        # HIGH-11: use atomic UPDATE...WHERE status='open' to prevent double-accept race condition
         reserved_until = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
-        db.execute(
-            "UPDATE tasks SET worker_id = ?, status = 'in_progress', reserved_until = ?, updated_at = datetime('now') WHERE id = ?",
+        rows_updated = db.execute(
+            "UPDATE tasks SET worker_id = ?, status = 'in_progress', reserved_until = ?, updated_at = datetime('now') "
+            "WHERE id = ? AND status = 'open'",
             [user['id'], reserved_until, task_id]
-        )
+        ).rowcount
+        if rows_updated == 0:
+            db.rollback()
+            return error_response("Task is no longer available (already accepted by another worker)", 409)
+        # Re-fetch task to get client_id for notifications
+        task = db.execute("SELECT * FROM tasks WHERE id = ?", [task_id]).fetchone()
 
         queue_webhook(db, task['client_id'], task_id, "task.accepted", {
             "event": "task.accepted", "task_id": task_id,
@@ -1048,26 +1095,28 @@ def handle_request():
         # Credit worker earnings
         if task['worker_id']:
             wp = db.execute("SELECT * FROM worker_profiles WHERE user_id = ?", [task['worker_id']]).fetchone()
+            service_fee = round(task['budget_amount'] * SERVICE_FEE_RATE, 2)
+            worker_payout = task['budget_amount'] - service_fee
             if wp:
-                                    service_fee = round(task['budget_amount'] * SERVICE_FEE_RATE, 2)
-                                    worker_payout = task['budget_amount'] - service_fee
-                        new_earnings = (wp['estimated_earnings'] or 0) + worker_payout
-                        new_withdrawable = (wp['withdrawable_balance'] or 0)  +worker_payout
-                        new_completed = (wp['total_tasks_completed'] or 0) + 1
-                        db.execute(
-                            "UPDATE worker_profiles SET estimated_earnings = ?, withdrawable_balance = ?, total_tasks_completed = ? WHERE user_id = ?",
-                            [new_earnings, new_withdrawable, new_completed, task['worker_id']]
-                        )
-                        db.execute(
-                            "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                                                [task['worker_id'], task_id, 'credit', worker_payout, new_withdrawable, f"Payment for task #{task_id} (1% fee: ${service_fee:.2f})"]
-                        )
-                                        db.execute("INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                                                                        [task['client_id'], task_id, 'fee', service_fee, None, f"Platform fee (1%) for task #{task_id}"])
-            # Notify worker
+                new_earnings = (wp['estimated_earnings'] or 0) + worker_payout
+                new_withdrawable = (wp['withdrawable_balance'] or 0) + worker_payout
+                new_completed = (wp['total_tasks_completed'] or 0) + 1
+                db.execute(
+                    "UPDATE worker_profiles SET estimated_earnings = ?, withdrawable_balance = ?, total_tasks_completed = ? WHERE user_id = ?",
+                    [new_earnings, new_withdrawable, new_completed, task['worker_id']]
+                )
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                    [task['worker_id'], task_id, 'credit', worker_payout, new_withdrawable, f"Payment for task #{task_id} (1% fee: ${service_fee:.2f})"]
+                )
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                    [task['client_id'], task_id, 'fee', service_fee, None, f"Platform fee (1%) for task #{task_id}"]
+                )
+            # CRIT-03: notify worker with correct worker_payout amount (not full budget_amount)
             push_notification(db, task['worker_id'], "task_completed",
-                f"Task completed & payment released",
-                f"Task #{task_id} approved. ${task['budget_amount']:.2f} added to your balance.",
+                "Task completed & payment released",
+                f"Task #{task_id} approved. ${worker_payout:.2f} added to your balance (after 1% platform fee).",
                 f"/api/v1/tasks/{task_id}")
 
         # Update client spent
@@ -1138,6 +1187,12 @@ def handle_request():
         if not task:
             return error_response("Task not found", 404)
 
+        # CRIT-06: only task participants (client, worker) or admins can open a dispute
+        if user['id'] not in (task['client_id'], task['worker_id']) and user['role'] != 'admin':
+            return error_response("Only task participants can open a dispute", 403)
+        if task['status'] not in ('in_progress', 'submitted', 'reserved'):
+            return error_response("Can only dispute active tasks", 409)
+
         body = get_body()
         db.execute(
             "UPDATE tasks SET status = 'disputed', updated_at = datetime('now') WHERE id = ?",
@@ -1179,7 +1234,7 @@ def handle_request():
 
         try:
             worker_skills = set(json.loads(wp['skills'] or '[]'))
-        except:
+        except (json.JSONDecodeError, ValueError):  # HIGH-02: catch only specific exceptions
             worker_skills = set()
         worker_geo = (wp['geography'] or '').lower()
 
@@ -1195,7 +1250,7 @@ def handle_request():
             td = row_to_dict(t)
             try:
                 req_skills = set(json.loads(t['required_skills'] or '[]'))
-            except:
+            except (json.JSONDecodeError, ValueError):  # HIGH-02: catch only specific exceptions
                 req_skills = set()
 
             overlap = len(worker_skills & req_skills)
@@ -1296,15 +1351,21 @@ def handle_request():
                 )
                 task_id = cursor.lastrowid
 
-                # Debit client balance
-                profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
-                if profile:
-                    new_balance = (profile['credit_balance'] or 0) - float(merged['budget_amount'])
-                    db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user['id']])
-                    db.execute(
-                        "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                        [user['id'], task_id, 'debit', float(merged['budget_amount']), new_balance, f"Batch task #{task_id}"]
-                    )
+                # CRIT-01: atomic balance deduction — prevent race condition / negative balance in batch
+                batch_budget = float(merged['budget_amount'])
+                batch_rows_updated = db.execute(
+                    "UPDATE ai_client_profiles SET credit_balance = credit_balance - ? "
+                    "WHERE user_id = ? AND credit_balance >= ?",
+                    [batch_budget, user['id'], batch_budget]
+                ).rowcount
+                if batch_rows_updated == 0:
+                    raise ValueError("Insufficient credit balance for this task")
+                batch_balance_row = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
+                batch_new_balance = batch_balance_row['credit_balance'] if batch_balance_row else 0
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                    [user['id'], task_id, 'debit', batch_budget, batch_new_balance, f"Batch task #{task_id}"]
+                )
 
                 if template_id:
                     db.execute("UPDATE task_templates SET usage_count = usage_count + 1 WHERE id = ?", [template_id])
@@ -1432,15 +1493,22 @@ def handle_request():
         )
         task_id = cursor.lastrowid
 
-        # Debit balance
-        profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
-        if profile:
-            new_balance = (profile['credit_balance'] or 0) - float(task_data['budget_amount'])
-            db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user['id']])
-            db.execute(
-                "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                [user['id'], task_id, 'debit', float(task_data['budget_amount']), new_balance, f"Task from template #{template_id}"]
-            )
+        # CRIT-01: atomic balance deduction for from-template task creation
+        tmpl_budget = float(task_data['budget_amount'])
+        tmpl_rows_updated = db.execute(
+            "UPDATE ai_client_profiles SET credit_balance = credit_balance - ? "
+            "WHERE user_id = ? AND credit_balance >= ?",
+            [tmpl_budget, user['id'], tmpl_budget]
+        ).rowcount
+        if tmpl_rows_updated == 0:
+            db.rollback()
+            return error_response("Insufficient credit balance", 402)
+        tmpl_balance_row = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        tmpl_new_balance = tmpl_balance_row['credit_balance'] if tmpl_balance_row else 0
+        db.execute(
+            "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+            [user['id'], task_id, 'debit', tmpl_budget, tmpl_new_balance, f"Task from template #{template_id}"]
+        )
 
         db.execute("UPDATE task_templates SET usage_count = usage_count + 1 WHERE id = ?", [template_id])
         audit(db, user['id'], "create_task_from_template", "task", task_id, {"template_id": template_id})
@@ -1479,7 +1547,7 @@ def handle_request():
         # Check deliverables_files has entries
         try:
             dl_files = json.loads(task['deliverables_files'] or '[]')
-        except:
+        except (json.JSONDecodeError, ValueError):  # HIGH-02
             dl_files = []
         if dl_files:
             score += 20
@@ -1490,7 +1558,7 @@ def handle_request():
         # Check deliverables_data is not empty
         try:
             dl_data = json.loads(task['deliverables_data'] or '{}')
-        except:
+        except (json.JSONDecodeError, ValueError):  # HIGH-02
             dl_data = {}
         if dl_data:
             score += 20
@@ -1510,7 +1578,7 @@ def handle_request():
                 else:
                     flags.append("exceeded_time_cap")
                     details_parts.append(f"Exceeded time cap (+0)")
-            except:
+            except (ValueError, TypeError):  # HIGH-02
                 score += 15
                 details_parts.append("Time check inconclusive (+15)")
         else:
@@ -1619,6 +1687,23 @@ def handle_request():
         if not body.get("entity_type") or not body.get("entity_id") or not body.get("reason"):
             return error_response("entity_type, entity_id, and reason required")
 
+        # CRIT-07: validate entity_type before INSERT to prevent arbitrary values
+        valid_entity_types = ('task', 'worker', 'client')
+        if body['entity_type'] not in valid_entity_types:
+            return error_response(f"entity_type must be one of: {', '.join(valid_entity_types)}")
+        if not isinstance(body['entity_id'], int):
+            return error_response("entity_id must be an integer")
+        if len(str(body['reason'])) > 2000:
+            return error_response("reason must be 2000 characters or fewer")
+
+        # MED-12: per-user rate limit on flag submissions to prevent flooding
+        recent_flags = db.execute(
+            "SELECT COUNT(*) as c FROM flags WHERE flagged_by = ? AND created_at >= datetime('now', '-1 hour')",
+            [user['id']]
+        ).fetchone()['c']
+        if recent_flags >= 10:
+            return error_response("Too many flags submitted. Please wait before flagging again.", 429)
+
         db.execute(
             "INSERT INTO flags (flagged_by, flagged_entity_type, flagged_entity_id, reason) VALUES (?,?,?,?)",
             [user['id'], body['entity_type'], body['entity_id'], body['reason']]
@@ -1697,13 +1782,19 @@ def handle_request():
 
         body = get_body()
         amount = float(body.get("amount", 0))
-        profile = db.execute("SELECT withdrawable_balance FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
 
-        if amount <= 0 or amount > (profile['withdrawable_balance'] or 0):
-            return error_response("Invalid payout amount")
+        # CRIT-02: atomic payout deduction — UPDATE...WHERE >= prevents double-withdrawal race condition
+        rows_updated = db.execute(
+            "UPDATE worker_profiles SET withdrawable_balance = withdrawable_balance - ? "
+            "WHERE user_id = ? AND withdrawable_balance >= ? AND ? > 0",
+            [amount, user['id'], amount, amount]
+        ).rowcount
+        if rows_updated == 0:
+            db.rollback()
+            return error_response("Insufficient withdrawable balance, invalid amount, or concurrent request conflict", 409)
+        new_balance_row = db.execute("SELECT withdrawable_balance FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        new_balance = new_balance_row['withdrawable_balance'] if new_balance_row else 0
 
-        new_balance = (profile['withdrawable_balance'] or 0) - amount
-        db.execute("UPDATE worker_profiles SET withdrawable_balance = ? WHERE user_id = ?", [new_balance, user['id']])
         db.execute(
             "INSERT INTO payout_requests (user_id, amount) VALUES (?,?)",
             [user['id'], amount]
@@ -1889,16 +1980,30 @@ def handle_request():
                 )
                 failed += 1
             else:
-                # Compute HMAC-SHA256 signature
+                # CRIT-05: actually attempt HTTP delivery with HMAC-SHA256 signature
                 secret = event['webhook_secret'] or ''
                 payload_bytes = event['payload'].encode('utf-8')
                 sig = hmac.new(secret.encode('utf-8'), payload_bytes, hashlib.sha256).hexdigest()
-                # Simulate delivery success
-                db.execute(
-                    "UPDATE webhook_events SET delivery_status = 'delivered', attempts = attempts + 1, last_attempt_at = ? WHERE id = ?",
-                    [now, event['id']]
+                req = urllib.request.Request(
+                    event['webhook_url'],
+                    data=payload_bytes,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-GoHireHumans-Signature': f'sha256={sig}',
+                    },
+                    method='POST'
                 )
-                delivered += 1
+                try:
+                    with urllib.request.urlopen(req, timeout=5):
+                        delivery_status = 'delivered'
+                        delivered += 1
+                except Exception:
+                    delivery_status = 'failed'
+                    failed += 1
+                db.execute(
+                    "UPDATE webhook_events SET delivery_status = ?, attempts = attempts + 1, last_attempt_at = ? WHERE id = ?",
+                    [delivery_status, now, event['id']]
+                )
 
         db.commit()
         return json_response({"delivered": delivered, "failed": failed})
@@ -2144,7 +2249,8 @@ def handle_request():
         category = params.get("category")
         location_type = params.get("location_type")
         required_skills_str = params.get("required_skills", "")
-        required_skills = [s.strip() for s in required_skills_str.split(",") if s.strip()] if required_skills_str else []
+        # MED-14: cap at 20 skills to prevent DoS via large iteration
+        required_skills = [s.strip() for s in required_skills_str.split(",") if s.strip()][:20] if required_skills_str else []
 
         conditions = ["status = 'completed'"]
         values = []
@@ -2417,6 +2523,15 @@ def handle_request():
     # ── Seed Route (for demo setup) ────────────────────────────────────────
 
     elif path == "/seed" and method == "POST":
+        # CRIT-04: require SEED_SECRET env var to prevent unauthenticated database resets
+        seed_secret = os.environ.get("SEED_SECRET")
+        if not seed_secret:
+            return error_response("Seed endpoint disabled", 404)
+        seed_body = get_body()
+        provided_secret = (seed_body or {}).get("secret", "")
+        if not hmac.compare_digest(seed_secret, provided_secret):
+            return error_response("Forbidden", 403)
+
         # Check if already seeded
         existing = db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c']
         if existing > 0:
@@ -2603,16 +2718,17 @@ def handle_request():
             )
 
         db.commit()
-        db.close()
+        # Note: db.close() is handled by the try/finally in handle_request()
 
+        # CRIT-04: do NOT return plaintext passwords in the response
         return json_response({
             "message": "Seed data created successfully",
             "ai_clients": [
-                {"email": clients_data[0]['email'], "api_key": client_keys[0], "password": "demo1234"},
-                {"email": clients_data[1]['email'], "api_key": client_keys[1], "password": "demo1234"},
+                {"email": clients_data[0]['email'], "api_key": client_keys[0]},
+                {"email": clients_data[1]['email'], "api_key": client_keys[1]},
             ],
-            "workers": [{"email": w['email'], "password": "demo1234"} for w in workers_data],
-            "admin": {"email": "admin@gohirehumans.com", "password": "admin1234"},
+            "workers": [{"email": w['email']} for w in workers_data],
+            "admin": {"email": "admin@gohirehumans.com"},
             "tasks_created": 10,
             "templates_created": 5
         }, 201)
@@ -2620,5 +2736,4 @@ def handle_request():
     else:
         return error_response(f"Route not found: {method} {path}", 404)
 
-    db.close()
-
+    # Note: db.close() is handled by the try/finally wrapper in handle_request()
