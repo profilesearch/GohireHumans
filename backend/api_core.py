@@ -18,6 +18,8 @@ import math
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 
+
+SERVICE_FEE_RATE = 0.01  # 1% platform service fee
 # ─── Database Setup ───────────────────────────────────────────────────────────
 
 DB_PATH = os.environ.get("DATABASE_PATH", "agentwork.db")
@@ -1047,8 +1049,10 @@ def handle_request():
         if task['worker_id']:
             wp = db.execute("SELECT * FROM worker_profiles WHERE user_id = ?", [task['worker_id']]).fetchone()
             if wp:
-                new_earnings = (wp['estimated_earnings'] or 0) + task['budget_amount']
-                new_withdrawable = (wp['withdrawable_balance'] or 0) + task['budget_amount']
+                                    service_fee = round(task['budget_amount'] * SERVICE_FEE_RATE, 2)
+                                    worker_payout = task['budget_amount'] - service_fee
+                new_earnings = (wp['estimated_earnings'] or 0) + worker_payout
+                new_withdrawable = (wp['withdrawable_balance'] or 0)  +worker_payout
                 new_completed = (wp['total_tasks_completed'] or 0) + 1
                 db.execute(
                     "UPDATE worker_profiles SET estimated_earnings = ?, withdrawable_balance = ?, total_tasks_completed = ? WHERE user_id = ?",
@@ -1056,8 +1060,10 @@ def handle_request():
                 )
                 db.execute(
                     "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                    [task['worker_id'], task_id, 'credit', task['budget_amount'], new_withdrawable, f"Payment for task #{task_id}"]
+                                        [task['worker_id'], task_id, 'credit', worker_payout, new_withdrawable, f"Payment for task #{task_id} (1% fee: ${service_fee:.2f})"]
                 )
+                                db.execute("INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                                                                   [task['client_id'], task_id, 'fee', service_fee, None, f"Platform fee (1%) for task #{task_id}"])
             # Notify worker
             push_notification(db, task['worker_id'], "task_completed",
                 f"Task completed & payment released",
