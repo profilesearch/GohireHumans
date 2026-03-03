@@ -77,7 +77,7 @@
 const API = window.GOHIREHUMANS_API_URL || "http://localhost:8080";
 
 // --- State ---
-let state = { user: null, token: null, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', sidebarOpen: false };
+let state = { user: null, token: null, theme: 'light', sidebarOpen: false };
 
 // --- Theme ---
 function setTheme(t) { state.theme = t; document.documentElement.setAttribute('data-theme', t); }
