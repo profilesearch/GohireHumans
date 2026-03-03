@@ -177,7 +177,11 @@ function getRoute() { return window.location.hash.slice(1) || '/'; }
 function appShell(content, activeNav = '') {
   const u = state.user;
   const role = u.role;
-  const initials = (u.name || u.email).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const rawName = (u.name || u.email || '?').trim();
+  const words = rawName.split(/\s+/).filter(Boolean);
+  const initials = words.length >= 2
+    ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+    : rawName.slice(0, 2).toUpperCase();
   let navItems = '';
   if (role === 'worker') {
     navItems = `
@@ -484,6 +488,8 @@ async function renderDashboard() {
         </div>
         <div class="task-list">${tasks.slice(0, 5).map(t => taskCard(t)).join('')}</div>
       `, 'dashboard');
+    } else {
+      appShell(`<div class="empty-state"><p>Dashboard not available for role: ${esc(role)}</p><a href="#/" class="btn btn-primary">Go Home</a></div>`, 'dashboard');
     }
   } catch (err) { appShell(`<div class="empty-state"><p>Error: ${err.message}</p></div>`, 'dashboard'); }
 }
@@ -650,7 +656,6 @@ async function handleCreateTask(e) {
   body.required_skills = body.required_skills ? body.required_skills.split(',').map(s => s.trim()).filter(Boolean) : [];
   body.budget_amount = parseFloat(body.budget_amount);
   if (!body.due_by) delete body.due_by; if (!body.location_detail) delete body.location_detail;
-  body.status = 'open';
   try { const task = await api('/api/v1/tasks', { method: 'POST', body }); toast('Task created!', 'success'); navigate(`#/task/${task.id}`); } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -897,7 +902,7 @@ async function renderAdminAudit() {
     appShell(`
       <h1 class="page-title">Audit Log</h1>
       <table class="data-table"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>
-        ${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString()}</td><td>${l.user_id||'System'}</td><td>${esc(l.action)}</td><td>${esc(l.details||'')}</td></tr>`).join('')}
+        ${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString()}</td><td>${esc(String(l.user_id || 'System'))}</td><td>${esc(l.action)}</td><td>${esc(l.details||'')}</td></tr>`).join('')}
       </tbody></table>
     `, 'admin-audit');
   } catch (err) { appShell(`<div class="empty-state"><p>Error: ${err.message}</p></div>`, 'admin-audit'); }
@@ -922,9 +927,11 @@ async function markNotifRead(id) {
 
 async function loadNotifCount() {
   try {
-    const data = await api('/api/v1/notifications/unread-count');
+    const data = await api('/api/v1/notifications?unread_only=true');
+    const notifs = Array.isArray(data) ? data : [];
+    const count = notifs.length;
     const badge = document.getElementById('notif-badge');
-    if (badge) { badge.textContent = data.count || ''; badge.style.display = data.count ? 'inline' : 'none'; }
+    if (badge) { badge.textContent = count || ''; badge.style.display = count ? 'inline-flex' : 'none'; }
   } catch (e) {}
 }
 

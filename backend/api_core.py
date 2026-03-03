@@ -490,6 +490,9 @@ def authenticate(db):
     return user
 
 def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
+    """Insert an audit log entry. Caller MUST call db.commit() afterward —
+    this function does not commit on its own so that audit + business logic
+    can be committed atomically."""
     db.execute(
         "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details) VALUES (?,?,?,?,?)",
         [user_id, action, entity_type, entity_id, json.dumps(details) if details else None]
@@ -530,6 +533,12 @@ def push_notification(db, user_id, notif_type, title, message=None, link=None):
     )
 
 def fake_stripe_payment_id():
+    """STUB: Replace with real Stripe integration for production payments."""
+    if os.environ.get("STRIPE_SECRET_KEY"):
+        raise NotImplementedError(
+            "Real Stripe integration not yet implemented. "
+            "Remove fake_stripe_payment_id() and integrate stripe.PaymentIntent."
+        )
     return f"pi_sim_{secrets.token_hex(12)}"
 
 # ─── Route Handler ────────────────────────────────────────────────────────────
@@ -678,6 +687,16 @@ def _handle_routes(db):
         return json_response({"ok": True})
 
     # ── Google OAuth Stub ──────────────────────────────────────────────────
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STUB: Google OAuth — NOT PRODUCTION READY
+    # This is a simulated OAuth flow for development/demo purposes.
+    # TODO before production:
+    #   1. Register a real Google OAuth client_id and client_secret
+    #   2. Exchange the auth code for tokens via Google's token endpoint
+    #   3. Fetch the user's real email from the userinfo endpoint
+    #   4. Store and verify the state parameter to prevent CSRF
+    #   5. Use GET redirect for callback (not POST)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     elif path == "/auth/oauth/google" and method == "GET":
         script_name = os.environ.get("SCRIPT_NAME", "/cgi-bin/api.py")
@@ -1109,6 +1128,8 @@ def _handle_routes(db):
         # Credit worker earnings
         if task['worker_id']:
             wp = db.execute("SELECT * FROM worker_profiles WHERE user_id = ?", [task['worker_id']]).fetchone()
+            # TODO: Track cumulative platform fees in a dedicated table/column for revenue reporting.
+            # Currently, service_fee is only recorded in individual ledger entries.
             service_fee = round(task['budget_amount'] * SERVICE_FEE_RATE, 2)
             worker_payout = task['budget_amount'] - service_fee
             if wp:
