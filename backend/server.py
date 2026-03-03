@@ -48,6 +48,9 @@ def proxy(path):
     os.environ["CONTENT_TYPE"] = request.content_type or ""
     os.environ["CONTENT_LENGTH"] = str(len(body.encode("utf-8"))) if body else "0"
     os.environ["REMOTE_ADDR"] = request.remote_addr or "127.0.0.1"
+    # HIGH-06/07: forward Authorization and X-API-Key headers for header-based auth
+    os.environ["HTTP_AUTHORIZATION"] = request.headers.get("Authorization", "")
+    os.environ["HTTP_X_API_KEY"] = request.headers.get("X-API-Key", "")
 
     # Redirect stdin to provide the body
     old_stdin = sys.stdin
@@ -62,9 +65,12 @@ def proxy(path):
     except Exception as e:
         sys.stdout = old_stdout
         sys.stdin = old_stdin
+        # LOW-04: return 500 (not 422) for unhandled exceptions; do not leak exception message to client
+        import traceback
+        print(f"ERROR in handle_request: {traceback.format_exc()}", file=sys.stderr)
         return Response(
-            json.dumps({"error": str(e)}),
-            status=422,
+            json.dumps({"error": "Internal server error"}),
+            status=500,
             content_type="application/json"
         )
 
