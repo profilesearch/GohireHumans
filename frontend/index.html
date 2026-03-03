@@ -16,11 +16,15 @@
   <meta property="og:description" content="The trusted marketplace where businesses, AI agents, and individuals hire verified human professionals for real-world tasks. Safe, screened, on demand.">
   <meta property="og:site_name" content="GoHireHumans">
   <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://gohirehumans.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GoHireHumans — Verified Human Professionals, On Demand">
   <meta name="twitter:description" content="The trusted marketplace where businesses, AI agents, and individuals hire verified human professionals for real-world tasks. Safe, screened, on demand.">
+  <meta name="twitter:image" content="https://gohirehumans.com/og-image.png">
 
   <!-- Additional SEO -->
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
@@ -64,9 +68,26 @@
   }
   </script>
 
-  <link rel="stylesheet" href="/base.css">     <link rel="stylesheet" href="/style.css">
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+
+  <link rel="stylesheet" href="/base.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <noscript>
+    <div style="text-align:center;padding:4rem;font-family:sans-serif">
+      <h1>JavaScript Required</h1>
+      <p>GoHireHumans requires JavaScript to run. Please enable JavaScript in your browser settings.</p>
+    </div>
+  </noscript>
   <div id="app"></div>
   <div id="toasts"></div>
   <script src="/config.js"></script>
@@ -77,7 +98,13 @@
 const API = window.GOHIREHUMANS_API_URL || "http://localhost:8080";
 
 // --- State ---
-let state = { user: null, token: null, theme: 'light', sidebarOpen: false, landingMode: 'hire', landingSearch: '' };
+// --- Session Persistence ---
+let storedUser = null, storedToken = null;
+try {
+  storedToken = localStorage.getItem('ghh_token');
+  storedUser = JSON.parse(localStorage.getItem('ghh_user') || 'null');
+} catch(e) {}
+let state = { user: storedUser, token: storedToken, theme: 'light', sidebarOpen: false, landingMode: 'hire', landingSearch: '' };
 
 // --- Theme ---
 function setTheme(t) { state.theme = t; document.documentElement.setAttribute('data-theme', t); }
@@ -85,12 +112,27 @@ setTheme(state.theme);
 
 // --- API Client ---
 async function api(path, opts = {}) {
-  const sep = path.includes('?') ? '&' : '?';
-  const authParam = state.token ? `${sep}token=${state.token}` : '';
-  const url = `${API}${path}${authParam}`;
-  const res = await fetch(url, { method: opts.method || 'GET', headers: opts.body ? { 'Content-Type': 'application/json' } : {}, body: opts.body ? JSON.stringify(opts.body) : undefined });
-  const data = await res.json();
-  if (!res.ok && data.error) throw new Error(data.error);
+  const url = `${API}${path}`;
+  const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: opts.method || 'GET',
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+  } catch (networkErr) {
+    throw new Error('Network error — please check your connection.');
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Server error (${res.status})`);
+  }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
 
@@ -130,36 +172,6 @@ const LOGO = `<svg width="24" height="24" viewBox="0 0 32 32" fill="none"><rect 
 // --- Router ---
 function navigate(hash) { window.location.hash = hash; }
 function getRoute() { return window.location.hash.slice(1) || '/'; }
-
-// --- Render Engine ---
-function render() {
-  const route = getRoute();
-  if (!state.user) {
-    if (route.startsWith('/register')) return renderAuth('register');
-    if (route.startsWith('/terms')) return renderTerms();
-    if (route.startsWith('/guidelines')) return renderGuidelines();
-    if (route.startsWith('/login')) return renderAuth('login');
-    return renderLanding();
-  }
-  if (route.startsWith('/task/')) return renderTaskDetail(route.split('/')[2]);
-  if (route === '/tasks') return renderTasks();
-  if (route === '/create-task') return renderCreateTask();
-  if (route === '/developer') return renderDeveloperSettings();
-  if (route === '/playground') return renderPlayground();
-  if (route === '/payments') return renderPayments();
-  if (route === '/profile') return renderProfile();
-  if (route === '/admin') return renderDashboard();
-  if (route === '/admin/flags') return renderAdminFlags();
-  if (route === '/admin/users') return renderAdminUsers();
-  if (route === '/admin/audit') return renderAdminAudit();
-  if (route === '/notifications') return renderNotifications();
-  if (route === '/matching') return renderMatching();
-  if (route === '/verification') return renderVerification();
-  if (route === '/terms') return renderTerms();
-  if (route === '/guidelines') return renderGuidelines();
-  return renderDashboard();
-}
-window.addEventListener('hashchange', render);
 
 // --- App Shell (Simplified Sidebar) ---
 function appShell(content, activeNav = '') {
@@ -207,6 +219,7 @@ function appShell(content, activeNav = '') {
         <div class="sidebar-label">Admin</div>
         <button class="sidebar-item ${activeNav==='dashboard'?'active':''}" onclick="navigate('#/')">${icons.chart} Overview</button>
         <button class="sidebar-item ${activeNav==='tasks'?'active':''}" onclick="navigate('#/tasks')">${icons.tasks} All Tasks</button>
+        <button class="sidebar-item ${activeNav==='admin-tasks'?'active':''}" onclick="navigate('#/admin/tasks')">${icons.tasks} Task Review</button>
         <button class="sidebar-item ${activeNav==='admin-users'?'active':''}" onclick="navigate('#/admin/users')">${icons.users} Users</button>
         <button class="sidebar-item ${activeNav==='admin-flags'?'active':''}" onclick="navigate('#/admin/flags')">${icons.flag} Flags</button>
         <button class="sidebar-item ${activeNav==='admin-audit'?'active':''}" onclick="navigate('#/admin/audit')">${icons.log} Audit Log</button>
@@ -239,7 +252,7 @@ function appShell(content, activeNav = '') {
         <header class="app-header">
           <button class="mobile-toggle" onclick="toggleSidebar()">${icons.menu}</button>
           <div style="flex:1"></div>
-          <button class="notif-btn" onclick="navigate('#/notifications')" aria-label="Notifications" id="notifBell">${icons.bell}</button>
+          <button class="notif-btn" onclick="navigate('#/notifications')" aria-label="Notifications" id="notifBell">${icons.bell}<span class="notif-badge" id="notif-badge" style="display:none"></span></button>
           <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">${state.theme === 'dark' ? icons.sun : icons.moon}</button>
         </header>
         <div class="app-content">${content}</div>
@@ -388,16 +401,35 @@ async function handleAuth(e, mode) {
   try {
     const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
     const data = await api(endpoint, { method: 'POST', body });
-    state.user = data; state.token = data.token;
+    const { token, ...user } = data;
+    state.user = user; state.token = token;
+    try {
+      localStorage.setItem('ghh_token', token);
+      localStorage.setItem('ghh_user', JSON.stringify(user));
+    } catch(e) {}
     toast(mode === 'login' ? 'Welcome back!' : 'Account created!', 'success'); navigate('#/');
   } catch (err) { toast(err.message, 'error'); }
 }
-function logout() { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.user = null; state.token = null; navigate('#/'); }
+function logout() {
+  api('/auth/logout', { method: 'POST' }).catch(() => {});
+  state.user = null;
+  state.token = null;
+  state.sidebarOpen = false;
+  try {
+    localStorage.removeItem('ghh_token');
+    localStorage.removeItem('ghh_user');
+  } catch(e) {}
+  if (window.location.hash === '#/' || window.location.hash === '') render(); else navigate('#/');
+}
 function esc(s) { return s ? s.replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function safeParseJSON(str, fallback = []) {
+  try { return JSON.parse(str || JSON.stringify(fallback)); }
+  catch { return fallback; }
+}
 
 // --- Task Card ---
 function taskCard(t) {
-  const skills = JSON.parse(t.required_skills || '[]');
+  const skills = safeParseJSON(t.required_skills, []);
   return `<div class="task-card" onclick="navigate('#/task/${t.id}')">
     <div class="task-card-header"><div class="task-card-title">${esc(t.title)}</div><span class="badge badge-${t.status}">${t.status.replace('_', ' ')}</span></div>
     <div class="task-card-meta"><span>${icons.dollar} $${Number(t.budget_amount).toFixed(2)} ${t.budget_type === 'hourly' ? '/hr' : 'flat'}</span><span>${icons.location} ${t.location_type === 'remote' ? 'Remote' : esc(t.location_detail || t.location_type)}</span><span>${icons.clock} ${t.category.replace(/_/g, ' ')}</span></div>
@@ -488,10 +520,12 @@ function filterTasks(key, val) {
 
 // --- Task Detail ---
 async function renderTaskDetail(id) {
+  id = parseInt(id, 10);
+  if (isNaN(id)) { appShell('<div class="empty-state"><p>Invalid task ID.</p></div>', 'tasks'); return; }
   appShell('<div class="loading"><div class="spinner"></div></div>', 'tasks');
   try {
     const task = await api(`/api/v1/tasks/${id}`);
-    const skills = JSON.parse(task.required_skills || '[]');
+    const skills = safeParseJSON(task.required_skills, []);
     const role = state.user.role; const isClient = task.client_id === state.user.id; const isWorker = task.worker_id === state.user.id;
     let actions = '';
     if (role === 'worker' && task.status === 'open') actions = `<button class="btn btn-primary" onclick="acceptTask(${id})">Accept Task</button>`;
@@ -549,7 +583,20 @@ function showSubmitModal(taskId) {
   const overlay = document.createElement('div'); overlay.className = 'modal-overlay active';
   overlay.innerHTML = `<div class="modal"><div class="modal-title">Submit Deliverables</div><form id="submitForm"><div class="form-group"><label class="label">Description of completed work</label><textarea class="textarea" name="text" rows="6" required></textarea></div><div class="form-group"><label class="label">File URLs (one per line, optional)</label><textarea class="textarea" name="files" rows="3"></textarea></div><div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button><button type="submit" class="btn btn-primary">Submit</button></div></form></div>`;
   document.body.appendChild(overlay);
-  overlay.querySelector('#submitForm').onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target); const files = fd.get('files').split('\n').filter(Boolean); try { await api(`/api/v1/tasks/${taskId}/submit`, { method: 'POST', body: { text: fd.get('text'), files } }); overlay.remove(); toast('Submitted!', 'success'); renderTaskDetail(taskId); } catch (err) { toast(err.message, 'error'); } };
+  overlay.querySelector('#submitForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const rawFiles = fd.get('files').split('\n').filter(u => u.trim());
+    const files = rawFiles.map(u => u.trim()).filter(Boolean);
+    const validUrls = files.filter(u => {
+      try { const url = new URL(u); return ['http:', 'https:'].includes(url.protocol); }
+      catch { return false; }
+    });
+    if (files.length > 0 && files.length !== validUrls.length) {
+      toast('All file URLs must be valid http/https URLs.', 'error'); return;
+    }
+    try { await api(`/api/v1/tasks/${taskId}/submit`, { method: 'POST', body: { text: fd.get('text'), files: validUrls } }); overlay.remove(); toast('Submitted!', 'success'); renderTaskDetail(taskId); } catch (err) { toast(err.message, 'error'); }
+  };
 }
 function showRateModal(taskId) {
   let selectedRating = 0;
@@ -593,7 +640,7 @@ function renderCreateTask() {
           <div class="form-group"><label class="label">Budget ($)</label><input class="input" type="number" name="budget_amount" min="1" step="0.01" placeholder="25.00" required></div>
         </div>
         <div class="form-group"><label class="label">Required skills <span style="color:var(--color-text-faint);font-weight:400">(comma-separated)</span></label><input class="input" name="required_skills" placeholder="e.g. phone, writing"></div>
-        <div class="form-group"><label class="label">Due by</label><input class="input" type="datetime-local" name="due_by"></div>
+        <div class="form-group"><label class="label">Due by</label><input class="input" type="datetime-local" name="due_by" id="input-due_by" min="${new Date(Date.now() + 60000).toISOString().slice(0, 16)}"></div>
         <button type="submit" class="btn btn-primary btn-lg">Post task</button>
       </form>
     </div>
@@ -645,9 +692,24 @@ async function createApiKey() {
   const name = prompt('Key name:') || 'Default';
   try {
     const result = await api('/api/v1/clients/api-keys', { method: 'POST', body: { name } });
-    const overlay = document.createElement('div'); overlay.className = 'modal-overlay active';
-    overlay.innerHTML = `<div class="modal"><div class="modal-title">API Key Created</div><p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Copy this key now. You won't see it again.</p><div class="code-block" style="word-break:break-all;user-select:all">${result.api_key}</div><div class="modal-actions"><button class="btn btn-primary" onclick="navigator.clipboard.writeText('${result.api_key}');toast('Copied!','success');this.closest('.modal-overlay').remove();renderDeveloperSettings()">Copy &amp; Close</button></div></div>`;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `<div class="modal">
+      <div class="modal-title">API Key Created</div>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Copy this key now. You won't see it again.</p>
+      <div class="code-block" id="newApiKeyDisplay" style="word-break:break-all;user-select:all"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="copyKeyBtn">Copy &amp; Close</button>
+      </div>
+    </div>`;
     document.body.appendChild(overlay);
+    overlay.querySelector('#newApiKeyDisplay').textContent = result.api_key;
+    overlay.querySelector('#copyKeyBtn').onclick = () => {
+      navigator.clipboard.writeText(result.api_key);
+      toast('Copied!', 'success');
+      overlay.remove();
+      renderDeveloperSettings();
+    };
   } catch (err) { toast(err.message, 'error'); }
 }
 async function revokeApiKey(id) { if (!confirm('Revoke this key?')) return; try { await api(`/api/v1/clients/api-keys/${id}/revoke`, { method: 'POST' }); toast('Key revoked', 'success'); renderDeveloperSettings(); } catch (err) { toast(err.message, 'error'); } }
@@ -710,7 +772,7 @@ async function renderProfile() {
     const me = await api('/auth/me'); const p = me.profile || {}; const role = me.role;
     let profileFields = '';
     if (role === 'worker') {
-      const skills = JSON.parse(p.skills || '[]');
+      const skills = safeParseJSON(p.skills, []);
       profileFields = `<div class="form-group"><label class="label">Bio</label><textarea class="textarea" name="bio" rows="3">${esc(p.bio || '')}</textarea></div><div class="form-group"><label class="label">Skills (comma-separated)</label><input class="input" name="skills_raw" value="${skills.join(', ')}"></div><div class="form-row"><div class="form-group"><label class="label">Hourly Rate Min ($)</label><input class="input" type="number" name="hourly_rate_min" value="${p.hourly_rate_min || ''}"></div><div class="form-group"><label class="label">Hourly Rate Max ($)</label><input class="input" type="number" name="hourly_rate_max" value="${p.hourly_rate_max || ''}"></div></div><div class="form-row"><div class="form-group"><label class="label">Geography</label><input class="input" name="geography" value="${esc(p.geography || '')}"></div><div class="form-group"><label class="label">Timezone</label><input class="input" name="timezone" value="${esc(p.timezone || '')}"></div></div>`;
     } else if (role === 'ai_client') {
       profileFields = `<div class="form-group"><label class="label">App Name</label><input class="input" name="app_name" value="${esc(p.app_name || '')}"></div><div class="form-group"><label class="label">Description</label><textarea class="textarea" name="description" rows="3">${esc(p.description || '')}</textarea></div><div class="form-group"><label class="label">Billing Email</label><input class="input" type="email" name="billing_email" value="${esc(p.billing_email || '')}"></div>`;
@@ -760,7 +822,7 @@ async function renderAdminDashboard() {
       </div>
       <div class="card" style="margin-top:var(--space-4)"><div class="card-header"><div class="card-title">Recent Users</div></div>
         <table class="data-table"><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Verified</th></tr></thead><tbody>
-          ${(users.users||[]).map(u => `<tr><td>${u.id}</td><td>${esc(u.name||'')}</td><td>${esc(u.email)}</td><td><span class="badge">${u.role}</span></td><td>${u.is_verified ? '${ICONS.check}' : '<button class="btn btn-sm" onclick="adminVerifyUser(${u.id})">Verify</button>'}</td></tr>`).join('')}
+          ${(users.users||[]).map(u => `<tr><td>${u.id}</td><td>${esc(u.name||'')}</td><td>${esc(u.email)}</td><td><span class="badge">${u.role}</span></td><td>${u.is_verified ? '<span style="color:var(--color-success)">&#10003; Verified</span>' : `<button class="btn btn-sm" onclick="adminVerifyUser(${u.id})">Verify</button>`}</td></tr>`).join('')}
         </tbody></table>
       </div>
     `, 'admin');
@@ -782,7 +844,7 @@ async function renderAdminTasks() {
       <h1 class="page-title">All Tasks</h1>
       <p class="page-desc">Manage tasks and quality reviews</p>
       <table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Category</th><th>Review</th><th>Created</th></tr></thead><tbody>
-        ${tasks.map(t => `<tr><td><a href="#/admin/tasks/${t.id}">#${t.id}</a></td><td>${esc(t.title)}</td><td><span class="badge badge-${t.status}">${t.status}</span></td><td>${t.category||''}</td><td>${t.needs_review ? '<span class="badge badge-warning">Needs Review</span>' : (t.reviewed ? '${ICONS.check}' : '-')}</td><td>${new Date(t.created_at).toLocaleDateString()}</td></tr>`).join('')}
+        ${tasks.map(t => `<tr><td><a href="#/admin/tasks/${t.id}">#${t.id}</a></td><td>${esc(t.title)}</td><td><span class="badge badge-${t.status}">${t.status}</span></td><td>${t.category||''}</td><td>${t.needs_review ? '<span class="badge badge-warning">Needs Review</span>' : (t.reviewed ? '<span style="color:var(--color-success)">&#10003;</span>' : '-')}</td><td>${new Date(t.created_at).toLocaleDateString()}</td></tr>`).join('')}
       </tbody></table>
     `, 'admin-tasks');
   } catch (err) { appShell(`<div class="empty-state"><p>Error: ${err.message}</p></div>`, 'admin-tasks'); }
@@ -817,7 +879,7 @@ async function renderAdminFlags() {
     appShell(`
       <h1 class="page-title">Flagged Content</h1>
       <table class="data-table"><thead><tr><th>ID</th><th>Task</th><th>Reason</th><th>Reporter</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-        ${flags.map(f => `<tr><td>${f.id}</td><td><a href="#/tasks/${f.task_id}">#${f.task_id}</a></td><td>${esc(f.reason||'')}</td><td>${f.reporter_id}</td><td><span class="badge badge-${f.status}">${f.status}</span></td><td>${f.status === 'pending' ? `<button class="btn btn-sm" onclick="resolveFlag(${f.id},'resolved')">Resolve</button> <button class="btn btn-sm btn-danger" onclick="resolveFlag(${f.id},'dismissed')">Dismiss</button>` : ''}</td></tr>`).join('')}
+        ${flags.map(f => `<tr><td>${f.id}</td><td><a href="#/task/${f.task_id}">#${f.task_id}</a></td><td>${esc(f.reason||'')}</td><td>${f.reporter_id}</td><td><span class="badge badge-${f.status}">${f.status}</span></td><td>${f.status === 'pending' ? `<button class="btn btn-sm" onclick="resolveFlag(${f.id},'resolved')">Resolve</button> <button class="btn btn-sm btn-danger" onclick="resolveFlag(${f.id},'dismissed')">Dismiss</button>` : ''}</td></tr>`).join('')}
       </tbody></table>
     `, 'admin-flags');
   } catch (err) { appShell(`<div class="empty-state"><p>Error: ${err.message}</p></div>`, 'admin-flags'); }
@@ -905,7 +967,7 @@ function renderTerms() {
   document.getElementById('app').innerHTML = `
     <div style="max-width:800px;margin:0 auto;padding:var(--space-6) var(--space-4)">
       <h1>Terms of Service</h1>
-      <p>Last updated: 2025</p>
+      <p>Last updated: January 2026</p>
       <h2>1. Acceptance</h2><p>By using GoHireHumans you agree to these terms.</p>
       <h2>2. Services</h2><p>We connect clients with verified human professionals for task completion.</p>
       <h2>3. Accounts</h2><p>You must provide accurate information and are responsible for your account security.</p>
@@ -936,19 +998,20 @@ function render() {
   const segments = path.split('/').filter(Boolean);
 
   // Public routes
-  if (path === '/') return renderLanding();
-  if (path === '/auth') return renderAuth();
+  if (path === '/') { if (state.user && state.token) return renderDashboard(); return renderLanding(); }
+  if (path === '/auth' || path === '/login') return renderAuth('login');
+  if (path === '/register') return renderAuth('register');
   if (path === '/terms') return renderTerms();
   if (path === '/guidelines') return renderGuidelines();
 
   // Auth required
-  if (!state.token) { location.hash = '#/auth'; return; }
+  if (!state.user || !state.token) { location.hash = '#/auth'; return; }
 
   // User routes
   if (path === '/dashboard') return renderDashboard();
   if (path === '/tasks') return renderTasks();
-  if (path.match(/^\/tasks\/\d+$/)) return renderTaskDetail(segments[1]);
-  if (path === '/create') return renderCreateTask();
+  if (path.match(/^\/task\/\d+$/)) return renderTaskDetail(segments[1]);
+  if (path === '/create' || path === '/create-task') return renderCreateTask();
   if (path === '/developer') return renderDeveloperSettings();
   if (path === '/playground') return renderPlayground();
   if (path === '/payments') return renderPayments();
