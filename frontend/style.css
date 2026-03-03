@@ -746,7 +746,7 @@
   text-align: center;
 }
 .lp-safety-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   gap: var(--space-5); text-align: left;
 }
 .lp-safety-item {
