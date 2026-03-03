@@ -20,12 +20,27 @@ import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
+try:
+    import stripe
+    STRIPE_AVAILABLE = True
+except ImportError:
+    STRIPE_AVAILABLE = False
 
 
 SERVICE_FEE_RATE = 0.01  # 1% platform service fee
 # ─── Database Setup ───────────────────────────────────────────────────────────
 
 DB_PATH = os.environ.get("DATABASE_PATH", "agentwork.db")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://gohirehumans.com")
+
+def stripe_configured():
+    return STRIPE_AVAILABLE and bool(STRIPE_SECRET_KEY)
+
+if stripe_configured():
+    stripe.api_key = STRIPE_SECRET_KEY
 
 def get_db():
     db = sqlite3.connect(DB_PATH)
@@ -156,7 +171,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL REFERENCES users(id),
         task_id INTEGER REFERENCES tasks(id),
-        entry_type TEXT NOT NULL CHECK(entry_type IN ('credit','debit','fee','payout_request','fund_add')),
+        entry_type TEXT NOT NULL CHECK(entry_type IN ('credit','debit','fee','payout_request','fund_add','checkout_pending','fund_add_confirmed','payout_failed','payout_refund','payout_rejected')),
         amount REAL NOT NULL,
         balance_after REAL,
         description TEXT,
@@ -168,9 +183,19 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL REFERENCES users(id),
         amount REAL NOT NULL,
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','rejected')),
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','rejected','failed')),
+        stripe_transfer_id TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         processed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_revenue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER REFERENCES tasks(id),
+        fee_amount REAL NOT NULL,
+        fee_type TEXT DEFAULT 'service_fee',
+        stripe_transfer_id TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS webhook_events (
@@ -409,7 +434,12 @@ def get_body():
         try:
             length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
             if length > 0:
-                raw = sys.stdin.read(length)
+                # Check if get_body_raw already read stdin
+                if hasattr(get_body_raw, '_raw_cache'):
+                    raw = get_body_raw._raw_cache
+                else:
+                    raw = sys.stdin.read(length)
+                    get_body_raw._raw_cache = raw
                 parsed = json.loads(raw)
                 if not isinstance(parsed, dict):
                     get_body._cache = None  # non-dict body treated as bad JSON
@@ -422,6 +452,16 @@ def get_body():
         except (ValueError, OSError):
             get_body._cache = None
     return get_body._cache
+
+def get_body_raw():
+    """Read raw request body as string (for webhook signature verification)."""
+    if not hasattr(get_body_raw, '_raw_cache'):
+        content_length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
+        if content_length > 0:
+            get_body_raw._raw_cache = sys.stdin.read(content_length)
+        else:
+            get_body_raw._raw_cache = sys.stdin.read()
+    return get_body_raw._raw_cache
 
 def get_query_params():
     qs = os.environ.get("QUERY_STRING", "")
@@ -533,12 +573,11 @@ def push_notification(db, user_id, notif_type, title, message=None, link=None):
     )
 
 def fake_stripe_payment_id():
-    """STUB: Replace with real Stripe integration for production payments."""
-    if os.environ.get("STRIPE_SECRET_KEY"):
-        raise NotImplementedError(
-            "Real Stripe integration not yet implemented. "
-            "Remove fake_stripe_payment_id() and integrate stripe.PaymentIntent."
-        )
+    """Return a simulated payment ID when Stripe is not configured."""
+    if stripe_configured():
+        # In production with Stripe, we should not be calling this function.
+        # Real endpoints use stripe API directly. This is only for fallback.
+        return f"pi_live_fallback_{secrets.token_hex(12)}"
     return f"pi_sim_{secrets.token_hex(12)}"
 
 # ─── Route Handler ────────────────────────────────────────────────────────────
@@ -1143,6 +1182,11 @@ def _handle_routes(db):
                 db.execute(
                     "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
                     [task['worker_id'], task_id, 'credit', worker_payout, new_withdrawable, f"Payment for task #{task_id} (1% fee: ${service_fee:.2f})"]
+                )
+                # Track platform fee in dedicated revenue table
+                db.execute(
+                    "INSERT INTO platform_revenue (task_id, fee_amount, fee_type) VALUES (?,?,?)",
+                    [task_id, service_fee, 'service_fee']
                 )
                 db.execute(
                     "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
@@ -1799,25 +1843,40 @@ def _handle_routes(db):
 
     elif path == "/api/v1/payments/add-funds" and method == "POST":
         user = authenticate(db)
-        if not user or user['role'] != 'ai_client':
-            return error_response("Only AI clients can add funds", 403)
+        if not user:
+            return error_response("Unauthorized", 401)
+        
+        # In production (Stripe configured), only admins can manually add funds (for testing/corrections)
+        # In simulation mode, AI clients can add funds freely
+        if stripe_configured() and user['role'] != 'admin':
+            return error_response("Use checkout to add funds. Direct fund addition is admin-only in production.", 403)
+        
+        if user['role'] not in ('ai_client', 'admin'):
+            return error_response("Only AI clients or admins can add funds", 403)
 
         body = get_body()
         amount = float(body.get("amount", 0))
         if amount <= 0:
             return error_response("Amount must be positive")
+        
+        target_user_id = user['id']
+        # Admin can add funds to any user
+        if user['role'] == 'admin' and body.get("user_id"):
+            target_user_id = int(body['user_id'])
 
-        stripe_payment_id = fake_stripe_payment_id()
-        profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        payment_id = fake_stripe_payment_id()
+        profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [target_user_id]).fetchone()
+        if not profile:
+            return error_response("Client profile not found", 404)
         new_balance = (profile['credit_balance'] or 0) + amount
-        db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user['id']])
+        db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, target_user_id])
         db.execute(
             "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description, stripe_payment_id) VALUES (?,?,?,?,?,?,?)",
-            [user['id'], None, 'fund_add', amount, new_balance, f"Added ${amount:.2f} (test funds)", stripe_payment_id]
+            [target_user_id, None, 'fund_add', amount, new_balance, f"Added ${amount:.2f}" + (" (admin)" if user['role'] == 'admin' else " (test funds)"), payment_id]
         )
-        audit(db, user['id'], "add_funds", "payment", None, {"amount": amount, "stripe_payment_id": stripe_payment_id})
+        audit(db, user['id'], "add_funds", "payment", None, {"amount": amount, "target_user_id": target_user_id, "payment_id": payment_id})
         db.commit()
-        return json_response({"ok": True, "new_balance": new_balance, "stripe_payment_id": stripe_payment_id})
+        return json_response({"ok": True, "new_balance": new_balance, "payment_id": payment_id})
 
     elif path == "/api/v1/payments/request-payout" and method == "POST":
         user = authenticate(db)
@@ -1843,13 +1902,55 @@ def _handle_routes(db):
             "INSERT INTO payout_requests (user_id, amount) VALUES (?,?)",
             [user['id'], amount]
         )
+        payout_request_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        
+        # Attempt real Stripe transfer if configured
+        transfer_id = None
+        payout_status = 'pending'
+        wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        
+        if stripe_configured() and wp and wp['payout_account_id'] and not wp['payout_account_id'].startswith('acct_sim_'):
+            try:
+                transfer = stripe.Transfer.create(
+                    amount=int(amount * 100),  # cents
+                    currency="usd",
+                    destination=wp['payout_account_id'],
+                    metadata={
+                        "user_id": str(user['id']),
+                        "payout_request_id": str(payout_request_id),
+                    },
+                    description=f"GoHireHumans payout for user {user['id']}",
+                )
+                transfer_id = transfer.id
+                payout_status = 'processing'
+                db.execute(
+                    "UPDATE payout_requests SET status = 'processing', stripe_transfer_id = ? WHERE id = ?",
+                    [transfer_id, payout_request_id]
+                )
+            except stripe.error.StripeError as e:
+                # Transfer failed — refund the worker's balance and cancel the payout request
+                db.execute(
+                    "UPDATE worker_profiles SET withdrawable_balance = withdrawable_balance + ? WHERE user_id = ?",
+                    [amount, user['id']]
+                )
+                db.execute("UPDATE payout_requests SET status = 'failed' WHERE id = ?", [payout_request_id])
+                new_balance_row = db.execute("SELECT withdrawable_balance FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
+                new_balance = new_balance_row['withdrawable_balance'] if new_balance_row else 0
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                    [user['id'], None, 'payout_failed', amount, new_balance, f"Payout failed: {str(e)}"]
+                )
+                audit(db, user['id'], "payout_failed", "payment", None, {"amount": amount, "error": str(e)})
+                db.commit()
+                return error_response(f"Payout transfer failed: {str(e)}", 502)
+
         db.execute(
             "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
             [user['id'], None, 'payout_request', amount, new_balance, f"Payout request: ${amount:.2f}"]
         )
         audit(db, user['id'], "request_payout", "payment", None, {"amount": amount})
         db.commit()
-        return json_response({"ok": True, "new_balance": new_balance})
+        return json_response({"ok": True, "new_balance": new_balance, "payout_request_id": payout_request_id, "status": payout_status})
 
     elif path == "/api/v1/payments/ledger" and method == "GET":
         user = authenticate(db)
@@ -1872,41 +1973,185 @@ def _handle_routes(db):
         currency = body.get("currency", "usd")
         if amount <= 0:
             return error_response("Amount must be positive")
+        if amount < 1.00:
+            return error_response("Minimum deposit is $1.00")
 
-        session_id = f"cs_sim_{secrets.token_hex(16)}"
-        payment_url = f"https://checkout.stripe.com/pay/{session_id}#simulated"
-        stripe_payment_id = fake_stripe_payment_id()
+        if stripe_configured():
+            try:
+                # Create real Stripe Checkout Session
+                session = stripe.checkout.Session.create(
+                    payment_method_types=["card"],
+                    line_items=[{
+                        "price_data": {
+                            "currency": currency,
+                            "unit_amount": int(amount * 100),  # Stripe uses cents
+                            "product_data": {
+                                "name": "GoHireHumans Account Deposit",
+                                "description": f"Add ${amount:.2f} to your GoHireHumans balance",
+                            },
+                        },
+                        "quantity": 1,
+                    }],
+                    mode="payment",
+                    success_url=f"{FRONTEND_URL}/#/payments?deposit=success",
+                    cancel_url=f"{FRONTEND_URL}/#/payments?deposit=canceled",
+                    metadata={
+                        "user_id": str(user['id']),
+                        "type": "deposit",
+                    },
+                    client_reference_id=str(user['id']),
+                )
+                
+                # Record pending checkout in ledger
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description, stripe_payment_id) VALUES (?,?,?,?,?,?,?)",
+                    [user['id'], None, 'checkout_pending', amount, None, f"Checkout session (pending)", session.id]
+                )
+                audit(db, user['id'], "create_checkout", "payment", None, {"amount": amount, "currency": currency, "session_id": session.id})
+                db.commit()
+                return json_response({
+                    "session_id": session.id,
+                    "payment_url": session.url,
+                    "amount": amount,
+                    "currency": currency,
+                    "mode": "live"
+                }, 201)
+            except stripe.error.StripeError as e:
+                return error_response(f"Payment processing error: {str(e)}", 502)
+        else:
+            # Simulation mode: immediately credit balance (like add-funds)
+            profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user['id']]).fetchone()
+            new_balance = (profile['credit_balance'] or 0) + amount if profile else amount
+            db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user['id']])
+            session_id = f"cs_sim_{secrets.token_hex(16)}"
+            payment_url = f"{FRONTEND_URL}/#/payments?deposit=success&simulated=true"
+            db.execute(
+                "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description, stripe_payment_id) VALUES (?,?,?,?,?,?,?)",
+                [user['id'], None, 'fund_add', amount, new_balance, f"Simulated deposit ${amount:.2f}", session_id]
+            )
+            audit(db, user['id'], "create_checkout", "payment", None, {"amount": amount, "currency": currency, "session_id": session_id, "simulated": True})
+            db.commit()
+            return json_response({
+                "session_id": session_id,
+                "payment_url": payment_url,
+                "amount": amount,
+                "currency": currency,
+                "mode": "simulated",
+                "new_balance": new_balance
+            }, 201)
 
-        # Record in ledger as pending (not yet applied to balance)
-        db.execute(
-            "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description, stripe_payment_id) VALUES (?,?,?,?,?,?,?)",
-            [user['id'], None, 'fund_add', amount, None, f"Checkout session {session_id} ({currency.upper()})", stripe_payment_id]
-        )
-        audit(db, user['id'], "create_checkout", "payment", None, {"amount": amount, "currency": currency, "session_id": session_id})
-        db.commit()
-        return json_response({"session_id": session_id, "payment_url": payment_url, "stripe_payment_id": stripe_payment_id, "amount": amount, "currency": currency}, 201)
-
-    elif path == "/api/v1/payments/connect-account" and method == "POST":
+    elif path == "/api/v1/payments/connect-onboard" and method == "POST":
         user = authenticate(db)
         if not user or user['role'] != 'worker':
             return error_response("Only workers can set up payout accounts", 403)
 
-        body = get_body()
-        bank_name = body.get("bank_name", "")
-        account_last4 = body.get("account_last4", "")
-        if not bank_name or not account_last4:
-            return error_response("bank_name and account_last4 required")
+        if stripe_configured():
+            try:
+                wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
+                
+                if wp and wp['payout_account_id'] and wp['payout_account_id'].startswith('acct_') and not wp['payout_account_id'].startswith('acct_sim_'):
+                    # Already has a real Connect account — generate refresh link
+                    account_id = wp['payout_account_id']
+                else:
+                    # Create new Express connected account
+                    account = stripe.Account.create(
+                        type="express",
+                        country="US",
+                        email=user['email'],
+                        capabilities={
+                            "transfers": {"requested": True},
+                        },
+                        metadata={"user_id": str(user['id'])},
+                    )
+                    account_id = account.id
+                    db.execute(
+                        "UPDATE worker_profiles SET payout_account_id = ?, payout_method = 'stripe_connect' WHERE user_id = ?",
+                        [account_id, user['id']]
+                    )
+                    db.commit()
+                
+                # Generate account link for onboarding
+                account_link = stripe.AccountLink.create(
+                    account=account_id,
+                    refresh_url=f"{FRONTEND_URL}/#/payments?connect=refresh",
+                    return_url=f"{FRONTEND_URL}/#/payments?connect=complete",
+                    type="account_onboarding",
+                )
+                
+                audit(db, user['id'], "connect_onboard", "worker_profile", user['id'], {"account_id": account_id})
+                db.commit()
+                return json_response({
+                    "ok": True,
+                    "onboarding_url": account_link.url,
+                    "account_id": account_id,
+                    "mode": "live"
+                })
+            except stripe.error.StripeError as e:
+                return error_response(f"Connect setup error: {str(e)}", 502)
+        else:
+            # Simulation mode
+            body = get_body()
+            bank_name = body.get("bank_name", "Demo Bank")
+            account_last4 = body.get("account_last4", "0000")
+            payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
+            payout_method_details = json.dumps({"bank_name": bank_name, "account_last4": account_last4})
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id = ?, payout_method_details = ?, payout_method = 'stripe_simulated' WHERE user_id = ?",
+                [payout_account_id, payout_method_details, user['id']]
+            )
+            audit(db, user['id'], "connect_payout_account", "worker_profile", user['id'])
+            db.commit()
+            return json_response({
+                "ok": True,
+                "onboarding_url": f"{FRONTEND_URL}/#/payments?connect=complete&simulated=true",
+                "account_id": payout_account_id,
+                "mode": "simulated"
+            })
 
-        payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
-        payout_method_details = json.dumps({"bank_name": bank_name, "account_last4": account_last4})
+    # Keep legacy connect-account route as redirect
+    elif path == "/api/v1/payments/connect-account" and method == "POST":
+        # Redirect to new endpoint
+        user = authenticate(db)
+        if not user or user['role'] != 'worker':
+            return error_response("Only workers can set up payout accounts", 403)
+        return json_response({"error": "This endpoint is deprecated. Use /api/v1/payments/connect-onboard instead.", "redirect": "/api/v1/payments/connect-onboard"}, 301)
 
-        db.execute(
-            "UPDATE worker_profiles SET payout_account_id = ?, payout_method_details = ?, payout_method = 'stripe' WHERE user_id = ?",
-            [payout_account_id, payout_method_details, user['id']]
-        )
-        audit(db, user['id'], "connect_payout_account", "worker_profile", user['id'])
-        db.commit()
-        return json_response({"ok": True, "payout_account_id": payout_account_id, "bank_name": bank_name, "account_last4": account_last4})
+    elif path == "/api/v1/payments/connect-status" and method == "GET":
+        user = authenticate(db)
+        if not user or user['role'] != 'worker':
+            return error_response("Only workers can check connect status", 403)
+
+        wp = db.execute("SELECT payout_account_id, payout_method, payout_method_details FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
+        
+        if not wp or not wp['payout_account_id']:
+            return json_response({"connected": False, "status": "not_started", "mode": "none"})
+        
+        account_id = wp['payout_account_id']
+        
+        if stripe_configured() and account_id.startswith('acct_') and not account_id.startswith('acct_sim_'):
+            try:
+                account = stripe.Account.retrieve(account_id)
+                return json_response({
+                    "connected": account.charges_enabled and account.payouts_enabled,
+                    "charges_enabled": account.charges_enabled,
+                    "payouts_enabled": account.payouts_enabled,
+                    "details_submitted": account.details_submitted,
+                    "account_id": account_id,
+                    "status": "active" if account.payouts_enabled else "pending",
+                    "mode": "live"
+                })
+            except stripe.error.StripeError as e:
+                return error_response(f"Error checking account: {str(e)}", 502)
+        else:
+            return json_response({
+                "connected": True,
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "account_id": account_id,
+                "status": "active",
+                "mode": "simulated"
+            })
 
     elif path == "/api/v1/payments/payout-history" and method == "GET":
         user = authenticate(db)
@@ -1920,6 +2165,112 @@ def _handle_routes(db):
         return json_response([row_to_dict(p) for p in payouts])
 
     # ── File Uploads ───────────────────────────────────────────────────────
+
+    elif path == "/api/v1/webhooks/stripe" and method == "POST":
+        # Stripe webhook — no auth required (uses signature verification)
+        body_raw = get_body_raw()
+        sig_header = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
+        
+        if not stripe_configured():
+            return json_response({"received": True, "mode": "simulated"})
+        
+        if not STRIPE_WEBHOOK_SECRET:
+            return error_response("Webhook secret not configured", 500)
+        
+        try:
+            event = stripe.Webhook.construct_event(body_raw, sig_header, STRIPE_WEBHOOK_SECRET)
+        except ValueError:
+            return error_response("Invalid payload", 400)
+        except stripe.error.SignatureVerificationError:
+            return error_response("Invalid signature", 400)
+        
+        event_type = event['type']
+        data = event['data']['object']
+        
+        if event_type == 'checkout.session.completed':
+            # Client deposit completed
+            user_id = int(data['metadata'].get('user_id', 0))
+            amount_cents = data['amount_total']
+            amount = amount_cents / 100.0
+            payment_intent = data.get('payment_intent', '')
+            
+            if user_id and data['metadata'].get('type') == 'deposit':
+                profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [user_id]).fetchone()
+                if profile:
+                    new_balance = (profile['credit_balance'] or 0) + amount
+                    db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, user_id])
+                    db.execute(
+                        "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description, stripe_payment_id) VALUES (?,?,?,?,?,?,?)",
+                        [user_id, None, 'fund_add', amount, new_balance, f"Deposit confirmed (${amount:.2f})", payment_intent]
+                    )
+                    # Mark any pending checkout ledger entry
+                    db.execute(
+                        "UPDATE ledger SET entry_type = 'fund_add_confirmed' WHERE stripe_payment_id = ? AND entry_type = 'checkout_pending'",
+                        [data['id']]
+                    )
+                    push_notification(db, user_id, "deposit_confirmed",
+                        "Deposit confirmed",
+                        f"${amount:.2f} has been added to your balance.",
+                        "/api/v1/payments/ledger")
+                    audit(db, user_id, "deposit_confirmed", "payment", None, {"amount": amount, "payment_intent": payment_intent})
+                    db.commit()
+        
+        elif event_type == 'transfer.paid':
+            # Worker payout completed
+            transfer_id = data['id']
+            payout_req = db.execute("SELECT * FROM payout_requests WHERE stripe_transfer_id = ?", [transfer_id]).fetchone()
+            if payout_req:
+                db.execute(
+                    "UPDATE payout_requests SET status = 'completed', processed_at = datetime('now') WHERE id = ?",
+                    [payout_req['id']]
+                )
+                push_notification(db, payout_req['user_id'], "payout_completed",
+                    "Payout completed",
+                    f"${payout_req['amount']:.2f} has been sent to your bank account.",
+                    "/api/v1/payments/payout-history")
+                audit(db, payout_req['user_id'], "payout_completed", "payment", None, {"amount": payout_req['amount'], "transfer_id": transfer_id})
+                db.commit()
+        
+        elif event_type == 'transfer.failed':
+            transfer_id = data['id']
+            payout_req = db.execute("SELECT * FROM payout_requests WHERE stripe_transfer_id = ?", [transfer_id]).fetchone()
+            if payout_req:
+                # Refund worker balance
+                db.execute(
+                    "UPDATE worker_profiles SET withdrawable_balance = withdrawable_balance + ? WHERE user_id = ?",
+                    [payout_req['amount'], payout_req['user_id']]
+                )
+                db.execute(
+                    "UPDATE payout_requests SET status = 'failed', processed_at = datetime('now') WHERE id = ?",
+                    [payout_req['id']]
+                )
+                new_bal = db.execute("SELECT withdrawable_balance FROM worker_profiles WHERE user_id = ?", [payout_req['user_id']]).fetchone()
+                db.execute(
+                    "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                    [payout_req['user_id'], None, 'payout_refund', payout_req['amount'], new_bal['withdrawable_balance'] if new_bal else 0, f"Payout failed — funds returned"]
+                )
+                push_notification(db, payout_req['user_id'], "payout_failed",
+                    "Payout failed",
+                    f"Your ${payout_req['amount']:.2f} payout could not be processed. Funds have been returned to your balance.",
+                    "/api/v1/payments/payout-history")
+                db.commit()
+        
+        elif event_type == 'account.updated':
+            # Worker Connect account updated
+            account_id = data['id']
+            wp = db.execute("SELECT user_id FROM worker_profiles WHERE payout_account_id = ?", [account_id]).fetchone()
+            if wp:
+                is_active = data.get('payouts_enabled', False) and data.get('charges_enabled', False)
+                new_method = 'stripe_connect_active' if is_active else 'stripe_connect_pending'
+                db.execute("UPDATE worker_profiles SET payout_method = ? WHERE user_id = ?", [new_method, wp['user_id']])
+                if is_active:
+                    push_notification(db, wp['user_id'], "connect_active",
+                        "Bank account connected",
+                        "Your payout account is now active. You can request payouts.",
+                        "/api/v1/payments/payout-history")
+                db.commit()
+        
+        return json_response({"received": True})
 
     elif path == "/api/v1/uploads/presign" and method == "POST":
         user = authenticate(db)
@@ -2467,6 +2818,108 @@ def _handle_routes(db):
         db.commit()
         return json_response({"status": "queued", "message": "Email delivery is stubbed in MVP"})
 
+    elif path == "/api/v1/admin/revenue" and method == "GET":
+        user = authenticate(db)
+        if not user or user['role'] != 'admin':
+            return error_response("Admin access required", 403)
+
+        total_fees = db.execute("SELECT COALESCE(SUM(fee_amount), 0) as total FROM platform_revenue").fetchone()['total']
+        fees_30d = db.execute("SELECT COALESCE(SUM(fee_amount), 0) as total FROM platform_revenue WHERE date(created_at) >= date('now', '-30 days')").fetchone()['total']
+        fees_7d = db.execute("SELECT COALESCE(SUM(fee_amount), 0) as total FROM platform_revenue WHERE date(created_at) >= date('now', '-7 days')").fetchone()['total']
+        
+        daily = db.execute("""
+            SELECT date(created_at) as day, SUM(fee_amount) as fees, COUNT(*) as transactions
+            FROM platform_revenue
+            WHERE date(created_at) >= date('now', '-30 days')
+            GROUP BY date(created_at)
+            ORDER BY day ASC
+        """).fetchall()
+        
+        pending_payouts = db.execute("""
+            SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
+            FROM payout_requests WHERE status = 'pending'
+        """).fetchone()
+        
+        return json_response({
+            "total_platform_fees": round(total_fees, 2),
+            "fees_last_30_days": round(fees_30d, 2),
+            "fees_last_7_days": round(fees_7d, 2),
+            "daily_breakdown": [row_to_dict(r) for r in daily],
+            "pending_payouts": {"count": pending_payouts['count'], "total": round(pending_payouts['total'], 2)},
+            "stripe_mode": "live" if stripe_configured() else "simulated"
+        })
+
+    elif re.match(r"^/api/v1/admin/payouts/\d+/process$", path) and method == "POST":
+        user = authenticate(db)
+        if not user or user['role'] != 'admin':
+            return error_response("Admin access required", 403)
+
+        payout_id = int(path.split("/")[5])
+        body = get_body()
+        action = body.get("action", "approve")  # approve or reject
+        
+        payout = db.execute("SELECT * FROM payout_requests WHERE id = ?", [payout_id]).fetchone()
+        if not payout:
+            return error_response("Payout request not found", 404)
+        if payout['status'] != 'pending':
+            return error_response(f"Payout is already {payout['status']}", 409)
+        
+        if action == "reject":
+            # Refund worker balance
+            db.execute(
+                "UPDATE worker_profiles SET withdrawable_balance = withdrawable_balance + ? WHERE user_id = ?",
+                [payout['amount'], payout['user_id']]
+            )
+            db.execute(
+                "UPDATE payout_requests SET status = 'rejected', processed_at = datetime('now') WHERE id = ?",
+                [payout_id]
+            )
+            new_bal = db.execute("SELECT withdrawable_balance FROM worker_profiles WHERE user_id = ?", [payout['user_id']]).fetchone()
+            db.execute(
+                "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+                [payout['user_id'], None, 'payout_rejected', payout['amount'], new_bal['withdrawable_balance'] if new_bal else 0, f"Payout request #{payout_id} rejected by admin"]
+            )
+            push_notification(db, payout['user_id'], "payout_rejected",
+                "Payout rejected",
+                f"Your ${payout['amount']:.2f} payout request was rejected. Funds returned to your balance.",
+                "/api/v1/payments/payout-history")
+            audit(db, user['id'], "reject_payout", "payment", payout_id, {"amount": payout['amount']})
+            db.commit()
+            return json_response({"ok": True, "status": "rejected"})
+        
+        elif action == "approve":
+            wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [payout['user_id']]).fetchone()
+            
+            if stripe_configured() and wp and wp['payout_account_id'] and not wp['payout_account_id'].startswith('acct_sim_'):
+                try:
+                    transfer = stripe.Transfer.create(
+                        amount=int(payout['amount'] * 100),
+                        currency="usd",
+                        destination=wp['payout_account_id'],
+                        metadata={"payout_request_id": str(payout_id), "user_id": str(payout['user_id'])},
+                        description=f"GoHireHumans payout #{payout_id}",
+                    )
+                    db.execute(
+                        "UPDATE payout_requests SET status = 'processing', stripe_transfer_id = ?, processed_at = datetime('now') WHERE id = ?",
+                        [transfer.id, payout_id]
+                    )
+                    audit(db, user['id'], "approve_payout", "payment", payout_id, {"transfer_id": transfer.id})
+                    db.commit()
+                    return json_response({"ok": True, "status": "processing", "transfer_id": transfer.id})
+                except stripe.error.StripeError as e:
+                    return error_response(f"Transfer failed: {str(e)}", 502)
+            else:
+                # Simulation mode: mark as completed immediately
+                db.execute(
+                    "UPDATE payout_requests SET status = 'completed', processed_at = datetime('now') WHERE id = ?",
+                    [payout_id]
+                )
+                audit(db, user['id'], "approve_payout_simulated", "payment", payout_id)
+                db.commit()
+                return json_response({"ok": True, "status": "completed", "mode": "simulated"})
+        
+        return error_response("Invalid action. Use 'approve' or 'reject'.", 400)
+
     # ── Analytics Dashboard ────────────────────────────────────────────────
 
     elif path == "/api/v1/admin/analytics/trends" and method == "GET":
@@ -2476,13 +2929,14 @@ def _handle_routes(db):
 
         rows = db.execute("""
             SELECT
-                date(created_at) as day,
+                date(t.created_at) as day,
                 COUNT(*) as new_tasks,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
-                COALESCE(SUM(CASE WHEN status = 'completed' THEN budget_amount ELSE 0 END), 0) as revenue
-            FROM tasks
-            WHERE date(created_at) >= date('now', '-30 days')
-            GROUP BY date(created_at)
+                SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+                COALESCE(SUM(CASE WHEN t.status = 'completed' THEN t.budget_amount ELSE 0 END), 0) as gross_volume,
+                COALESCE((SELECT SUM(pr.fee_amount) FROM platform_revenue pr WHERE date(pr.created_at) = date(t.created_at)), 0) as platform_fees
+            FROM tasks t
+            WHERE date(t.created_at) >= date('now', '-30 days')
+            GROUP BY date(t.created_at)
             ORDER BY day ASC
         """).fetchall()
         return json_response([row_to_dict(r) for r in rows])

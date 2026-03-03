@@ -339,7 +339,7 @@ function renderLanding() {
         <div class="lp-safety-grid">
           <div class="lp-safety-item"><div class="lp-safety-icon">${icons.shield}</div><div class="lp-safety-title">Content screening</div><div class="lp-safety-desc">Every task reviewed against safety standards before posting.</div></div>
           <div class="lp-safety-item"><div class="lp-safety-icon">${icons.tasks}</div><div class="lp-safety-title">Verified identity</div><div class="lp-safety-desc">Professionals verify identity and credentials for sensitive tasks.</div></div>
-          <div class="lp-safety-item"><div class="lp-safety-icon">${icons.dollar}</div><div class="lp-safety-title">Secure payments</div><div class="lp-safety-desc">Escrow-protected payments held until task completion and approval.</div></div>
+          <div class="lp-safety-item"><div class="lp-safety-icon">${icons.dollar}</div><div class="lp-safety-title">Secure payments</div><div class="lp-safety-desc">Payments powered by Stripe. Funds held securely until task completion and approval.</div></div>
           <div class="lp-safety-item"><div class="lp-safety-icon">${icons.star}</div><div class="lp-safety-title">Ratings &amp; reviews</div><div class="lp-safety-desc">Two-way ratings build accountability and keep quality high.</div></div>
         </div>
       </section>
@@ -748,21 +748,203 @@ async function runPlayground(e) {
   } catch (err) { document.getElementById('playgroundResult').innerHTML = `<div class="card" style="border-color:var(--color-error)"><div class="card-title" style="color:var(--color-error)">Error</div><p style="font-size:var(--text-sm)">${err.message}</p></div>`; }
 }
 
-// --- Payments (Simplified: no Stripe simulation buttons) ---
+// --- Payments (Real Stripe integration with graceful simulation fallback) ---
+
+// Handle deposit success/cancel URL params
+function checkDepositStatus() {
+  const hash = window.location.hash;
+  if (hash.includes('deposit=success')) {
+    toast('Deposit confirmed! Your balance has been updated.', 'success');
+    window.location.hash = '#/payments';
+  } else if (hash.includes('deposit=canceled')) {
+    toast('Deposit canceled.', 'info');
+    window.location.hash = '#/payments';
+  } else if (hash.includes('connect=complete')) {
+    toast('Bank account setup complete! Checking status...', 'success');
+    window.location.hash = '#/payments';
+  } else if (hash.includes('connect=refresh')) {
+    toast('Please complete your bank account setup.', 'info');
+    window.location.hash = '#/payments';
+  }
+}
+
+async function handleDeposit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const amount = parseFloat(form.deposit_amount.value);
+  if (!amount || amount < 1) { toast('Minimum deposit is $1.00', 'error'); return; }
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true; btn.textContent = 'Processing...';
+  try {
+    const res = await api('/api/v1/payments/create-checkout', { method: 'POST', body: { amount, currency: 'usd' } });
+    if (res.payment_url) {
+      if (res.mode === 'simulated') {
+        toast(`$${amount.toFixed(2)} added to your balance (simulation mode)`, 'success');
+        renderPayments();
+      } else {
+        // Redirect to Stripe Checkout
+        window.location.href = res.payment_url;
+      }
+    }
+  } catch (err) { toast('Deposit failed: ' + err.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Deposit'; }
+}
+
+async function handleConnectOnboard() {
+  const btn = document.getElementById('connect-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Setting up...'; }
+  try {
+    const res = await api('/api/v1/payments/connect-onboard', { method: 'POST', body: {} });
+    if (res.onboarding_url) {
+      if (res.mode === 'simulated') {
+        toast('Bank account connected (simulation mode)', 'success');
+        renderPayments();
+      } else {
+        window.location.href = res.onboarding_url;
+      }
+    }
+  } catch (err) { toast('Setup failed: ' + err.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Connect Bank Account'; } }
+}
+
+async function handlePayoutRequest(e) {
+  e.preventDefault();
+  const form = e.target;
+  const amount = parseFloat(form.payout_amount.value);
+  if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true; btn.textContent = 'Processing...';
+  try {
+    const res = await api('/api/v1/payments/request-payout', { method: 'POST', body: { amount } });
+    toast(`Payout of $${amount.toFixed(2)} requested successfully`, 'success');
+    renderPayments();
+  } catch (err) { toast('Payout failed: ' + err.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Request Payout'; }
+}
+
 async function renderPayments() {
   appShell('<div class="loading"><div class="spinner"></div></div>', 'payments');
+  checkDepositStatus();
   try {
-    const [profile, ledger] = await Promise.all([api('/auth/me'), api('/api/v1/payments/ledger')]);
-    const p = profile.profile || {}; const role = state.user.role;
+    const role = state.user.role;
+    let fetches = [api('/auth/me'), api('/api/v1/payments/ledger')];
+    if (role === 'worker') fetches.push(api('/api/v1/payments/connect-status').catch(() => ({ connected: false, status: 'not_started' })));
+    if (role === 'worker') fetches.push(api('/api/v1/payments/payout-history').catch(() => []));
+    const results = await Promise.all(fetches);
+    const profile = results[0]; const ledger = results[1];
+    const connectStatus = role === 'worker' ? results[2] : null;
+    const payoutHistory = role === 'worker' ? results[3] : null;
+    const p = profile.profile || {};
+
     let header = '';
-    if (role === 'ai_client') header = `<div class="stats-grid"><div class="stat-card"><div class="stat-label">Credit Balance</div><div class="stat-value">$${(p.credit_balance || 0).toFixed(2)}</div></div><div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value">$${(p.total_spent || 0).toFixed(2)}</div></div></div>`;
-    else if (role === 'worker') header = `<div class="stats-grid"><div class="stat-card"><div class="stat-label">Total Earned</div><div class="stat-value">$${(p.estimated_earnings || 0).toFixed(2)}</div></div><div class="stat-card"><div class="stat-label">Available</div><div class="stat-value">$${(p.withdrawable_balance || 0).toFixed(2)}</div></div><div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value">${p.total_tasks_completed || 0}</div></div></div>`;
+    let actionSection = '';
+
+    if (role === 'ai_client') {
+      header = `<div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Credit Balance</div><div class="stat-value">$${(p.credit_balance || 0).toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value">$${(p.total_spent || 0).toFixed(2)}</div></div>
+      </div>`;
+      actionSection = `
+        <div class="card" style="margin-bottom:var(--space-6)">
+          <div class="card-header"><div class="card-title">Add Funds</div></div>
+          <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Deposit funds to your account to create and pay for tasks.</p>
+          <form onsubmit="handleDeposit(event)" style="display:flex;gap:var(--space-3);align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group" style="margin-bottom:0;flex:1;min-width:160px">
+              <label class="label">Amount (USD)</label>
+              <input class="input" type="number" name="deposit_amount" min="1" step="0.01" placeholder="25.00" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Deposit</button>
+          </form>
+        </div>`;
+    } else if (role === 'worker') {
+      header = `<div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Earned</div><div class="stat-value">$${(p.estimated_earnings || 0).toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Available to Withdraw</div><div class="stat-value">$${(p.withdrawable_balance || 0).toFixed(2)}</div></div>
+        <div class="stat-card"><div class="stat-label">Tasks Completed</div><div class="stat-value">${p.total_tasks_completed || 0}</div></div>
+      </div>`;
+
+      // Connect account section
+      let connectSection = '';
+      const isConnected = connectStatus && connectStatus.connected;
+      const isPending = connectStatus && connectStatus.status === 'pending';
+      if (!isConnected && !isPending) {
+        connectSection = `
+          <div class="card" style="margin-bottom:var(--space-4);border-left:3px solid var(--color-warning)">
+            <div class="card-header"><div class="card-title">Connect Your Bank Account</div></div>
+            <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">To receive payouts, connect your bank account through our secure payment partner Stripe.</p>
+            <button id="connect-btn" class="btn btn-primary" onclick="handleConnectOnboard()">Connect Bank Account</button>
+          </div>`;
+      } else if (isPending) {
+        connectSection = `
+          <div class="card" style="margin-bottom:var(--space-4);border-left:3px solid var(--color-warning)">
+            <div class="card-header"><div class="card-title">Bank Account Setup Pending</div></div>
+            <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Your account setup is not yet complete. Please finish the onboarding process.</p>
+            <button id="connect-btn" class="btn btn-primary" onclick="handleConnectOnboard()">Complete Setup</button>
+          </div>`;
+      } else {
+        connectSection = `
+          <div class="card" style="margin-bottom:var(--space-4);border-left:3px solid var(--color-success)">
+            <div class="card-header"><div class="card-title">Bank Account Connected</div></div>
+            <p style="font-size:var(--text-sm);color:var(--color-text-muted)">Your payout account is active and ready to receive payments.${connectStatus.mode === 'simulated' ? ' <span class="badge badge-open">Simulation</span>' : ''}</p>
+          </div>`;
+      }
+
+      // Payout request section
+      const canPayout = (p.withdrawable_balance || 0) > 0 && isConnected;
+      let payoutSection = '';
+      if (isConnected) {
+        payoutSection = `
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header"><div class="card-title">Request Payout</div></div>
+            ${canPayout ? `
+              <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Request a transfer of your available balance to your connected bank account.</p>
+              <form onsubmit="handlePayoutRequest(event)" style="display:flex;gap:var(--space-3);align-items:flex-end;flex-wrap:wrap">
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:160px">
+                  <label class="label">Amount (USD)</label>
+                  <input class="input" type="number" name="payout_amount" min="0.01" max="${(p.withdrawable_balance || 0).toFixed(2)}" step="0.01" placeholder="${(p.withdrawable_balance || 0).toFixed(2)}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Request Payout</button>
+              </form>
+            ` : `<p style="font-size:var(--text-sm);color:var(--color-text-faint)">No funds available for withdrawal.</p>`}
+          </div>`;
+      }
+
+      // Payout history
+      let payoutHistorySection = '';
+      if (payoutHistory && payoutHistory.length > 0) {
+        const statusBadge = (s) => {
+          const map = { pending: 'open', processing: 'reserved', completed: 'completed', failed: 'canceled', rejected: 'canceled' };
+          return `<span class="badge badge-${map[s] || 'open'}">${s}</span>`;
+        };
+        payoutHistorySection = `
+          <h2 style="font-size:var(--text-lg);font-weight:600;margin:var(--space-6) 0 var(--space-4)">Payout History</h2>
+          <table class="data-table"><thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+            ${payoutHistory.map(pr => `<tr><td>${new Date(pr.created_at).toLocaleDateString()}</td><td style="font-variant-numeric:tabular-nums">$${Math.abs(pr.amount).toFixed(2)}</td><td>${statusBadge(pr.status)}</td></tr>`).join('')}
+          </tbody></table>`;
+      }
+
+      actionSection = connectSection + payoutSection + payoutHistorySection;
+    }
+
+    // Ledger type badge helper
+    const ledgerBadge = (type) => {
+      const positive = ['credit', 'fund_add', 'fund_add_confirmed', 'payout_refund'];
+      const neutral = ['checkout_pending'];
+      if (positive.includes(type)) return 'completed';
+      if (neutral.includes(type)) return 'reserved';
+      return 'open';
+    };
+    const ledgerSign = (type) => {
+      const positive = ['credit', 'fund_add', 'fund_add_confirmed', 'payout_refund'];
+      return positive.includes(type) ? '+' : '-';
+    };
+
     appShell(`
-      <h1 class="page-title">${role === 'ai_client' ? 'Balance & Billing' : 'Earnings'}</h1>
+      <h1 class="page-title">${role === 'ai_client' ? 'Balance & Billing' : 'Earnings & Payouts'}</h1>
       ${header}
+      ${actionSection}
       <h2 style="font-size:var(--text-lg);font-weight:600;margin-bottom:var(--space-4)">Transaction History</h2>
       <table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th><th>Description</th></tr></thead><tbody>
-        ${ledger.map(e => `<tr><td>${new Date(e.created_at).toLocaleDateString()}</td><td><span class="badge badge-${e.entry_type === 'credit' || e.entry_type === 'fund_add' ? 'completed' : 'open'}">${e.entry_type}</span></td><td style="font-variant-numeric:tabular-nums">${e.entry_type === 'credit' || e.entry_type === 'fund_add' ? '+' : '-'}$${Math.abs(e.amount).toFixed(2)}</td><td>$${(e.balance_after || 0).toFixed(2)}</td><td style="font-size:var(--text-xs);color:var(--color-text-muted)">${esc(e.description || '')}</td></tr>`).join('')}
+        ${ledger.map(e => `<tr><td>${new Date(e.created_at).toLocaleDateString()}</td><td><span class="badge badge-${ledgerBadge(e.entry_type)}">${e.entry_type.replace(/_/g, ' ')}</span></td><td style="font-variant-numeric:tabular-nums">${ledgerSign(e.entry_type)}$${Math.abs(e.amount).toFixed(2)}</td><td>${e.balance_after != null ? '$' + e.balance_after.toFixed(2) : '—'}</td><td style="font-size:var(--text-xs);color:var(--color-text-muted)">${esc(e.description || '')}</td></tr>`).join('')}
         ${!ledger.length ? '<tr><td colspan="5" style="text-align:center;color:var(--color-text-faint);padding:var(--space-6)">No transactions yet</td></tr>' : ''}
       </tbody></table>
     `, 'payments');
@@ -806,10 +988,11 @@ async function updateProfile(e) {
 async function renderAdminDashboard() {
   appShell('<div class="loading"><div class="spinner"></div></div>', 'admin');
   try {
-    const [stats, tasks, users] = await Promise.all([
+    const [stats, tasks, users, revenue] = await Promise.all([
       api('/api/v1/admin/stats'),
       api('/api/v1/admin/tasks?limit=10'),
-      api('/api/v1/admin/users?limit=10')
+      api('/api/v1/admin/users?limit=10'),
+      api('/api/v1/admin/revenue').catch(() => ({ total_platform_fees: 0, fees_last_30_days: 0, fees_last_7_days: 0, pending_payouts: { count: 0, total: 0 }, stripe_mode: 'unknown' }))
     ]);
     appShell(`
       <h1 class="page-title">Admin Dashboard</h1>
@@ -817,7 +1000,16 @@ async function renderAdminDashboard() {
         <div class="stat-card"><div class="stat-value">${stats.total_users || 0}</div><div class="stat-label">Users</div></div>
         <div class="stat-card"><div class="stat-value">${stats.total_tasks || 0}</div><div class="stat-label">Tasks</div></div>
         <div class="stat-card"><div class="stat-value">${stats.active_workers || 0}</div><div class="stat-label">Active Workers</div></div>
-        <div class="stat-card"><div class="stat-value">$${(stats.total_payout_value || 0).toFixed(2)}</div><div class="stat-label">Total Payout Value</div></div>
+        <div class="stat-card"><div class="stat-value">$${(stats.total_payout_value || 0).toFixed(2)}</div><div class="stat-label">Gross Task Volume</div></div>
+      </div>
+      <div class="card" style="margin-top:var(--space-4);border-left:3px solid var(--color-success)">
+        <div class="card-header"><div class="card-title">Platform Revenue (1% Fee) ${revenue.stripe_mode === 'simulated' ? '<span class="badge badge-open" style="margin-left:var(--space-2)">Simulation</span>' : revenue.stripe_mode === 'live' ? '<span class="badge badge-completed" style="margin-left:var(--space-2)">Live</span>' : ''}</div></div>
+        <div class="stats-grid" style="margin-top:var(--space-3)">
+          <div class="stat-card"><div class="stat-value">$${(revenue.total_platform_fees || 0).toFixed(2)}</div><div class="stat-label">Total Fees Collected</div></div>
+          <div class="stat-card"><div class="stat-value">$${(revenue.fees_last_30_days || 0).toFixed(2)}</div><div class="stat-label">Last 30 Days</div></div>
+          <div class="stat-card"><div class="stat-value">$${(revenue.fees_last_7_days || 0).toFixed(2)}</div><div class="stat-label">Last 7 Days</div></div>
+          <div class="stat-card"><div class="stat-value">${revenue.pending_payouts ? revenue.pending_payouts.count : 0}</div><div class="stat-label">Pending Payouts ($${(revenue.pending_payouts ? revenue.pending_payouts.total : 0).toFixed(2)})</div></div>
+        </div>
       </div>
       <div class="card" style="margin-top:var(--space-4)"><div class="card-header"><div class="card-title">Recent Tasks</div></div>
         <table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Created</th></tr></thead><tbody>
