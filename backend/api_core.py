@@ -403,17 +403,25 @@ def error_response(message, status=400):
     json_response({"error": message}, status)
 
 def get_body():
-    # HIGH-01: catch only specific exceptions; return None on bad JSON so callers can return 400
-    try:
-        length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
-        if length > 0:
-            raw = sys.stdin.read(length)
-            return json.loads(raw)
-    except json.JSONDecodeError:
-        return None  # Callers should check: if body is None: return error_response("Invalid JSON", 400)
-    except (ValueError, OSError):
-        return None
-    return {}
+    # Issue 8: cache stdin so it's read only once (stdin cannot be re-read).
+    # Returns {} on no body, None on malformed JSON, or the parsed dict.
+    if not hasattr(get_body, '_cache'):
+        try:
+            length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
+            if length > 0:
+                raw = sys.stdin.read(length)
+                parsed = json.loads(raw)
+                if not isinstance(parsed, dict):
+                    get_body._cache = None  # non-dict body treated as bad JSON
+                else:
+                    get_body._cache = parsed
+            else:
+                get_body._cache = {}
+        except json.JSONDecodeError:
+            get_body._cache = None  # Callers should check: if body is None: return error_response("Invalid JSON", 400)
+        except (ValueError, OSError):
+            get_body._cache = None
+    return get_body._cache
 
 def get_query_params():
     qs = os.environ.get("QUERY_STRING", "")
@@ -551,6 +559,10 @@ def _handle_routes(db):
     path = os.environ.get("PATH_INFO", "").rstrip("/")
     params = get_query_params()
 
+    # Issue 8: centralized guard — reject malformed JSON bodies for all mutating methods
+    if method in ("POST", "PUT", "PATCH") and get_body() is None:
+        return error_response("Invalid JSON in request body", 400)
+
     # ── Auth Routes ────────────────────────────────────────────────────────
 
     if path == "/auth/register" and method == "POST":
@@ -656,9 +668,11 @@ def _handle_routes(db):
         return json_response(user)
 
     elif path == "/auth/logout" and method == "POST":
-        user = authenticate(db)
-        if user:
-            token = params.get("token") or params.get("auth")
+        auth_header = os.environ.get("HTTP_AUTHORIZATION", "")
+        token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+        if not token:
+            token = params.get("token") or params.get("auth")  # legacy fallback
+        if token:
             db.execute("DELETE FROM sessions WHERE token = ?", [token])
             db.commit()
         return json_response({"ok": True})
@@ -1153,14 +1167,19 @@ def _handle_routes(db):
         )
 
         # Refund client
-        profile = db.execute("SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?", [task['client_id']]).fetchone()
-        if profile:
-            new_balance = (profile['credit_balance'] or 0) + task['budget_amount']
-            db.execute("UPDATE ai_client_profiles SET credit_balance = ? WHERE user_id = ?", [new_balance, task['client_id']])
-            db.execute(
-                "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
-                [task['client_id'], task_id, 'credit', task['budget_amount'], new_balance, f"Refund for canceled task #{task_id}"]
-            )
+        db.execute(
+            "UPDATE ai_client_profiles SET credit_balance = credit_balance + ? WHERE user_id = ?",
+            [task['budget_amount'], task['client_id']]
+        )
+        new_balance_row = db.execute(
+            "SELECT credit_balance FROM ai_client_profiles WHERE user_id = ?",
+            [task['client_id']]
+        ).fetchone()
+        new_balance = new_balance_row['credit_balance'] if new_balance_row else 0
+        db.execute(
+            "INSERT INTO ledger (user_id, task_id, entry_type, amount, balance_after, description) VALUES (?,?,?,?,?,?)",
+            [task['client_id'], task_id, 'credit', task['budget_amount'], new_balance, f"Refund for canceled task #{task_id}"]
+        )
 
         queue_webhook(db, task['client_id'], task_id, "task.canceled", {
             "event": "task.canceled", "task_id": task_id
@@ -1319,6 +1338,7 @@ def _handle_routes(db):
 
         for idx, task_input in enumerate(tasks_input):
             try:
+                db.execute("SAVEPOINT batch_task")
                 merged = {**template_defaults, **task_input}
                 for field in ['title', 'description', 'category', 'location_type', 'budget_type', 'budget_amount']:
                     if not merged.get(field):
@@ -1370,8 +1390,11 @@ def _handle_routes(db):
                 if template_id:
                     db.execute("UPDATE task_templates SET usage_count = usage_count + 1 WHERE id = ?", [template_id])
 
+                db.execute("RELEASE SAVEPOINT batch_task")
                 created_ids.append(task_id)
             except Exception as e:
+                db.execute("ROLLBACK TO SAVEPOINT batch_task")
+                db.execute("RELEASE SAVEPOINT batch_task")
                 errors.append({"index": idx, "error": str(e)})
 
         audit(db, user['id'], "batch_create_tasks", "task", None, {"count": len(created_ids)})
@@ -2217,6 +2240,16 @@ def _handle_routes(db):
         notifs = db.execute(query, qvals).fetchall()
         return json_response([row_to_dict(n) for n in notifs])
 
+    elif path == "/api/v1/notifications/unread-count" and method == "GET":
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        count = db.execute(
+            "SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0",
+            [user['id']]
+        ).fetchone()['c']
+        return json_response({"count": count})
+
     elif re.match(r"^/api/v1/notifications/\d+/read$", path) and method == "POST":
         user = authenticate(db)
         if not user:
@@ -2347,7 +2380,12 @@ def _handle_routes(db):
             return error_response("Admin access required", 403)
 
         users = db.execute(
-            "SELECT id, email, role, name, created_at, is_active, is_suspended, is_banned FROM users ORDER BY created_at DESC"
+            """SELECT u.id, u.email, u.role, u.name, u.created_at,
+                      u.is_active, u.is_suspended, u.is_banned,
+                      COALESCE(wp.is_verified, 0) as is_verified
+               FROM users u
+               LEFT JOIN worker_profiles wp ON u.id = wp.user_id
+               ORDER BY u.created_at DESC"""
         ).fetchall()
         return json_response([row_to_dict(u) for u in users])
 
