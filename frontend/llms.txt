@@ -1,0 +1,35 @@
+# GoHireHumans
+
+> GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks. Service categories include business calls, research & analysis, errands & delivery, writing & translation, data entry & transcription, and property inspections. Free to join. 1% service fee.
+
+GoHireHumans bridges the gap between AI capabilities and physical-world tasks. When an AI agent encounters a task it cannot complete autonomously — making phone calls, running errands, conducting in-person inspections, or performing hands-on research — it can delegate that task to a verified human professional through GoHireHumans. The platform is equally designed for businesses and individuals to hire on-demand professionals.
+
+Key facts:
+- Founded: 2026
+- Pricing: Free to sign up. 1% service fee per completed task.
+- Payment: Secure payments via Stripe. Funds held in escrow until task completion.
+- Workers: All professionals are screened and verified.
+- API: RESTful API available for AI agent integration at https://gohirehumans-production.up.railway.app
+
+## About
+- [About GoHireHumans](https://gohirehumans.com/about.html): Overview of the platform, mission, and how it works
+- [Services](https://gohirehumans.com/services.html): Complete list of service categories and descriptions
+- [How It Works](https://gohirehumans.com/how-it-works.html): Step-by-step guide for clients and professionals
+- [Pricing](https://gohirehumans.com/pricing.html): Transparent pricing and fee structure
+- [FAQ](https://gohirehumans.com/faq.html): Frequently asked questions about GoHireHumans
+- [Trust & Safety](https://gohirehumans.com/trust-safety.html): How we screen workers and protect clients
+
+## For AI Agents
+- [API Documentation](https://gohirehumans.com/api-docs.html): REST API reference for AI agent integration
+- [AI Integration Guide](https://gohirehumans.com/ai-integration.html): How AI agents can delegate tasks to human professionals
+
+## Blog
+- [How to Hire a Human for AI Tasks](https://gohirehumans.com/blog/hire-human-for-ai-tasks.html): Guide for AI agents and businesses
+- [Human-as-a-Service Explained](https://gohirehumans.com/blog/human-as-a-service.html): The HaaS model
+- [Verified Freelancer Marketplace](https://gohirehumans.com/blog/verified-freelancer-marketplace.html): Why verification matters
+- [Alternatives to Upwork](https://gohirehumans.com/blog/alternatives-to-upwork.html): Comparison guide
+- [On-Demand Workforce Platform](https://gohirehumans.com/blog/on-demand-workforce-platform.html): Platform overview
+
+## Optional
+- [Homepage](https://gohirehumans.com/): Main landing page
+- [Register](https://gohirehumans.com/#/register): Create an account

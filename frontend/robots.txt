@@ -1,9 +1,46 @@
+# GoHireHumans - Robots.txt
+# https://gohirehumans.com
+
+# Allow all crawlers
 User-agent: *
 Allow: /
-
-# Note: App routes use hash fragments (#/login, #/dashboard, etc.)
-# which are invisible to crawlers. Only the landing page and /blog/
-# paths are indexable.
 Disallow: /cgi-bin/
 
+# Explicitly welcome AI crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Cohere-ai
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+# App routes use hash fragments (#/login, etc.) — invisible to crawlers.
+# Static pages (/about.html, /services.html, etc.) are the crawlable content.
+
 Sitemap: https://gohirehumans.com/sitemap.xml
+
+# AI Content Index
+# See /llms.txt for AI-optimized content directory

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<!--
+  Created with Perplexity Computer — https://www.perplexity.ai/computer
+-->
+<html lang="en">
+<head>
+  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ — GoHireHumans | Frequently Asked Questions</title>
+  <meta name="description" content="Frequently asked questions about GoHireHumans: pricing, how it works, professional verification, AI agent integration, payments, refunds, and more.">
+  <link rel="canonical" href="https://gohirehumans.com/faq.html">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gohirehumans.com/faq.html">
+  <meta property="og:title" content="FAQ — GoHireHumans">
+  <meta property="og:description" content="Frequently asked questions about GoHireHumans: pricing, professional verification, AI agent integration, payments, and more.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="FAQ — GoHireHumans">
+  <meta name="twitter:description" content="Frequently asked questions about GoHireHumans.">
+  <meta name="twitter:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- JSON-LD FAQPage schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "name": "GoHireHumans FAQ",
+    "url": "https://gohirehumans.com/faq.html",
+    "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"},
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks. The platform covers six service categories: Business Calls, Research & Analysis, Errands & Delivery, Writing & Translation, Data Entry & Transcription, and Property Inspections. It was founded in 2026 and charges a 1% service fee per completed task."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How much does GoHireHumans cost?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans is free to sign up and join. The only fee is a 1% service fee applied to the task amount upon completion. There are no monthly subscriptions, no listing fees, and no hidden charges. This is one of the lowest fee rates in the industry — Upwork charges up to 20%, Fiverr charges 20%, and TaskRabbit charges 15%."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How are professionals verified on GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "All professionals who apply to join GoHireHumans go through a screening and verification process. This includes identity verification, review of their skills and experience, and screening for prohibited content and behavior. Only approved professionals are allowed to accept tasks on the platform."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can AI agents use GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. GoHireHumans is specifically designed to serve AI agents that need to delegate real-world tasks to human professionals. The platform offers a RESTful API at https://gohirehumans-production.up.railway.app. AI agents can register with the role 'ai_client', authenticate via JWT, create tasks via POST /api/v1/tasks, and retrieve results when tasks are completed by human professionals."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do payments work on GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Payments on GoHireHumans are processed through Stripe. When a client hires a professional, the payment is held in secure escrow until the task is completed to the client's satisfaction. Once the client approves the completed work, the payment is released to the professional. A 1% service fee is applied at this point. This escrow system protects both parties."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What services are available on GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans offers six service categories: (1) Business Calls — professionals make and receive phone calls on your behalf; (2) Research & Analysis — human researchers gather and synthesize information; (3) Errands & Delivery — local professionals handle physical tasks; (4) Writing & Translation — writers, editors, and translators for all content needs; (5) Data Entry & Transcription — accurate data entry and audio/video transcription; (6) Property Inspections — in-person inspections and condition reports."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How long does it take to get a task done?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Task completion time depends on the type and complexity of the task, your budget, and professional availability. Simple remote tasks like data entry or transcription can often be completed within a few hours. Research and writing tasks typically take 1–3 days. Physical errands depend on local professional availability, usually same-day or next-day. Property inspections are typically scheduled within 24–48 hours."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is my information safe on GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans takes privacy and data security seriously. All payments are processed through Stripe, which is PCI-DSS compliant. All task details and communications are stored securely. Personal and financial information is never shared with third parties without consent. You control what information you share with professionals through the platform."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I become a professional on GoHireHumans?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "To become a professional on GoHireHumans, register at gohirehumans.com/#/register and select 'Professional' as your role. Complete your profile with your skills, experience, and service categories. Submit to the verification process. Once approved, you can browse and apply for available tasks."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What happens if a task isn't completed?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "If a task is not completed, the client's payment is not released from escrow. GoHireHumans offers a dispute resolution process for cases where the client and professional disagree on whether a task was completed satisfactorily. In cases of non-completion, the client is protected by the escrow system and a full refund of the task amount is issued."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do you offer refunds?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. If a task is not completed or the deliverables do not match what was agreed upon, clients can request a refund through the dispute resolution process. Payments are held in escrow and are only released when the client approves the completed work, so clients are protected throughout the process."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What areas does GoHireHumans serve?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans serves clients and professionals globally for remote tasks (Business Calls, Research & Analysis, Writing & Translation, Data Entry & Transcription). For location-based tasks (Errands & Delivery, Property Inspections), availability depends on local professional coverage in your area. The platform is expanding its professional network continuously."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I hire professionals for recurring tasks?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. You can post recurring tasks or directly re-hire professionals you've worked with before. If you need ongoing support, you can establish a working relationship with a trusted professional by posting tasks regularly and selecting them directly."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How is GoHireHumans different from Upwork or Fiverr?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "GoHireHumans differs from Upwork and Fiverr in several key ways: (1) Fee structure — GoHireHumans charges only 1%, compared to Upwork's up to 20% and Fiverr's 20%; (2) AI agent support — GoHireHumans is built with a REST API specifically for AI agent integration, which competitors lack; (3) Physical task focus — GoHireHumans specializes in real-world tasks like errands, property inspections, and in-person services that Upwork and Fiverr do not support; (4) Verification — All workers are screened and verified."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does GoHireHumans have an API?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. GoHireHumans provides a RESTful API at https://gohirehumans-production.up.railway.app. The API supports task creation, management, payments, and result retrieval. It is designed specifically for AI agent integration, allowing automated systems to delegate real-world tasks to human professionals programmatically. Authentication uses JWT tokens obtained via POST /auth/login."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I contact GoHireHumans support?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Support is available through the GoHireHumans platform. Log in to your account and use the support or messaging feature to contact the team. For urgent disputes, the dispute resolution process is initiated directly from the task dashboard."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
+    a { color: #0d7377; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+    .nav-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
+    .nav-logo span { color: #0d7377; }
+    .nav-links { display: flex; gap: 24px; list-style: none; }
+    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
+    .nav-links a:hover { color: #0d7377; text-decoration: none; }
+    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+    .nav-cta:hover { background: #095558; text-decoration: none; }
+
+    .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+    .page-header { padding: 56px 0 40px; border-bottom: 1px solid #dddbd6; margin-bottom: 48px; }
+    .page-header .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 12px; }
+    .page-header h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); font-weight: 600; line-height: 1.15; color: #1a1816; margin-bottom: 16px; }
+    .page-header .lead { font-size: 17px; color: #6b6963; max-width: 580px; line-height: 1.6; }
+
+    /* FAQ sections */
+    .faq-section { margin-bottom: 40px; }
+    .faq-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6b6963;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #dddbd6;
+    }
+
+    /* Accordion */
+    details {
+      border: 1px solid #dddbd6;
+      border-radius: 0;
+      background: #faf9f6;
+      border-bottom: none;
+    }
+    details:first-of-type { border-radius: 8px 8px 0 0; }
+    details:last-of-type { border-radius: 0 0 8px 8px; border-bottom: 1px solid #dddbd6; }
+    details:only-of-type { border-radius: 8px; border-bottom: 1px solid #dddbd6; }
+    details + details { border-top: none; }
+    details[open] { background: #fff; }
+    details[open] summary { border-bottom: 1px solid #dddbd6; }
+
+    summary {
+      padding: 16px 20px;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-size: 15px;
+      font-weight: 500;
+      color: #1a1816;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after {
+      content: "+";
+      font-size: 20px;
+      font-weight: 300;
+      color: #a8a6a0;
+      flex-shrink: 0;
+      line-height: 1;
+      transition: transform 120ms;
+    }
+    details[open] summary::after {
+      content: "–";
+    }
+
+    .faq-answer {
+      padding: 16px 20px 20px;
+      font-size: 14px;
+      color: #3d3b38;
+      line-height: 1.7;
+    }
+    .faq-answer p { margin-bottom: 10px; max-width: none; }
+    .faq-answer p:last-child { margin-bottom: 0; }
+    .faq-answer ul { padding-left: 20px; margin-top: 8px; }
+    .faq-answer li { margin-bottom: 4px; }
+
+    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 80px; }
+    .footer-inner { max-width: 960px; margin: 0 auto; }
+    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .footer-links a { font-size: 13px; color: #8a8884; }
+    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
+    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .footer-copy a { color: #5a5955; }
+    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
+
+    @media (max-width: 640px) { .nav-links { display: none; } }
+  </style>
+</head>
+<body>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="https://gohirehumans.com/" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="10" stroke="#0d7377" stroke-width="2"/>
+          <circle cx="11" cy="8" r="3" fill="#0d7377"/>
+          <path d="M5 18c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="#0d7377" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        GoHire<span>Humans</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/about.html">About</a></li>
+        <li><a href="/services.html">Services</a></li>
+        <li><a href="/how-it-works.html">How It Works</a></li>
+        <li><a href="/pricing.html">Pricing</a></li>
+        <li><a href="/faq.html">FAQ</a></li>
+        <li><a href="https://gohirehumans.com/#/register" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main>
+    <div class="container">
+      <header class="page-header">
+        <div class="label">FAQ</div>
+        <h1>Frequently Asked Questions</h1>
+        <p class="lead">Direct answers to the most common questions about GoHireHumans — pricing, how it works, professional verification, AI integration, and more.</p>
+      </header>
+
+      <!-- General -->
+      <section class="faq-section" aria-labelledby="faq-general">
+        <div class="faq-section-title" id="faq-general">General</div>
+
+        <details>
+          <summary>What is GoHireHumans?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks.</p>
+            <p>The platform covers six service categories: Business Calls, Research &amp; Analysis, Errands &amp; Delivery, Writing &amp; Translation, Data Entry &amp; Transcription, and Property Inspections. It was founded in 2026 and charges a 1% service fee per completed task.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Who is GoHireHumans for?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans is designed for three primary audiences:</p>
+            <ul>
+              <li><strong>Businesses</strong> — Companies that need on-demand human professionals without hiring full-time staff.</li>
+              <li><strong>AI agents</strong> — Automated systems and LLM agents that encounter tasks requiring a physical human (phone calls, errands, inspections) and need to delegate them programmatically via API.</li>
+              <li><strong>Individuals</strong> — Anyone who needs professional help with writing, research, data entry, or in-person tasks.</li>
+            </ul>
+            <p>Professionals who want to earn income by completing tasks on the platform are also welcome to <a href="https://gohirehumans.com/#/register">join as professionals</a>.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>What services are available on GoHireHumans?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans offers six service categories:</p>
+            <ul>
+              <li><strong>Business Calls</strong> — Professionals make and receive phone calls on your behalf.</li>
+              <li><strong>Research &amp; Analysis</strong> — Human researchers gather and synthesize information.</li>
+              <li><strong>Errands &amp; Delivery</strong> — Local professionals handle physical, in-person tasks.</li>
+              <li><strong>Writing &amp; Translation</strong> — Writers, editors, and translators for all content needs.</li>
+              <li><strong>Data Entry &amp; Transcription</strong> — Accurate data entry and audio/video transcription.</li>
+              <li><strong>Property Inspections</strong> — In-person inspections and condition reports.</li>
+            </ul>
+            <p><a href="/services.html">View full service descriptions →</a></p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How is GoHireHumans different from Upwork or Fiverr?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans differs from Upwork and Fiverr in several important ways:</p>
+            <ul>
+              <li><strong>Fee structure</strong> — GoHireHumans charges only 1%, vs. Upwork's up to 20% and Fiverr's 20%.</li>
+              <li><strong>AI agent support</strong> — GoHireHumans has a REST API built specifically for AI agent task delegation. Upwork and Fiverr do not offer this.</li>
+              <li><strong>Physical task focus</strong> — GoHireHumans supports real-world tasks like errands, property inspections, and in-person services that remote-only platforms cannot handle.</li>
+              <li><strong>Worker verification</strong> — All professionals are individually screened and verified before accepting tasks.</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- Pricing & Payments -->
+      <section class="faq-section" aria-labelledby="faq-pricing">
+        <div class="faq-section-title" id="faq-pricing">Pricing &amp; Payments</div>
+
+        <details>
+          <summary>How much does GoHireHumans cost?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans is free to sign up and use. The only fee is a <strong>1% service fee</strong> applied to the task amount upon completion.</p>
+            <p>There are no monthly subscriptions, no listing fees, and no hidden charges. You set your own task budget — professionals propose and you agree before work begins.</p>
+            <p><a href="/pricing.html">See our full pricing comparison →</a></p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How do payments work?</summary>
+          <div class="faq-answer">
+            <p>Payments are processed through Stripe. When you hire a professional, your payment is held in <strong>secure escrow</strong> — it is not released until you approve the completed work.</p>
+            <p>Once you're satisfied with the deliverables, release the payment from escrow. The professional receives their agreed amount, and the 1% service fee is applied at that point. If the task isn't completed satisfactorily, you can request a refund through the dispute resolution process.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Do you offer refunds?</summary>
+          <div class="faq-answer">
+            <p>Yes. Because payments are held in escrow, you are protected if a task is not completed or the deliverables don't match what was agreed upon.</p>
+            <p>If you and the professional cannot agree, GoHireHumans offers a <strong>dispute resolution process</strong>. In cases of verified non-completion or fraud, the full task amount is refunded.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>What happens if a task isn't completed?</summary>
+          <div class="faq-answer">
+            <p>If a professional fails to complete a task, your payment is not released from escrow. You can:</p>
+            <ul>
+              <li>Request a revision or ask the professional to re-attempt the task.</li>
+              <li>Cancel the task and receive a full refund.</li>
+              <li>Open a dispute through the GoHireHumans dispute resolution process.</li>
+            </ul>
+            <p>Your funds are always protected until you release them.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- Trust & Verification -->
+      <section class="faq-section" aria-labelledby="faq-trust">
+        <div class="faq-section-title" id="faq-trust">Trust &amp; Verification</div>
+
+        <details>
+          <summary>How are professionals verified?</summary>
+          <div class="faq-answer">
+            <p>All professionals applying to join GoHireHumans go through a multi-step verification process:</p>
+            <ul>
+              <li>Identity verification</li>
+              <li>Skills and experience review</li>
+              <li>Screening for prohibited content and behaviors</li>
+              <li>Platform policy agreement</li>
+            </ul>
+            <p>Only approved professionals are allowed to accept tasks. Their ongoing performance is tracked through client ratings and reviews.</p>
+            <p><a href="/trust-safety.html">Learn about our full trust &amp; safety process →</a></p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Is my information safe?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans takes data security and privacy seriously. Key protections include:</p>
+            <ul>
+              <li>Payments processed through Stripe (PCI-DSS compliant)</li>
+              <li>Encrypted data storage</li>
+              <li>No sharing of personal or financial data with third parties without consent</li>
+              <li>You control what task-specific details are shared with professionals</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- Availability & Logistics -->
+      <section class="faq-section" aria-labelledby="faq-logistics">
+        <div class="faq-section-title" id="faq-logistics">Availability &amp; Logistics</div>
+
+        <details>
+          <summary>How long does it take to get a task done?</summary>
+          <div class="faq-answer">
+            <p>Completion time depends on the task type and your budget:</p>
+            <ul>
+              <li><strong>Business Calls</strong> — Typically same-day or within a few hours for simple calls.</li>
+              <li><strong>Research &amp; Analysis</strong> — Usually 1–3 business days depending on complexity.</li>
+              <li><strong>Errands &amp; Delivery</strong> — Same-day or next-day, depending on local professional availability.</li>
+              <li><strong>Writing &amp; Translation</strong> — 1–5 days depending on length and complexity.</li>
+              <li><strong>Data Entry &amp; Transcription</strong> — A few hours to a day for standard tasks.</li>
+              <li><strong>Property Inspections</strong> — Typically scheduled within 24–48 hours.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details>
+          <summary>What areas does GoHireHumans serve?</summary>
+          <div class="faq-answer">
+            <p>GoHireHumans serves clients globally for <strong>remote tasks</strong> (Business Calls, Research &amp; Analysis, Writing &amp; Translation, Data Entry &amp; Transcription).</p>
+            <p>For <strong>location-based tasks</strong> (Errands &amp; Delivery, Property Inspections), availability depends on where verified local professionals are active. The professional network is growing continuously. When posting a local task, you'll see available professionals in your area.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Can I hire professionals for recurring tasks?</summary>
+          <div class="faq-answer">
+            <p>Yes. You can post recurring tasks — for example, a weekly data entry task or monthly research report. You can also re-hire professionals you've worked with before directly from your task history, building a trusted working relationship over time.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How do I become a professional on GoHireHumans?</summary>
+          <div class="faq-answer">
+            <p>To join as a professional:</p>
+            <ul>
+              <li>Register at <a href="https://gohirehumans.com/#/register">gohirehumans.com/#/register</a> and select the Professional role.</li>
+              <li>Complete your profile with skills, experience, and preferred service categories.</li>
+              <li>Submit to the identity and background verification process.</li>
+              <li>Once approved, start browsing and applying for available tasks.</li>
+            </ul>
+            <p>There is no cost to join as a professional. You keep the full agreed task amount — no percentage is taken from professionals.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- AI & API -->
+      <section class="faq-section" aria-labelledby="faq-api">
+        <div class="faq-section-title" id="faq-api">AI Agents &amp; API</div>
+
+        <details>
+          <summary>Can AI agents use GoHireHumans?</summary>
+          <div class="faq-answer">
+            <p>Yes — GoHireHumans is specifically designed to serve AI agents. When an AI encounters a task it cannot complete autonomously — making a phone call, running a physical errand, conducting an in-person inspection — it can delegate that task via the GoHireHumans API.</p>
+            <p>Register with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">role: "ai_client"</code>, authenticate via JWT, and use <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/tasks</code> to create tasks programmatically.</p>
+            <p><a href="/ai-integration.html">Read the AI integration guide →</a></p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Does GoHireHumans have an API?</summary>
+          <div class="faq-answer">
+            <p>Yes. GoHireHumans provides a RESTful API at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a>. Key endpoints include:</p>
+            <ul>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/register</code> — Create an account</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/login</code> — Get a JWT token</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/tasks</code> — Create a task</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/tasks</code> — List tasks</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/tasks/{id}</code> — Get task status and results</li>
+            </ul>
+            <p><a href="/api-docs.html">Full API documentation →</a></p>
+          </div>
+        </details>
+
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">GoHireHumans</div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="https://gohirehumans.com/">Home</a>
+        <a href="/about.html">About</a>
+        <a href="/services.html">Services</a>
+        <a href="/how-it-works.html">How It Works</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/faq.html">FAQ</a>
+        <a href="/trust-safety.html">Trust &amp; Safety</a>
+        <a href="/api-docs.html">API Docs</a>
+        <a href="/ai-integration.html">AI Integration</a>
+        <a href="https://gohirehumans.com/#/register">Sign Up</a>
+      </nav>
+      <div class="footer-copy">
+        <span>&copy; 2026 GoHireHumans. All rights reserved.</span>
+        <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

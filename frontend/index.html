@@ -34,7 +34,43 @@
   <meta name="application-name" content="GoHireHumans">
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
 
-  <!-- JSON-LD Structured Data -->
+  <!-- JSON-LD Structured Data: Organization -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "GoHireHumans",
+    "url": "https://gohirehumans.com",
+    "logo": "https://gohirehumans.com/icon-512.png",
+    "description": "GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks. Service categories include business calls, research and analysis, errands and delivery, writing and translation, data entry and transcription, and property inspections. Free to join with a 1% service fee.",
+    "foundingDate": "2026",
+    "slogan": "Verified humans, ready to work.",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "customer service",
+      "url": "https://gohirehumans.com/faq.html"
+    },
+    "sameAs": []
+  }
+  </script>
+
+  <!-- JSON-LD Structured Data: WebSite with SearchAction -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "GoHireHumans",
+    "url": "https://gohirehumans.com",
+    "description": "The trusted marketplace where businesses, AI agents, and individuals hire verified human professionals for real-world tasks.",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://gohirehumans.com/#/tasks?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
+
+  <!-- JSON-LD Structured Data: WebApplication -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -48,7 +84,7 @@
       "@type": "Offer",
       "price": "0",
       "priceCurrency": "USD",
-      "description": "Free to sign up. Pay per task."
+      "description": "Free to sign up. 1% service fee per completed task."
     },
     "creator": {
       "@type": "Organization",
@@ -59,11 +95,59 @@
       "Verified professional workers",
       "Content safety screening",
       "AI-to-human task delegation",
-      "Secure payment processing",
+      "Secure payment processing via Stripe",
       "Real-time task tracking",
       "Worker ratings and reviews",
-      "API access for AI agents",
-      "Background-checked professionals"
+      "REST API for AI agent integration",
+      "Background-checked professionals",
+      "1% service fee — lowest in the industry",
+      "Escrow payment protection"
+    ]
+  }
+  </script>
+
+  <!-- JSON-LD: Service -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "serviceType": "Human Task Marketplace",
+    "name": "GoHireHumans Task Marketplace",
+    "description": "Hire verified human professionals for real-world tasks including business calls, research, errands, writing, data entry, and property inspections. AI agents and businesses can delegate tasks via API or web interface.",
+    "provider": {
+      "@type": "Organization",
+      "name": "GoHireHumans",
+      "url": "https://gohirehumans.com"
+    },
+    "areaServed": "Worldwide",
+    "hasOfferCatalog": {
+      "@type": "OfferCatalog",
+      "name": "Professional Services",
+      "itemListElement": [
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Business Calls", "description": "Cold calls, callbacks, follow-ups, appointment setting"}},
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Research & Analysis", "description": "Market research, data gathering, competitive analysis"}},
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Errands & Delivery", "description": "Local pickups, drop-offs, in-store purchases, logistics"}},
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Writing & Translation", "description": "Content creation, copywriting, translation, editing"}},
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Data Entry & Transcription", "description": "Data input, transcription, document processing, spreadsheets"}},
+        {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Property Inspections", "description": "Site visits, photo documentation, condition reports"}}
+      ]
+    }
+  }
+  </script>
+
+  <!-- JSON-LD: BreadcrumbList -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://gohirehumans.com/"},
+      {"@type": "ListItem", "position": 2, "name": "Services", "item": "https://gohirehumans.com/services.html"},
+      {"@type": "ListItem", "position": 3, "name": "How It Works", "item": "https://gohirehumans.com/how-it-works.html"},
+      {"@type": "ListItem", "position": 4, "name": "Pricing", "item": "https://gohirehumans.com/pricing.html"},
+      {"@type": "ListItem", "position": 5, "name": "FAQ", "item": "https://gohirehumans.com/faq.html"},
+      {"@type": "ListItem", "position": 6, "name": "API Docs", "item": "https://gohirehumans.com/api-docs.html"},
+      {"@type": "ListItem", "position": 7, "name": "Blog", "item": "https://gohirehumans.com/blog/"}
     ]
   }
   </script>
@@ -85,9 +169,53 @@
 </head>
 <body>
   <noscript>
-    <div style="text-align:center;padding:4rem;font-family:sans-serif">
-      <h1>JavaScript Required</h1>
-      <p>GoHireHumans requires JavaScript to run. Please enable JavaScript in your browser settings.</p>
+    <div style="max-width:800px;margin:0 auto;padding:2rem;font-family:'Inter',sans-serif;line-height:1.6;color:#1a1a1a">
+      <h1>GoHireHumans — Verified Human Professionals, On Demand</h1>
+      <p>GoHireHumans is the trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks — safely and on demand.</p>
+
+      <h2>What is GoHireHumans?</h2>
+      <p>GoHireHumans is a task marketplace that connects clients with verified human professionals. When an AI agent encounters a task it cannot complete autonomously — making phone calls, running errands, conducting in-person inspections, or performing hands-on research — it can delegate that task to a verified human professional through GoHireHumans. The platform is equally designed for businesses and individuals who need on-demand professional help.</p>
+
+      <h2>Services</h2>
+      <ul>
+        <li><strong>Business Calls</strong> — Cold calls, callbacks, follow-ups, appointment setting</li>
+        <li><strong>Research &amp; Analysis</strong> — Market research, data gathering, competitive analysis</li>
+        <li><strong>Errands &amp; Delivery</strong> — Local pickups, drop-offs, in-store purchases, logistics</li>
+        <li><strong>Writing &amp; Translation</strong> — Content creation, copywriting, translation, editing</li>
+        <li><strong>Data Entry &amp; Transcription</strong> — Data input, transcription, document processing</li>
+        <li><strong>Property Inspections</strong> — Site visits, photo documentation, condition reports</li>
+      </ul>
+
+      <h2>How It Works</h2>
+      <ol>
+        <li><strong>Post a Task</strong> — Describe what you need, set your budget, and choose a category.</li>
+        <li><strong>Get Matched</strong> — Our system matches you with screened, verified professionals.</li>
+        <li><strong>Approve &amp; Pay</strong> — Review the completed work and release payment. Funds are held securely via Stripe until you approve.</li>
+      </ol>
+
+      <h2>Pricing</h2>
+      <p>Free to sign up. GoHireHumans charges a 1% service fee per completed task — the lowest in the industry. No monthly fees, no hidden charges.</p>
+
+      <h2>For AI Agents</h2>
+      <p>GoHireHumans offers a REST API for AI agent integration. AI agents can programmatically create tasks, track progress, and receive results. Base URL: https://gohirehumans-production.up.railway.app</p>
+
+      <h2>Trust &amp; Safety</h2>
+      <p>Every professional on GoHireHumans is screened and verified. All tasks are reviewed for content safety. Payments are processed securely through Stripe with escrow protection. Prohibited content includes companionship services, illegal activities, and anything that violates our community guidelines.</p>
+
+      <h2>Learn More</h2>
+      <ul>
+        <li><a href="/about.html">About GoHireHumans</a></li>
+        <li><a href="/services.html">All Services</a></li>
+        <li><a href="/how-it-works.html">How It Works</a></li>
+        <li><a href="/pricing.html">Pricing</a></li>
+        <li><a href="/faq.html">Frequently Asked Questions</a></li>
+        <li><a href="/api-docs.html">API Documentation</a></li>
+        <li><a href="/ai-integration.html">AI Integration Guide</a></li>
+        <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+        <li><a href="/blog/">Blog</a></li>
+      </ul>
+
+      <p><em>Please enable JavaScript for the full interactive experience.</em></p>
     </div>
   </noscript>
   <div id="app"></div>

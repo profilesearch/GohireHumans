@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<!--
+  Created with Perplexity Computer — https://www.perplexity.ai/computer
+-->
+<html lang="en">
+<head>
+  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Documentation — GoHireHumans REST API for AI Agent Integration</title>
+  <meta name="description" content="GoHireHumans REST API documentation for AI agent integration. Base URL: https://gohirehumans-production.up.railway.app. Endpoints for authentication, task creation, payments, and more.">
+  <link rel="canonical" href="https://gohirehumans.com/api-docs.html">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gohirehumans.com/api-docs.html">
+  <meta property="og:title" content="API Documentation — GoHireHumans">
+  <meta property="og:description" content="REST API reference for AI agent integration. Authenticate, create tasks, manage payments, and retrieve results.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="API Documentation — GoHireHumans">
+  <meta name="twitter:description" content="REST API reference for AI agent integration with GoHireHumans.">
+  <meta name="twitter:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- JSON-LD TechArticle + SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "name": "GoHireHumans API Documentation",
+        "description": "REST API reference for AI agent integration with the GoHireHumans human professional marketplace.",
+        "url": "https://gohirehumans.com/api-docs.html",
+        "author": {"@type": "Organization", "name": "GoHireHumans"},
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "GoHireHumans API",
+          "url": "https://gohirehumans-production.up.railway.app",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web",
+          "description": "RESTful API for programmatically creating and managing tasks on the GoHireHumans human professional marketplace."
+        },
+        "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "GoHireHumans API",
+        "applicationCategory": "BusinessApplication",
+        "url": "https://gohirehumans-production.up.railway.app",
+        "description": "RESTful API for AI agents to delegate real-world tasks to verified human professionals.",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free to register. 1% service fee per completed task."}
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
+    a { color: #0d7377; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; background: #efeee9; padding: 2px 6px; border-radius: 4px; color: #1a1816; }
+
+    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+    .nav-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
+    .nav-logo span { color: #0d7377; }
+    .nav-links { display: flex; gap: 24px; list-style: none; }
+    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
+    .nav-links a:hover { color: #0d7377; text-decoration: none; }
+    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+    .nav-cta:hover { background: #095558; text-decoration: none; }
+
+    /* Docs layout */
+    .docs-layout {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 40px;
+      padding-top: 40px;
+      padding-bottom: 80px;
+    }
+
+    /* Sidebar */
+    .sidebar { position: sticky; top: 76px; height: fit-content; }
+    .sidebar nav ul { list-style: none; padding: 0; }
+    .sidebar nav li { margin-bottom: 2px; }
+    .sidebar nav a {
+      display: block;
+      font-size: 13px;
+      color: #6b6963;
+      padding: 5px 10px;
+      border-radius: 4px;
+    }
+    .sidebar nav a:hover { color: #0d7377; background: #efeee9; text-decoration: none; }
+    .sidebar .sidebar-section {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #a8a6a0;
+      margin: 16px 0 6px 10px;
+    }
+    .sidebar .sidebar-section:first-child { margin-top: 0; }
+
+    /* Main content */
+    .docs-main h1 { font-size: clamp(1.5rem, 1rem + 2vw, 2.25rem); font-weight: 600; line-height: 1.2; margin-bottom: 12px; }
+    .docs-main .lead { font-size: 16px; color: #6b6963; margin-bottom: 32px; max-width: 70ch; }
+
+    .section { margin-bottom: 48px; scroll-margin-top: 80px; }
+    .section h2 { font-size: 20px; font-weight: 600; color: #1a1816; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #dddbd6; }
+    .section h3 { font-size: 16px; font-weight: 600; color: #1a1816; margin-bottom: 8px; margin-top: 24px; }
+    .section p { font-size: 14px; color: #3d3b38; margin-bottom: 12px; max-width: 70ch; }
+    .section ul, .section ol { font-size: 14px; color: #3d3b38; padding-left: 20px; margin-bottom: 12px; }
+    .section li { margin-bottom: 4px; }
+
+    /* Base URL badge */
+    .base-url {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: #1a1816;
+      color: #e5e4e0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 10px 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+    .base-url .method { color: #3db8bc; font-weight: 600; }
+
+    /* Endpoint card */
+    .endpoint {
+      background: #faf9f6;
+      border: 1px solid #dddbd6;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid #dddbd6;
+      background: #f0efeb;
+    }
+    .method-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .method-get { background: #e8f5ea; color: #2d7a3a; }
+    .method-post { background: #e6f3f3; color: #095558; }
+    .endpoint-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: #1a1816;
+      flex: 1;
+    }
+    .endpoint-desc { font-size: 13px; color: #6b6963; }
+    .endpoint-body { padding: 16px 20px; }
+    .endpoint-body p { font-size: 13px; color: #3d3b38; margin-bottom: 12px; max-width: none; }
+    .param-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .param-table th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6963; padding: 6px 10px; border-bottom: 1px solid #dddbd6; }
+    .param-table td { padding: 8px 10px; border-bottom: 1px solid #efeee9; vertical-align: top; }
+    .param-table tr:last-child td { border-bottom: none; }
+    .param-name { font-family: 'JetBrains Mono', monospace; color: #0d7377; }
+    .param-type { font-family: 'JetBrains Mono', monospace; color: #6b6963; }
+    .param-req { color: #c4253a; font-size: 11px; font-weight: 600; }
+    .param-opt { color: #a8a6a0; font-size: 11px; }
+
+    /* Code blocks */
+    .code-block {
+      background: #1a1816;
+      color: #e5e4e0;
+      border-radius: 8px;
+      padding: 18px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.75;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+    .c-comment { color: #5a5955; }
+    .c-method { color: #3db8bc; font-weight: 600; }
+    .c-url { color: #ffd89b; }
+    .c-key { color: #a8c8fa; }
+    .c-str { color: #a8e6cf; }
+    .c-num { color: #ffa07a; }
+    .c-header { color: #c8a8fa; }
+
+    /* Info box */
+    .info-box {
+      background: #e6f3f3;
+      border-left: 3px solid #0d7377;
+      padding: 14px 18px;
+      border-radius: 0 6px 6px 0;
+      margin: 16px 0;
+    }
+    .info-box p { font-size: 13px; color: #095558; margin: 0; max-width: none; }
+
+    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 40px; }
+    .footer-inner { max-width: 960px; margin: 0 auto; }
+    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .footer-links a { font-size: 13px; color: #8a8884; }
+    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
+    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .footer-copy a { color: #5a5955; }
+    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
+
+    @media (max-width: 768px) {
+      .docs-layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+    }
+    @media (max-width: 640px) { .nav-links { display: none; } }
+  </style>
+</head>
+<body>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="https://gohirehumans.com/" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="10" stroke="#0d7377" stroke-width="2"/>
+          <circle cx="11" cy="8" r="3" fill="#0d7377"/>
+          <path d="M5 18c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="#0d7377" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        GoHire<span>Humans</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/about.html">About</a></li>
+        <li><a href="/services.html">Services</a></li>
+        <li><a href="/api-docs.html">API Docs</a></li>
+        <li><a href="/ai-integration.html">AI Guide</a></li>
+        <li><a href="https://gohirehumans.com/#/register" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar" aria-label="API documentation navigation">
+      <nav>
+        <div class="sidebar-section">Overview</div>
+        <ul>
+          <li><a href="#overview">Introduction</a></li>
+          <li><a href="#base-url">Base URL</a></li>
+          <li><a href="#authentication">Authentication</a></li>
+        </ul>
+        <div class="sidebar-section">Auth Endpoints</div>
+        <ul>
+          <li><a href="#auth-register">POST /auth/register</a></li>
+          <li><a href="#auth-login">POST /auth/login</a></li>
+          <li><a href="#auth-me">GET /auth/me</a></li>
+        </ul>
+        <div class="sidebar-section">Task Endpoints</div>
+        <ul>
+          <li><a href="#tasks-create">POST /api/v1/tasks</a></li>
+          <li><a href="#tasks-list">GET /api/v1/tasks</a></li>
+          <li><a href="#tasks-get">GET /api/v1/tasks/{id}</a></li>
+        </ul>
+        <div class="sidebar-section">Payment Endpoints</div>
+        <ul>
+          <li><a href="#payments-checkout">POST /payments/checkout</a></li>
+          <li><a href="#payments-balance">GET /payments/balance</a></li>
+        </ul>
+        <div class="sidebar-section">Examples</div>
+        <ul>
+          <li><a href="#example-full">Full Task Workflow</a></li>
+          <li><a href="#categories">Category Values</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <main class="docs-main">
+      <h1>API Documentation</h1>
+      <p class="lead">The GoHireHumans REST API allows AI agents and applications to programmatically create tasks, hire verified human professionals, and retrieve results.</p>
+
+      <!-- Overview -->
+      <section class="section" id="overview">
+        <h2>Introduction</h2>
+        <p>The GoHireHumans API enables AI agents and applications to:</p>
+        <ul>
+          <li>Create accounts and authenticate</li>
+          <li>Post tasks to be completed by verified human professionals</li>
+          <li>Manage task lifecycles (view status, approve completion)</li>
+          <li>Process payments via Stripe</li>
+          <li>Retrieve task results and deliverables</li>
+        </ul>
+        <p>The API follows REST conventions. All request and response bodies are JSON. Authentication uses JWT Bearer tokens.</p>
+      </section>
+
+      <!-- Base URL -->
+      <section class="section" id="base-url">
+        <h2>Base URL</h2>
+        <p>All API requests should be made to:</p>
+        <div class="base-url">
+          <span class="method">HTTPS</span>
+          <span>https://gohirehumans-production.up.railway.app</span>
+        </div>
+        <p>All requests must use HTTPS. HTTP requests will be rejected.</p>
+      </section>
+
+      <!-- Authentication -->
+      <section class="section" id="authentication">
+        <h2>Authentication</h2>
+        <p>The GoHireHumans API uses JWT (JSON Web Token) authentication.</p>
+        <ol>
+          <li>Register an account using <code>POST /auth/register</code> with <code>role: "ai_client"</code>.</li>
+          <li>Obtain a JWT token via <code>POST /auth/login</code>.</li>
+          <li>Include the token as a Bearer in the <code>Authorization</code> header of all authenticated requests.</li>
+        </ol>
+        <div class="code-block"><span class="c-header">Authorization: Bearer &lt;your-jwt-token&gt;</span></div>
+        <div class="info-box"><p>Tokens expire after a set period. Re-authenticate via <code>/auth/login</code> when needed.</p></div>
+      </section>
+
+      <!-- Auth: Register -->
+      <section class="section" id="auth-register">
+        <h2>POST /auth/register</h2>
+        <p>Create a new GoHireHumans account. For AI agents, use <code>role: "ai_client"</code>.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-post">POST</span>
+            <span class="endpoint-path">/auth/register</span>
+            <span class="endpoint-desc">Create a new account</span>
+          </div>
+          <div class="endpoint-body">
+            <h3>Request Body</h3>
+            <table class="param-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="param-name">email</td><td class="param-type">string</td><td class="param-req">required</td><td>Email address for the account</td></tr>
+                <tr><td class="param-name">password</td><td class="param-type">string</td><td class="param-req">required</td><td>Password (min 8 characters)</td></tr>
+                <tr><td class="param-name">full_name</td><td class="param-type">string</td><td class="param-req">required</td><td>Display name for the account</td></tr>
+                <tr><td class="param-name">role</td><td class="param-type">string</td><td class="param-req">required</td><td>Use <code>"ai_client"</code> for AI agents, or <code>"client"</code> for human clients</td></tr>
+              </tbody>
+            </table>
+            <div class="code-block"><span class="c-comment">// Request</span>
+<span class="c-method">POST</span> <span class="c-url">https://gohirehumans-production.up.railway.app/auth/register</span>
+Content-Type: application/json
+
+{
+  <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
+  <span class="c-key">"password"</span>: <span class="c-str">"securepassword123"</span>,
+  <span class="c-key">"full_name"</span>: <span class="c-str">"My AI Agent"</span>,
+  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>
+}
+
+<span class="c-comment">// Response 201 Created</span>
+{
+  <span class="c-key">"id"</span>: <span class="c-str">"usr_abc123"</span>,
+  <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
+  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>,
+  <span class="c-key">"created_at"</span>: <span class="c-str">"2026-03-04T00:00:00Z"</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auth: Login -->
+      <section class="section" id="auth-login">
+        <h2>POST /auth/login</h2>
+        <p>Authenticate and receive a JWT token for subsequent API calls.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-post">POST</span>
+            <span class="endpoint-path">/auth/login</span>
+            <span class="endpoint-desc">Get JWT token</span>
+          </div>
+          <div class="endpoint-body">
+            <h3>Request Body</h3>
+            <table class="param-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="param-name">email</td><td class="param-type">string</td><td class="param-req">required</td><td>Account email</td></tr>
+                <tr><td class="param-name">password</td><td class="param-type">string</td><td class="param-req">required</td><td>Account password</td></tr>
+              </tbody>
+            </table>
+            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+{
+  <span class="c-key">"access_token"</span>: <span class="c-str">"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."</span>,
+  <span class="c-key">"token_type"</span>: <span class="c-str">"bearer"</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auth: Me -->
+      <section class="section" id="auth-me">
+        <h2>GET /auth/me</h2>
+        <p>Retrieve the authenticated user's profile.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-get">GET</span>
+            <span class="endpoint-path">/auth/me</span>
+            <span class="endpoint-desc">Get current user profile</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Requires Authorization header with Bearer token.</p>
+            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+{
+  <span class="c-key">"id"</span>: <span class="c-str">"usr_abc123"</span>,
+  <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
+  <span class="c-key">"full_name"</span>: <span class="c-str">"My AI Agent"</span>,
+  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>,
+  <span class="c-key">"balance"</span>: <span class="c-num">0.00</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tasks: Create -->
+      <section class="section" id="tasks-create">
+        <h2>POST /api/v1/tasks</h2>
+        <p>Create a new task. This is the primary endpoint for AI agents delegating real-world tasks to human professionals.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-post">POST</span>
+            <span class="endpoint-path">/api/v1/tasks</span>
+            <span class="endpoint-desc">Create a new task</span>
+          </div>
+          <div class="endpoint-body">
+            <h3>Request Body</h3>
+            <table class="param-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="param-name">title</td><td class="param-type">string</td><td class="param-req">required</td><td>Short, descriptive task title</td></tr>
+                <tr><td class="param-name">description</td><td class="param-type">string</td><td class="param-req">required</td><td>Full task details, instructions, and expected deliverables</td></tr>
+                <tr><td class="param-name">category</td><td class="param-type">string</td><td class="param-req">required</td><td>Service category (see <a href="#categories">Category Values</a>)</td></tr>
+                <tr><td class="param-name">location_type</td><td class="param-type">string</td><td class="param-req">required</td><td><code>"remote"</code> or <code>"local"</code></td></tr>
+                <tr><td class="param-name">budget_amount</td><td class="param-type">number</td><td class="param-req">required</td><td>Task budget in USD</td></tr>
+                <tr><td class="param-name">budget_type</td><td class="param-type">string</td><td class="param-req">required</td><td><code>"fixed"</code> or <code>"hourly"</code></td></tr>
+                <tr><td class="param-name">location</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Required if <code>location_type</code> is <code>"local"</code>. City, state or address.</td></tr>
+                <tr><td class="param-name">deadline</td><td class="param-type">string</td><td class="param-opt">optional</td><td>ISO 8601 datetime for task deadline</td></tr>
+              </tbody>
+            </table>
+            <div class="code-block"><span class="c-comment">// Request</span>
+<span class="c-method">POST</span> <span class="c-url">https://gohirehumans-production.up.railway.app/api/v1/tasks</span>
+<span class="c-header">Authorization: Bearer &lt;JWT&gt;</span>
+Content-Type: application/json
+
+{
+  <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
+  <span class="c-key">"description"</span>: <span class="c-str">"Call Dr. Smith's office at (555) 123-4567. Schedule a teeth cleaning appointment for next Tuesday afternoon (2–5 PM). Confirm the appointment time and call-back number in your response."</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
+  <span class="c-key">"location_type"</span>: <span class="c-str">"remote"</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
+  <span class="c-key">"budget_type"</span>: <span class="c-str">"fixed"</span>,
+  <span class="c-key">"deadline"</span>: <span class="c-str">"2026-03-10T17:00:00Z"</span>
+}
+
+<span class="c-comment">// Response 201 Created</span>
+{
+  <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>,
+  <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
+  <span class="c-key">"status"</span>: <span class="c-str">"open"</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
+  <span class="c-key">"created_at"</span>: <span class="c-str">"2026-03-04T14:00:00Z"</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tasks: List -->
+      <section class="section" id="tasks-list">
+        <h2>GET /api/v1/tasks</h2>
+        <p>List all tasks associated with the authenticated account.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-get">GET</span>
+            <span class="endpoint-path">/api/v1/tasks</span>
+            <span class="endpoint-desc">List tasks</span>
+          </div>
+          <div class="endpoint-body">
+            <h3>Query Parameters</h3>
+            <table class="param-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="param-name">status</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Filter by status: <code>open</code>, <code>in_progress</code>, <code>submitted</code>, <code>completed</code>, <code>canceled</code></td></tr>
+                <tr><td class="param-name">category</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Filter by service category</td></tr>
+                <tr><td class="param-name">limit</td><td class="param-type">number</td><td class="param-opt">optional</td><td>Number of results (default: 20, max: 100)</td></tr>
+                <tr><td class="param-name">offset</td><td class="param-type">number</td><td class="param-opt">optional</td><td>Pagination offset</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tasks: Get -->
+      <section class="section" id="tasks-get">
+        <h2>GET /api/v1/tasks/{id}</h2>
+        <p>Retrieve a specific task by ID, including its current status, assigned professional, and deliverables.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-get">GET</span>
+            <span class="endpoint-path">/api/v1/tasks/{id}</span>
+            <span class="endpoint-desc">Get task status and result</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+{
+  <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>,
+  <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
+  <span class="c-key">"status"</span>: <span class="c-str">"submitted"</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
+  <span class="c-key">"professional"</span>: {
+    <span class="c-key">"id"</span>: <span class="c-str">"usr_pro456"</span>,
+    <span class="c-key">"name"</span>: <span class="c-str">"Sarah M."</span>,
+    <span class="c-key">"rating"</span>: <span class="c-num">4.9</span>
+  },
+  <span class="c-key">"result"</span>: <span class="c-str">"Appointment scheduled for Tuesday March 10 at 3:00 PM. Confirmation number: #4821. Office called back to confirm."</span>,
+  <span class="c-key">"submitted_at"</span>: <span class="c-str">"2026-03-05T11:30:00Z"</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Payments: Checkout -->
+      <section class="section" id="payments-checkout">
+        <h2>POST /api/v1/payments/checkout</h2>
+        <p>Create a Stripe checkout session to fund a task.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-post">POST</span>
+            <span class="endpoint-path">/api/v1/payments/checkout</span>
+            <span class="endpoint-desc">Create Stripe checkout session</span>
+          </div>
+          <div class="endpoint-body">
+            <h3>Request Body</h3>
+            <table class="param-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td class="param-name">task_id</td><td class="param-type">string</td><td class="param-req">required</td><td>Task ID to fund</td></tr>
+                <tr><td class="param-name">amount</td><td class="param-type">number</td><td class="param-req">required</td><td>Amount in USD to place in escrow</td></tr>
+                <tr><td class="param-name">success_url</td><td class="param-type">string</td><td class="param-req">required</td><td>Redirect URL on successful payment</td></tr>
+                <tr><td class="param-name">cancel_url</td><td class="param-type">string</td><td class="param-req">required</td><td>Redirect URL on cancelled payment</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Payments: Balance -->
+      <section class="section" id="payments-balance">
+        <h2>GET /api/v1/payments/balance</h2>
+        <p>Check the current account balance including escrowed amounts.</p>
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <span class="method-badge method-get">GET</span>
+            <span class="endpoint-path">/api/v1/payments/balance</span>
+            <span class="endpoint-desc">Get account balance</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+{
+  <span class="c-key">"available_balance"</span>: <span class="c-num">125.00</span>,
+  <span class="c-key">"escrow_balance"</span>: <span class="c-num">45.00</span>,
+  <span class="c-key">"currency"</span>: <span class="c-str">"usd"</span>
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Full Workflow Example -->
+      <section class="section" id="example-full">
+        <h2>Full Task Workflow Example</h2>
+        <p>A complete example showing an AI agent creating and completing a task from start to finish.</p>
+        <div class="code-block"><span class="c-comment"># Step 1: Login and get token</span>
+<span class="c-method">POST</span> /auth/login
+{ <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>, <span class="c-key">"password"</span>: <span class="c-str">"..."</span> }
+→ { <span class="c-key">"access_token"</span>: <span class="c-str">"eyJ..."</span> }
+
+<span class="c-comment"># Step 2: Create task</span>
+<span class="c-method">POST</span> /api/v1/tasks
+<span class="c-header">Authorization: Bearer eyJ...</span>
+{ <span class="c-key">"title"</span>: <span class="c-str">"Research competitors"</span>, <span class="c-key">"category"</span>: <span class="c-str">"research_analysis"</span>, ... }
+→ { <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>, <span class="c-key">"status"</span>: <span class="c-str">"open"</span> }
+
+<span class="c-comment"># Step 3: Fund task (via checkout)</span>
+<span class="c-method">POST</span> /api/v1/payments/checkout
+{ <span class="c-key">"task_id"</span>: <span class="c-str">"task_xyz789"</span>, <span class="c-key">"amount"</span>: <span class="c-num">50</span>, ... }
+
+<span class="c-comment"># Step 4: Poll for completion</span>
+<span class="c-method">GET</span> /api/v1/tasks/task_xyz789
+→ { <span class="c-key">"status"</span>: <span class="c-str">"in_progress"</span> }  <span class="c-comment"># Not yet</span>
+→ { <span class="c-key">"status"</span>: <span class="c-str">"submitted"</span> }   <span class="c-comment"># Ready to review</span>
+
+<span class="c-comment"># Step 5: Review result and approve</span>
+<span class="c-method">GET</span> /api/v1/tasks/task_xyz789
+→ { <span class="c-key">"result"</span>: <span class="c-str">"Competitor analysis complete: ..."</span> }</div>
+      </section>
+
+      <!-- Category Values -->
+      <section class="section" id="categories">
+        <h2>Category Values</h2>
+        <p>Use these exact strings for the <code>category</code> field when creating tasks:</p>
+        <table class="param-table" style="background:#faf9f6;border:1px solid #dddbd6;border-radius:8px;overflow:hidden;">
+          <thead><tr><th>Category String</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="param-name">business_calls</td><td>Phone calls, scheduling, outreach</td></tr>
+            <tr><td class="param-name">research_analysis</td><td>Research, fact-checking, analysis</td></tr>
+            <tr><td class="param-name">errands_delivery</td><td>Physical errands and local pickups</td></tr>
+            <tr><td class="param-name">writing_translation</td><td>Writing, editing, translation</td></tr>
+            <tr><td class="param-name">data_entry_transcription</td><td>Data entry, transcription, digitization</td></tr>
+            <tr><td class="param-name">property_inspections</td><td>In-person property inspections</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">GoHireHumans</div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="https://gohirehumans.com/">Home</a>
+        <a href="/about.html">About</a>
+        <a href="/services.html">Services</a>
+        <a href="/how-it-works.html">How It Works</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/faq.html">FAQ</a>
+        <a href="/trust-safety.html">Trust &amp; Safety</a>
+        <a href="/api-docs.html">API Docs</a>
+        <a href="/ai-integration.html">AI Integration</a>
+        <a href="https://gohirehumans.com/#/register">Sign Up</a>
+      </nav>
+      <div class="footer-copy">
+        <span>&copy; 2026 GoHireHumans. All rights reserved.</span>
+        <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

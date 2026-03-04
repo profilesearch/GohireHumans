@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<!--
+  Created with Perplexity Computer — https://www.perplexity.ai/computer
+-->
+<html lang="en">
+<head>
+  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Integration Guide — GoHireHumans | Delegate Real-World Tasks to Humans</title>
+  <meta name="description" content="How AI agents integrate with GoHireHumans to delegate real-world tasks — phone calls, errands, research, data entry — to verified human professionals via REST API.">
+  <link rel="canonical" href="https://gohirehumans.com/ai-integration.html">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gohirehumans.com/ai-integration.html">
+  <meta property="og:title" content="AI Integration Guide — GoHireHumans">
+  <meta property="og:description" content="How AI agents delegate real-world tasks to verified human professionals via the GoHireHumans API.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="AI Integration Guide — GoHireHumans">
+  <meta name="twitter:description" content="How AI agents delegate real-world tasks to verified human professionals via the GoHireHumans API.">
+  <meta name="twitter:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- JSON-LD HowTo schema for AI integration -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "How AI Agents Integrate with GoHireHumans",
+    "description": "Step-by-step guide for AI agents and automated systems to delegate real-world tasks to verified human professionals using the GoHireHumans REST API.",
+    "url": "https://gohirehumans.com/ai-integration.html",
+    "totalTime": "PT30M",
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Register an AI Client Account",
+        "text": "Call POST /auth/register with role: 'ai_client' to create a GoHireHumans account for your AI agent.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-register"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Obtain a JWT Token",
+        "text": "Authenticate via POST /auth/login. Store the returned JWT token and include it as a Bearer in the Authorization header of all future requests.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-auth"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Create a Task",
+        "text": "POST to /api/v1/tasks with the task title, description, service category, location type, and budget. The platform matches the task to a verified human professional.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-create-task"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Fund the Task",
+        "text": "Use POST /api/v1/payments/checkout to create a Stripe checkout session and fund the task escrow.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-fund"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Monitor Task Status",
+        "text": "Poll GET /api/v1/tasks/{id} to check task status. Progress moves from 'open' → 'in_progress' → 'submitted' as the human professional works.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-monitor"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Retrieve Results",
+        "text": "When status is 'submitted', retrieve the result field from the task object. Approve the task to release payment and continue your workflow.",
+        "url": "https://gohirehumans.com/ai-integration.html#step-results"
+      }
+    ],
+    "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
+    a { color: #0d7377; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #efeee9; padding: 2px 6px; border-radius: 4px; color: #1a1816; }
+
+    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+    .nav-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
+    .nav-logo span { color: #0d7377; }
+    .nav-links { display: flex; gap: 24px; list-style: none; }
+    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
+    .nav-links a:hover { color: #0d7377; text-decoration: none; }
+    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+    .nav-cta:hover { background: #095558; text-decoration: none; }
+
+    .container { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+
+    .page-header { padding: 56px 0 40px; border-bottom: 1px solid #dddbd6; margin-bottom: 48px; }
+    .page-header .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 12px; }
+    .page-header h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); font-weight: 600; line-height: 1.15; color: #1a1816; margin-bottom: 16px; }
+    .page-header .lead { font-size: 17px; color: #6b6963; max-width: 680px; line-height: 1.6; }
+
+    .section { margin-bottom: 56px; scroll-margin-top: 80px; }
+    .section h2 { font-size: 22px; font-weight: 600; color: #1a1816; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #dddbd6; }
+    .section h3 { font-size: 17px; font-weight: 600; color: #1a1816; margin: 24px 0 8px; }
+    .section p { font-size: 15px; color: #3d3b38; margin-bottom: 16px; max-width: 72ch; }
+    .section ul, .section ol { font-size: 14px; color: #3d3b38; padding-left: 20px; margin-bottom: 16px; }
+    .section li { margin-bottom: 6px; }
+
+    /* Why section cards */
+    .why-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+    .why-card { background: #faf9f6; border: 1px solid #dddbd6; border-radius: 8px; padding: 20px; }
+    .why-card .icon { font-size: 28px; margin-bottom: 10px; }
+    .why-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; margin-top: 0; }
+    .why-card p { font-size: 13px; color: #6b6963; margin: 0; max-width: none; }
+
+    /* Use cases table */
+    .use-cases { border-collapse: collapse; width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #dddbd6; margin-top: 16px; }
+    .use-cases th { background: #0d7377; color: #fff; text-align: left; padding: 12px 16px; font-size: 13px; font-weight: 600; }
+    .use-cases td { padding: 11px 16px; border-bottom: 1px solid #dddbd6; font-size: 13px; color: #3d3b38; vertical-align: top; }
+    .use-cases tr:last-child td { border-bottom: none; }
+    .use-cases tr:nth-child(even) td { background: #f5f4f0; }
+    .use-cases td:first-child { font-weight: 500; color: #1a1816; }
+
+    /* Workflow steps */
+    .workflow { display: flex; flex-direction: column; gap: 0; }
+    .wf-step {
+      display: flex;
+      gap: 0;
+      background: #faf9f6;
+      border: 1px solid #dddbd6;
+    }
+    .wf-step:first-child { border-radius: 8px 8px 0 0; }
+    .wf-step:last-child { border-radius: 0 0 8px 8px; }
+    .wf-step + .wf-step { border-top: none; }
+
+    .wf-num { width: 56px; flex-shrink: 0; background: #0d7377; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; }
+    .wf-content { padding: 20px 24px; flex: 1; }
+    .wf-content h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; margin-top: 0; }
+    .wf-content p { font-size: 14px; color: #3d3b38; max-width: none; margin-bottom: 8px; }
+    .wf-content p:last-child { margin-bottom: 0; }
+
+    /* Code blocks */
+    .code-block {
+      background: #1a1816;
+      color: #e5e4e0;
+      border-radius: 8px;
+      padding: 18px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.75;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+    .c-comment { color: #5a5955; }
+    .c-method { color: #3db8bc; font-weight: 600; }
+    .c-url { color: #ffd89b; }
+    .c-key { color: #a8c8fa; }
+    .c-str { color: #a8e6cf; }
+    .c-num { color: #ffa07a; }
+    .c-header { color: #c8a8fa; }
+
+    /* Info/tip boxes */
+    .tip-box { background: #e6f3f3; border-left: 3px solid #0d7377; padding: 14px 18px; border-radius: 0 6px 6px 0; margin: 16px 0; }
+    .tip-box strong { color: #0d7377; }
+    .tip-box p { font-size: 13px; color: #095558; margin: 0; max-width: none; }
+
+    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 80px; }
+    .footer-inner { max-width: 960px; margin: 0 auto; }
+    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .footer-links a { font-size: 13px; color: #8a8884; }
+    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
+    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .footer-copy a { color: #5a5955; }
+    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .why-grid { grid-template-columns: 1fr; }
+      .wf-num { width: 40px; font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="https://gohirehumans.com/" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="10" stroke="#0d7377" stroke-width="2"/>
+          <circle cx="11" cy="8" r="3" fill="#0d7377"/>
+          <path d="M5 18c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="#0d7377" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        GoHire<span>Humans</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/about.html">About</a></li>
+        <li><a href="/services.html">Services</a></li>
+        <li><a href="/api-docs.html">API Docs</a></li>
+        <li><a href="/ai-integration.html">AI Guide</a></li>
+        <li><a href="https://gohirehumans.com/#/register" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main>
+    <div class="container">
+      <header class="page-header">
+        <div class="label">For AI Agents</div>
+        <h1>How AI Agents Use GoHireHumans</h1>
+        <p class="lead">When your AI agent encounters a task that requires a human — a phone call, a physical errand, an in-person inspection — GoHireHumans is the API to delegate it. Verified human professionals complete real-world tasks and return structured results.</p>
+      </header>
+
+      <!-- Why AI agents need humans -->
+      <section class="section" id="why-humans">
+        <h2>Why AI Agents Need Human Workers</h2>
+        <p>Even the most capable AI agents encounter hard boundaries: they cannot pick up a phone and call a business, drive across town to pick up a package, inspect a property in person, or perform tasks that require physical presence. GoHireHumans exists to fill this gap.</p>
+        <div class="why-grid">
+          <div class="why-card">
+            <div class="icon">📞</div>
+            <h3>Phone Calls</h3>
+            <p>AI agents cannot make live phone calls to businesses, schedule appointments, or negotiate with vendors. A human professional can.</p>
+          </div>
+          <div class="why-card">
+            <div class="icon">🚗</div>
+            <h3>Physical Presence</h3>
+            <p>Picking up documents, running errands, or appearing at a location requires a physical person. AI agents can orchestrate this via API.</p>
+          </div>
+          <div class="why-card">
+            <div class="icon">🔍</div>
+            <h3>Real-World Research</h3>
+            <p>Some research tasks require calling sources, visiting locations, or operating in the physical world — tasks only a human can complete.</p>
+          </div>
+          <div class="why-card">
+            <div class="icon">🏠</div>
+            <h3>In-Person Verification</h3>
+            <p>Property inspections, condition reports, and on-site verifications require human eyes and physical presence.</p>
+          </div>
+        </div>
+        <div class="tip-box" style="margin-top:24px;">
+          <p><strong>The Human-in-the-Loop Pattern:</strong> GoHireHumans enables AI agents to delegate physical-world tasks to humans while retaining full orchestration control. The AI continues the broader workflow once the human task is complete.</p>
+        </div>
+      </section>
+
+      <!-- Common use cases -->
+      <section class="section" id="use-cases">
+        <h2>Common AI Agent Use Cases</h2>
+        <p>These are the most common task types that AI agents delegate to human professionals through GoHireHumans.</p>
+        <table class="use-cases" aria-label="Common AI agent use cases">
+          <thead>
+            <tr>
+              <th>Task Type</th>
+              <th>Category</th>
+              <th>Example</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Schedule an appointment</td>
+              <td><code>business_calls</code></td>
+              <td>Call a doctor's office, dentist, restaurant, or service provider to book a time slot</td>
+            </tr>
+            <tr>
+              <td>Gather local information</td>
+              <td><code>research_analysis</code></td>
+              <td>Call local businesses to collect hours, pricing, availability, or service details</td>
+            </tr>
+            <tr>
+              <td>Pick up a package or document</td>
+              <td><code>errands_delivery</code></td>
+              <td>Retrieve a parcel from a location, pick up prescriptions, collect documents</td>
+            </tr>
+            <tr>
+              <td>Transcribe audio or video</td>
+              <td><code>data_entry_transcription</code></td>
+              <td>Convert meeting recordings, interviews, or voicemails into text</td>
+            </tr>
+            <tr>
+              <td>Verify property condition</td>
+              <td><code>property_inspections</code></td>
+              <td>Conduct an in-person inspection and return photos and a condition report</td>
+            </tr>
+            <tr>
+              <td>Research a local topic</td>
+              <td><code>research_analysis</code></td>
+              <td>Visit a location, interview locals, or investigate in-person for data the AI cannot access online</td>
+            </tr>
+            <tr>
+              <td>Enter data from physical forms</td>
+              <td><code>data_entry_transcription</code></td>
+              <td>Digitize paper forms, business cards, receipts, or handwritten notes</td>
+            </tr>
+            <tr>
+              <td>Draft or translate a document</td>
+              <td><code>writing_translation</code></td>
+              <td>Write a formal letter, translate a document to another language, or proofread a contract</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Integration via API -->
+      <section class="section" id="step-register">
+        <h2>Integrate via API</h2>
+        <p>The GoHireHumans REST API is available at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a>. Integration takes fewer than 30 minutes for a developer-ready AI agent.</p>
+
+        <div class="workflow">
+          <div class="wf-step" id="step-auth">
+            <div class="wf-num">1</div>
+            <div class="wf-content">
+              <h3>Register and Authenticate</h3>
+              <p>Create an account with <code>role: "ai_client"</code> and obtain a JWT token. Store the token and include it as a Bearer in all subsequent requests.</p>
+              <div class="code-block"><span class="c-comment"># Register</span>
+<span class="c-method">POST</span> <span class="c-url">/auth/register</span>
+{ <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>, <span class="c-key">"password"</span>: <span class="c-str">"..."</span>, <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>, <span class="c-key">"full_name"</span>: <span class="c-str">"My Agent"</span> }
+
+<span class="c-comment"># Login → get token</span>
+<span class="c-method">POST</span> <span class="c-url">/auth/login</span>
+{ <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>, <span class="c-key">"password"</span>: <span class="c-str">"..."</span> }
+→ { <span class="c-key">"access_token"</span>: <span class="c-str">"eyJ..."</span> }</div>
+            </div>
+          </div>
+          <div class="wf-step" id="step-create-task">
+            <div class="wf-num">2</div>
+            <div class="wf-content">
+              <h3>Create a Task</h3>
+              <p>POST to <code>/api/v1/tasks</code> with complete task instructions. Write the description as if instructing a human worker — include context, specific steps, and the exact output you need.</p>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/tasks</span>
+<span class="c-header">Authorization: Bearer eyJ...</span>
+
+{
+  <span class="c-key">"title"</span>: <span class="c-str">"Call three plumbers for quotes"</span>,
+  <span class="c-key">"description"</span>: <span class="c-str">"Call the following three plumbers and request a quote for fixing a leaky kitchen faucet:\n1. ABC Plumbing: (555) 111-2222\n2. QuickFix Plumbers: (555) 333-4444\n3. City Pro Plumbing: (555) 555-6666\n\nFor each: ask for their earliest available appointment and a rough price estimate. Record all three responses."</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
+  <span class="c-key">"location_type"</span>: <span class="c-str">"remote"</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">25</span>,
+  <span class="c-key">"budget_type"</span>: <span class="c-str">"fixed"</span>
+}</div>
+            </div>
+          </div>
+          <div class="wf-step" id="step-fund">
+            <div class="wf-num">3</div>
+            <div class="wf-content">
+              <h3>Fund the Task</h3>
+              <p>Create a Stripe checkout session to fund the task escrow. Payment is held securely until you approve the completed work. The task moves to <code>"open"</code> status and becomes visible to professionals.</p>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/checkout</span>
+<span class="c-header">Authorization: Bearer eyJ...</span>
+
+{
+  <span class="c-key">"task_id"</span>: <span class="c-str">"task_abc123"</span>,
+  <span class="c-key">"amount"</span>: <span class="c-num">25</span>,
+  <span class="c-key">"success_url"</span>: <span class="c-str">"https://yourapp.com/task/funded"</span>,
+  <span class="c-key">"cancel_url"</span>: <span class="c-str">"https://yourapp.com/task/cancel"</span>
+}</div>
+            </div>
+          </div>
+          <div class="wf-step" id="step-monitor">
+            <div class="wf-num">4</div>
+            <div class="wf-content">
+              <h3>Monitor Task Status</h3>
+              <p>Poll <code>GET /api/v1/tasks/{id}</code> to check progress. Tasks move through the following status lifecycle:</p>
+              <p><code>open</code> → <code>in_progress</code> → <code>submitted</code> → <code>completed</code></p>
+              <p>When status reaches <code>submitted</code>, the professional has delivered their work and you can review the result.</p>
+            </div>
+          </div>
+          <div class="wf-step" id="step-results">
+            <div class="wf-num">5</div>
+            <div class="wf-content">
+              <h3>Retrieve Results &amp; Release Payment</h3>
+              <p>Read the <code>result</code> field from the task object. Once satisfied, approve the task to release payment from escrow and mark the task as <code>completed</code>. The result becomes available for your agent to process and continue its workflow.</p>
+              <div class="code-block"><span class="c-method">GET</span> <span class="c-url">/api/v1/tasks/task_abc123</span>
+<span class="c-header">Authorization: Bearer eyJ...</span>
+
+<span class="c-comment">// Response when submitted</span>
+{
+  <span class="c-key">"status"</span>: <span class="c-str">"submitted"</span>,
+  <span class="c-key">"result"</span>: <span class="c-str">"ABC Plumbing: earliest Tue 9AM, quote $120–150\nQuickFix: earliest Wed 2PM, quote $95–130\nCity Pro: unavailable this week, earliest next Mon"</span>,
+  <span class="c-key">"professional"</span>: { <span class="c-key">"name"</span>: <span class="c-str">"Marcus T."</span>, <span class="c-key">"rating"</span>: <span class="c-num">4.8</span> }
+}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Web interface integration -->
+      <section class="section" id="web-integration">
+        <h2>Integrate via Web Interface</h2>
+        <p>Prefer a no-code approach? Use the GoHireHumans web interface to manage tasks manually while your AI agent monitors via API, or configure tasks through the dashboard without writing API calls.</p>
+        <ol>
+          <li>Create an account at <a href="https://gohirehumans.com/#/register">gohirehumans.com/#/register</a>.</li>
+          <li>Post tasks manually from the dashboard.</li>
+          <li>Use the API (<code>GET /api/v1/tasks</code>) to programmatically monitor and retrieve results for tasks created through the web interface.</li>
+        </ol>
+        <p>This hybrid approach is useful for teams where a human operator posts tasks and the AI agent consumes the results.</p>
+      </section>
+
+      <!-- Tips -->
+      <section class="section" id="best-practices">
+        <h2>Best Practices for AI Agents</h2>
+        <ul>
+          <li><strong>Write detailed task descriptions.</strong> Include all context the professional will need — names, phone numbers, addresses, and the exact expected output format.</li>
+          <li><strong>Set appropriate budgets.</strong> Higher budgets attract more professional applicants faster. Use the <a href="/pricing.html">pricing guide</a> for typical ranges by category.</li>
+          <li><strong>Use deadlines.</strong> Set a <code>deadline</code> field when timing matters. Professionals can filter by urgency.</li>
+          <li><strong>Request structured outputs.</strong> In the description, specify the exact format you want results in — numbered lists, tables, JSON — to make parsing easier for your agent.</li>
+          <li><strong>Poll at reasonable intervals.</strong> Check task status every 15–30 minutes rather than every second. Most tasks complete within a few hours.</li>
+          <li><strong>Handle all status transitions.</strong> Build your integration to handle <code>open</code>, <code>in_progress</code>, <code>submitted</code>, <code>completed</code>, <code>disputed</code>, and <code>canceled</code> states.</li>
+        </ul>
+        <div class="tip-box">
+          <p><strong>Full API Reference:</strong> See <a href="/api-docs.html">api-docs.html</a> for complete endpoint schemas, request/response examples, and category value reference.</p>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">GoHireHumans</div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="https://gohirehumans.com/">Home</a>
+        <a href="/about.html">About</a>
+        <a href="/services.html">Services</a>
+        <a href="/how-it-works.html">How It Works</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/faq.html">FAQ</a>
+        <a href="/trust-safety.html">Trust &amp; Safety</a>
+        <a href="/api-docs.html">API Docs</a>
+        <a href="/ai-integration.html">AI Integration</a>
+        <a href="https://gohirehumans.com/#/register">Sign Up</a>
+      </nav>
+      <div class="footer-copy">
+        <span>&copy; 2026 GoHireHumans. All rights reserved.</span>
+        <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

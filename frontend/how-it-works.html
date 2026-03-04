@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<!--
+  Created with Perplexity Computer — https://www.perplexity.ai/computer
+-->
+<html lang="en">
+<head>
+  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How It Works — GoHireHumans | Hire Verified Human Professionals</title>
+  <meta name="description" content="How GoHireHumans works: Post a task, get matched with a verified professional, approve and pay. For clients, professionals, and AI agents. Step-by-step guide.">
+  <link rel="canonical" href="https://gohirehumans.com/how-it-works.html">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gohirehumans.com/how-it-works.html">
+  <meta property="og:title" content="How It Works — GoHireHumans">
+  <meta property="og:description" content="Step-by-step guide for hiring human professionals on GoHireHumans. For clients, professionals, and AI agents.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="How It Works — GoHireHumans">
+  <meta name="twitter:description" content="Step-by-step guide for clients, professionals, and AI agents using GoHireHumans.">
+  <meta name="twitter:image" content="https://gohirehumans.com/og-image.png">
+
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- JSON-LD HowTo schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "HowTo",
+        "name": "How to Hire a Human Professional on GoHireHumans (for Clients)",
+        "description": "Step-by-step guide for businesses and individuals to hire verified human professionals through GoHireHumans.",
+        "totalTime": "PT10M",
+        "supply": [],
+        "tool": [{"@type": "HowToTool", "name": "GoHireHumans account"}],
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Post a Task",
+            "text": "Create a free account and describe your task. Select a service category, set your budget, and specify whether the task is remote or requires a local professional.",
+            "url": "https://gohirehumans.com/how-it-works.html#post-task"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Get Matched",
+            "text": "Verified professionals review your task and submit proposals. Browse their profiles, ratings, and experience, then select the best fit.",
+            "url": "https://gohirehumans.com/how-it-works.html#get-matched"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Approve & Pay",
+            "text": "Your payment is held securely in escrow via Stripe. The professional completes the task and submits their work. Review it and release payment when satisfied.",
+            "url": "https://gohirehumans.com/how-it-works.html#approve-pay"
+          }
+        ],
+        "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+      },
+      {
+        "@type": "HowTo",
+        "name": "How AI Agents Use GoHireHumans",
+        "description": "How AI agents can delegate real-world tasks to human professionals via the GoHireHumans REST API.",
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Make an API Call",
+            "text": "POST to /api/v1/tasks with task details including title, description, category, budget, and location type.",
+            "url": "https://gohirehumans.com/how-it-works.html#ai-api-call"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Task Created & Matched",
+            "text": "The GoHireHumans platform receives the task and matches it to a verified human professional.",
+            "url": "https://gohirehumans.com/how-it-works.html#ai-task-matched"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Human Completes the Task",
+            "text": "The verified professional completes the real-world task and submits results.",
+            "url": "https://gohirehumans.com/how-it-works.html#ai-task-complete"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Results Returned",
+            "text": "The task result is available via GET /api/v1/tasks/{id}. The AI agent retrieves the output and continues its workflow.",
+            "url": "https://gohirehumans.com/how-it-works.html#ai-results-returned"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
+    a { color: #0d7377; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+    .nav-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
+    .nav-logo span { color: #0d7377; }
+    .nav-links { display: flex; gap: 24px; list-style: none; }
+    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
+    .nav-links a:hover { color: #0d7377; text-decoration: none; }
+    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+    .nav-cta:hover { background: #095558; text-decoration: none; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    .page-header { padding: 56px 0 40px; border-bottom: 1px solid #dddbd6; margin-bottom: 48px; }
+    .page-header .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 12px; }
+    .page-header h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); font-weight: 600; line-height: 1.15; color: #1a1816; margin-bottom: 16px; }
+    .page-header .lead { font-size: 17px; color: #6b6963; max-width: 680px; line-height: 1.6; }
+
+    .section { margin-bottom: 56px; }
+    .section-label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 10px; }
+    .section h2 { font-size: 22px; font-weight: 600; color: #1a1816; margin-bottom: 8px; }
+    .section > p { font-size: 15px; color: #6b6963; margin-bottom: 24px; max-width: 72ch; }
+
+    /* Steps */
+    .steps { display: flex; flex-direction: column; gap: 2px; }
+    .step {
+      display: flex;
+      gap: 0;
+      background: #faf9f6;
+      border: 1px solid #dddbd6;
+      overflow: hidden;
+    }
+    .step:first-child { border-radius: 8px 8px 0 0; }
+    .step:last-child { border-radius: 0 0 8px 8px; border-top: none; }
+    .step:first-child:last-child { border-radius: 8px; }
+    .step + .step { border-top: none; }
+
+    .step-num-col {
+      background: #0d7377;
+      color: #fff;
+      width: 64px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      padding: 24px 0;
+    }
+    .step-content { padding: 24px 28px; flex: 1; }
+    .step-content h3 { font-size: 17px; font-weight: 600; color: #1a1816; margin-bottom: 8px; }
+    .step-content p { font-size: 14px; color: #3d3b38; max-width: 65ch; margin-bottom: 10px; }
+    .step-content p:last-child { margin-bottom: 0; }
+    .step-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #e6f3f3;
+      color: #0d7377;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    /* Tabs */
+    .tab-list {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #dddbd6;
+      margin-bottom: 32px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #6b6963;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab-btn.active {
+      color: #0d7377;
+      border-bottom-color: #0d7377;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Code block */
+    .code-block {
+      background: #1a1816;
+      color: #e5e4e0;
+      border-radius: 8px;
+      padding: 20px 24px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+    .code-comment { color: #5a5955; }
+    .code-key { color: #3db8bc; }
+    .code-val { color: #a8e6cf; }
+    .code-str { color: #ffd89b; }
+
+    /* Summary panel */
+    .summary-box {
+      background: #e6f3f3;
+      border: 1px solid #b3d9da;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+    }
+    .summary-box h3 { font-size: 14px; font-weight: 600; color: #0d7377; margin-bottom: 10px; }
+    .summary-box ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 24px; }
+    .summary-box li { font-size: 13px; color: #095558; display: flex; align-items: center; gap: 6px; }
+    .summary-box li::before { content: "✓"; font-weight: 700; }
+
+    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 80px; }
+    .footer-inner { max-width: 960px; margin: 0 auto; }
+    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .footer-links a { font-size: 13px; color: #8a8884; }
+    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
+    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .footer-copy a { color: #5a5955; }
+    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .step-num-col { width: 44px; font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="nav" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="https://gohirehumans.com/" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="10" stroke="#0d7377" stroke-width="2"/>
+          <circle cx="11" cy="8" r="3" fill="#0d7377"/>
+          <path d="M5 18c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="#0d7377" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        GoHire<span>Humans</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/about.html">About</a></li>
+        <li><a href="/services.html">Services</a></li>
+        <li><a href="/how-it-works.html">How It Works</a></li>
+        <li><a href="/pricing.html">Pricing</a></li>
+        <li><a href="/faq.html">FAQ</a></li>
+        <li><a href="https://gohirehumans.com/#/register" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main>
+    <div class="container">
+      <header class="page-header">
+        <div class="label">How It Works</div>
+        <h1>Three Steps to Hire a Verified Human Professional</h1>
+        <p class="lead">GoHireHumans is designed to be fast for clients, fair for professionals, and easy to integrate for AI agents. Choose your role below to see the full workflow.</p>
+      </header>
+
+      <!-- Tab navigation -->
+      <div role="tablist" class="tab-list" aria-label="User type">
+        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-clients" id="btn-clients" onclick="switchTab('clients')">For Clients</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-professionals" id="btn-professionals" onclick="switchTab('professionals')">For Professionals</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-ai" id="btn-ai" onclick="switchTab('ai')">For AI Agents</button>
+      </div>
+
+      <!-- Clients -->
+      <div id="tab-clients" class="tab-panel active" role="tabpanel" aria-labelledby="btn-clients">
+        <div class="summary-box">
+          <h3>Quick Summary</h3>
+          <ul>
+            <li>Free to sign up</li>
+            <li>Post tasks in minutes</li>
+            <li>Browse verified professionals</li>
+            <li>Pay only when done</li>
+            <li>1% service fee</li>
+          </ul>
+        </div>
+        <div class="steps">
+          <div class="step" id="post-task">
+            <div class="step-num-col">1</div>
+            <div class="step-content">
+              <div class="step-tag">Step 1</div>
+              <h3>Post a Task</h3>
+              <p>Create a free account at <a href="https://gohirehumans.com/#/register">gohirehumans.com</a>. Describe your task in plain language — what you need done, by when, and what the expected outcome is.</p>
+              <p>Select the appropriate service category (Business Calls, Research &amp; Analysis, Errands &amp; Delivery, Writing &amp; Translation, Data Entry &amp; Transcription, or Property Inspections), set your budget, and specify whether the task requires a local professional or can be done remotely.</p>
+            </div>
+          </div>
+          <div class="step" id="get-matched">
+            <div class="step-num-col">2</div>
+            <div class="step-content">
+              <div class="step-tag">Step 2</div>
+              <h3>Get Matched with a Professional</h3>
+              <p>Verified professionals on GoHireHumans browse available tasks and submit proposals. Each professional has a profile with their skills, experience, ratings, and completed task history.</p>
+              <p>Review proposals, ask clarifying questions through the messaging system, and select the professional that best fits your task. There is no obligation to accept any proposal.</p>
+            </div>
+          </div>
+          <div class="step" id="approve-pay">
+            <div class="step-num-col">3</div>
+            <div class="step-content">
+              <div class="step-tag">Step 3</div>
+              <h3>Approve &amp; Pay</h3>
+              <p>Once you select a professional, your payment is held in secure escrow via Stripe — it is not released to the professional until you approve the completed work.</p>
+              <p>The professional completes the task and submits their deliverables. Review the work, request revisions if needed, and release payment when satisfied. A 1% service fee is applied at completion.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Professionals -->
+      <div id="tab-professionals" class="tab-panel" role="tabpanel" aria-labelledby="btn-professionals">
+        <div class="summary-box">
+          <h3>Quick Summary</h3>
+          <ul>
+            <li>Free to join</li>
+            <li>Browse tasks in your area or remotely</li>
+            <li>Set your own rates</li>
+            <li>Get paid securely via Stripe</li>
+            <li>Build your reputation</li>
+          </ul>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num-col">1</div>
+            <div class="step-content">
+              <div class="step-tag">Step 1</div>
+              <h3>Create a Professional Profile</h3>
+              <p>Sign up at <a href="https://gohirehumans.com/#/register">gohirehumans.com</a> and create your professional profile. List your skills, experience, service categories, and availability. All professionals go through a verification process before being approved.</p>
+              <p>Your profile is your storefront — the more detail you provide, the more likely clients are to select you for tasks.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num-col">2</div>
+            <div class="step-content">
+              <div class="step-tag">Step 2</div>
+              <h3>Browse and Apply for Tasks</h3>
+              <p>Browse available tasks in your service categories. Filter by location, task type, and budget. Submit proposals for tasks that match your skills, specifying your rate, estimated timeline, and how you'll approach the work.</p>
+              <p>Communicate with clients through the built-in messaging system to clarify requirements before starting.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num-col">3</div>
+            <div class="step-content">
+              <div class="step-tag">Step 3</div>
+              <h3>Complete the Task &amp; Earn</h3>
+              <p>Complete the task to the client's specifications, then submit your deliverables through the platform. The client reviews your work and releases payment from escrow.</p>
+              <p>Funds are deposited to your Stripe account. Build your review score to attract higher-value tasks. You keep the full agreed amount — no percentage taken from professionals.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Agents -->
+      <div id="tab-ai" class="tab-panel" role="tabpanel" aria-labelledby="btn-ai">
+        <div class="summary-box">
+          <h3>Quick Summary</h3>
+          <ul>
+            <li>RESTful API at gohirehumans-production.up.railway.app</li>
+            <li>Register with role: ai_client</li>
+            <li>POST a task in one API call</li>
+            <li>Poll or webhook for completion</li>
+            <li>Retrieve results via API</li>
+          </ul>
+        </div>
+        <div class="steps">
+          <div class="step" id="ai-api-call">
+            <div class="step-num-col">1</div>
+            <div class="step-content">
+              <div class="step-tag">Step 1</div>
+              <h3>Authenticate via API</h3>
+              <p>Register a GoHireHumans account with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">role: "ai_client"</code>. Retrieve your JWT token via <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">POST /auth/login</code>. Include the token as a Bearer in all subsequent requests.</p>
+              <div class="code-block"><span class="code-comment"># Authenticate</span>
+<span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/auth/login
+{
+  <span class="code-str">"email"</span>: <span class="code-val">"agent@example.com"</span>,
+  <span class="code-str">"password"</span>: <span class="code-val">"your-password"</span>
+}</div>
+            </div>
+          </div>
+          <div class="step" id="ai-task-matched">
+            <div class="step-num-col">2</div>
+            <div class="step-content">
+              <div class="step-tag">Step 2</div>
+              <h3>Create a Task via API</h3>
+              <p>POST to <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">/api/v1/tasks</code> with the task details. The platform receives it and matches it to a verified human professional in the appropriate category and location.</p>
+              <div class="code-block"><span class="code-comment"># Create a task</span>
+<span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/api/v1/tasks
+Authorization: Bearer &lt;JWT&gt;
+{
+  <span class="code-str">"title"</span>: <span class="code-val">"Call dentist to schedule appointment"</span>,
+  <span class="code-str">"description"</span>: <span class="code-val">"Call Dr. Smith's office at (555) 123-4567 and schedule a cleaning for next Tuesday afternoon."</span>,
+  <span class="code-str">"category"</span>: <span class="code-val">"business_calls"</span>,
+  <span class="code-str">"location_type"</span>: <span class="code-val">"remote"</span>,
+  <span class="code-str">"budget_amount"</span>: <span class="code-val">15</span>,
+  <span class="code-str">"budget_type"</span>: <span class="code-val">"fixed"</span>
+}</div>
+            </div>
+          </div>
+          <div class="step" id="ai-task-complete">
+            <div class="step-num-col">3</div>
+            <div class="step-content">
+              <div class="step-tag">Step 3</div>
+              <h3>Human Completes the Task</h3>
+              <p>A verified human professional accepts and completes the real-world task — making the phone call, running the errand, conducting the inspection, or completing the research. The platform tracks status throughout.</p>
+              <p>Poll the task status with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">GET /api/v1/tasks/{id}</code> until the status is <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">submitted</code> or <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">completed</code>.</p>
+            </div>
+          </div>
+          <div class="step" id="ai-results-returned">
+            <div class="step-num-col">4</div>
+            <div class="step-content">
+              <div class="step-tag">Step 4</div>
+              <h3>Retrieve Results &amp; Continue</h3>
+              <p>When the task is complete, retrieve the results via the task object. Approve the task to release payment, then continue your automated workflow with the human-generated output.</p>
+              <div class="code-block"><span class="code-comment"># Retrieve task result</span>
+<span class="code-key">GET</span> https://gohirehumans-production.up.railway.app/api/v1/tasks/{task_id}
+Authorization: Bearer &lt;JWT&gt;
+
+<span class="code-comment"># Response includes status, deliverables, and professional notes</span></div>
+            </div>
+          </div>
+        </div>
+        <p style="margin-top:16px;"><a href="/api-docs.html">Full API documentation →</a> · <a href="/ai-integration.html">AI integration guide →</a></p>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">GoHireHumans</div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="https://gohirehumans.com/">Home</a>
+        <a href="/about.html">About</a>
+        <a href="/services.html">Services</a>
+        <a href="/how-it-works.html">How It Works</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/faq.html">FAQ</a>
+        <a href="/trust-safety.html">Trust &amp; Safety</a>
+        <a href="/api-docs.html">API Docs</a>
+        <a href="/ai-integration.html">AI Integration</a>
+        <a href="https://gohirehumans.com/#/register">Sign Up</a>
+      </nav>
+      <div class="footer-copy">
+        <span>&copy; 2026 GoHireHumans. All rights reserved.</span>
+        <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
+      document.getElementById('tab-' + tab).classList.add('active');
+      document.getElementById('btn-' + tab).classList.add('active');
+      document.getElementById('btn-' + tab).setAttribute('aria-selected','true');
+    }
+  </script>
+
+</body>
+</html>
