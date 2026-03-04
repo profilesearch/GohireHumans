@@ -583,6 +583,12 @@ def fake_stripe_payment_id():
 # ─── Route Handler ────────────────────────────────────────────────────────────
 
 def handle_request():
+    # Clear per-request caches (function-attribute caches persist across Flask requests)
+    if hasattr(get_body, '_cache'):
+        del get_body._cache
+    if hasattr(get_body_raw, '_raw_cache'):
+        del get_body_raw._raw_cache
+
     init_db()
 
     # Rate limiting
