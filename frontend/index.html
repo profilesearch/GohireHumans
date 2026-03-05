@@ -208,7 +208,7 @@
 // GoHireHumans SPA — Two-Sided Marketplace
 // Services + Jobs public browsing with full authenticated app
 // ============================================================
-const API = window.GOHIREHUMANS_API_URL || 'http://localhost:8080';
+const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
 
 // ─── State ───────────────────────────────────────────────────
 let storedUser = null, storedToken = null;
@@ -550,8 +550,32 @@ async function renderLanding() {
   const mode = state.landingMode;
   const isHire = mode === 'hire';
 
-  // Sample cards (static preview)
-  const sampleServices = [
+  // Fetch live data from API
+  let liveServices = [], liveJobs = [];
+  try {
+    const [sRes, jRes] = await Promise.all([
+      api('/services?per_page=6'),
+      api('/jobs?per_page=6')
+    ]);
+    liveServices = (sRes.services || []).map(s => ({
+      title: s.title, worker: s.worker_name || 'Professional',
+      price: s.pricing_type === 'hourly' ? `$${s.hourly_rate}/hr` : s.price ? `$${s.price}` : 'Custom',
+      delivery: s.delivery_time_days ? `${s.delivery_time_days} days` : 'Flexible',
+      rating: Math.round(s.avg_rating || 5), reviews: s.total_reviews || 0,
+      category: (s.category || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
+      id: s.id
+    }));
+    liveJobs = (jRes.jobs || []).map(j => ({
+      title: j.title, employer: j.employer_name || j.company_name || 'Employer',
+      budget: j.budget_type === 'hourly' ? `$${j.budget_amount}/hr` : `$${j.budget_amount}`,
+      location: j.location_type === 'remote' ? 'Remote' : j.location_type || 'Remote',
+      posted: relativeDate(j.created_at), category: (j.category || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
+      id: j.id
+    }));
+  } catch(e) { console.log('Failed to load live data, using fallback'); }
+
+  // Fallback sample data
+  const fallbackServices = [
     { title: 'Professional Logo Design', worker: 'Alex M.', price: '$49', delivery: '3 days', rating: 5, reviews: 24, category: 'Design' },
     { title: 'SEO Blog Article (1,500+ words)', worker: 'Sarah K.', price: '$35', delivery: '2 days', rating: 5, reviews: 41, category: 'Writing' },
     { title: 'Data Entry & Spreadsheet Cleanup', worker: 'James T.', price: '$25', delivery: '1 day', rating: 4, reviews: 18, category: 'Data' },
@@ -559,14 +583,16 @@ async function renderLanding() {
     { title: 'Market Research Report', worker: 'David P.', price: '$75', delivery: '5 days', rating: 5, reviews: 12, category: 'Research' },
     { title: 'Cold Outreach Email Campaign', worker: 'Emma R.', price: '$60', delivery: '3 days', rating: 4, reviews: 29, category: 'Marketing' },
   ];
-  const sampleJobs = [
+  const fallbackJobs = [
     { title: 'Part-time Social Media Manager', employer: 'TechCorp Inc.', budget: '$500/mo', location: 'Remote', posted: '2h ago', category: 'Marketing' },
     { title: 'Freelance Copywriter for SaaS Blog', employer: 'StartupHub', budget: '$40/hr', location: 'Remote', posted: '5h ago', category: 'Writing' },
     { title: 'Local Delivery Driver (weekends)', employer: 'QuickDeliver', budget: '$22/hr', location: 'Denver, CO', posted: '1d ago', category: 'Delivery' },
     { title: 'Customer Support Specialist', employer: 'Retail Co.', budget: '$2,000 fixed', location: 'Remote', posted: '2d ago', category: 'Support' },
     { title: 'Property Inspector (Colorado)', employer: 'RealEstate LLC', budget: '$150/inspection', location: 'Colorado', posted: '3d ago', category: 'Inspections' },
-    { title: 'Data Analyst – Contract 3 months', employer: 'Analytics Co.', budget: '$55/hr', location: 'Hybrid', posted: '1d ago', category: 'Data' },
+    { title: 'Data Analyst \u2013 Contract 3 months', employer: 'Analytics Co.', budget: '$55/hr', location: 'Hybrid', posted: '1d ago', category: 'Data' },
   ];
+  const sampleServices = liveServices.length > 0 ? liveServices : fallbackServices;
+  const sampleJobs = liveJobs.length > 0 ? liveJobs : fallbackJobs;
 
   const previewCards = isHire
     ? sampleServices.map(s => `
