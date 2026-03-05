@@ -14,12 +14,7 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
-CORS(app, resources={
-    r"/api/*": {"origins": allowed_origins},
-    r"/auth/*": {"origins": allowed_origins},
-    r"/profile": {"origins": allowed_origins},
-})
-# /seed endpoint excluded from CORS — should only be called internally
+CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 # ─── Import the CGI API module ────────────────────────────────────────────────
 # We load api.py as a module so we can call its functions directly
