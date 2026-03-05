@@ -630,8 +630,9 @@ def _handle_routes(db):
             return error_response("Email and password required")
         if len(password) < 10:  # HIGH-05: increased from 6 to 10 characters
             return error_response("Password must be at least 10 characters")
-        if role not in ('worker', 'ai_client', 'admin'):
+        if role not in ('worker', 'ai_client'):
             return error_response("Invalid role")
+        # SECURITY: admin accounts cannot be created through public registration
 
         existing = db.execute("SELECT id FROM users WHERE email = ?", [email]).fetchone()
         if existing:
