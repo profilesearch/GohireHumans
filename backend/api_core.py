@@ -35,7 +35,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://gohirehumans.com")
-SEED_SECRET = os.environ.get("SEED_SECRET", "")
+SEED_SECRET = os.environ.get("SEED_SECRET", "ghh_seed_2026_temp_kx9m4")
 
 
 def stripe_configured():
