@@ -35,7 +35,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://gohirehumans.com")
-SEED_SECRET = os.environ.get("SEED_SECRET", "ghh_seed_2026_temp_kx9m4")
+SEED_SECRET = os.environ.get("SEED_SECRET", "")
 
 
 def stripe_configured():
@@ -284,6 +284,186 @@ def init_db():
     """)
     db.commit()
     db.close()
+
+
+_seeded = False
+def auto_seed_if_empty():
+    """Auto-seed sample data on first run if database is empty."""
+    global _seeded
+    if _seeded:
+        return
+    _seeded = True
+    db = get_db()
+    try:
+        count = db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c']
+        if count > 0:
+            return
+        print("Auto-seeding sample data...", file=sys.stderr)
+
+        # Create Workers
+        workers_data = [
+            {"email": "sarah.chen@example.com", "name": "Sarah Chen",
+             "skills": ["graphic_design", "ui_ux_design", "content_creation"],
+             "bio": "Freelance designer with 5 years experience in brand identity and digital design. Specializes in clean, modern aesthetics.",
+             "hourly_rate": 65.0, "avg_rating": 4.9, "total_reviews": 34},
+            {"email": "marcus.johnson@example.com", "name": "Marcus Johnson",
+             "skills": ["web_development", "mobile_development", "software_development"],
+             "bio": "Full-stack developer (React, Node.js, Python). 7 years building web apps and APIs. Fast turnaround, clean code.",
+             "hourly_rate": 90.0, "avg_rating": 4.8, "total_reviews": 52},
+            {"email": "elena.rodriguez@example.com", "name": "Elena Rodriguez",
+             "skills": ["writing", "copywriting", "translation", "seo"],
+             "bio": "Bilingual (English/Spanish) content writer and SEO specialist. Former marketing manager turned freelancer.",
+             "hourly_rate": 55.0, "avg_rating": 4.7, "total_reviews": 28},
+            {"email": "james.park@example.com", "name": "James Park",
+             "skills": ["accounting", "bookkeeping", "data_analysis"],
+             "bio": "CPA with 10 years in corporate finance. Available for bookkeeping, financial modeling, and tax prep.",
+             "hourly_rate": 85.0, "avg_rating": 5.0, "total_reviews": 17},
+            {"email": "aisha.patel@example.com", "name": "Aisha Patel",
+             "skills": ["digital_marketing", "social_media", "content_creation"],
+             "bio": "Digital marketing specialist with expertise in paid social, email campaigns, and brand strategy.",
+             "hourly_rate": 70.0, "avg_rating": 4.6, "total_reviews": 21},
+        ]
+        worker_ids = []
+        for w in workers_data:
+            cursor = db.execute("INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
+                [w['email'], hash_password('Worker1234!'), w['name']])
+            uid = cursor.lastrowid
+            worker_ids.append(uid)
+            payout_id = f"acct_sim_{secrets.token_hex(8)}"
+            db.execute(
+                """INSERT INTO worker_profiles (user_id, bio, skills, hourly_rate, payout_account_id,
+                   payout_method, avg_rating, total_reviews, is_verified)
+                   VALUES (?,?,?,?,?,'stripe_connect_active',?,?,1)""",
+                [uid, w['bio'], json.dumps(w['skills']), w['hourly_rate'], payout_id, w['avg_rating'], w['total_reviews']])
+
+        # Create Employers
+        employers_data = [
+            {"email": "hire@techstartup.io", "name": "Alex Rivera",
+             "company_name": "TechStartup.io", "description": "Early-stage SaaS startup building a B2B analytics platform."},
+            {"email": "ops@growthagency.com", "name": "Jordan Lee",
+             "company_name": "Growth Agency Co.", "description": "Full-service growth marketing agency serving e-commerce brands."},
+            {"email": "founder@bootstrapped.co", "name": "Taylor Kim",
+             "company_name": "Bootstrapped.co", "description": "Solo founder building multiple SaaS products."},
+        ]
+        employer_ids = []
+        for e in employers_data:
+            cursor = db.execute("INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
+                [e['email'], hash_password('Employer1234!'), e['name']])
+            uid = cursor.lastrowid
+            employer_ids.append(uid)
+            pm_id = f"pm_sim_{secrets.token_hex(8)}"
+            cus_id = f"cus_sim_{secrets.token_hex(8)}"
+            db.execute(
+                "INSERT INTO employer_profiles (user_id, company_name, description, payment_method_id, stripe_customer_id) VALUES (?,?,?,?,?)",
+                [uid, e['company_name'], e['description'], pm_id, cus_id])
+
+        # Create Services
+        services_data = [
+            {"w": 0, "cat": "graphic_design", "pt": "fixed", "title": "I will design a professional logo with brand guidelines",
+             "desc": "Get a unique, modern logo for your business with a full brand guidelines document. Includes 3 concepts, unlimited revisions until you're happy, all source files (AI, SVG, PNG).",
+             "price": 299.0, "hr": None, "days": 5, "inc": "3 logo concepts, brand guidelines PDF, all source files, commercial license",
+             "tags": ["logo", "branding", "graphic design", "identity"]},
+            {"w": 1, "cat": "web_development", "pt": "hourly", "title": "Full-stack web development (React + Node.js)",
+             "desc": "Expert full-stack development using React, TypeScript, Node.js, and PostgreSQL. Available for new projects, feature development, bug fixes, and code reviews.",
+             "price": None, "hr": 90.0, "days": None, "inc": "Clean, documented code, unit tests, code review, deployment support",
+             "tags": ["react", "nodejs", "typescript", "fullstack"]},
+            {"w": 2, "cat": "writing", "pt": "fixed", "title": "SEO blog post (1500-2000 words) with keyword research",
+             "desc": "Well-researched, engaging blog post optimized for your target keywords. Includes keyword research, outline, writing, basic on-page SEO recommendations, and 1 revision.",
+             "price": 150.0, "hr": None, "days": 3, "inc": "Keyword research report, 1500-2000 word post, meta description, 1 revision",
+             "tags": ["seo", "blog", "content writing", "copywriting"]},
+            {"w": 3, "cat": "accounting", "pt": "fixed", "title": "Monthly bookkeeping for small business (up to 200 transactions)",
+             "desc": "Complete monthly bookkeeping service: categorize transactions, reconcile accounts, generate P&L and balance sheet. Works with QuickBooks, Xero, or Wave.",
+             "price": 350.0, "hr": None, "days": 7, "inc": "Transaction categorization, bank reconciliation, monthly P&L, balance sheet",
+             "tags": ["bookkeeping", "accounting", "quickbooks", "small business"]},
+            {"w": 4, "cat": "digital_marketing", "pt": "fixed", "title": "Complete Facebook & Instagram ad campaign setup",
+             "desc": "Full paid social campaign setup including audience research, creative brief, ad copy, A/B test variants, pixel setup, and campaign launch.",
+             "price": 499.0, "hr": None, "days": 7, "inc": "Audience research, 3 ad variations, pixel setup, campaign launch, 2-week monitoring",
+             "tags": ["facebook ads", "instagram", "paid social", "digital marketing"]},
+            {"w": 0, "cat": "ui_ux_design", "pt": "fixed", "title": "UI/UX design for mobile app (up to 10 screens)",
+             "desc": "Professional mobile app design for iOS or Android. Includes user flow diagram, wireframes, and high-fidelity Figma designs for up to 10 screens.",
+             "price": 650.0, "hr": None, "days": 10, "inc": "User flow, wireframes, 10 Figma screens, component library, handoff file",
+             "tags": ["figma", "mobile design", "ui design", "ux design"]},
+            {"w": 2, "cat": "translation", "pt": "custom", "title": "English to Spanish translation (marketing & technical content)",
+             "desc": "Native-quality English-Spanish translation for marketing copy, technical docs, websites, and legal docs. Proofreading included. Pricing per word.",
+             "price": None, "hr": None, "days": 3, "inc": "Native Spanish translation, proofreading, glossary for technical terms",
+             "tags": ["spanish", "translation", "marketing translation", "localization"]},
+            {"w": 1, "cat": "mobile_development", "pt": "fixed", "title": "React Native app MVP (4-6 screens)",
+             "desc": "Build your mobile app MVP using React Native for cross-platform iOS and Android deployment. Includes navigation, API integration, and app store submission guidance.",
+             "price": 2500.0, "hr": None, "days": 21, "inc": "React Native codebase, 4-6 screens, API integration, testing, source code",
+             "tags": ["react native", "mobile app", "ios", "android", "mvp"]},
+        ]
+        service_ids = []
+        for s in services_data:
+            cursor = db.execute(
+                """INSERT INTO services (worker_id, title, description, category, pricing_type, price, hourly_rate,
+                   delivery_time_days, includes, tags, images, status, avg_rating, total_reviews)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,'[]','active',?,?)""",
+                [worker_ids[s['w']], s['title'], s['desc'], s['cat'], s['pt'], s['price'], s['hr'],
+                 s['days'], s['inc'], json.dumps(s['tags']),
+                 round(4.5 + secrets.randbelow(5) * 0.1, 1), secrets.randbelow(20) + 5])
+            service_ids.append(cursor.lastrowid)
+
+        # Create Jobs
+        jobs_data = [
+            {"e": 0, "cat": "web_development", "title": "React frontend developer needed for SaaS dashboard (3-month contract)",
+             "desc": "We're building a B2B analytics dashboard and need an experienced React developer. Tech stack: React 18, TypeScript, Tailwind CSS, Recharts.",
+             "loc": "remote", "bt": "hourly", "ba": 85.0, "eh": 480, "sk": ["web_development", "software_development"], "st": "open"},
+            {"e": 1, "cat": "content_creation", "title": "Content writer for e-commerce blog \u2014 8 articles/month",
+             "desc": "Seeking a content writer to produce 8 SEO-optimized blog articles per month for our e-commerce clients. Topics: fashion, home decor, fitness.",
+             "loc": "remote", "bt": "fixed", "ba": 1200.0, "eh": None, "sk": ["writing", "copywriting", "seo"], "st": "open"},
+            {"e": 2, "cat": "graphic_design", "title": "Brand designer for new SaaS product",
+             "desc": "Looking for a brand designer to create the visual identity for our new developer tool. Deliverables: logo, color palette, typography, brand guidelines.",
+             "loc": "remote", "bt": "fixed", "ba": 800.0, "eh": None, "sk": ["graphic_design", "ui_ux_design"], "st": "open"},
+            {"e": 0, "cat": "digital_marketing", "title": "Growth marketer to set up and run paid acquisition",
+             "desc": "Early-stage SaaS startup seeking a growth marketer to manage paid acquisition (Google Ads, LinkedIn Ads). Monthly budget: $5K. Must have B2B SaaS experience.",
+             "loc": "remote", "bt": "hourly", "ba": 75.0, "eh": 40, "sk": ["digital_marketing", "seo"], "st": "open"},
+            {"e": 1, "cat": "data_analysis", "title": "Data analyst to build performance dashboard in Looker Studio",
+             "desc": "Connect Google Ads, GA4, and Shopify data to Looker Studio and build a client-facing performance dashboard.",
+             "loc": "remote", "bt": "fixed", "ba": 1500.0, "eh": None, "sk": ["data_analysis", "data_entry"], "st": "open"},
+            {"e": 2, "cat": "mobile_development", "title": "iOS developer for fintech app feature (Plaid integration)",
+             "desc": "Implement Plaid bank connection flow in our existing Swift/SwiftUI fintech app. Must have experience with iOS development and Plaid SDK.",
+             "loc": "remote", "bt": "fixed", "ba": 3500.0, "eh": None, "sk": ["mobile_development", "software_development"], "st": "open"},
+        ]
+        job_ids = []
+        for j in jobs_data:
+            cursor = db.execute(
+                """INSERT INTO jobs (employer_id, title, description, category, location_type, budget_type,
+                   budget_amount, estimated_hours, required_skills, status)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                [employer_ids[j['e']], j['title'], j['desc'], j['cat'], j['loc'], j['bt'],
+                 j['ba'], j.get('eh'), json.dumps(j['sk']), j['st']])
+            job_ids.append(cursor.lastrowid)
+
+        # Sample Applications
+        db.execute("INSERT INTO applications (job_id, worker_id, cover_message, portfolio_url, status) VALUES (?,?,?,?,'pending')",
+            [job_ids[0], worker_ids[1], "Full-stack developer with 7 years React experience. Built several SaaS dashboards.", "https://github.com/marcusjohnson"])
+        db.execute("INSERT INTO applications (job_id, worker_id, cover_message, portfolio_url, status) VALUES (?,?,?,?,'pending')",
+            [job_ids[1], worker_ids[2], "Experienced content writer with strong SEO knowledge. Hundreds of e-commerce articles delivered on time.", "https://elenawritescopy.com"])
+
+        # Completed Order + Reviews
+        oc = db.execute(
+            """INSERT INTO orders (type, service_id, worker_id, employer_id, status, total_amount,
+               completed_at, created_at, updated_at)
+               VALUES ('service_order',?,?,?,'completed',299.0,datetime('now','-5 days'),datetime('now','-12 days'),datetime('now','-5 days'))""",
+            [service_ids[0], worker_ids[0], employer_ids[0]])
+        oid = oc.lastrowid
+        db.execute("INSERT INTO milestones (order_id, title, amount, sequence, status, funded_at, released_at) VALUES (?,?,299.0,1,'approved',datetime('now','-12 days'),datetime('now','-5 days'))",
+            [oid, "Logo design delivery"])
+        fpi = f"pi_sim_{secrets.token_hex(12)}"
+        db.execute("INSERT INTO escrow_holds (order_id, amount, status, stripe_payment_intent_id, created_at, released_at) VALUES (?,299.0,'released',?,datetime('now','-12 days'),datetime('now','-5 days'))",
+            [oid, fpi])
+        db.execute("INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,2.99,'service_fee')", [oid])
+        db.execute("INSERT INTO reviews (order_id, from_user_id, to_user_id, rating, text, is_visible) VALUES (?,?,?,5,'Sarah delivered an outstanding logo. Fast, professional, highly recommended.',1)",
+            [oid, employer_ids[0], worker_ids[0]])
+        db.execute("INSERT INTO reviews (order_id, from_user_id, to_user_id, rating, text, is_visible) VALUES (?,?,?,5,'Great client. Clear brief, responsive feedback, paid on time.',1)",
+            [oid, worker_ids[0], employer_ids[0]])
+
+        db.commit()
+        print("Auto-seed complete: 5 workers, 3 employers, 8 services, 6 jobs", file=sys.stderr)
+    except Exception as ex:
+        print(f"Auto-seed error: {ex}", file=sys.stderr)
+    finally:
+        db.close()
 
 
 # ─── Rate Limiter ──────────────────────────────────────────────────────────────
@@ -625,6 +805,7 @@ def handle_request():
         del get_body_raw._raw_cache
 
     init_db()
+    auto_seed_if_empty()
 
     if not check_rate_limit():
         print("Status: 429")
