@@ -246,7 +246,18 @@ async function api(path, opts = {}) {
   }
   let data;
   try { data = await res.json(); } catch { throw new Error(`Server error (${res.status})`); }
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // Auto-clear stale session on 401 and redirect to login
+    if (res.status === 401 && state.token) {
+      state.user = null;
+      state.token = null;
+      try { localStorage.removeItem('ghh_token'); localStorage.removeItem('ghh_user'); } catch(e) {}
+      toast('Session expired — please log in again.', 'error');
+      navigate('#/login');
+      throw new Error('Session expired');
+    }
+    throw new Error(data?.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 
