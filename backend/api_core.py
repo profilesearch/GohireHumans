@@ -19,6 +19,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
 
+# Thread-local storage for per-request context (avoids os.environ race conditions)
+_request_ctx = threading.local()
+
 try:
     import stripe
     STRIPE_AVAILABLE = True
@@ -501,7 +504,7 @@ _rate_limit_lock = threading.Lock()
 
 
 def check_rate_limit() -> bool:
-    ip = os.environ.get("REMOTE_ADDR", "unknown")
+    ip = getattr(_request_ctx, 'remote_addr', 'unknown')
     now = time.time()
     window = 60
     limit = 120
@@ -618,41 +621,41 @@ def error_response(message, status=400):
 
 
 def get_body():
-    if not hasattr(get_body, '_cache'):
+    if not hasattr(_request_ctx, 'body_cache'):
         try:
-            length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
+            length = int(getattr(_request_ctx, 'content_length', 0) or 0)
             if length > 0:
-                if hasattr(get_body_raw, '_raw_cache'):
-                    raw = get_body_raw._raw_cache
+                if hasattr(_request_ctx, 'raw_body'):
+                    raw = _request_ctx.raw_body
                 else:
-                    raw = sys.stdin.read(length)
-                    get_body_raw._raw_cache = raw
+                    raw = getattr(_request_ctx, 'stdin_data', '')
+                    _request_ctx.raw_body = raw
                 parsed = json.loads(raw)
                 if not isinstance(parsed, dict):
-                    get_body._cache = None
+                    _request_ctx.body_cache = None
                 else:
-                    get_body._cache = parsed
+                    _request_ctx.body_cache = parsed
             else:
-                get_body._cache = {}
+                _request_ctx.body_cache = {}
         except json.JSONDecodeError:
-            get_body._cache = None
+            _request_ctx.body_cache = None
         except (ValueError, OSError):
-            get_body._cache = None
-    return get_body._cache
+            _request_ctx.body_cache = None
+    return _request_ctx.body_cache
 
 
 def get_body_raw():
-    if not hasattr(get_body_raw, '_raw_cache'):
-        content_length = int(os.environ.get("CONTENT_LENGTH", 0) or 0)
+    if not hasattr(_request_ctx, 'raw_body'):
+        content_length = int(getattr(_request_ctx, 'content_length', 0) or 0)
         if content_length > 0:
-            get_body_raw._raw_cache = sys.stdin.read(content_length)
+            _request_ctx.raw_body = getattr(_request_ctx, 'stdin_data', '')
         else:
-            get_body_raw._raw_cache = sys.stdin.read()
-    return get_body_raw._raw_cache
+            _request_ctx.raw_body = getattr(_request_ctx, 'stdin_data', '')
+    return _request_ctx.raw_body
 
 
 def get_query_params():
-    qs = os.environ.get("QUERY_STRING", "")
+    qs = getattr(_request_ctx, 'query_string', '')
     return dict(urllib.parse.parse_qsl(qs))
 
 
@@ -664,12 +667,12 @@ def row_to_dict(row):
 
 def authenticate_session(db):
     token = None
-    auth_header = os.environ.get("HTTP_AUTHORIZATION", "")
+    auth_header = getattr(_request_ctx, 'http_authorization', '')
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
 
     if not token:
-        qs = os.environ.get("QUERY_STRING", "")
+        qs = getattr(_request_ctx, 'query_string', '')
         params = dict(urllib.parse.parse_qsl(qs))
         token = params.get("token") or params.get("auth")
 
@@ -829,11 +832,19 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
 # ─── Route Handler ─────────────────────────────────────────────────────────────
 
 def handle_request():
-    # Clear per-request caches
-    if hasattr(get_body, '_cache'):
-        del get_body._cache
-    if hasattr(get_body_raw, '_raw_cache'):
-        del get_body_raw._raw_cache
+    # If server.py already set thread-local context, skip os.environ fallback.
+    # Only populate from os.environ for direct CGI mode (not used in production).
+    if not hasattr(_request_ctx, 'request_method'):
+        _request_ctx.request_method = os.environ.get("REQUEST_METHOD", "GET")
+        _request_ctx.path_info = os.environ.get("PATH_INFO", "")
+        _request_ctx.query_string = os.environ.get("QUERY_STRING", "")
+        _request_ctx.content_type = os.environ.get("CONTENT_TYPE", "")
+        _request_ctx.content_length = os.environ.get("CONTENT_LENGTH", "0")
+        _request_ctx.remote_addr = os.environ.get("REMOTE_ADDR", "127.0.0.1")
+        _request_ctx.http_authorization = os.environ.get("HTTP_AUTHORIZATION", "")
+        _request_ctx.http_x_api_key = os.environ.get("HTTP_X_API_KEY", "")
+        _request_ctx.http_stripe_signature = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
+        _request_ctx.stdin_data = sys.stdin.read() if sys.stdin else ""
 
     init_db()
     auto_seed_if_empty()
@@ -853,8 +864,8 @@ def handle_request():
 
 
 def _handle_routes(db):
-    method = os.environ.get("REQUEST_METHOD", "GET")
-    path = os.environ.get("PATH_INFO", "").rstrip("/")
+    method = getattr(_request_ctx, 'request_method', 'GET')
+    path = getattr(_request_ctx, 'path_info', '').rstrip("/")
     params = get_query_params()
 
     # Strip /api/v1 prefix so Stripe webhook URL and other prefixed paths work
@@ -943,7 +954,7 @@ def _handle_routes(db):
         return json_response(user_data)
 
     elif path == "/auth/logout" and method == "POST":
-        auth_header = os.environ.get("HTTP_AUTHORIZATION", "")
+        auth_header = getattr(_request_ctx, 'http_authorization', '')
         token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
         if not token:
             token = params.get("token")
@@ -2688,7 +2699,7 @@ def _handle_routes(db):
 
     elif path == "/webhooks/stripe" and method == "POST":
         body_raw = get_body_raw()
-        sig_header = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
+        sig_header = getattr(_request_ctx, 'http_stripe_signature', '')
 
         if not stripe_configured():
             return json_response({"received": True, "mode": "simulated"})

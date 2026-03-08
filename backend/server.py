@@ -8,16 +8,41 @@ import os
 import sys
 import json
 import io
+import threading
 import importlib.util
 from flask import Flask, request, Response
 from flask_cors import CORS
+
+# ─── Thread-safe stdout capture ───────────────────────────────────────────────
+# Each request thread gets its own StringIO buffer. Print statements from
+# api_core.py (CGI pattern) are routed to the calling thread's buffer.
+_tls = threading.local()
+_real_stdout = sys.stdout
+
+
+class _ThreadLocalStdout:
+    """Routes write() to the current thread's capture buffer, or real stdout."""
+    def write(self, s):
+        buf = getattr(_tls, 'captured', None)
+        if buf is not None:
+            buf.write(s)
+        else:
+            _real_stdout.write(s)
+
+    def flush(self):
+        _real_stdout.flush()
+
+
+# Install once at module load — never reassign sys.stdout again
+sys.stdout = _ThreadLocalStdout()
+
+# ─── Flask App ────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 # ─── Import the CGI API module ────────────────────────────────────────────────
-# We load api.py as a module so we can call its functions directly
 spec = importlib.util.spec_from_file_location("api_module", os.path.join(os.path.dirname(__file__), "api_core.py"))
 api_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api_module)
@@ -31,8 +56,6 @@ def health():
 @app.route("/api/v1/<path:subpath>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 def api_v1_proxy(subpath):
     """Strip /api/v1 prefix and forward to the main handler (fixes Stripe webhook URL mismatch)."""
-    from flask import redirect, url_for
-    # Rewrite the path by stripping the /api/v1 prefix
     return proxy(subpath)
 
 
@@ -40,56 +63,49 @@ def api_v1_proxy(subpath):
 @app.route("/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 def proxy(path):
     """
-    Proxy all requests to the CGI handler by simulating the CGI environment.
+    Proxy all requests to the CGI handler using thread-local context.
+    Fully thread-safe: no shared os.environ or sys.stdout mutations.
     """
     path_info = f"/{path}" if path else ""
-
-    # Build query string
     query_string = request.query_string.decode("utf-8")
-
-    # Get request body
     body = request.get_data(as_text=True) if request.method in ("POST", "PUT", "PATCH") else ""
 
-    # Set CGI environment variables
-    os.environ["REQUEST_METHOD"] = request.method
-    os.environ["PATH_INFO"] = path_info
-    os.environ["QUERY_STRING"] = query_string
-    os.environ["CONTENT_TYPE"] = request.content_type or ""
-    os.environ["CONTENT_LENGTH"] = str(len(body.encode("utf-8"))) if body else "0"
-    os.environ["REMOTE_ADDR"] = request.remote_addr or "127.0.0.1"
-    # HIGH-06/07: forward Authorization and X-API-Key headers for header-based auth
-    os.environ["HTTP_AUTHORIZATION"] = request.headers.get("Authorization", "")
-    os.environ["HTTP_X_API_KEY"] = request.headers.get("X-API-Key", "")
-    os.environ["HTTP_STRIPE_SIGNATURE"] = request.headers.get("Stripe-Signature", "")
+    # ── Set thread-local request context (read by api_core.py) ──
+    ctx = api_module._request_ctx
+    ctx.request_method = request.method
+    ctx.path_info = path_info
+    ctx.query_string = query_string
+    ctx.content_type = request.content_type or ""
+    ctx.content_length = str(len(body.encode("utf-8"))) if body else "0"
+    ctx.remote_addr = request.remote_addr or "127.0.0.1"
+    ctx.http_authorization = request.headers.get("Authorization", "")
+    ctx.http_x_api_key = request.headers.get("X-API-Key", "")
+    ctx.http_stripe_signature = request.headers.get("Stripe-Signature", "")
+    ctx.stdin_data = body
 
-    # Redirect stdin to provide the body
-    old_stdin = sys.stdin
-    sys.stdin = io.StringIO(body)
+    # Clear per-request caches
+    for attr in ('body_cache', 'raw_body'):
+        if hasattr(ctx, attr):
+            delattr(ctx, attr)
 
-    # Capture stdout
-    old_stdout = sys.stdout
-    sys.stdout = captured = io.StringIO()
+    # ── Capture CGI stdout output for this thread ──
+    _tls.captured = io.StringIO()
 
     try:
         api_module.handle_request()
-    except Exception as e:
-        sys.stdout = old_stdout
-        sys.stdin = old_stdin
-        # LOW-04: return 500 (not 422) for unhandled exceptions; do not leak exception message to client
+    except Exception:
         import traceback
-        print(f"ERROR in handle_request: {traceback.format_exc()}", file=sys.stderr)
+        print(f"ERROR in handle_request: {traceback.format_exc()}", file=_real_stdout)
         return Response(
             json.dumps({"error": "Internal server error"}),
             status=500,
             content_type="application/json"
         )
+    finally:
+        output = _tls.captured.getvalue()
+        _tls.captured = None  # Stop capturing for this thread
 
-    sys.stdout = old_stdout
-    sys.stdin = old_stdin
-
-    output = captured.getvalue()
-
-    # Parse CGI output (headers + body)
+    # ── Parse CGI output (headers + body) ──
     status_code = 200
     content_type = "application/json"
     response_body = output
@@ -107,7 +123,6 @@ def proxy(path):
     elif output.strip().startswith("{") or output.strip().startswith("["):
         response_body = output.strip()
     else:
-        # Try to find headers without double newline (single \n separation)
         lines = output.split("\n")
         body_start = 0
         for i, line in enumerate(lines):
