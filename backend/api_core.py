@@ -38,34 +38,43 @@ SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 _VOLUME_DIR = "/data"
 _VOLUME_ATTACHED = bool(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ""))
 
-def _resolve_db_path():
-    """Pick the best database path, testing write access."""
+# DB_PATH is resolved lazily on first request to ensure volume is mounted
+_db_path_resolved = None
+
+def _get_db_path():
+    global _db_path_resolved
+    if _db_path_resolved is not None:
+        return _db_path_resolved
+
     explicit = os.environ.get("DATABASE_PATH", "")
     if explicit:
-        print(f"[GoHireHumans] Using explicit DATABASE_PATH: {explicit}", file=sys.stderr)
-        return explicit
-    # Try /data first (persistent volume)
-    if os.path.isdir(_VOLUME_DIR):
-        test_path = os.path.join(_VOLUME_DIR, ".write_test")
-        try:
-            with open(test_path, "w") as f:
-                f.write("ok")
-            os.remove(test_path)
-            db_path = os.path.join(_VOLUME_DIR, "gohirehumans.db")
-            # Also test that SQLite can actually open a file here
-            test_db = sqlite3.connect(db_path)
-            test_db.execute("CREATE TABLE IF NOT EXISTS _ping (id INTEGER)")
-            test_db.close()
-            print(f"[GoHireHumans] Using persistent volume: {db_path}", file=sys.stderr)
-            return db_path
-        except Exception as e:
-            print(f"[GoHireHumans] WARNING: /data not usable: {e}", file=sys.stderr)
-    # Fallback to working directory
-    fallback = os.path.join(os.getcwd(), "gohirehumans.db")
-    print(f"[GoHireHumans] Falling back to ephemeral: {fallback}", file=sys.stderr)
-    return fallback
+        _db_path_resolved = explicit
+        print(f"[GoHireHumans] DB path (explicit): {explicit}", file=sys.stderr)
+        return _db_path_resolved
 
-DB_PATH = _resolve_db_path()
+    # Try /data first (persistent volume)
+    candidates = [
+        os.path.join(_VOLUME_DIR, "gohirehumans.db"),
+        os.path.join(os.getcwd(), "gohirehumans.db"),
+    ]
+    for candidate in candidates:
+        parent = os.path.dirname(candidate) or "."
+        try:
+            os.makedirs(parent, exist_ok=True)
+            test_db = sqlite3.connect(candidate)
+            test_db.execute("CREATE TABLE IF NOT EXISTS _ping (id INTEGER)")
+            test_db.commit()
+            test_db.close()
+            _db_path_resolved = candidate
+            print(f"[GoHireHumans] DB path: {candidate}", file=sys.stderr)
+            return _db_path_resolved
+        except Exception as e:
+            print(f"[GoHireHumans] Cannot use {candidate}: {e}", file=sys.stderr)
+
+    # Last resort: in-memory (won't persist but at least won't crash)
+    _db_path_resolved = ":memory:"
+    print(f"[GoHireHumans] CRITICAL: Using in-memory DB (no persistence!)", file=sys.stderr)
+    return _db_path_resolved
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
@@ -84,7 +93,7 @@ if stripe_configured():
 # ─── Database ─────────────────────────────────────────────────────────────────
 
 def get_db():
-    db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(_get_db_path())
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
@@ -864,8 +873,9 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
 # ─── Route Handler ─────────────────────────────────────────────────────────────
 
 # Log DB location on first import (visible in Railway deploy logs)
-print(f"[GoHireHumans] Database path: {DB_PATH}", file=sys.stderr)
-print(f"[GoHireHumans] Persistent volume: {'YES (Railway volume attached)' if _VOLUME_ATTACHED else 'NOT DETECTED — data may be lost on redeploy!'}", file=sys.stderr)
+print(f"[GoHireHumans] Volume dir /data exists: {os.path.isdir(_VOLUME_DIR)}", file=sys.stderr)
+print(f"[GoHireHumans] RAILWAY_VOLUME_MOUNT_PATH: {os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '(not set)')}", file=sys.stderr)
+print(f"[GoHireHumans] DB path will be resolved lazily on first request", file=sys.stderr)
 
 
 def handle_request():
