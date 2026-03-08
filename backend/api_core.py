@@ -35,15 +35,28 @@ SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 
 # Railway volume mount: store DB in /data (the volume mount point).
 # The Dockerfile creates /data, and Railway mounts a persistent volume there.
-# The env var RAILWAY_VOLUME_MOUNT_PATH is set when a volume IS attached;
-# we use it to log whether data will persist, but always write to /data.
 _VOLUME_DIR = "/data"
 _VOLUME_ATTACHED = bool(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ""))
-if os.path.isdir(_VOLUME_DIR):
-    _DEFAULT_DB = os.path.join(_VOLUME_DIR, "gohirehumans.db")
-else:
-    _DEFAULT_DB = "gohirehumans.db"
-DB_PATH = os.environ.get("DATABASE_PATH", _DEFAULT_DB)
+
+def _resolve_db_path():
+    """Pick the best database path, testing write access."""
+    explicit = os.environ.get("DATABASE_PATH", "")
+    if explicit:
+        return explicit
+    # Try /data first (persistent volume)
+    if os.path.isdir(_VOLUME_DIR):
+        test_path = os.path.join(_VOLUME_DIR, ".write_test")
+        try:
+            with open(test_path, "w") as f:
+                f.write("ok")
+            os.remove(test_path)
+            return os.path.join(_VOLUME_DIR, "gohirehumans.db")
+        except (OSError, IOError) as e:
+            print(f"[GoHireHumans] WARNING: /data exists but is NOT writable: {e}", file=sys.stderr)
+            print(f"[GoHireHumans] Falling back to local directory (ephemeral!)", file=sys.stderr)
+    return "gohirehumans.db"
+
+DB_PATH = _resolve_db_path()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()

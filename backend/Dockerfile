@@ -9,14 +9,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create persistent data directory for Railway volume mount.
-# Railway mounts a volume to /data — if no volume is attached, this dir
-# still exists but data is ephemeral (lost on redeploy).
-RUN mkdir -p /data && chmod 777 /data
+# Create /data fallback (Railway volume replaces this at runtime)
+RUN mkdir -p /data
+
+# Make start script executable
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Expose port (Railway sets PORT env var)
 EXPOSE 8080
 
-# Single worker: intentional for SQLite (single-writer constraint).
-# Increase --workers when migrating to PostgreSQL.
-CMD gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 120 server:app
+# Start script fixes volume permissions at runtime, then launches gunicorn
+CMD ["/app/start.sh"]
