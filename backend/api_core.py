@@ -1161,10 +1161,8 @@ def _handle_routes(db):
         if not safe:
             return error_response(f"Service rejected: {msg}", 422)
 
-        # Must have worker profile with payout setup
+        # Ensure worker profile exists (payout can be set up later)
         ensure_worker_profile(db, user['id'])
-        if not worker_has_payout_setup(db, user['id']):
-            return error_response("You must set up a payout method before posting services. Use /payments/setup-worker.", 402)
 
         pricing_type = body.get("pricing_type", "fixed")
         if pricing_type not in ('fixed', 'hourly', 'custom'):
