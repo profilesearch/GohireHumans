@@ -105,6 +105,14 @@ def proxy(path):
         output = _tls.captured.getvalue()
         _tls.captured = None  # Stop capturing for this thread
 
+    # ── Guard: empty output means handler produced nothing ──
+    if not output or not output.strip():
+        return Response(
+            json.dumps({"error": "Empty response from server"}),
+            status=500,
+            content_type="application/json"
+        )
+
     # ── Parse CGI output (headers + body) ──
     status_code = 200
     content_type = "application/json"
@@ -141,6 +149,23 @@ def proxy(path):
             else:
                 break
         response_body = "\n".join(lines[body_start:])
+
+    # ── Guard: ensure response body is valid JSON when content type is JSON ──
+    if "json" in content_type and response_body.strip():
+        try:
+            json.loads(response_body)
+        except (json.JSONDecodeError, ValueError):
+            return Response(
+                json.dumps({"error": "Server produced invalid response"}),
+                status=500,
+                content_type="application/json"
+            )
+    elif "json" in content_type and not response_body.strip():
+        return Response(
+            json.dumps({"error": "Empty response from server"}),
+            status=500,
+            content_type="application/json"
+        )
 
     return Response(response_body, status=status_code, content_type=content_type)
 

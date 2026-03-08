@@ -33,7 +33,17 @@ except ImportError:
 
 SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 
-DB_PATH = os.environ.get("DATABASE_PATH", "gohirehumans.db")
+# Railway volume mount: store DB in /data (the volume mount point).
+# The Dockerfile creates /data, and Railway mounts a persistent volume there.
+# The env var RAILWAY_VOLUME_MOUNT_PATH is set when a volume IS attached;
+# we use it to log whether data will persist, but always write to /data.
+_VOLUME_DIR = "/data"
+_VOLUME_ATTACHED = bool(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ""))
+if os.path.isdir(_VOLUME_DIR):
+    _DEFAULT_DB = os.path.join(_VOLUME_DIR, "gohirehumans.db")
+else:
+    _DEFAULT_DB = "gohirehumans.db"
+DB_PATH = os.environ.get("DATABASE_PATH", _DEFAULT_DB)
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
@@ -831,6 +841,11 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
 
 # ─── Route Handler ─────────────────────────────────────────────────────────────
 
+# Log DB location on first import (visible in Railway deploy logs)
+print(f"[GoHireHumans] Database path: {DB_PATH}", file=sys.stderr)
+print(f"[GoHireHumans] Persistent volume: {'YES (Railway volume attached)' if _VOLUME_ATTACHED else 'NOT DETECTED — data may be lost on redeploy!'}", file=sys.stderr)
+
+
 def handle_request():
     # If server.py already set thread-local context, skip os.environ fallback.
     # Only populate from os.environ for direct CGI mode (not used in production).
@@ -846,7 +861,12 @@ def handle_request():
         _request_ctx.http_stripe_signature = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
         _request_ctx.stdin_data = sys.stdin.read() if sys.stdin else ""
 
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[GoHireHumans] Database init failed: {e}", file=sys.stderr)
+        return error_response("Database initialization failed", 500)
+
     auto_seed_if_empty()
 
     if not check_rate_limit():
@@ -859,6 +879,11 @@ def handle_request():
     db = get_db()
     try:
         _handle_routes(db)
+    except Exception as e:
+        print(f"[GoHireHumans] Unhandled error in route: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        error_response("Internal server error", 500)
     finally:
         db.close()
 

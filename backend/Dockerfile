@@ -9,8 +9,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
+# Create persistent data directory for Railway volume mount.
+# Railway mounts a volume to /data — if no volume is attached, this dir
+# still exists but data is ephemeral (lost on redeploy).
+RUN mkdir -p /data && chmod 777 /data
 
 # Expose port (Railway sets PORT env var)
 EXPOSE 8080
