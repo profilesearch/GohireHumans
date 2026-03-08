@@ -865,7 +865,9 @@ def handle_request():
         init_db()
     except Exception as e:
         print(f"[GoHireHumans] Database init failed: {e}", file=sys.stderr)
-        return error_response("Database initialization failed", 500)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return error_response(f"Database initialization failed: {e}", 500)
 
     auto_seed_if_empty()
 
