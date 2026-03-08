@@ -93,9 +93,15 @@ if stripe_configured():
 # ─── Database ─────────────────────────────────────────────────────────────────
 
 def get_db():
-    db = sqlite3.connect(_get_db_path())
+    path = _get_db_path()
+    db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
+    # Use DELETE journal mode for compatibility with network/volume filesystems
+    # WAL mode requires shared memory which may not work on all volume mounts
+    try:
+        db.execute("PRAGMA journal_mode=WAL")
+    except Exception:
+        db.execute("PRAGMA journal_mode=DELETE")
     db.execute("PRAGMA foreign_keys=ON")
     return db
 
@@ -896,10 +902,23 @@ def handle_request():
     try:
         init_db()
     except Exception as e:
-        print(f"[GoHireHumans] Database init failed: {e}", file=sys.stderr)
         import traceback
+        # Extensive diagnostics for database issues
+        diag = [
+            f"Error: {e}",
+            f"DB path resolved: {_db_path_resolved}",
+            f"/data exists: {os.path.isdir('/data')}",
+            f"/data writable: {os.access('/data', os.W_OK) if os.path.isdir('/data') else 'N/A'}",
+            f"CWD: {os.getcwd()}",
+            f"CWD writable: {os.access(os.getcwd(), os.W_OK)}",
+            f"UID: {os.getuid()}",
+            f"RAILWAY_VOLUME_MOUNT_PATH: {os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', 'not set')}",
+            f"RAILWAY_RUN_UID: {os.environ.get('RAILWAY_RUN_UID', 'not set')}",
+        ]
+        diag_str = " | ".join(diag)
+        print(f"[GoHireHumans] DB INIT FAILED: {diag_str}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return error_response(f"Database initialization failed: {e}", 500)
+        return error_response(f"Database initialization failed: {e} [{diag_str}]", 500)
 
     auto_seed_if_empty()
 
