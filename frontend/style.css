@@ -570,24 +570,7 @@
   max-width: 600px; margin: 0 auto var(--space-10);
   line-height: 1.7; font-weight: 400;
 }
-.lp-mode-toggle {
-  display: flex; gap: var(--space-3);
-  justify-content: center; flex-wrap: wrap;
-  margin-bottom: var(--space-6);
-}
-.lp-mode-btn {
-  background: var(--color-surface-2); color: var(--color-text);
-  border: 1px solid var(--color-border);
-  padding: 0.875rem 2rem;
-  border-radius: var(--radius-md);
-  font-size: var(--text-base); font-weight: 500;
-  cursor: pointer; text-decoration: none;
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  transition: all var(--transition-base);
-  white-space: nowrap;
-}
-.lp-mode-btn.active { background: var(--color-primary); color: var(--color-primary-text); border-color: var(--color-primary); }
-.lp-mode-btn:hover { background: var(--color-surface-offset); border-color: var(--color-text-muted); }
+
 .lp-hero-eyebrow svg { width: 20px; height: 20px; flex-shrink: 0; }
 
 /* Feed Section */ .lp-feed { text-align: center; padding: var(--space-10) var(--space-4); } .lp-feed-search { display: flex; justify-content: center; margin-bottom: var(--space-6); } .lp-feed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4); max-width: var(--content-wide); margin: 0 auto; text-align: left; } .lp-feed-card { background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); } .lp-feed-title { font-size: var(--text-base); font-weight: 600; color: var(--color-text); } .lp-feed-meta { font-size: var(--text-xs); color: var(--color-text-faint); display: flex; align-items: center; gap: var(--space-2); } .lp-feed-meta svg { width: 14px; height: 14px; flex-shrink: 0; } .lp-feed-desc { font-size: var(--text-sm); color: var(--color-text-muted); line-height: 1.5; flex: 1; }  /* Trust Bar */
@@ -942,7 +925,6 @@
 @media (max-width: 480px) {
   .lp-safety-grid { grid-template-columns: 1fr; }
   .lp-categories-grid { grid-template-columns: 1fr 1fr; }
-  .lp-mode-toggle { flex-direction: column; align-items: center; }
 }
 @media (max-width: 360px) {
   .lp-categories-grid { grid-template-columns: 1fr; }

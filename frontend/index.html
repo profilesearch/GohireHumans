@@ -221,7 +221,6 @@ let state = {
   user: storedUser,
   token: storedToken,
   sidebarOpen: false,
-  landingMode: 'hire',
   // Cache for public browsing
   categories: null,
 };
@@ -553,9 +552,6 @@ function skeletonCards(count = 6) {
 // LANDING PAGE
 // ═══════════════════════════════════════════════════════════════
 async function renderLanding() {
-  const mode = state.landingMode;
-  const isHire = mode === 'hire';
-
   // Fetch live data from API
   let liveServices = [], liveJobs = [];
   try {
@@ -600,8 +596,7 @@ async function renderLanding() {
   const sampleServices = liveServices.length > 0 ? liveServices : fallbackServices;
   const sampleJobs = liveJobs.length > 0 ? liveJobs : fallbackJobs;
 
-  const previewCards = isHire
-    ? sampleServices.map(s => `
+  const previewCards = sampleServices.map(s => `
         <div class="lp-feed-card" onclick="navigate('#/services')">
           <div class="lp-feed-card-cat">${esc(s.category)}</div>
           <div class="lp-feed-title">${esc(s.title)}</div>
@@ -613,19 +608,6 @@ async function renderLanding() {
             <div class="lp-card-stars">${stars(s.rating)} <span style="color:var(--color-text-faint);font-size:11px">(${s.reviews})</span></div>
             <strong style="color:var(--color-text);font-size:var(--text-base)">${esc(s.price)}</strong>
           </div>
-        </div>`).join('')
-    : sampleJobs.map(j => `
-        <div class="lp-feed-card" onclick="navigate('#/jobs')">
-          <div class="lp-feed-card-cat">${esc(j.category)}</div>
-          <div class="lp-feed-title">${esc(j.title)}</div>
-          <div class="lp-feed-meta">
-            <span>${I.location} ${esc(j.location)}</span>
-            <span>Posted ${esc(j.posted)}</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:var(--space-3)">
-            <span style="font-size:var(--text-xs);color:var(--color-text-muted)">${esc(j.employer)}</span>
-            <strong style="color:var(--color-text);font-size:var(--text-base)">${esc(j.budget)}</strong>
-          </div>
         </div>`).join('');
 
   document.getElementById('app').innerHTML = `
@@ -633,20 +615,11 @@ async function renderLanding() {
       ${renderPublicNav()}
       <section class="lp-hero">
         <div class="lp-hero-eyebrow">${I.shield} Secure Escrow &bull; Verified Users &bull; Human + AI</div>
-        <h1>${isHire ? 'Find the right person<br><span class="accent">for every task.</span>' : 'Turn your skills<br><span class="accent">into income.</span>'}</h1>
-        <p>${isHire
-          ? 'Browse services, post a job, or let AI agents hire verified humans. Pay securely through escrow — funds only release when you approve.'
-          : 'Post your services or apply to jobs from humans and AI employers alike. Get paid weekly for hourly work or on milestone approval for fixed projects.'}</p>
-        <div class="lp-mode-toggle">
-          <button class="lp-mode-btn ${!isHire?'active':''}" onclick="state.landingMode='work';renderLanding()">${I.zap} I want to work</button>
-          <button class="lp-mode-btn ${isHire?'active':''}" onclick="state.landingMode='hire';renderLanding()">${I.users} I want to hire</button>
-        </div>
+        <h1>Find the right person<br><span class="accent">for every task.</span></h1>
+        <p>Browse services, post a job, or let AI agents hire verified humans. Pay securely through escrow — funds only release when you approve.</p>
         <div class="lp-hero-ctas">
-          ${isHire
-            ? `<button class="btn btn-primary btn-lg" onclick="navigate('#/services')">Browse Services</button>
-               <button class="btn btn-secondary btn-lg" onclick="navigate('#/jobs')">Post a Job</button>`
-            : `<button class="btn btn-primary btn-lg" onclick="navigate('#/jobs')">Browse Jobs</button>
-               <button class="btn btn-secondary btn-lg" onclick="navigate('#/register')">Post a Service</button>`}
+          <button class="btn btn-primary btn-lg" onclick="navigate('#/services')">Browse Services</button>
+          <button class="btn btn-secondary btn-lg" onclick="navigate('#/jobs')">Find Work</button>
         </div>
       </section>
 
@@ -662,13 +635,13 @@ async function renderLanding() {
       <section style="padding:clamp(3rem,6vw,5rem) var(--space-6)">
         <div style="max-width:var(--content-wide);margin:0 auto">
           <div style="text-align:center;margin-bottom:var(--space-10)">
-            <div class="lp-section-label">${isHire ? 'Top Services' : 'Latest Jobs'}</div>
-            <h2 class="lp-section-head">${isHire ? 'Ready-to-order services' : 'Jobs hiring now'}</h2>
+            <div class="lp-section-label">Top Services</div>
+            <h2 class="lp-section-head">Ready-to-order services</h2>
           </div>
           <div class="lp-feed-grid">${previewCards}</div>
           <div style="text-align:center;margin-top:var(--space-8)">
-            <button class="btn btn-primary btn-lg" onclick="navigate('${isHire ? '#/services' : '#/jobs'}')">
-              View all ${isHire ? 'services' : 'jobs'} →
+            <button class="btn btn-primary btn-lg" onclick="navigate('#/services')">
+              View all services →
             </button>
           </div>
         </div>
@@ -677,17 +650,13 @@ async function renderLanding() {
       <section class="lp-how">
         <div class="lp-how-inner">
           <div class="lp-section-label">How It Works</div>
-          <h2 class="lp-section-head">${isHire ? 'Get work done in three steps' : 'Start earning in three steps'}</h2>
-          <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-10)">${isHire ? 'Browse, hire, and pay securely — funds only release when you\'re satisfied.' : 'Post services, apply to jobs, and get paid through our secure escrow system.'}</p>
+          <h2 class="lp-section-head">Get work done in three steps</h2>
+          <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-10)">Browse, hire, and pay securely — funds only release when you're satisfied.</p>
           <div class="lp-how-cols">
             <div class="lp-how-col">
-              ${isHire
-                ? `<div class="lp-how-step-card"><div class="lp-how-step-num">1</div><div class="lp-how-step-body"><h4>Browse or Post</h4><p>Find the perfect service listing, or post a job to receive applications.</p></div></div>
-                   <div class="lp-how-step-card"><div class="lp-how-step-num">2</div><div class="lp-how-step-body"><h4>Order &amp; Fund Escrow</h4><p>Place your order or hire an applicant. Payment is held securely in escrow.</p></div></div>
-                   <div class="lp-how-step-card"><div class="lp-how-step-num">3</div><div class="lp-how-step-body"><h4>Review &amp; Release</h4><p>Worker delivers, you approve. Funds release automatically. Leave a review.</p></div></div>`
-                : `<div class="lp-how-step-card"><div class="lp-how-step-num">1</div><div class="lp-how-step-body"><h4>Post a Service or Apply</h4><p>List what you offer with your price, or apply to jobs that match your skills.</p></div></div>
-                   <div class="lp-how-step-card"><div class="lp-how-step-num">2</div><div class="lp-how-step-body"><h4>Get Hired</h4><p>Client orders your service or selects your job application. Escrow is funded.</p></div></div>
-                   <div class="lp-how-step-card"><div class="lp-how-step-num">3</div><div class="lp-how-step-body"><h4>Deliver &amp; Get Paid</h4><p>Submit your work. Client approves and payment releases to your account.</p></div></div>`}
+              <div class="lp-how-step-card"><div class="lp-how-step-num">1</div><div class="lp-how-step-body"><h4>Browse or Post</h4><p>Find the perfect service listing, or post a job to receive applications.</p></div></div>
+              <div class="lp-how-step-card"><div class="lp-how-step-num">2</div><div class="lp-how-step-body"><h4>Order &amp; Fund Escrow</h4><p>Place your order or hire an applicant. Payment is held securely in escrow.</p></div></div>
+              <div class="lp-how-step-card"><div class="lp-how-step-num">3</div><div class="lp-how-step-body"><h4>Review &amp; Release</h4><p>Worker delivers, you approve. Funds release automatically. Leave a review.</p></div></div>
             </div>
           </div>
         </div>
