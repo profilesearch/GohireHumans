@@ -283,6 +283,34 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     """)
     db.commit()
+
+    # ── AI marketplace migrations ─────────────────────────────────────
+    # Add AI columns to services (safe: ALTER TABLE ADD COLUMN is idempotent-ish in SQLite)
+    for col_sql in [
+        "ALTER TABLE services ADD COLUMN provider_type TEXT DEFAULT 'human'",
+        "ALTER TABLE services ADD COLUMN fulfillment_type TEXT DEFAULT 'manual'",
+        "ALTER TABLE services ADD COLUMN api_endpoint TEXT DEFAULT ''",
+        "ALTER TABLE services ADD COLUMN ai_model TEXT DEFAULT ''",
+        "ALTER TABLE services ADD COLUMN avg_response_time TEXT DEFAULT ''",
+    ]:
+        try:
+            db.execute(col_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    # Add is_ai_agent flag to users
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN is_ai_agent INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    # Add AI indexes
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_services_provider_type ON services(provider_type)")
+    except sqlite3.OperationalError:
+        pass
+
+    db.commit()
     db.close()
 
 
@@ -539,7 +567,10 @@ VALID_CATEGORIES = [
     'phone_call', 'in_person_errand', 'document_signing', 'media_capture',
     'expert_review', 'inspection', 'delivery', 'event_support',
     'notary', 'property_check', 'mystery_shopping', 'transcription',
-    'testing', 'other'
+    'testing',
+    'ai_writing', 'ai_coding', 'ai_image_generation', 'ai_data_analysis',
+    'ai_translation', 'ai_voice', 'ai_video', 'ai_chatbot', 'ai_automation',
+    'other'
 ]
 
 
@@ -1048,6 +1079,7 @@ def _handle_routes(db):
         min_price = params.get("min_price")
         max_price = params.get("max_price")
         pricing_type = params.get("pricing_type")
+        provider_type = params.get("provider_type")
 
         conditions = ["s.status = 'active'"]
         values = []
@@ -1058,6 +1090,9 @@ def _handle_routes(db):
         if pricing_type:
             conditions.append("s.pricing_type = ?")
             values.append(pricing_type)
+        if provider_type:
+            conditions.append("s.provider_type = ?")
+            values.append(provider_type)
         if min_price:
             conditions.append("(s.price >= ? OR s.hourly_rate >= ?)")
             values.extend([float(min_price), float(min_price)])
@@ -1146,17 +1181,34 @@ def _handle_routes(db):
         tags = body.get("tags", [])
         images = body.get("images", [])
 
+        provider_type = body.get("provider_type", "human")
+        if provider_type not in ('human', 'ai'):
+            return error_response("provider_type must be 'human' or 'ai'")
+
+        fulfillment_type = body.get("fulfillment_type", "manual")
+        if fulfillment_type not in ('manual', 'api'):
+            return error_response("fulfillment_type must be 'manual' or 'api'")
+
+        api_endpoint = body.get("api_endpoint", "")
+        ai_model = body.get("ai_model", "")
+        avg_response_time = body.get("avg_response_time", "")
+
+        if provider_type == 'ai' and fulfillment_type == 'api' and not api_endpoint:
+            return error_response("api_endpoint required for API-fulfilled AI services")
+
         cursor = db.execute(
             """INSERT INTO services
                (worker_id, title, description, category, pricing_type, price, hourly_rate,
-                delivery_time_days, includes, tags, images, status)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,'active')""",
+                delivery_time_days, includes, tags, images, status,
+                provider_type, fulfillment_type, api_endpoint, ai_model, avg_response_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?)""",
             [user['id'], body['title'], body['description'], body['category'],
              pricing_type, price, hourly_rate,
              body.get("delivery_time_days"),
              body.get("includes", ""),
              json.dumps(tags) if isinstance(tags, list) else tags,
-             json.dumps(images) if isinstance(images, list) else images]
+             json.dumps(images) if isinstance(images, list) else images,
+             provider_type, fulfillment_type, api_endpoint, ai_model, avg_response_time]
         )
         service_id = cursor.lastrowid
         audit(db, user['id'], "create_service", "service", service_id)
@@ -1185,7 +1237,8 @@ def _handle_routes(db):
         updates = []
         vals = []
         for field in ['title', 'description', 'category', 'pricing_type', 'price', 'hourly_rate',
-                      'delivery_time_days', 'includes', 'status']:
+                      'delivery_time_days', 'includes', 'status',
+                      'provider_type', 'fulfillment_type', 'api_endpoint', 'ai_model', 'avg_response_time']:
             if field in body:
                 if field == 'category' and body[field] not in VALID_CATEGORIES:
                     return error_response("Invalid category")
@@ -3234,6 +3287,34 @@ def _handle_routes(db):
                 "includes": "React Native codebase, 4-6 screens, API integration, testing, source code",
                 "tags": ["react native", "mobile app", "ios", "android", "mvp"]
             },
+            # AI Services
+            {
+                "worker_idx": 1, "category": "ai_coding", "pricing_type": "fixed",
+                "title": "AI Code Review & Bug Detection",
+                "description": "Automated code review powered by advanced AI. Submit your codebase and get detailed analysis of bugs, security vulnerabilities, performance issues, and best practice violations. Supports Python, JavaScript, TypeScript, Go, and Rust.",
+                "price": 49.0, "delivery_time_days": 1,
+                "includes": "Full codebase scan, bug report, security audit, performance suggestions",
+                "tags": ["ai", "code review", "debugging", "security"],
+                "provider_type": "ai", "fulfillment_type": "manual", "ai_model": "GPT-4 + Custom Analysis"
+            },
+            {
+                "worker_idx": 2, "category": "ai_writing", "pricing_type": "fixed",
+                "title": "AI-Powered SEO Content Suite (5 articles)",
+                "description": "Get 5 fully SEO-optimized articles written by AI, reviewed and edited by a human writer. Each article is 1500+ words with keyword research, meta descriptions, and internal linking suggestions.",
+                "price": 199.0, "delivery_time_days": 2,
+                "includes": "5 articles, keyword research, meta descriptions, human editing pass",
+                "tags": ["ai", "seo", "content", "blog"],
+                "provider_type": "ai", "fulfillment_type": "manual", "ai_model": "Claude + Human Editor"
+            },
+            {
+                "worker_idx": 4, "category": "ai_data_analysis", "pricing_type": "fixed",
+                "title": "AI Data Analysis & Visualization Dashboard",
+                "description": "Upload your dataset and get a complete analysis with insights, trends, anomalies, and an interactive dashboard. Powered by AI with human QA review.",
+                "price": 149.0, "delivery_time_days": 2,
+                "includes": "Data cleaning, statistical analysis, visualization dashboard, insights report",
+                "tags": ["ai", "data analysis", "visualization", "dashboard"],
+                "provider_type": "ai", "fulfillment_type": "manual", "ai_model": "GPT-4 + Python Analytics"
+            },
         ]
 
         service_ids = []
@@ -3241,14 +3322,17 @@ def _handle_routes(db):
             cursor = db.execute(
                 """INSERT INTO services
                    (worker_id, title, description, category, pricing_type, price, hourly_rate,
-                    delivery_time_days, includes, tags, images, status, avg_rating, total_reviews)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'[]','active',?,?)""",
+                    delivery_time_days, includes, tags, images, status, avg_rating, total_reviews,
+                    provider_type, fulfillment_type, api_endpoint, ai_model, avg_response_time)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,'[]','active',?,?,?,?,?,?,?)""",
                 [worker_ids[s['worker_idx']], s['title'], s['description'], s['category'],
                  s['pricing_type'], s.get('price'), s.get('hourly_rate'),
                  s.get('delivery_time_days'), s.get('includes', ''),
                  json.dumps(s['tags']),
                  round(4.5 + secrets.randbelow(5) * 0.1, 1),
-                 secrets.randbelow(20) + 5]
+                 secrets.randbelow(20) + 5,
+                 s.get('provider_type', 'human'), s.get('fulfillment_type', 'manual'),
+                 s.get('api_endpoint', ''), s.get('ai_model', ''), s.get('avg_response_time', '')]
             )
             service_ids.append(cursor.lastrowid)
 

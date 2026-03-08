@@ -325,6 +325,29 @@
 .badge-completed { background: var(--color-success-subtle); color: var(--color-success); }
 .badge-disputed { background: var(--color-error-subtle); color: var(--color-error); }
 .badge-canceled { background: #f3f4f6; color: #6b7280; }
+/* AI/Human badges */
+.badge-ai {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.badge-human {
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
 
 [data-theme="dark"] .badge-draft { background: #374151; color: #9ca3af; }
 [data-theme="dark"] .badge-reserved { background: #2d1f5e; color: #a78bfa; }
@@ -1301,6 +1324,9 @@
 }
 .svc-card-header {
   padding: var(--space-3) var(--space-4) 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .svc-card-cat {
   font-size: 11px; font-weight: 600;

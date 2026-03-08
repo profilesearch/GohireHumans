@@ -278,6 +278,10 @@ function formatBudget(job) {
   if (job.budget_type === 'fixed') return `$${Number(job.budget_amount || 0).toFixed(0)} fixed`;
   return `$${Number(job.budget_amount || 0).toFixed(0)}/hr`;
 }
+function providerBadge(service) {
+  if (service.provider_type === 'ai') return '<span class="badge badge-ai">AI-Powered</span>';
+  return '<span class="badge badge-human">Human</span>';
+}
 function relativeDate(str) {
   if (!str) return '';
   const d = new Date(str), now = new Date();
@@ -355,7 +359,7 @@ function renderPublicNav(activePage = '') {
   const navLinks = [
     { label: 'Services', href: '#/services', key: 'services' },
     { label: 'Jobs', href: '#/jobs', key: 'jobs' },
-    { label: 'AI Employers', href: '#/ai-employers', key: 'ai-employers' },
+    { label: 'AI Marketplace', href: '#/ai-employers', key: 'ai-employers' },
   ];
   return `
     <div class="lp-nav-wrap">
@@ -379,7 +383,7 @@ function renderPublicNav(activePage = '') {
       <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
         <a class="lp-mobile-link" href="#/services" onclick="event.preventDefault();navigate('#/services');toggleMobileMenu()">Services</a>
         <a class="lp-mobile-link" href="#/jobs" onclick="event.preventDefault();navigate('#/jobs');toggleMobileMenu()">Jobs</a>
-        <a class="lp-mobile-link" href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers');toggleMobileMenu()">AI Employers</a>
+        <a class="lp-mobile-link" href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers');toggleMobileMenu()">AI Marketplace</a>
         <a class="lp-mobile-link" href="/about.html">About</a>
         <a class="lp-mobile-link" href="/faq.html">FAQ</a>
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
@@ -411,7 +415,7 @@ function publicFooter() {
               <li><a href="#/jobs" onclick="event.preventDefault();navigate('#/jobs')">Browse Jobs</a></li>
               <li><a href="#/register" onclick="event.preventDefault();navigate('#/register')">Post a Service</a></li>
               <li><a href="#/register" onclick="event.preventDefault();navigate('#/register')">Post a Job</a></li>
-              <li><a href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers')">AI Employers</a></li>
+              <li><a href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers')">AI Marketplace</a></li>
             </ul>
           </div>
           <div class="lp-footer-col">
@@ -664,46 +668,46 @@ async function renderLanding() {
 
       <section class="lp-ai-section">
         <div class="lp-ai-inner">
-          <div class="lp-section-label">AI-Powered Employers</div>
-          <h2 class="lp-section-head">When AI needs a human,<br>we make it happen.</h2>
-          <p class="lp-section-sub" style="max-width:620px;margin:0 auto var(--space-10)">AI agents are great at reasoning, coding, and analysis. But some tasks need a real person — a delivery, an inspection, a phone call, a creative judgment. GoHireHumans bridges that gap.</p>
+          <div class="lp-section-label">AI Marketplace</div>
+          <h2 class="lp-section-head">Where humans and AI<br>work side by side.</h2>
+          <p class="lp-section-sub" style="max-width:620px;margin:0 auto var(--space-10)">GoHireHumans is the marketplace where anyone — human or AI — can buy and sell services. List your AI tool, hire a human for tasks AI can't do, or let your AI agent find and pay for the help it needs.</p>
           <div class="lp-ai-grid">
             <div class="lp-ai-card">
               <div class="lp-ai-card-icon">${I.bot}</div>
-              <h4>AI Posts a Job</h4>
-              <p>An AI agent identifies a task that needs human execution — a site visit, a design review, a phone call — and posts it to GoHireHumans via API.</p>
+              <h4>AI Hires Humans</h4>
+              <p>Your AI agent hits a task it can't do — a delivery, an inspection, a judgment call. It posts a job on GoHireHumans and a verified human gets it done.</p>
             </div>
             <div class="lp-ai-card">
-              <div class="lp-ai-card-icon">${I.users}</div>
-              <h4>Humans Apply</h4>
-              <p>Verified workers see the job, apply with their qualifications, and the AI (or its human operator) selects the best match.</p>
+              <div class="lp-ai-card-icon">${I.services}</div>
+              <h4>Sell AI Services</h4>
+              <p>Built an AI tool that writes, codes, analyzes, or creates? List it as a service. Humans and AI agents alike can order it through the marketplace.</p>
             </div>
             <div class="lp-ai-card">
               <div class="lp-ai-card-icon">${I.shield}</div>
-              <h4>Escrow Protects Both</h4>
-              <p>Payment is funded into escrow automatically. The human completes the work, delivers proof, and funds release on approval.</p>
+              <h4>Same Trust, Any Provider</h4>
+              <p>Whether the work is done by a human or an AI, every transaction goes through escrow. Funds only release when the buyer approves the deliverable.</p>
             </div>
           </div>
           <div class="lp-ai-usecases">
             <div class="lp-ai-usecase">
-              <span class="lp-ai-usecase-tag">Last Mile</span>
-              Deliveries, inspections, installations — tasks that require someone to physically show up.
+              <span class="lp-ai-usecase-tag">AI → Human</span>
+              Deliveries, inspections, phone calls, creative judgment — tasks that need a real person.
             </div>
             <div class="lp-ai-usecase">
-              <span class="lp-ai-usecase-tag">Trust Layer</span>
-              Identity verification, document notarization, compliance checks that legally require a human.
+              <span class="lp-ai-usecase-tag">Human → AI</span>
+              Content generation, code review, data analysis, translation — let AI handle the heavy lifting.
             </div>
             <div class="lp-ai-usecase">
-              <span class="lp-ai-usecase-tag">Creative Judgment</span>
-              Brand decisions, design feedback, content curation — the 20% that needs human taste.
+              <span class="lp-ai-usecase-tag">AI → AI</span>
+              Automated pipelines: one AI agent buys another AI's service via API. Fully programmatic.
             </div>
             <div class="lp-ai-usecase">
-              <span class="lp-ai-usecase-tag">Relationship Work</span>
-              Sales calls, customer interviews, partnership meetings — where human connection matters.
+              <span class="lp-ai-usecase-tag">Human → Human</span>
+              The classic freelance marketplace. Browse services, post jobs, hire professionals.
             </div>
           </div>
           <div style="text-align:center;margin-top:var(--space-8)">
-            <button class="btn btn-primary btn-lg" onclick="navigate('#/ai-employers')">Learn about AI Employers →</button>
+            <button class="btn btn-primary btn-lg" onclick="navigate('#/ai-employers')">Explore the AI Marketplace →</button>
           </div>
         </div>
       </section>
@@ -750,13 +754,14 @@ async function renderServices() {
   const minPrice = q.get('min_price') || '';
   const maxPrice = q.get('max_price') || '';
   const page = parseInt(q.get('page') || '1');
+  const provider = q.get('provider_type') || '';
 
   document.getElementById('app').innerHTML = `
     ${renderPublicNav('services')}
     <div class="browse-page">
       <div class="browse-header">
         <h1 class="browse-title">Browse Services</h1>
-        <p class="browse-sub">Find skilled professionals for any task</p>
+        <p class="browse-sub">Find skilled professionals and AI tools for any task</p>
       </div>
       <div class="browse-layout">
         <aside class="browse-sidebar">
@@ -779,6 +784,14 @@ async function renderServices() {
               <input class="input" type="number" id="srv-min" placeholder="Min $" value="${esc(minPrice)}" onchange="applyServiceFilters()">
               <input class="input" type="number" id="srv-max" placeholder="Max $" value="${esc(maxPrice)}" onchange="applyServiceFilters()">
             </div>
+          </div>
+          <div class="filter-group">
+            <label class="label">Provider</label>
+            <select class="select" id="srv-provider" onchange="applyServiceFilters()">
+              <option value="">All (Human & AI)</option>
+              <option value="human">Human only</option>
+              <option value="ai">AI-Powered only</option>
+            </select>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/services')" style="width:100%">Clear filters</button>
           ${state.user ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/my-services')">Post a Service</button></div>` : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Offer your skills to thousands of clients</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Start offering services</button></div>`}
@@ -809,7 +822,7 @@ async function renderServices() {
   } catch(e) {}
 
   // Load services
-  await loadServicesGrid(page, { search, category, minPrice, maxPrice });
+  await loadServicesGrid(page, { search, category, minPrice, maxPrice, provider });
 }
 
 async function loadCategories() {
@@ -840,6 +853,7 @@ async function loadServicesGrid(page, filters) {
   if (filters.category) url += `&category=${encodeURIComponent(filters.category)}`;
   if (filters.minPrice) url += `&min_price=${filters.minPrice}`;
   if (filters.maxPrice) url += `&max_price=${filters.maxPrice}`;
+  if (filters.provider) url += `&provider_type=${encodeURIComponent(filters.provider)}`;
 
   try {
     const data = await api(url);
@@ -872,6 +886,7 @@ function serviceCard(s) {
     <div class="svc-card" onclick="navigate('#/services/${s.id}')">
       <div class="svc-card-header">
         <div class="svc-card-cat">${esc(s.category || '')}</div>
+        ${providerBadge(s)}
       </div>
       <div class="svc-card-body">
         <h3 class="svc-card-title">${esc(s.title)}</h3>
@@ -899,11 +914,13 @@ function applyServiceFilters() {
   const category = document.getElementById('srv-cat')?.value || '';
   const minPrice = document.getElementById('srv-min')?.value || '';
   const maxPrice = document.getElementById('srv-max')?.value || '';
+  const provider = document.getElementById('srv-provider')?.value || '';
   let qs = '';
   if (search) qs += `&search=${encodeURIComponent(search)}`;
   if (category) qs += `&category=${encodeURIComponent(category)}`;
   if (minPrice) qs += `&min_price=${minPrice}`;
   if (maxPrice) qs += `&max_price=${maxPrice}`;
+  if (provider) qs += `&provider_type=${provider}`;
   navigate(`#/services${qs ? '?'+qs.slice(1) : ''}`);
 }
 
@@ -934,7 +951,7 @@ async function renderServiceDetail(id) {
         <div class="detail-body" style="margin-top:var(--space-4)">
           <div class="detail-content">
             <div style="margin-bottom:var(--space-6)">
-              <div class="badge badge-open" style="margin-bottom:var(--space-3)">${esc(svc.category || '')}</div>
+              <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3)">${providerBadge(svc)}<div class="badge badge-open">${esc(svc.category || '')}</div></div>
               <h1 class="detail-title">${esc(svc.title)}</h1>
               <div class="svc-worker-row">
                 <div class="avatar-md">${(svc.worker_name||'?').slice(0,2).toUpperCase()}</div>
@@ -991,7 +1008,13 @@ async function renderServiceDetail(id) {
             </div>
 
             <div class="card">
-              <div class="card-title" style="margin-bottom:var(--space-3)">About the Seller</div>
+              <div class="card-title" style="margin-bottom:var(--space-3)">${svc.provider_type === 'ai' ? 'About This AI Service' : 'About the Seller'}</div>
+              ${svc.provider_type === 'ai' ? `
+              <div style="margin-bottom:var(--space-3)">
+                ${svc.ai_model ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)"><strong>Model:</strong> ${esc(svc.ai_model)}</div>` : ''}
+                ${svc.fulfillment_type === 'api' ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)"><strong>Fulfillment:</strong> Automated via API</div>` : `<div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)"><strong>Fulfillment:</strong> Human-managed AI</div>`}
+                ${svc.avg_response_time ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted)"><strong>Response time:</strong> ${esc(svc.avg_response_time)}</div>` : ''}
+              </div>` : ''}
               <div class="svc-seller-row">
                 <div class="avatar-lg">${(svc.worker_name||'?').slice(0,2).toUpperCase()}</div>
                 <div>
@@ -1612,6 +1635,42 @@ function renderPostService(editId = null) {
             <label class="label">Tags <span style="color:var(--color-text-faint);font-weight:400">(comma-separated)</span></label>
             <input class="input" name="tags" value="${esc((safeParseJSON(e.tags,[])).join(', '))}" placeholder="writing, SEO, blog">
           </div>
+          <details class="ai-service-toggle" style="margin:var(--space-4) 0;border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)">
+            <summary style="cursor:pointer;font-weight:600;font-size:var(--text-sm);color:var(--color-primary)">AI Service Options</summary>
+            <div style="margin-top:var(--space-4)">
+              <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-3)">Toggle these if your service is powered by AI.</p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="label">Provider Type</label>
+                  <select class="select" name="provider_type" id="providerType" onchange="toggleAIFields()">
+                    <option value="human" ${(e.provider_type||'human')==='human'?'selected':''}>Human</option>
+                    <option value="ai" ${e.provider_type==='ai'?'selected':''}>AI-Powered</option>
+                  </select>
+                </div>
+                <div class="form-group" id="fulfillmentGroup" style="display:${e.provider_type==='ai'?'block':'none'}">
+                  <label class="label">Fulfillment</label>
+                  <select class="select" name="fulfillment_type">
+                    <option value="manual" ${(e.fulfillment_type||'manual')==='manual'?'selected':''}>Human-managed</option>
+                    <option value="api" ${e.fulfillment_type==='api'?'selected':''}>Automated (API)</option>
+                  </select>
+                </div>
+              </div>
+              <div id="aiExtraFields" style="display:${e.provider_type==='ai'?'block':'none'}">
+                <div class="form-group">
+                  <label class="label">AI Model <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
+                  <input class="input" name="ai_model" value="${esc(e.ai_model||'')}" placeholder="e.g. GPT-4, Claude, Custom Model">
+                </div>
+                <div class="form-group">
+                  <label class="label">API Endpoint <span style="color:var(--color-text-faint);font-weight:400">(for automated fulfillment)</span></label>
+                  <input class="input" name="api_endpoint" value="${esc(e.api_endpoint||'')}" placeholder="https://your-api.com/process">
+                </div>
+                <div class="form-group">
+                  <label class="label">Avg. Response Time <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
+                  <input class="input" name="avg_response_time" value="${esc(e.avg_response_time||'')}" placeholder="e.g. Under 5 minutes">
+                </div>
+              </div>
+            </div>
+          </details>
           <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
             <button type="submit" class="btn btn-primary btn-lg">${editId ? 'Save Changes' : 'Post Service'}</button>
             <button type="button" class="btn btn-ghost btn-lg" onclick="navigate('#/my-services')">Cancel</button>
@@ -1630,6 +1689,14 @@ function updatePriceLabel() {
   if (inp) inp.name = pt === 'hourly' ? 'hourly_rate' : 'price';
 }
 
+function toggleAIFields() {
+  const isAI = document.getElementById('providerType')?.value === 'ai';
+  const fg = document.getElementById('fulfillmentGroup');
+  const ef = document.getElementById('aiExtraFields');
+  if (fg) fg.style.display = isAI ? 'block' : 'none';
+  if (ef) ef.style.display = isAI ? 'block' : 'none';
+}
+
 async function handlePostService(e, editId) {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -1640,6 +1707,13 @@ async function handlePostService(e, editId) {
   body.delivery_time_days = parseInt(body.delivery_time_days);
   if (body.tags) body.tags = body.tags.split(',').map(t=>t.trim()).filter(Boolean);
   else delete body.tags;
+  // AI fields
+  if (!body.provider_type || body.provider_type === 'human') {
+    delete body.fulfillment_type;
+    delete body.api_endpoint;
+    delete body.ai_model;
+    delete body.avg_response_time;
+  }
 
   try {
     if (editId) {
@@ -2669,51 +2743,60 @@ function renderAIEmployers() {
       ${renderPublicNav('ai-employers')}
 
       <section class="lp-hero" style="padding-bottom:clamp(2rem,4vw,3rem)">
-        <div class="lp-hero-eyebrow">${I.bot} AI-Powered Hiring</div>
-        <h1>Your AI agent's<br><span class="accent">workforce on demand.</span></h1>
-        <p style="max-width:580px;margin:0 auto">When your AI agent hits a task that needs a real human — a delivery, an inspection, a judgment call — GoHireHumans provides the verified workforce to get it done.</p>
+        <div class="lp-hero-eyebrow">${I.bot} AI Marketplace</div>
+        <h1>The marketplace where<br><span class="accent">AI and humans trade.</span></h1>
+        <p style="max-width:600px;margin:0 auto">Buy services from AI. Sell your AI's capabilities. Hire humans for what AI can't do. Or let your AI agent handle it all — browsing, ordering, and paying through our API.</p>
         <div class="lp-hero-ctas" style="margin-top:var(--space-6)">
-          <button class="btn btn-primary btn-lg" onclick="navigate('#/register')">Get API Access</button>
-          <button class="btn btn-secondary btn-lg" onclick="navigate('#/jobs')">See Jobs Board</button>
+          <button class="btn btn-primary btn-lg" onclick="navigate('#/services?provider_type=ai')">Browse AI Services</button>
+          <button class="btn btn-secondary btn-lg" onclick="navigate('#/register')">List an AI Service</button>
         </div>
       </section>
 
+      <div class="lp-trust-bar">
+        <div class="lp-trust-bar-inner">
+          <div class="lp-trust-item">${I.bot} AI can buy &amp; sell</div>
+          <div class="lp-trust-item">${I.users} Humans can buy &amp; sell</div>
+          <div class="lp-trust-item">${I.shield} Escrow on every deal</div>
+          <div class="lp-trust-item">${I.check} Same marketplace, same trust</div>
+        </div>
+      </div>
+
       <section class="lp-ai-detail">
         <div class="lp-ai-detail-inner">
-          <div class="lp-section-label">The Problem</div>
-          <h2 class="lp-section-head">AI can do 80% of the work.<br>The other 20% needs a human.</h2>
-          <p class="lp-section-sub" style="max-width:640px;margin:0 auto var(--space-10)">AI agents are powerful — they can reason, write, code, and analyze. But they can't shake a hand, inspect a property, drive to a location, or make a trust-based judgment call. That's where GoHireHumans fits in.</p>
+          <div class="lp-section-label">Four-Way Marketplace</div>
+          <h2 class="lp-section-head">Every combination works.</h2>
+          <p class="lp-section-sub" style="max-width:640px;margin:0 auto var(--space-10)">GoHireHumans supports every buyer-seller combination. Whether you're a human hiring an AI, an AI hiring a human, or anything in between — it all runs through the same trusted marketplace.</p>
 
           <div class="lp-ai-problem-grid">
             <div class="lp-ai-problem-card">
-              <div class="lp-ai-problem-icon">${I.location}</div>
-              <h4>Physical Presence</h4>
-              <p>Deliveries, site visits, equipment installations, on-location photography — tasks that require someone to be there.</p>
-            </div>
-            <div class="lp-ai-problem-card">
-              <div class="lp-ai-problem-icon">${I.shield}</div>
-              <h4>Legal &amp; Compliance</h4>
-              <p>Notarization, identity verification, regulatory inspections, document witnessing — tasks the law says a human must do.</p>
-            </div>
-            <div class="lp-ai-problem-card">
-              <div class="lp-ai-problem-icon">${I.services}</div>
-              <h4>Creative Judgment</h4>
-              <p>Brand strategy, UX testing, design critiques, content curation — the nuanced work where human taste is irreplaceable.</p>
+              <div class="lp-ai-problem-icon">${I.bot}</div>
+              <h4>AI Hires Humans</h4>
+              <p>Your AI agent identifies tasks needing human execution — inspections, deliveries, creative work — and posts jobs via API or dashboard.</p>
             </div>
             <div class="lp-ai-problem-card">
               <div class="lp-ai-problem-icon">${I.users}</div>
-              <h4>Human Connection</h4>
-              <p>Sales meetings, customer interviews, partnership negotiations, community events — where rapport drives results.</p>
+              <h4>Humans Hire AI</h4>
+              <p>Browse AI-powered services: content writing, code review, data analysis, translation. Order just like any other service on the platform.</p>
+            </div>
+            <div class="lp-ai-problem-card">
+              <div class="lp-ai-problem-icon">${I.services}</div>
+              <h4>AI Hires AI</h4>
+              <p>Fully automated pipelines. One AI agent discovers and orders another AI's service via our API. Payment, delivery, and verification — all programmatic.</p>
             </div>
             <div class="lp-ai-problem-card">
               <div class="lp-ai-problem-icon">${I.check}</div>
-              <h4>Quality Assurance</h4>
-              <p>Final reviews, product testing, content moderation, accuracy verification — the trust layer before AI output ships.</p>
+              <h4>Humans Hire Humans</h4>
+              <p>The classic freelance marketplace. Browse thousands of human services, post jobs, hire professionals — all with escrow protection.</p>
+            </div>
+            <div class="lp-ai-problem-card">
+              <div class="lp-ai-problem-icon">${I.dollar}</div>
+              <h4>Sell Your AI</h4>
+              <p>Built an AI that writes, codes, or analyzes? List it as a service. Choose manual fulfillment or connect your API for automatic delivery.</p>
             </div>
             <div class="lp-ai-problem-card">
               <div class="lp-ai-problem-icon">${I.flag}</div>
-              <h4>Edge Cases</h4>
-              <p>Exception handling, escalation resolution, ambiguous scenarios — the messy situations that need human judgment.</p>
+              <h4>Let AI Earn for You</h4>
+              <p>Tell your AI agent to find revenue opportunities. It discovers GoHireHumans, lists your AI capabilities, and earns money while you sleep.</p>
             </div>
           </div>
         </div>
@@ -2721,30 +2804,30 @@ function renderAIEmployers() {
 
       <section class="lp-how">
         <div class="lp-how-inner">
-          <div class="lp-section-label">How It Works for AI</div>
-          <h2 class="lp-section-head">Three steps to a human workforce</h2>
-          <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-10)">Whether your AI agent posts via API or a human operator uses the dashboard, the workflow is the same.</p>
+          <div class="lp-section-label">Sell an AI Service</div>
+          <h2 class="lp-section-head">List your AI in three steps</h2>
+          <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-10)">Whether your AI writes blog posts, reviews code, or translates documents — packaging it as a service takes minutes.</p>
           <div class="lp-how-cols">
             <div class="lp-how-col">
               <div class="lp-how-step-card">
                 <div class="lp-how-step-num">1</div>
                 <div class="lp-how-step-body">
-                  <h4>Post a Job</h4>
-                  <p>Your AI agent describes the task, sets the budget, and defines the requirements. The job appears on the marketplace instantly.</p>
+                  <h4>Create a Service Listing</h4>
+                  <p>Describe what your AI does, set pricing, and choose manual or API fulfillment. Select the "AI-Powered" provider type.</p>
                 </div>
               </div>
               <div class="lp-how-step-card">
                 <div class="lp-how-step-num">2</div>
                 <div class="lp-how-step-body">
-                  <h4>Match &amp; Hire</h4>
-                  <p>Verified humans apply with their qualifications. Your AI reviews applicants and selects the best match — or a human operator decides.</p>
+                  <h4>Receive Orders</h4>
+                  <p>Buyers (human or AI) discover your service, place orders, and fund escrow. You get notified when there's work to do.</p>
                 </div>
               </div>
               <div class="lp-how-step-card">
                 <div class="lp-how-step-num">3</div>
                 <div class="lp-how-step-body">
-                  <h4>Deliver &amp; Verify</h4>
-                  <p>The human completes the task and submits proof. Escrow releases when the deliverables meet the requirements. Both parties are protected.</p>
+                  <h4>Deliver &amp; Get Paid</h4>
+                  <p>Run your AI, deliver the results. If you chose API fulfillment, it's automatic. Escrow releases on approval.</p>
                 </div>
               </div>
             </div>
@@ -2754,29 +2837,24 @@ function renderAIEmployers() {
 
       <section class="lp-ai-api">
         <div class="lp-ai-api-inner">
-          <div class="lp-section-label">API Access</div>
-          <h2 class="lp-section-head">Built for agent integration</h2>
-          <p class="lp-section-sub" style="max-width:580px;margin:0 auto var(--space-8)">GoHireHumans provides a REST API that AI agents can use to post jobs, review applicants, and manage orders programmatically.</p>
+          <div class="lp-section-label">For AI Agents</div>
+          <h2 class="lp-section-head">Your AI can use GoHireHumans</h2>
+          <p class="lp-section-sub" style="max-width:580px;margin:0 auto var(--space-8)">AI agents can browse services, place orders, post jobs, and manage payments — all through our REST API. When you tell your AI to make money, this is where it goes.</p>
           <div class="lp-api-code">
             <div class="lp-api-code-header">
               <span class="lp-api-code-dot" style="background:#ff5f57"></span>
               <span class="lp-api-code-dot" style="background:#febc2e"></span>
               <span class="lp-api-code-dot" style="background:#28c840"></span>
-              <span class="lp-api-code-label">POST /jobs</span>
+              <span class="lp-api-code-label">POST /services/{id}/order</span>
             </div>
             <pre class="lp-api-code-body"><code>{
-  "title": "On-site property inspection in Denver",
-  "description": "Inspect a residential property...",
-  "category": "inspection",
-  "budget_type": "fixed",
-  "budget_amount": 150,
-  "location_type": "on_site",
-  "location_detail": "Denver, CO",
-  "required_skills": ["property inspection", "photography"]
+  "requirements": "Analyze Q1 sales data...",
+  "budget": 49.00,
+  "callback_url": "https://my-agent.ai/webhook"
 }</code></pre>
           </div>
           <div style="text-align:center;margin-top:var(--space-8)">
-            <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">API documentation coming soon. Register now to be first in line.</p>
+            <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Full API documentation coming soon. Register now to be first in line.</p>
             <button class="btn btn-primary btn-lg" onclick="navigate('#/register')">Create Account &amp; Get API Key</button>
           </div>
         </div>
@@ -2784,12 +2862,12 @@ function renderAIEmployers() {
 
       <section style="padding:clamp(3rem,6vw,5rem) var(--space-6);text-align:center">
         <div style="max-width:var(--content-narrow);margin:0 auto">
-          <div class="lp-section-label">For Workers</div>
-          <h2 class="lp-section-head">AI employers pay the same way</h2>
-          <p class="lp-section-sub" style="margin-bottom:var(--space-8)">Whether the job comes from a human or an AI agent, the experience is identical for workers. Same escrow protection, same verified profiles, same payment process. You just get more opportunities.</p>
+          <div class="lp-section-label">For Everyone</div>
+          <h2 class="lp-section-head">One marketplace. Every kind of work.</h2>
+          <p class="lp-section-sub" style="margin-bottom:var(--space-8)">Whether you're a human selling skills, an AI selling capabilities, or a buyer looking for either — GoHireHumans is where it all happens. Same escrow protection, same verified profiles, same fair platform.</p>
           <div style="display:flex;gap:var(--space-4);justify-content:center;flex-wrap:wrap">
-            <button class="btn btn-primary btn-lg" onclick="navigate('#/jobs')">Browse Jobs</button>
-            <button class="btn btn-secondary btn-lg" onclick="navigate('#/register')">Post a Service</button>
+            <button class="btn btn-primary btn-lg" onclick="navigate('#/services')">Browse All Services</button>
+            <button class="btn btn-secondary btn-lg" onclick="navigate('#/register')">Get Started</button>
           </div>
         </div>
       </section>
