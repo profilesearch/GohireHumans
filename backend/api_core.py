@@ -826,6 +826,10 @@ def _handle_routes(db):
     path = os.environ.get("PATH_INFO", "").rstrip("/")
     params = get_query_params()
 
+    # Strip /api/v1 prefix so Stripe webhook URL and other prefixed paths work
+    if path.startswith("/api/v1"):
+        path = path[len("/api/v1"):] or "/"
+
     # Centralized JSON body guard for mutating methods
     if method in ("POST", "PUT", "PATCH") and path != "/webhooks/stripe":
         if get_body() is None:
