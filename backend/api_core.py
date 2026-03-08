@@ -46,17 +46,14 @@ def _get_db_path():
     if _db_path_resolved is not None:
         return _db_path_resolved
 
+    # Build candidate list: explicit env var first, then volume, then CWD
+    candidates = []
     explicit = os.environ.get("DATABASE_PATH", "")
     if explicit:
-        _db_path_resolved = explicit
-        print(f"[GoHireHumans] DB path (explicit): {explicit}", file=sys.stderr)
-        return _db_path_resolved
+        candidates.append(explicit)
+    candidates.append(os.path.join(_VOLUME_DIR, "gohirehumans.db"))  # /data/gohirehumans.db
+    candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))  # /app/gohirehumans.db
 
-    # Try /data first (persistent volume)
-    candidates = [
-        os.path.join(_VOLUME_DIR, "gohirehumans.db"),
-        os.path.join(os.getcwd(), "gohirehumans.db"),
-    ]
     for candidate in candidates:
         parent = os.path.dirname(candidate) or "."
         try:
