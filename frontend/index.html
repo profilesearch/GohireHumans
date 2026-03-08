@@ -827,9 +827,18 @@ async function renderServices() {
 
 async function loadCategories() {
   if (state.categories) return state.categories;
+  function normalize(list) {
+    return list.map(c => {
+      if (typeof c === 'string') {
+        return { slug: c, name: c.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase()) };
+      }
+      return c;
+    });
+  }
   try {
     const data = await api('/categories');
-    state.categories = Array.isArray(data) ? data : (data.categories || []);
+    const raw = Array.isArray(data) ? data : (data.categories || []);
+    state.categories = normalize(raw);
     return state.categories;
   } catch {
     return [
