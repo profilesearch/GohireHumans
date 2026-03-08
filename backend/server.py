@@ -28,6 +28,14 @@ def health():
     return {"status": "ok", "service": "gohirehumans-api"}
 
 
+@app.route("/api/v1/<path:subpath>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def api_v1_proxy(subpath):
+    """Strip /api/v1 prefix and forward to the main handler (fixes Stripe webhook URL mismatch)."""
+    from flask import redirect, url_for
+    # Rewrite the path by stripping the /api/v1 prefix
+    return proxy(subpath)
+
+
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 @app.route("/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 def proxy(path):
