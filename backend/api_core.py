@@ -42,6 +42,7 @@ def _resolve_db_path():
     """Pick the best database path, testing write access."""
     explicit = os.environ.get("DATABASE_PATH", "")
     if explicit:
+        print(f"[GoHireHumans] Using explicit DATABASE_PATH: {explicit}", file=sys.stderr)
         return explicit
     # Try /data first (persistent volume)
     if os.path.isdir(_VOLUME_DIR):
@@ -50,11 +51,19 @@ def _resolve_db_path():
             with open(test_path, "w") as f:
                 f.write("ok")
             os.remove(test_path)
-            return os.path.join(_VOLUME_DIR, "gohirehumans.db")
-        except (OSError, IOError) as e:
-            print(f"[GoHireHumans] WARNING: /data exists but is NOT writable: {e}", file=sys.stderr)
-            print(f"[GoHireHumans] Falling back to local directory (ephemeral!)", file=sys.stderr)
-    return "gohirehumans.db"
+            db_path = os.path.join(_VOLUME_DIR, "gohirehumans.db")
+            # Also test that SQLite can actually open a file here
+            test_db = sqlite3.connect(db_path)
+            test_db.execute("CREATE TABLE IF NOT EXISTS _ping (id INTEGER)")
+            test_db.close()
+            print(f"[GoHireHumans] Using persistent volume: {db_path}", file=sys.stderr)
+            return db_path
+        except Exception as e:
+            print(f"[GoHireHumans] WARNING: /data not usable: {e}", file=sys.stderr)
+    # Fallback to working directory
+    fallback = os.path.join(os.getcwd(), "gohirehumans.db")
+    print(f"[GoHireHumans] Falling back to ephemeral: {fallback}", file=sys.stderr)
+    return fallback
 
 DB_PATH = _resolve_db_path()
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
