@@ -900,22 +900,9 @@ def handle_request():
         init_db()
     except Exception as e:
         import traceback
-        # Extensive diagnostics for database issues
-        diag = [
-            f"Error: {e}",
-            f"DB path resolved: {_db_path_resolved}",
-            f"/data exists: {os.path.isdir('/data')}",
-            f"/data writable: {os.access('/data', os.W_OK) if os.path.isdir('/data') else 'N/A'}",
-            f"CWD: {os.getcwd()}",
-            f"CWD writable: {os.access(os.getcwd(), os.W_OK)}",
-            f"UID: {os.getuid()}",
-            f"RAILWAY_VOLUME_MOUNT_PATH: {os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', 'not set')}",
-            f"RAILWAY_RUN_UID: {os.environ.get('RAILWAY_RUN_UID', 'not set')}",
-        ]
-        diag_str = " | ".join(diag)
-        print(f"[GoHireHumans] DB INIT FAILED: {diag_str}", file=sys.stderr)
+        print(f"[GoHireHumans] DB init failed: {e} (path={_db_path_resolved})", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return error_response(f"Database initialization failed: {e} [{diag_str}]", 500)
+        return error_response("Service temporarily unavailable. Please try again.", 500)
 
     auto_seed_if_empty()
 
