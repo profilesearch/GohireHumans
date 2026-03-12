@@ -689,12 +689,16 @@ def get_body():
 
 
 def get_body_raw():
+    """Return raw request body as bytes (needed for Stripe webhook signature verification)."""
     if not hasattr(_request_ctx, 'raw_body'):
-        content_length = int(getattr(_request_ctx, 'content_length', 0) or 0)
-        if content_length > 0:
-            _request_ctx.raw_body = getattr(_request_ctx, 'stdin_data', '')
+        # Prefer raw bytes if available (set by server.py)
+        raw_bytes = getattr(_request_ctx, 'stdin_data_raw', None)
+        if raw_bytes is not None and isinstance(raw_bytes, bytes):
+            _request_ctx.raw_body = raw_bytes
         else:
-            _request_ctx.raw_body = getattr(_request_ctx, 'stdin_data', '')
+            # Fallback: encode text data to bytes
+            text_data = getattr(_request_ctx, 'stdin_data', '')
+            _request_ctx.raw_body = text_data.encode('utf-8') if isinstance(text_data, str) else text_data
     return _request_ctx.raw_body
 
 

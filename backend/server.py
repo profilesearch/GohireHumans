@@ -68,25 +68,28 @@ def proxy(path):
     """
     path_info = f"/{path}" if path else ""
     query_string = request.query_string.decode("utf-8")
-    body = request.get_data(as_text=True) if request.method in ("POST", "PUT", "PATCH") else ""
+    body_bytes = request.get_data() if request.method in ("POST", "PUT", "PATCH") else b""
+    body = body_bytes.decode("utf-8") if body_bytes else ""
 
     # ── Set thread-local request context (read by api_core.py) ──
     ctx = api_module._request_ctx
+
+    # Clear per-request caches first (before setting new values)
+    for attr in ('body_cache', 'raw_body'):
+        if hasattr(ctx, attr):
+            delattr(ctx, attr)
+
     ctx.request_method = request.method
     ctx.path_info = path_info
     ctx.query_string = query_string
     ctx.content_type = request.content_type or ""
-    ctx.content_length = str(len(body.encode("utf-8"))) if body else "0"
+    ctx.content_length = str(len(body_bytes)) if body_bytes else "0"
     ctx.remote_addr = request.remote_addr or "127.0.0.1"
     ctx.http_authorization = request.headers.get("Authorization", "")
     ctx.http_x_api_key = request.headers.get("X-API-Key", "")
     ctx.http_stripe_signature = request.headers.get("Stripe-Signature", "")
     ctx.stdin_data = body
-
-    # Clear per-request caches
-    for attr in ('body_cache', 'raw_body'):
-        if hasattr(ctx, attr):
-            delattr(ctx, attr)
+    ctx.stdin_data_raw = body_bytes  # Raw bytes needed for Stripe webhook signature verification
 
     # ── Capture CGI stdout output for this thread ──
     _tls.captured = io.StringIO()
