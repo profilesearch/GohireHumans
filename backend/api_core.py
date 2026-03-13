@@ -938,6 +938,45 @@ def _handle_routes(db):
     if path.startswith("/api/v1"):
         path = path[len("/api/v1"):] or "/"
 
+    # ── Diagnostic endpoint (no auth) ──────────────────────────────────────
+    if path == "/diag/db" and method == "GET":
+        import stat as _stat
+        volume_exists = os.path.isdir(_VOLUME_DIR)
+        volume_contents = []
+        if volume_exists:
+            try:
+                volume_contents = os.listdir(_VOLUME_DIR)
+            except Exception as e:
+                volume_contents = [f"error: {e}"]
+        db_file_exists = os.path.isfile(_db_path_resolved) if _db_path_resolved and _db_path_resolved != ":memory:" else False
+        db_size = 0
+        if db_file_exists:
+            try:
+                db_size = os.path.getsize(_db_path_resolved)
+            except Exception:
+                pass
+        db = get_db()
+        user_count = db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c']
+        svc_count = db.execute("SELECT COUNT(*) as c FROM services").fetchone()['c']
+        job_count = db.execute("SELECT COUNT(*) as c FROM jobs").fetchone()['c']
+        oldest_user = db.execute("SELECT MIN(created_at) as d FROM users").fetchone()['d']
+        newest_user = db.execute("SELECT MAX(created_at) as d FROM users").fetchone()['d']
+        return json_response({
+            "db_path": _db_path_resolved,
+            "db_file_exists": db_file_exists,
+            "db_size_bytes": db_size,
+            "volume_dir_exists": volume_exists,
+            "volume_contents": volume_contents,
+            "user_count": user_count,
+            "service_count": svc_count,
+            "job_count": job_count,
+            "oldest_user_created": oldest_user,
+            "newest_user_created": newest_user,
+            "env_DATABASE_PATH": os.environ.get("DATABASE_PATH", "(not set)"),
+            "env_RAILWAY_VOLUME_MOUNT_PATH": os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "(not set)"),
+            "cwd": os.getcwd(),
+        })
+
     # Centralized JSON body guard for mutating methods
     if method in ("POST", "PUT", "PATCH") and path != "/webhooks/stripe":
         if get_body() is None:
