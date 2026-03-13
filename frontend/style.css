@@ -1750,3 +1750,232 @@
 @media (max-width: 600px) {
   .lp-ai-problem-grid { grid-template-columns: 1fr; }
 }
+
+/* ═══ EXPLAINER VIDEO SECTION ═══════════════════════════════════════ */
+.lp-video-section {
+  padding: clamp(3rem,6vw,5rem) var(--space-6);
+  background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface) 100%);
+  text-align: center;
+}
+.lp-video-inner {
+  max-width: 800px;
+  margin: 0 auto;
+}
+.lp-video-container {
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.08);
+  background: #000;
+  aspect-ratio: 16/9;
+}
+.lp-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lp-video-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.3s ease, transform 0.2s ease;
+  z-index: 2;
+  padding: 0;
+}
+.lp-video-play-btn:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+.lp-video-play-btn svg circle {
+  transition: fill 0.2s ease;
+}
+.lp-video-play-btn:hover svg circle {
+  fill: rgba(13,115,119,1);
+}
+
+/* ═══ HOW IT WORKS — VISUAL CARDS ═══════════════════════════════════ */
+.lp-hiw-visual-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: nowrap;
+}
+.lp-hiw-visual-card {
+  flex: 0 1 280px;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-divider);
+  position: relative;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.lp-hiw-visual-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+}
+.lp-hiw-visual-img-wrap {
+  width: 160px;
+  height: 160px;
+  margin: 0 auto var(--space-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.lp-hiw-visual-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.lp-hiw-visual-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--text-base);
+  margin: 0 auto var(--space-3);
+  box-shadow: 0 2px 8px rgba(13,115,119,0.3);
+}
+.lp-hiw-visual-card h4 {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+  color: var(--color-text);
+}
+.lp-hiw-visual-card p {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+.lp-hiw-connector {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Scroll animation: cards slide up */
+.lp-hiw-animate {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.lp-hiw-animate.lp-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ═══ STATS / SOCIAL PROOF BAR ══════════════════════════════════════ */
+.lp-stats-proof {
+  padding: clamp(2.5rem,5vw,4rem) var(--space-6);
+  background: var(--color-primary);
+}
+.lp-stats-inner {
+  max-width: var(--content-wide);
+  margin: 0 auto;
+}
+.lp-stats-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+}
+.lp-stat-item {
+  text-align: center;
+  flex: 1;
+}
+.lp-stat-number {
+  font-size: clamp(2.5rem,4vw,4rem);
+  font-weight: 800;
+  color: white;
+  line-height: 1;
+  display: inline;
+}
+.lp-stat-unit {
+  font-size: clamp(1.5rem,2.5vw,2.5rem);
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
+  display: inline;
+  margin-left: 2px;
+}
+.lp-stat-icon {
+  font-size: clamp(2rem,3vw,2.75rem);
+  color: white;
+  margin-bottom: var(--space-2);
+}
+.lp-stat-icon svg {
+  width: 40px;
+  height: 40px;
+}
+.lp-stat-label {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: white;
+  margin-top: var(--space-2);
+}
+.lp-stat-detail {
+  font-size: var(--text-xs);
+  color: rgba(255,255,255,0.7);
+  margin-top: var(--space-1);
+}
+.lp-stat-divider {
+  width: 1px;
+  height: 64px;
+  background: rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+/* Stats scroll animation */
+.lp-stat-animate {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.lp-stat-animate.lp-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ═══ RESPONSIVE: Visual Sections ═══════════════════════════════════ */
+@media (max-width: 900px) {
+  .lp-hiw-visual-grid {
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .lp-hiw-connector {
+    transform: rotate(90deg);
+  }
+  .lp-hiw-visual-card {
+    flex: none;
+    width: 100%;
+    max-width: 340px;
+  }
+  .lp-stats-grid {
+    flex-wrap: wrap;
+    gap: var(--space-6);
+  }
+  .lp-stat-divider {
+    display: none;
+  }
+  .lp-stat-item {
+    flex: 0 0 45%;
+  }
+}
+@media (max-width: 480px) {
+  .lp-stat-item {
+    flex: 0 0 100%;
+  }
+  .lp-video-container {
+    border-radius: var(--radius-lg);
+  }
+}

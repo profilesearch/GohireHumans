@@ -366,6 +366,48 @@ const I = {
 const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
 
 // ─── Public Nav (top bar) ──────────────────────────────────────
+// ─── Video Player Toggle ──────────────────────────────────────────
+function toggleVideo() {
+  const video = document.getElementById('explainer-video');
+  const btn = document.querySelector('.lp-video-play-btn');
+  if (!video) return;
+  if (video.paused) {
+    video.play();
+    btn.style.opacity = '0';
+    btn.style.pointerEvents = 'none';
+    video.controls = true;
+  } else {
+    video.pause();
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    video.controls = false;
+  }
+  video.addEventListener('ended', () => {
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    video.controls = false;
+  }, { once: true });
+}
+
+// ─── Scroll Animations (Intersection Observer) ────────────────────
+function initScrollAnimations() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const delay = parseInt(entry.target.dataset.delay || '0');
+        setTimeout(() => {
+          entry.target.classList.add('lp-visible');
+        }, delay);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+
+  document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => {
+    observer.observe(el);
+  });
+}
+
 function renderPublicNav(activePage = '') {
   const navLinks = [
     { label: 'Services', href: '#/services', key: 'services' },
@@ -638,6 +680,23 @@ async function renderLanding() {
         </div>
       </section>
 
+      <!-- ═══ EXPLAINER VIDEO SECTION ═══ -->
+      <section class="lp-video-section">
+        <div class="lp-video-inner">
+          <div class="lp-section-label">See How It Works</div>
+          <h2 class="lp-section-head">Your 30-second tour</h2>
+          <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-8)">Watch how GoHireHumans connects businesses, AI agents, and professionals — all secured by escrow.</p>
+          <div class="lp-video-container">
+            <video id="explainer-video" poster="/ai-human-collab.png" preload="metadata" playsinline>
+              <source src="/gohirehumans-explainer.mp4" type="video/mp4">
+            </video>
+            <button class="lp-video-play-btn" onclick="toggleVideo()" aria-label="Play video">
+              <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="32" fill="rgba(13,115,119,0.9)"/><polygon points="26,20 26,44 46,32" fill="white"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
       <div class="lp-trust-bar">
         <div class="lp-trust-bar-inner">
           <div class="lp-trust-item">${I.shield} Escrow-protected payments</div>
@@ -667,11 +726,64 @@ async function renderLanding() {
           <div class="lp-section-label">How It Works</div>
           <h2 class="lp-section-head">Get work done in three steps</h2>
           <p class="lp-section-sub" style="max-width:560px;margin:0 auto var(--space-10)">Browse, hire, and pay securely — funds only release when you're satisfied.</p>
-          <div class="lp-how-cols">
-            <div class="lp-how-col">
-              <div class="lp-how-step-card"><div class="lp-how-step-num">1</div><div class="lp-how-step-body"><h4>Browse or Post</h4><p>Find the perfect service listing, or post a job to receive applications.</p></div></div>
-              <div class="lp-how-step-card"><div class="lp-how-step-num">2</div><div class="lp-how-step-body"><h4>Order &amp; Fund Escrow</h4><p>Place your order or hire an applicant. Payment is held securely in escrow.</p></div></div>
-              <div class="lp-how-step-card"><div class="lp-how-step-num">3</div><div class="lp-how-step-body"><h4>Review &amp; Release</h4><p>Worker delivers, you approve. Funds release automatically. Leave a review.</p></div></div>
+          <div class="lp-hiw-visual-grid">
+            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="0">
+              <div class="lp-hiw-visual-img-wrap">
+                <img src="/hiw-step1-browse.png" alt="Browse services" loading="lazy" width="240" height="240">
+              </div>
+              <div class="lp-hiw-visual-num">1</div>
+              <h4>Browse or Post</h4>
+              <p>Find the perfect service listing, or post a job to receive applications from verified professionals.</p>
+            </div>
+            <div class="lp-hiw-connector" aria-hidden="true"><svg width="48" height="24" viewBox="0 0 48 24"><path d="M0 12h40" stroke="var(--color-primary)" stroke-width="2" stroke-dasharray="4 4" fill="none"/><polygon points="40,6 48,12 40,18" fill="var(--color-primary)"/></svg></div>
+            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="200">
+              <div class="lp-hiw-visual-img-wrap">
+                <img src="/hiw-step2-escrow.png" alt="Secure escrow payment" loading="lazy" width="240" height="240">
+              </div>
+              <div class="lp-hiw-visual-num">2</div>
+              <h4>Order &amp; Fund Escrow</h4>
+              <p>Place your order or hire an applicant. Payment is held securely in escrow until work is approved.</p>
+            </div>
+            <div class="lp-hiw-connector" aria-hidden="true"><svg width="48" height="24" viewBox="0 0 48 24"><path d="M0 12h40" stroke="var(--color-primary)" stroke-width="2" stroke-dasharray="4 4" fill="none"/><polygon points="40,6 48,12 40,18" fill="var(--color-primary)"/></svg></div>
+            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="400">
+              <div class="lp-hiw-visual-img-wrap">
+                <img src="/hiw-step3-approve.png" alt="Approve and review" loading="lazy" width="240" height="240">
+              </div>
+              <div class="lp-hiw-visual-num">3</div>
+              <h4>Review &amp; Release</h4>
+              <p>Worker delivers, you approve. Funds release automatically. Leave a review to build trust.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ ANIMATED STATS / SOCIAL PROOF SECTION ═══ -->
+      <section class="lp-stats-proof">
+        <div class="lp-stats-inner">
+          <div class="lp-stats-grid">
+            <div class="lp-stat-item lp-stat-animate">
+              <div class="lp-stat-number" data-target="1">1</div>
+              <div class="lp-stat-unit">%</div>
+              <div class="lp-stat-label">Platform Fee</div>
+              <div class="lp-stat-detail">Lowest in the industry</div>
+            </div>
+            <div class="lp-stat-divider" aria-hidden="true"></div>
+            <div class="lp-stat-item lp-stat-animate">
+              <div class="lp-stat-icon">${I.shield}</div>
+              <div class="lp-stat-label">Escrow Protected</div>
+              <div class="lp-stat-detail">Every transaction secured</div>
+            </div>
+            <div class="lp-stat-divider" aria-hidden="true"></div>
+            <div class="lp-stat-item lp-stat-animate">
+              <div class="lp-stat-icon">${I.check}</div>
+              <div class="lp-stat-label">Verified Profiles</div>
+              <div class="lp-stat-detail">Workers &amp; employers screened</div>
+            </div>
+            <div class="lp-stat-divider" aria-hidden="true"></div>
+            <div class="lp-stat-item lp-stat-animate">
+              <div class="lp-stat-icon">${I.bot}</div>
+              <div class="lp-stat-label">AI + Human</div>
+              <div class="lp-stat-detail">The future of work, today</div>
             </div>
           </div>
         </div>
@@ -753,6 +865,9 @@ async function renderLanding() {
 
       ${publicFooter()}
     </div>`;
+
+  // Initialize scroll animations after DOM render
+  requestAnimationFrame(() => initScrollAnimations());
 }
 
 // ═══════════════════════════════════════════════════════════════
