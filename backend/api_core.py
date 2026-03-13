@@ -46,13 +46,16 @@ def _get_db_path():
     if _db_path_resolved is not None:
         return _db_path_resolved
 
-    # Build candidate list: explicit env var first, then volume, then CWD
+    # Build candidate list: persistent volume FIRST, then explicit env var, then CWD
+    # The volume at /data is the only truly persistent storage on Railway.
+    # /app/ is ephemeral — it gets wiped on every deploy.
     candidates = []
+    candidates.append(os.path.join(_VOLUME_DIR, "gohirehumans.db"))  # /data/gohirehumans.db (PERSISTENT)
     explicit = os.environ.get("DATABASE_PATH", "")
-    if explicit:
+    if explicit and not explicit.startswith("/app"):
+        # Only use explicit path if it's NOT under /app (ephemeral container fs)
         candidates.append(explicit)
-    candidates.append(os.path.join(_VOLUME_DIR, "gohirehumans.db"))  # /data/gohirehumans.db
-    candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))  # /app/gohirehumans.db
+    candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))  # /app/gohirehumans.db (ephemeral fallback)
 
     for candidate in candidates:
         parent = os.path.dirname(candidate) or "."
