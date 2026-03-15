@@ -32,6 +32,7 @@ except ImportError:
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
+PROCESSING_FEE_RATE = 0.03  # ~3% payment processing fee passed to buyer (covers Stripe costs)
 
 # Railway volume mount: store DB in /data (the volume mount point).
 # The Dockerfile creates /data, and Railway mounts a persistent volume there.
@@ -848,7 +849,7 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
 
     if stripe_configured() and ep and ep['stripe_customer_id'] and ep['payment_method_id']:
         try:
-            total_charge = int((amount * (1 + SERVICE_FEE_RATE)) * 100)  # employer pays amount + 1% fee
+            total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% fee + ~3% processing fee
             pi = stripe.PaymentIntent.create(
                 amount=total_charge,
                 currency="usd",
@@ -978,6 +979,17 @@ def _handle_routes(db):
             "env_DATABASE_PATH": os.environ.get("DATABASE_PATH", "(not set)"),
             "env_RAILWAY_VOLUME_MOUNT_PATH": os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "(not set)"),
             "cwd": os.getcwd(),
+        })
+
+    # ── Public pricing info (no auth) ──────────────────────────────────────
+    if path == "/pricing/info" and method == "GET":
+        return json_response({
+            "service_fee_rate": SERVICE_FEE_RATE,
+            "processing_fee_rate": PROCESSING_FEE_RATE,
+            "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
+            "description": "Buyers pay a 1% platform fee plus ~3% payment processing fee on top of the service price. Sellers receive the full listed price.",
+            "fee_paid_by": "buyer",
+            "escrow": True
         })
 
     # Centralized JSON body guard for mutating methods

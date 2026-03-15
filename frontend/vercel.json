@@ -1,6 +1,9 @@
 {
   "buildCommand": null,
   "outputDirectory": ".",
+  "redirects": [
+    { "source": "/:path*", "has": [{"type": "host", "value": "gohirehumans.com"}], "destination": "https://www.gohirehumans.com/:path*", "permanent": true }
+  ],
   "rewrites": [
     { "source": "/((?!api/)(?!.*\\.).*)", "destination": "/index.html" }
   ],

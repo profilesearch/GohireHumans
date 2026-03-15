@@ -1,5 +1,5 @@
 # GoHireHumans - Robots.txt
-# https://gohirehumans.com
+# https://www.gohirehumans.com
 
 # Allow all crawlers
 User-agent: *
@@ -40,7 +40,7 @@ Allow: /
 # App routes use hash fragments (#/login, etc.) — invisible to crawlers.
 # Static pages (/about.html, /services.html, etc.) are the crawlable content.
 
-Sitemap: https://gohirehumans.com/sitemap.xml
+Sitemap: https://www.gohirehumans.com/sitemap.xml
 
 # AI Content Index
 # See /llms.txt for AI-optimized content directory
