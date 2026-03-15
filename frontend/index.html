@@ -58,6 +58,7 @@
     },
     "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"},
     "sameAs": [
+      "https://www.linkedin.com/company/gohirehumans",
       "https://github.com/profilesearch/GohireHumans"
     ]
   }
@@ -150,6 +151,8 @@
 
   <link rel="stylesheet" href="/base.css">
   <link rel="stylesheet" href="/style.css">
+  <!-- Google Identity Services (Sign in with Google) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <noscript>
@@ -229,6 +232,49 @@ let state = {
 
 // Force light theme per design requirements
 document.documentElement.setAttribute('data-theme', 'light');
+
+// ─── Referral tracking ────────────────────────────────────────
+(function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const ref = urlParams.get('ref');
+  if (ref) {
+    try { sessionStorage.setItem('ghh_ref', ref); } catch(e) {}
+    // Clean URL without losing hash
+    const clean = window.location.pathname + (window.location.hash || '');
+    window.history.replaceState(null, '', clean);
+  }
+})();
+function getRefCode() {
+  try { return sessionStorage.getItem('ghh_ref') || ''; } catch(e) { return ''; }
+}
+
+// ─── Google Sign-In callback ──────────────────────────────────
+function handleGoogleCredential(response) {
+  api('/auth/google', { method: 'POST', body: { credential: response.credential } })
+    .then(data => {
+      const { token, ...user } = data;
+      state.user = user;
+      state.token = token;
+      try {
+        localStorage.setItem('ghh_token', token);
+        localStorage.setItem('ghh_user', JSON.stringify(user));
+      } catch(e) {}
+      toast('Welcome to GoHireHumans!', 'success');
+      navigate('#/');
+    })
+    .catch(err => toast(err.message || 'Google sign-in failed', 'error'));
+}
+// Initialize Google One Tap when library loads
+window.addEventListener('load', () => {
+  if (typeof GOOGLE_CLIENT_ID !== 'undefined' && GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+  }
+});
 
 // ─── API Client ───────────────────────────────────────────────
 async function api(path, opts = {}) {
@@ -596,6 +642,7 @@ function appShell(content, activeNav = '') {
       <div class="sidebar-section">
         <div class="sidebar-label">Account</div>
         <button class="sidebar-item ${activeNav==='payments'?'active':''}" onclick="navigate('#/payments')">${I.dollar} Payments</button>
+        <button class="sidebar-item ${activeNav==='referrals'?'active':''}" onclick="navigate('#/referrals')">${I.plus} Referrals</button>
         <button class="sidebar-item ${activeNav==='profile'?'active':''}" onclick="navigate('#/profile')">${I.settings} Profile</button>
       </div>`;
   }
@@ -1237,7 +1284,7 @@ async function handleOrderService(id) {
       return;
     }
     // Proceed to order with modal confirmation
-    showModal('Confirm Order', `<p>Your payment will be placed in <strong>secure escrow</strong> until you approve the delivery.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">A ~4% fee (1% platform + 3% processing) will be added at checkout.</p>`, async () => {
+    showModal('Confirm Order', `<p>Your payment will be placed in <strong>secure escrow</strong> until you approve the delivery.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">A ~4% fee (1% platform + 3% processing) will be added at checkout.</p><div style="display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span style="font-size:11px;color:var(--color-text-muted)">Payments secured by <strong style="color:#635bff">Stripe</strong> &bull; 256-bit encryption &bull; PCI-DSS compliant</span></div>`, async () => {
       try {
         const order = await api(`/services/${id}/order`, { method: 'POST', body: {} });
         toast('Order placed! Payment is in escrow.', 'success');
@@ -1546,6 +1593,9 @@ async function handleJobApply(id) {
 // ═══════════════════════════════════════════════════════════════
 // AUTH — LOGIN + REGISTER
 // ═══════════════════════════════════════════════════════════════
+// Google Sign-In config — set GOOGLE_CLIENT_ID to enable
+const GOOGLE_CLIENT_ID = ''; // Enzo: paste your Google OAuth Client ID here
+
 function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
@@ -1556,6 +1606,13 @@ function renderAuth(mode) {
         <div class="auth2-card">
           <div class="auth2-title">${isLogin ? 'Welcome back' : 'Join GoHireHumans'}</div>
           <div class="auth2-sub">${isLogin ? 'Sign in to your account' : 'Browse services and jobs — free to join'}</div>
+          ${GOOGLE_CLIENT_ID ? `
+          <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:var(--space-4)"></div>
+          <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4)">
+            <div style="flex:1;height:1px;background:var(--color-border)"></div>
+            <span style="font-size:var(--text-xs);color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em">or</span>
+            <div style="flex:1;height:1px;background:var(--color-border)"></div>
+          </div>` : ''}
           <form id="authForm" onsubmit="handleAuth(event,'${mode}','${encodeURIComponent(redirect)}')">
             ${!isLogin ? `
             <div class="form-group">
@@ -1583,12 +1640,23 @@ function renderAuth(mode) {
         </div>
       </div>
     </div>`;
+  // Initialize Google Sign-In button if configured
+  if (GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
+    google.accounts.id.renderButton(document.getElementById('google-signin-btn'), {
+      theme: 'outline', size: 'large', width: 320, text: isLogin ? 'signin_with' : 'signup_with'
+    });
+  }
 }
 
 async function handleAuth(e, mode, encodedRedirect) {
   e.preventDefault();
   const form = new FormData(e.target);
   const body = Object.fromEntries(form);
+  // Attach referral code if registering
+  if (mode === 'register') {
+    const ref = getRefCode();
+    if (ref) body.ref_code = ref;
+  }
   try {
     const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
     const data = await api(endpoint, { method: 'POST', body });
@@ -2157,6 +2225,10 @@ async function handleHire(jobId, applicationId, workerId) {
         <label class="label">Milestone Amount ($)</label>
         <input class="input" type="number" id="milestone-amount" placeholder="500.00" min="1" step="0.01">
       </div>
+      <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        <span style="font-size:11px;color:var(--color-text-muted)">Payments secured by <strong style="color:#635bff">Stripe</strong> &bull; 256-bit encryption &bull; PCI-DSS compliant</span>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
         <button class="btn btn-primary" onclick="confirmHire(${jobId},${applicationId})">Confirm &amp; Fund Escrow</button>
@@ -2618,6 +2690,54 @@ async function loadNotifCount() {
     const badge = document.getElementById('notif-badge');
     if (badge) { badge.textContent = count || ''; badge.style.display = count ? 'inline-flex' : 'none'; }
   } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REFERRAL PROGRAM
+// ═══════════════════════════════════════════════════════════════
+async function renderReferrals() {
+  appShell(`<div class="loading"><div class="spinner"></div></div>`, 'referrals');
+  try {
+    const data = await api('/referral/code');
+    appShell(`
+      <div class="dash-section" style="max-width:640px">
+        <h2 style="margin-bottom:var(--space-2)">Referral Program</h2>
+        <p style="color:var(--color-text-muted);margin-bottom:var(--space-6)">Invite friends to GoHireHumans. When they sign up using your link, you both benefit from a growing marketplace.</p>
+
+        <div style="background:var(--color-surface-alt,#f8f7f4);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-5);margin-bottom:var(--space-6)">
+          <label style="font-size:var(--text-xs);color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:var(--space-2);display:block">Your referral link</label>
+          <div style="display:flex;gap:var(--space-2);align-items:stretch">
+            <input class="input" id="ref-url" readonly value="${esc(data.url)}" style="flex:1;font-family:'JetBrains Mono',monospace;font-size:var(--text-sm)" onclick="this.select()">
+            <button class="btn btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('ref-url').value).then(()=>toast('Link copied!','success')).catch(()=>toast('Failed to copy','error'))">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-bottom:var(--space-6)">
+          <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-4);text-align:center">
+            <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-text)">${data.total_referrals}</div>
+            <div style="font-size:var(--text-sm);color:var(--color-text-muted)">People Referred</div>
+          </div>
+          <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-4);text-align:center">
+            <div style="font-size:var(--text-2xl);font-weight:700;color:var(--color-primary)">${data.converted_referrals}</div>
+            <div style="font-size:var(--text-sm);color:var(--color-text-muted)">Completed First Order</div>
+          </div>
+        </div>
+
+        <div style="background:var(--color-surface-alt,#f8f7f4);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-5)">
+          <h3 style="margin-bottom:var(--space-3)">How it works</h3>
+          <ol style="padding-left:var(--space-5);color:var(--color-text-muted);font-size:var(--text-sm);display:flex;flex-direction:column;gap:var(--space-2)">
+            <li>Share your unique referral link with friends and colleagues</li>
+            <li>When they sign up and create an account, you get credit</li>
+            <li>Help build the marketplace and grow together</li>
+          </ol>
+        </div>
+      </div>
+    `, 'referrals');
+  } catch(err) {
+    appShell(`<div class="empty-state"><p>Error loading referrals: ${esc(err.message)}</p></div>`, 'referrals');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3183,6 +3303,7 @@ function render() {
   if (path === '/orders') return renderOrders();
   if (path.match(/^\/orders\/(\d+)$/)) return renderOrderDetail(segments[1]);
   if (path === '/payments') return renderPayments();
+  if (path === '/referrals') return renderReferrals();
   if (path === '/notifications') return renderNotifications();
   if (path === '/profile' || path === '/settings') return renderProfile();
 

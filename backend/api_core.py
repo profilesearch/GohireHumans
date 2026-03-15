@@ -113,9 +113,12 @@ def init_db():
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
+        password_hash TEXT NOT NULL DEFAULT '',
         name TEXT NOT NULL DEFAULT '',
         avatar_url TEXT,
+        google_sub TEXT,
+        referral_code TEXT UNIQUE,
+        referred_by INTEGER REFERENCES users(id),
         is_admin INTEGER DEFAULT 0,
         is_active INTEGER DEFAULT 1,
         is_suspended INTEGER DEFAULT 0,
@@ -358,6 +361,33 @@ def init_db():
     # Add AI indexes
     try:
         db.execute("CREATE INDEX IF NOT EXISTS idx_services_provider_type ON services(provider_type)")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Google OAuth + Referral program migrations ──────────────────────
+    for col_sql in [
+        "ALTER TABLE users ADD COLUMN google_sub TEXT",
+        "ALTER TABLE users ADD COLUMN referral_code TEXT UNIQUE",
+        "ALTER TABLE users ADD COLUMN referred_by INTEGER REFERENCES users(id)",
+    ]:
+        try:
+            db.execute(col_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    db.execute("""CREATE TABLE IF NOT EXISTS referrals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referrer_id INTEGER NOT NULL REFERENCES users(id),
+        referred_id INTEGER NOT NULL REFERENCES users(id),
+        status TEXT DEFAULT 'signed_up',
+        reward_type TEXT DEFAULT 'credit',
+        reward_amount REAL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        converted_at TEXT
+    )""")
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code)")
     except sqlite3.OperationalError:
         pass
 
@@ -1021,11 +1051,21 @@ def _handle_routes(db):
             return error_response("Email already registered", 409)
 
         pw_hash = hash_password(password)
+        ref_code = secrets.token_urlsafe(8)
         cursor = db.execute(
-            "INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
-            [email, pw_hash, name]
+            "INSERT INTO users (email, password_hash, name, referral_code) VALUES (?,?,?,?)",
+            [email, pw_hash, name, ref_code]
         )
         user_id = cursor.lastrowid
+
+        # Track referral if ref_code was passed
+        incoming_ref = body.get("ref_code", "").strip()
+        if incoming_ref:
+            referrer = db.execute("SELECT id FROM users WHERE referral_code = ?", [incoming_ref]).fetchone()
+            if referrer and referrer['id'] != user_id:
+                db.execute("UPDATE users SET referred_by = ? WHERE id = ?", [referrer['id'], user_id])
+                db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?,?)",
+                           [referrer['id'], user_id])
 
         token = generate_session_token()
         expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
@@ -1039,6 +1079,7 @@ def _handle_routes(db):
             "name": name,
             "is_admin": 0,
             "token": token,
+            "referral_code": ref_code,
             "worker_profile": None,
             "employer_profile": None
         }, 201)
@@ -1072,6 +1113,73 @@ def _handle_routes(db):
         user_data['employer_profile'] = row_to_dict(ep)
 
         return json_response(user_data)
+
+    elif path == "/auth/google" and method == "POST":
+        # Google One Tap / Sign-In with Google — verify ID token, create or login user
+        body = get_body()
+        id_token = body.get("credential", "").strip()
+        if not id_token:
+            return error_response("Google credential required")
+
+        # Verify the token with Google's tokeninfo endpoint
+        try:
+            verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(id_token)}"
+            req = urllib.request.Request(verify_url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                payload = json.loads(resp.read().decode())
+        except Exception as e:
+            return error_response(f"Google token verification failed: {str(e)}", 401)
+
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+        if google_client_id and payload.get("aud") != google_client_id:
+            return error_response("Google token audience mismatch", 401)
+
+        email = payload.get("email", "").strip().lower()
+        name = payload.get("name", "").strip()
+        google_sub = payload.get("sub", "")
+        email_verified = payload.get("email_verified", "false")
+
+        if not email or email_verified != "true":
+            return error_response("Google account email not verified", 401)
+
+        # Check if user exists
+        existing = db.execute("SELECT * FROM users WHERE email = ?", [email]).fetchone()
+
+        if existing:
+            if existing['is_banned']:
+                return error_response("Account banned", 403)
+            if existing['is_suspended']:
+                return error_response("Account suspended", 403)
+            user_id = existing['id']
+            # Update google_sub if not set
+            db.execute("UPDATE users SET google_sub = ? WHERE id = ? AND (google_sub IS NULL OR google_sub = '')",
+                       [google_sub, user_id])
+        else:
+            # Create new user — no password needed for Google auth
+            cursor = db.execute(
+                "INSERT INTO users (email, password_hash, name, google_sub) VALUES (?,?,?,?)",
+                [email, "", name, google_sub]  # empty password_hash = social-only account
+            )
+            user_id = cursor.lastrowid
+            audit(db, user_id, "register_google", "user", user_id)
+
+        token = generate_session_token()
+        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        db.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (?,?,?)",
+                   [user_id, token, expires])
+        audit(db, user_id, "login_google", "user", user_id)
+        db.commit()
+
+        user = db.execute("SELECT * FROM users WHERE id = ?", [user_id]).fetchone()
+        user_data = row_to_dict(user)
+        del user_data['password_hash']
+        user_data['token'] = token
+        wp = db.execute("SELECT * FROM worker_profiles WHERE user_id = ?", [user_id]).fetchone()
+        ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user_id]).fetchone()
+        user_data['worker_profile'] = row_to_dict(wp)
+        user_data['employer_profile'] = row_to_dict(ep)
+
+        return json_response(user_data, 200 if existing else 201)
 
     elif path == "/auth/logout" and method == "POST":
         auth_header = getattr(_request_ctx, 'http_authorization', '')
@@ -1189,6 +1297,62 @@ def _handle_routes(db):
         db.commit()
         ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user['id']]).fetchone()
         return json_response(row_to_dict(ep))
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # REFERRAL PROGRAM
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    elif path == "/referral/code" and method == "GET":
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        code = user.get('referral_code') or user['referral_code'] if 'referral_code' in dict(user).keys() else None
+        if not code:
+            code = secrets.token_urlsafe(8)
+            db.execute("UPDATE users SET referral_code = ? WHERE id = ?", [code, user['id']])
+            db.commit()
+        referral_url = f"https://www.gohirehumans.com/?ref={code}"
+        # Count referrals
+        stats = db.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END) as converted
+            FROM referrals WHERE referrer_id = ?
+        """, [user['id']]).fetchone()
+        return json_response({
+            "code": code,
+            "url": referral_url,
+            "total_referrals": stats['total'] if stats else 0,
+            "converted_referrals": stats['converted'] if stats else 0
+        })
+
+    elif path == "/referral/track" and method == "POST":
+        # Called during registration to track a referral
+        body = get_body()
+        ref_code = body.get("ref_code", "").strip()
+        new_user_id = body.get("user_id")
+        if not ref_code or not new_user_id:
+            return error_response("ref_code and user_id required")
+        referrer = db.execute("SELECT id FROM users WHERE referral_code = ?", [ref_code]).fetchone()
+        if not referrer or referrer['id'] == new_user_id:
+            return json_response({"ok": False, "reason": "invalid_code"})
+        # Prevent duplicates
+        existing = db.execute("SELECT id FROM referrals WHERE referred_id = ?", [new_user_id]).fetchone()
+        if existing:
+            return json_response({"ok": False, "reason": "already_tracked"})
+        db.execute("UPDATE users SET referred_by = ? WHERE id = ?", [referrer['id'], new_user_id])
+        db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?,?)",
+                   [referrer['id'], new_user_id])
+        db.commit()
+        return json_response({"ok": True})
+
+    elif path == "/referral/leaderboard" and method == "GET":
+        rows = db.execute("""
+            SELECT u.name, u.referral_code, COUNT(r.id) as count
+            FROM users u JOIN referrals r ON u.id = r.referrer_id
+            GROUP BY u.id ORDER BY count DESC LIMIT 10
+        """).fetchall()
+        return json_response({"leaderboard": [dict(r) for r in rows]})
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CATEGORIES
