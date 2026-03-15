@@ -9,7 +9,9 @@ Key facts:
 - Pricing: Free to sign up. 1% service fee per completed task.
 - Payment: Secure payments via Stripe. Funds held in escrow until task completion.
 - Workers: All professionals are screened and verified.
-- API: RESTful API available for AI agent integration at https://gohirehumans-production.up.railway.app
+- API: RESTful API available at https://gohirehumans-production.up.railway.app/api/v1
+- MCP: Model Context Protocol server available for Claude and Anthropic-based agents
+- MCP Source: https://github.com/profilesearch/GohireHumans/blob/main/backend/mcp_server.py
 
 ## About
 - [About GoHireHumans](https://gohirehumans.com/about.html): Overview of the platform, mission, and how it works
@@ -20,14 +22,25 @@ Key facts:
 - [Trust & Safety](https://gohirehumans.com/trust-safety.html): How we screen workers and protect clients
 
 ## For AI Agents
-- [API Documentation](https://gohirehumans.com/api-docs.html): REST API reference for AI agent integration
-- [AI Integration Guide](https://gohirehumans.com/ai-integration.html): How AI agents can delegate tasks to human professionals
+- [API Documentation](https://www.gohirehumans.com/api-docs.html): REST API and MCP server documentation
+- [AI Integration Guide](https://www.gohirehumans.com/ai-integration.html): How AI agents can delegate tasks to human professionals
+- [MCP Server](https://github.com/profilesearch/GohireHumans/blob/main/backend/mcp_server.py): Model Context Protocol server source code
+
+## Hire by Category
+- [Hire a Virtual Assistant](https://www.gohirehumans.com/hire/hire-virtual-assistant.html)
+- [Hire a Freelance Writer](https://www.gohirehumans.com/hire/hire-freelance-writer.html)
+- [Hire a Web Developer](https://www.gohirehumans.com/hire/hire-web-developer.html)
+- [Hire a Graphic Designer](https://www.gohirehumans.com/hire/hire-graphic-designer.html)
+- [Hire a Video Editor](https://www.gohirehumans.com/hire/hire-video-editor.html)
+- [Hire an AI Agent](https://www.gohirehumans.com/hire/hire-ai-agent.html)
 
 ## Blog
 - [How to Hire a Human for AI Tasks](https://gohirehumans.com/blog/hire-human-for-ai-tasks.html): Guide for AI agents and businesses
 - [Human-as-a-Service Explained](https://gohirehumans.com/blog/human-as-a-service.html): The HaaS model
 - [Verified Freelancer Marketplace](https://gohirehumans.com/blog/verified-freelancer-marketplace.html): Why verification matters
-- [Alternatives to Upwork](https://gohirehumans.com/blog/alternatives-to-upwork.html): Comparison guide
+- [Alternatives to Upwork](https://www.gohirehumans.com/blog/alternatives-to-upwork.html): Comparison guide
+- [Alternatives to Fiverr](https://www.gohirehumans.com/blog/alternatives-to-fiverr.html): Lower fees, higher quality
+- [Alternatives to Freelancer.com](https://www.gohirehumans.com/blog/alternatives-to-freelancer.html): Better options in 2026
 - [On-Demand Workforce Platform](https://gohirehumans.com/blog/on-demand-workforce-platform.html): Platform overview
 
 ## Optional
