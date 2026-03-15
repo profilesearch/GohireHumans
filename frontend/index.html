@@ -152,7 +152,7 @@
   <link rel="stylesheet" href="/base.css">
   <link rel="stylesheet" href="/style.css">
   <!-- Google Identity Services (Sign in with Google) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="window.dispatchEvent(new Event('google-identity-loaded'))"></script>
 </head>
 <body>
   <noscript>
@@ -264,17 +264,23 @@ function handleGoogleCredential(response) {
     })
     .catch(err => toast(err.message || 'Google sign-in failed', 'error'));
 }
-// Initialize Google One Tap when library loads
-window.addEventListener('load', () => {
-  if (typeof GOOGLE_CLIENT_ID !== 'undefined' && GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleGoogleCredential,
-      auto_select: false,
-      cancel_on_tap_outside: true
-    });
-  }
-});
+// Initialize Google Identity Services — handles async script loading
+let _googleInitialized = false;
+function initGoogleSignIn() {
+  if (_googleInitialized || !GOOGLE_CLIENT_ID || !window.google?.accounts?.id) return false;
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredential,
+    auto_select: false,
+    cancel_on_tap_outside: true
+  });
+  _googleInitialized = true;
+  return true;
+}
+// Try on page load
+window.addEventListener('load', () => initGoogleSignIn());
+// Also listen for the GSI script's own load callback
+window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 
 // ─── API Client ───────────────────────────────────────────────
 async function api(path, opts = {}) {
@@ -1641,10 +1647,25 @@ function renderAuth(mode) {
       </div>
     </div>`;
   // Initialize Google Sign-In button if configured
-  if (GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
-    google.accounts.id.renderButton(document.getElementById('google-signin-btn'), {
-      theme: 'outline', size: 'large', width: 320, text: isLogin ? 'signin_with' : 'signup_with'
-    });
+  if (GOOGLE_CLIENT_ID) {
+    const tryRenderGoogleBtn = () => {
+      initGoogleSignIn();
+      const el = document.getElementById('google-signin-btn');
+      if (el && window.google?.accounts?.id) {
+        google.accounts.id.renderButton(el, {
+          theme: 'outline', size: 'large', width: 320, text: isLogin ? 'signin_with' : 'signup_with'
+        });
+        return true;
+      }
+      return false;
+    };
+    if (!tryRenderGoogleBtn()) {
+      // GSI script still loading — retry a few times
+      let attempts = 0;
+      const interval = setInterval(() => {
+        if (tryRenderGoogleBtn() || ++attempts > 20) clearInterval(interval);
+      }, 200);
+    }
   }
 }
 
