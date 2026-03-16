@@ -33,6 +33,8 @@ except ImportError:
 
 SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 PROCESSING_FEE_RATE = 0.03  # ~3% payment processing fee passed to buyer (covers Stripe costs)
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "GoHireHumans <hello@gohirehumans.com>")
 
 # Railway volume mount: store DB in /data (the volume mount point).
 # The Dockerfile creates /data, and Railway mounts a persistent volume there.
@@ -783,6 +785,59 @@ def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
     )
 
 
+def send_email(to_email, subject, html_body):
+    """Send email via Resend API. Silently fails if not configured."""
+    if not RESEND_API_KEY:
+        return False
+    try:
+        data = json.dumps({
+            "from": EMAIL_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=data,
+            headers={'Authorization': f'Bearer {RESEND_API_KEY}', 'Content-Type': 'application/json'}
+        )
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception:
+        return False
+
+
+def send_welcome_email(email, name):
+    """Send welcome onboarding email to new user."""
+    first_name = (name or 'there').split()[0]
+    html = f"""
+    <div style="font-family:'Inter',system-ui,sans-serif;max-width:560px;margin:0 auto;color:#1a1816">
+      <div style="background:#0d7377;padding:24px 32px;border-radius:8px 8px 0 0">
+        <h1 style="color:white;font-size:20px;margin:0;font-weight:700">Welcome to GoHireHumans</h1>
+      </div>
+      <div style="background:#faf9f6;padding:32px;border:1px solid #dddbd6;border-top:none;border-radius:0 0 8px 8px">
+        <p style="font-size:16px;line-height:1.6;margin-bottom:16px">Hi {first_name},</p>
+        <p style="font-size:15px;line-height:1.6;margin-bottom:16px">Thanks for joining GoHireHumans — the marketplace where humans and AI work together.</p>
+        <p style="font-size:15px;line-height:1.6;margin-bottom:20px">Here are a few things you can do right now:</p>
+        <ul style="font-size:15px;line-height:1.8;margin-bottom:24px;padding-left:20px;color:#4a4a4a">
+          <li><strong>Post a service</strong> — list your skills and start earning</li>
+          <li><strong>Post a job</strong> — find verified professionals for any task</li>
+          <li><strong>Browse services</strong> — hire someone immediately from our catalog</li>
+          <li><strong>Explore the AI Marketplace</strong> — see how AI agents can hire humans</li>
+        </ul>
+        <div style="text-align:center;margin-bottom:24px">
+          <a href="https://www.gohirehumans.com" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">Get Started →</a>
+        </div>
+        <p style="font-size:13px;color:#6b6963;margin-bottom:8px">Every transaction is protected by escrow. Funds only release when you approve the work.</p>
+        <p style="font-size:13px;color:#6b6963">Questions? Reply to this email or check our <a href="https://www.gohirehumans.com/faq.html" style="color:#0d7377">FAQ</a>.</p>
+        <hr style="border:none;border-top:1px solid #dddbd6;margin:24px 0 16px">
+        <p style="font-size:11px;color:#a8a6a0;text-align:center">&copy; 2026 GoHireHumans · <a href="https://www.gohirehumans.com" style="color:#a8a6a0">gohirehumans.com</a></p>
+      </div>
+    </div>
+    """
+    return send_email(email, "Welcome to GoHireHumans — Let's get started", html)
+
+
 def push_notification(db, user_id, notif_type, title, message=None, link=None):
     db.execute(
         "INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
@@ -1093,6 +1148,12 @@ def _handle_routes(db):
         audit(db, user_id, "register", "user", user_id)
         db.commit()
 
+        # Send welcome email (non-blocking — silently fails if RESEND_API_KEY not set)
+        try:
+            send_welcome_email(email, name)
+        except Exception:
+            pass
+
         return json_response({
             "id": user_id,
             "email": email,
@@ -1182,6 +1243,9 @@ def _handle_routes(db):
             )
             user_id = cursor.lastrowid
             audit(db, user_id, "register_google", "user", user_id)
+            is_new_google_user = True
+        else:
+            is_new_google_user = False
 
         token = generate_session_token()
         expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
@@ -1189,6 +1253,13 @@ def _handle_routes(db):
                    [user_id, token, expires])
         audit(db, user_id, "login_google", "user", user_id)
         db.commit()
+
+        # Send welcome email to new Google users (non-blocking)
+        if is_new_google_user:
+            try:
+                send_welcome_email(email, name)
+            except Exception:
+                pass
 
         user = db.execute("SELECT * FROM users WHERE id = ?", [user_id]).fetchone()
         user_data = row_to_dict(user)

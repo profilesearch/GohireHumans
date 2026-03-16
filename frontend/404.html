@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Not Found | GoHireHumans</title>
+  <meta name="description" content="The page you're looking for doesn't exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <meta name="robots" content="noindex">
+  <meta property="og:title" content="Page Not Found | GoHireHumans">
+  <meta property="og:description" content="The page you're looking for doesn't exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font-body: 'Inter', system-ui, sans-serif;
+      --color-bg: #f5f4f0;
+      --color-surface: #faf9f6;
+      --color-divider: #dddbd6;
+      --color-text: #1a1816;
+      --color-text-muted: #6b6963;
+      --color-text-faint: #a8a6a0;
+      --color-primary: #0d7377;
+      --color-primary-hover: #095558;
+      --color-primary-text: #ffffff;
+      --radius-md: 0.375rem;
+      --radius-lg: 0.5rem;
+    }
+    body {
+      font-family: var(--font-body); background: var(--color-bg); color: var(--color-text);
+      line-height: 1.7; min-height: 100vh; display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .header {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(245,244,240,0.92); backdrop-filter: blur(16px) saturate(180%);
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .header-inner {
+      max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
+      height: 56px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-weight: 700; font-size: 0.9375rem; color: var(--color-text); text-decoration: none;
+    }
+    .logo-icon {
+      width: 28px; height: 28px; background: var(--color-primary);
+      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
+    }
+    .logo-icon svg { width: 16px; height: 16px; }
+    .main {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 4rem 1.5rem;
+    }
+    .content { text-align: center; max-width: 480px; }
+    .error-code {
+      font-size: clamp(5rem, 12vw, 8rem); font-weight: 800; color: var(--color-primary);
+      line-height: 1; letter-spacing: -0.04em; opacity: 0.15; margin-bottom: -1rem;
+    }
+    .title {
+      font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700;
+      margin-bottom: 0.75rem; letter-spacing: -0.02em;
+    }
+    .desc {
+      font-size: 1rem; color: var(--color-text-muted); margin-bottom: 2rem; line-height: 1.6;
+    }
+    .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.375rem;
+      padding: 0.625rem 1.25rem; border-radius: var(--radius-md);
+      font-size: 0.875rem; font-weight: 600; text-decoration: none;
+      transition: all 0.18s ease; border: none; cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--color-primary); color: var(--color-primary-text);
+    }
+    .btn-primary:hover { background: var(--color-primary-hover); }
+    .btn-secondary {
+      background: transparent; color: var(--color-text-muted);
+      border: 1px solid var(--color-divider);
+    }
+    .btn-secondary:hover { color: var(--color-text); border-color: var(--color-text-faint); }
+    .footer {
+      border-top: 1px solid var(--color-divider); background: var(--color-surface);
+    }
+    .footer-inner {
+      max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem;
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;
+    }
+    .footer-copy { font-size: 0.75rem; color: var(--color-text-faint); }
+    .footer-links { display: flex; gap: 1.5rem; }
+    .footer-links a { font-size: 0.8125rem; color: var(--color-text-muted); text-decoration: none; }
+    .footer-links a:hover { color: var(--color-text); }
+    @media (max-width: 640px) {
+      .footer-inner { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        GoHireHumans
+      </a>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="content">
+      <div class="error-code">404</div>
+      <h1 class="title">Page not found</h1>
+      <p class="desc">The page you're looking for doesn't exist or has been moved. Try browsing services, checking open jobs, or heading back to the homepage.</p>
+      <div class="actions">
+        <a href="/" class="btn btn-primary">Go Home</a>
+        <a href="/#/services" class="btn btn-secondary">Browse Services</a>
+        <a href="/#/jobs" class="btn btn-secondary">Find Jobs</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="/blog/">Blog</a>
+        <a href="/about.html">About</a>
+        <a href="/faq.html">FAQ</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

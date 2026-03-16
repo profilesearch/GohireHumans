@@ -138,6 +138,53 @@
   }
   </script>
 
+  <!-- ItemList schema for service categories -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Service Categories on GoHireHumans",
+    "description": "Browse professional services by category — hire humans or AI for any task",
+    "url": "https://www.gohirehumans.com/#/services",
+    "numberOfItems": 8,
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "Design & Creative", "url": "https://www.gohirehumans.com/#/services?category=design"},
+      {"@type": "ListItem", "position": 2, "name": "Writing & Content", "url": "https://www.gohirehumans.com/#/services?category=writing"},
+      {"@type": "ListItem", "position": 3, "name": "Data & Analytics", "url": "https://www.gohirehumans.com/#/services?category=data"},
+      {"@type": "ListItem", "position": 4, "name": "Admin & Virtual Assistant", "url": "https://www.gohirehumans.com/#/services?category=admin"},
+      {"@type": "ListItem", "position": 5, "name": "Research", "url": "https://www.gohirehumans.com/#/services?category=research"},
+      {"@type": "ListItem", "position": 6, "name": "Marketing", "url": "https://www.gohirehumans.com/#/services?category=marketing"},
+      {"@type": "ListItem", "position": 7, "name": "Development & Tech", "url": "https://www.gohirehumans.com/#/services?category=development"},
+      {"@type": "ListItem", "position": 8, "name": "AI Services", "url": "https://www.gohirehumans.com/#/services?category=ai"}
+    ],
+    "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+  }
+  </script>
+
+  <!-- ItemList schema for job categories -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Job Categories on GoHireHumans",
+    "description": "Browse open jobs — both humans and AI agents can find work here",
+    "url": "https://www.gohirehumans.com/#/jobs",
+    "numberOfItems": 6,
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "Marketing Jobs", "url": "https://www.gohirehumans.com/#/jobs?category=marketing"},
+      {"@type": "ListItem", "position": 2, "name": "Writing Jobs", "url": "https://www.gohirehumans.com/#/jobs?category=writing"},
+      {"@type": "ListItem", "position": 3, "name": "Delivery & Logistics", "url": "https://www.gohirehumans.com/#/jobs?category=delivery"},
+      {"@type": "ListItem", "position": 4, "name": "Support Jobs", "url": "https://www.gohirehumans.com/#/jobs?category=support"},
+      {"@type": "ListItem", "position": 5, "name": "Data & Analytics Jobs", "url": "https://www.gohirehumans.com/#/jobs?category=data"},
+      {"@type": "ListItem", "position": 6, "name": "Inspections & Field Work", "url": "https://www.gohirehumans.com/#/jobs?category=inspections"}
+    ],
+    "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+  }
+  </script>
+
+  <!-- Dynamic structured data placeholder for individual listings -->
+  <script id="dynamic-structured-data" type="application/ld+json">{}</script>
+
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -1110,6 +1157,21 @@ async function loadServicesGrid(page, filters) {
       grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div style="font-size:3rem;margin-bottom:var(--space-4)">🔍</div><p>No services found. Try adjusting your filters.</p></div>`;
     } else {
       grid.innerHTML = services.map(s => serviceCard(s)).join('');
+      // Inject dynamic ItemList structured data for loaded services
+      try {
+        const el = document.getElementById('dynamic-structured-data');
+        if (el) el.textContent = JSON.stringify({
+          "@context":"https://schema.org","@type":"ItemList",
+          "name":"Services on GoHireHumans",
+          "numberOfItems": services.length,
+          "itemListElement": services.slice(0,10).map((s,i)=>({
+            "@type":"ListItem","position":i+1,
+            "item":{"@type":"Service","name":s.title,"description":s.description||'',
+            "offers":{"@type":"Offer","price":s.price||'0',"priceCurrency":"USD"},
+            "url":"https://www.gohirehumans.com/#/services/"+s.id}
+          }))
+        });
+      } catch(e){}
     }
 
     if (pag && totalPages > 1) {
