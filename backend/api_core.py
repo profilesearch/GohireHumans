@@ -2398,6 +2398,36 @@ def _handle_routes(db):
                 "Order completed",
                 f"Order #{order_id} has been completed successfully.",
                 f"/orders/{order_id}")
+            # Send review request notification to employer
+            push_notification(db, order['employer_id'], "review_request",
+                "How was your experience?",
+                f"Order #{order_id} is complete! Leave a review to help others find great professionals.",
+                f"/orders/{order_id}#review")
+            # Send review request email if Resend is configured
+            try:
+                employer = db.execute("SELECT email, name FROM users WHERE id = ?", [order['employer_id']]).fetchone()
+                worker = db.execute("SELECT u.name FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.id = ?", [order['worker_id']]).fetchone()
+                if employer and worker:
+                    review_html = f"""
+                    <div style="font-family:'Inter',system-ui,sans-serif;max-width:560px;margin:0 auto;color:#1a1816">
+                      <div style="background:#0d7377;padding:24px 32px;border-radius:8px 8px 0 0">
+                        <h1 style="color:white;font-size:20px;margin:0;font-weight:700">How was your experience?</h1>
+                      </div>
+                      <div style="background:#faf9f6;padding:32px;border:1px solid #dddbd6;border-top:none;border-radius:0 0 8px 8px">
+                        <p style="font-size:16px;line-height:1.6;margin-bottom:16px">Hi {(employer['name'] or 'there').split()[0]},</p>
+                        <p style="font-size:15px;line-height:1.6;margin-bottom:16px">Your order with <strong>{worker['name']}</strong> is complete! We'd love to hear how it went.</p>
+                        <p style="font-size:15px;line-height:1.6;margin-bottom:24px">Your review helps other buyers find the best professionals and helps workers build their reputation.</p>
+                        <div style="text-align:center;margin-bottom:24px">
+                          <a href="https://www.gohirehumans.com/#/orders/{order_id}" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">Leave a Review →</a>
+                        </div>
+                        <hr style="border:none;border-top:1px solid #dddbd6;margin:24px 0 16px">
+                        <p style="font-size:11px;color:#a8a6a0;text-align:center">&copy; 2026 GoHireHumans · <a href="https://www.gohirehumans.com" style="color:#a8a6a0">gohirehumans.com</a></p>
+                      </div>
+                    </div>
+                    """
+                    send_email(employer['email'], f"How was your experience with {worker['name']}?", review_html)
+            except Exception:
+                pass
 
         audit(db, user['id'], "approve_order", "order", order_id)
         db.commit()
