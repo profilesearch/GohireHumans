@@ -367,13 +367,16 @@ def init_db():
         pass
 
     # ── Google OAuth + Referral program migrations ──────────────────────
+    # Note: SQLite cannot ADD COLUMN with UNIQUE constraint, so add column
+    # without UNIQUE first, then create a unique index separately.
     for col_sql in [
         "ALTER TABLE users ADD COLUMN google_sub TEXT",
-        "ALTER TABLE users ADD COLUMN referral_code TEXT UNIQUE",
+        "ALTER TABLE users ADD COLUMN referral_code TEXT",
         "ALTER TABLE users ADD COLUMN referred_by INTEGER REFERENCES users(id)",
     ]:
         try:
             db.execute(col_sql)
+            print(f"[GoHireHumans] Migration OK: {col_sql}", file=sys.stderr)
         except sqlite3.OperationalError:
             pass  # Column already exists
 
@@ -1127,20 +1130,31 @@ def _handle_routes(db):
 
         pw_hash = hash_password(password)
         ref_code = secrets.token_urlsafe(8)
-        cursor = db.execute(
-            "INSERT INTO users (email, password_hash, name, referral_code) VALUES (?,?,?,?)",
-            [email, pw_hash, name, ref_code]
-        )
+        try:
+            cursor = db.execute(
+                "INSERT INTO users (email, password_hash, name, referral_code) VALUES (?,?,?,?)",
+                [email, pw_hash, name, ref_code]
+            )
+        except sqlite3.OperationalError:
+            # Fallback: referral_code column may not exist yet
+            cursor = db.execute(
+                "INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
+                [email, pw_hash, name]
+            )
+            ref_code = None
         user_id = cursor.lastrowid
 
         # Track referral if ref_code was passed
         incoming_ref = body.get("ref_code", "").strip()
         if incoming_ref:
-            referrer = db.execute("SELECT id FROM users WHERE referral_code = ?", [incoming_ref]).fetchone()
-            if referrer and referrer['id'] != user_id:
-                db.execute("UPDATE users SET referred_by = ? WHERE id = ?", [referrer['id'], user_id])
-                db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?,?)",
-                           [referrer['id'], user_id])
+            try:
+                referrer = db.execute("SELECT id FROM users WHERE referral_code = ?", [incoming_ref]).fetchone()
+                if referrer and referrer['id'] != user_id:
+                    db.execute("UPDATE users SET referred_by = ? WHERE id = ?", [referrer['id'], user_id])
+                    db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?,?)",
+                               [referrer['id'], user_id])
+            except sqlite3.OperationalError:
+                pass  # referral columns may not exist yet
 
         token = generate_session_token()
         expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
