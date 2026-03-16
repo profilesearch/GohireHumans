@@ -105,7 +105,22 @@
     .article-info { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; font-size: 0.8125rem; color: var(--color-text-muted); }
     .article-info span { display: flex; align-items: center; gap: 0.375rem; }
     .article-info svg { width: 14px; height: 14px; opacity: 0.6; }
-    .article-hero-shape { width: 100%; height: 200px; border-radius: var(--radius-xl); margin-bottom: 2.5rem; background: linear-gradient(140deg, #e6f3f3 0%, #fef3c7 40%, #f3e8ff 100%); position: relative; overflow: hidden; }
+    .article-hero-shape {
+      width: 100%; height: 200px; border-radius: var(--radius-xl); margin-bottom: 2.5rem;
+      background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%);
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .article-hero-shape::before {
+      content: '📊'; position: absolute; font-size: 4rem; opacity: 0.2;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+    }
+    .article-hero-shape::after {
+      content: '50+'; position: absolute;
+      font-size: 4.5rem; font-weight: 900; letter-spacing: -0.04em;
+      color: #38bdf8; opacity: 0.08;
+      bottom: -10px; right: 24px;
+    
     .article-hero-shape::before { content: ''; position: absolute; width: 140px; height: 140px; border: 3px solid rgba(13, 115, 119, 0.1); border-radius: var(--radius-xl); top: 20px; right: 40px; transform: rotate(12deg); }
     .article-hero-shape::after { content: ''; position: absolute; width: 60px; height: 60px; background: rgba(180, 83, 9, 0.06); border-radius: 50%; bottom: 30px; left: 50px; }
     .article-body h2 { font-size: clamp(1.25rem, 2.5vw, 1.5rem); font-weight: 700; color: var(--color-text); margin-top: 2.5rem; margin-bottom: 1rem; letter-spacing: -0.01em; }
@@ -187,7 +202,7 @@
           <div class="stat-card">
             <div class="stat-number">70.4M</div>
             <div class="stat-label">US freelancers in 2025</div>
-            <div class="stat-source">Statista</div>
+            <div class="stat-source"><a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Statista</a></div>
           </div>
           <div class="stat-card">
             <div class="stat-number">$646B</div>
@@ -197,23 +212,23 @@
           <div class="stat-card">
             <div class="stat-number">$47.71</div>
             <div class="stat-label">Avg. freelancer hourly rate (NA)</div>
-            <div class="stat-source">Fortunly</div>
+            <div class="stat-source"><a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Fortunly</a></div>
           </div>
           <div class="stat-card">
             <div class="stat-number">86.5M</div>
             <div class="stat-label">Projected US freelancers by 2027</div>
-            <div class="stat-source">Statista</div>
+            <div class="stat-source"><a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Statista</a></div>
           </div>
         </div>
 
         <h2>Market Size &amp; Growth</h2>
         <ol>
-          <li>The global gig economy is valued between <strong>$455 billion and $646 billion</strong> (World Bank, Business Research Insights)</li>
-          <li>Annual growth rates are between <strong>16% and 17%</strong>, outpacing most traditional industries (Fortunly)</li>
-          <li>The platform-driven gig economy engages approximately <strong>12% of the global labor force</strong> (World Bank)</li>
-          <li>Total freelance income in the US generates nearly <strong>$1.3 trillion</strong> annually (Fortunly)</li>
-          <li>The AI agent workforce market alone is worth <strong>$7.84 billion</strong> and growing at 46% CAGR (Grand View Research)</li>
-          <li>By 2030, the global freelance platform market is projected to reach <strong>$14 billion</strong> (Statista)</li>
+          <li>The global gig economy is valued between <strong>$455 billion and $646 billion</strong> (<a href="https://www.worldbank.org/en/topic/jobsanddevelopment/brief/gig-economy" target="_blank" rel="noopener">World Bank</a>, <a href="https://www.businessresearchinsights.com/market-reports/gig-economy-market-100652" target="_blank" rel="noopener">Business Research Insights</a>)</li>
+          <li>Annual growth rates are between <strong>16% and 17%</strong>, outpacing most traditional industries (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li>The platform-driven gig economy engages approximately <strong>12% of the global labor force</strong> (<a href="https://www.worldbank.org/en/topic/jobsanddevelopment/brief/gig-economy" target="_blank" rel="noopener">World Bank</a>)</li>
+          <li>Total freelance income in the US generates nearly <strong>$1.3 trillion</strong> annually (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li>The AI agent workforce market alone is worth <strong>$7.84 billion</strong> and growing at 46% CAGR (<a href="https://www.grandviewresearch.com/industry-analysis/ai-agents-market-report" target="_blank" rel="noopener">Grand View Research</a>)</li>
+          <li>By 2030, the global freelance platform market is projected to reach <strong>$14 billion</strong> (<a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener">Statista</a>)</li>
         </ol>
 
         <h2>US Workforce Participation</h2>
@@ -236,22 +251,22 @@
           </div>
         </div>
         <ol start="7">
-          <li>Over <strong>70.4 million Americans</strong> were freelancing in 2025, representing 36% of the total workforce (Statista)</li>
-          <li>Projections show this growing to <strong>86.5 million by 2027</strong> &mdash; meaning over half of all US workers (Statista)</li>
-          <li>More than <strong>90% of US workers</strong> would consider freelancing or independent contracting (Fortunly)</li>
-          <li><strong>4.7 million independent workers</strong> in the US earned over $100,000 in 2024, up from 3 million in 2020 (OysterLink)</li>
+          <li>Over <strong>70.4 million Americans</strong> were freelancing in 2025, representing 36% of the total workforce (<a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener">Statista</a>)</li>
+          <li>Projections show this growing to <strong>86.5 million by 2027</strong> &mdash; meaning over half of all US workers (<a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener">Statista</a>)</li>
+          <li>More than <strong>90% of US workers</strong> would consider freelancing or independent contracting (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li><strong>4.7 million independent workers</strong> in the US earned over $100,000 in 2024, up from 3 million in 2020 (<a href="https://www.oysterlink.com/career-advice/gig-economy-statistics/" target="_blank" rel="noopener">OysterLink</a>)</li>
           <li>About <strong>28% of skilled professionals</strong> now work independently as freelancers (Upwork)</li>
           <li><strong>63% of freelancers</strong> say a portfolio of clients is more reliable than a single employer (Wonolo)</li>
-          <li>Florida has the highest concentration of gig workers, with <strong>22% of workers</strong> in the state doing gig work (OysterLink)</li>
+          <li>Florida has the highest concentration of gig workers, with <strong>22% of workers</strong> in the state doing gig work (<a href="https://www.oysterlink.com/career-advice/gig-economy-statistics/" target="_blank" rel="noopener">OysterLink</a>)</li>
         </ol>
 
         <h2>Earnings &amp; Compensation</h2>
         <ol start="14">
-          <li>The average hourly rate for freelancers in North America is <strong>$47.71</strong> (Fortunly)</li>
-          <li>Average annual income: full-time employees earn <strong>$80,116</strong> vs. freelancers at <strong>$69,000</strong> (Fortunly)</li>
-          <li>The gap is partly explained by freelancers working <strong>25 hours/week on average</strong> vs. 40 for full-time (Fortunly)</li>
+          <li>The average hourly rate for freelancers in North America is <strong>$47.71</strong> (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li>Average annual income: full-time employees earn <strong>$80,116</strong> vs. freelancers at <strong>$69,000</strong> (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li>The gap is partly explained by freelancers working <strong>25 hours/week on average</strong> vs. 40 for full-time (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
           <li><strong>57% of gig workers</strong> work more than 40 hours per week; average is 43 hours (Freelancermap)</li>
-          <li>The highest-paying gig job in the US is <strong>massage therapy at $27.34/hr</strong> (OysterLink)</li>
+          <li>The highest-paying gig job in the US is <strong>massage therapy at $27.34/hr</strong> (<a href="https://www.oysterlink.com/career-advice/gig-economy-statistics/" target="_blank" rel="noopener">OysterLink</a>)</li>
         </ol>
 
         <h2>Highest-Paying Freelance Fields</h2>
@@ -283,14 +298,14 @@
           </div>
         </div>
         <ol start="19">
-          <li><strong>48% of millennials</strong> use gig economy platforms to find work (Prudential)</li>
-          <li><strong>35% of Gen Xers</strong> browse gig economy websites for work (Prudential)</li>
-          <li>Only <strong>19% of baby boomers</strong> use gig platforms (Prudential)</li>
+          <li><strong>48% of millennials</strong> use gig economy platforms to find work (<a href="https://www.prudential.com/corporate/newsroom" target="_blank" rel="noopener">Prudential</a>)</li>
+          <li><strong>35% of Gen Xers</strong> browse gig economy websites for work (<a href="https://www.prudential.com/corporate/newsroom" target="_blank" rel="noopener">Prudential</a>)</li>
+          <li>Only <strong>19% of baby boomers</strong> use gig platforms (<a href="https://www.prudential.com/corporate/newsroom" target="_blank" rel="noopener">Prudential</a>)</li>
           <li>Gen Z is the fastest-growing demographic entering freelancing, driven by digital-native skills</li>
         </ol>
 
         <h2>Industry Breakdown</h2>
-        <p>The largest employer of US gig workers is actually the <strong>government and public sector at 14%</strong> (Statista). Here's the full industry breakdown:</p>
+        <p>The largest employer of US gig workers is actually the <strong>government and public sector at 14%</strong> (<a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener">Statista</a>). Here's the full industry breakdown:</p>
         <table class="summary-table">
           <thead><tr><th>Industry</th><th>% of Gig Workers</th></tr></thead>
           <tbody>
@@ -309,8 +324,8 @@
 
         <h2>Satisfaction &amp; Work-Life Balance</h2>
         <ol start="23">
-          <li><strong>77% of gig economy workers</strong> say they are very satisfied with their job (Fortunly)</li>
-          <li>Only <strong>1% of gig workers</strong> reported being dissatisfied (Fortunly)</li>
+          <li><strong>77% of gig economy workers</strong> say they are very satisfied with their job (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
+          <li>Only <strong>1% of gig workers</strong> reported being dissatisfied (<a href="https://fortunly.com/statistics/gig-economy-statistics/" target="_blank" rel="noopener">Fortunly</a>)</li>
           <li>The top reason for freelancing: <strong>flexibility and work-life balance</strong></li>
           <li><strong>63%</strong> prefer multiple clients over a single employer for financial security (Wonolo)</li>
           <li>Skill-based work (trades, creative services, handyman, pet care) is emerging as the primary side hustle for workers facing job instability</li>
@@ -334,7 +349,7 @@
 
         <h2>AI &amp; Automation Trends</h2>
         <ol start="28">
-          <li>The AI agent workforce market is valued at <strong>$7.84 billion</strong>, growing at 46% CAGR (Grand View Research)</li>
+          <li>The AI agent workforce market is valued at <strong>$7.84 billion</strong>, growing at 46% CAGR (<a href="https://www.grandviewresearch.com/industry-analysis/ai-agents-market-report" target="_blank" rel="noopener">Grand View Research</a>)</li>
           <li><strong>88% of enterprises</strong> have adopted or are piloting AI agent technology</li>
           <li>AI agents are creating new demand for "human-in-the-loop" workers: QA, data labeling, verification, and escalation handling</li>
           <li>GoHireHumans is the first platform to offer <strong>bidirectional AI-human hiring</strong> via REST API and MCP server</li>
@@ -344,7 +359,7 @@
 
         <h2>Global Gig Economy</h2>
         <ol start="34">
-          <li>The global gig economy employs approximately <strong>12% of the global labor force</strong> (World Bank)</li>
+          <li>The global gig economy employs approximately <strong>12% of the global labor force</strong> (<a href="https://www.worldbank.org/en/topic/jobsanddevelopment/brief/gig-economy" target="_blank" rel="noopener">World Bank</a>)</li>
           <li>India is the largest supplier of freelancers globally, followed by the Philippines and the United States</li>
           <li>Cross-border freelancing grew <strong>35% year over year</strong> as remote work normalized</li>
           <li>The UK freelance market is valued at over <strong>$162 billion</strong></li>
@@ -389,7 +404,7 @@
           </div>
         </div>
         <ol start="49">
-          <li>By 2027, <strong>over half of the US workforce</strong> will participate in freelancing (Statista)</li>
+          <li>By 2027, <strong>over half of the US workforce</strong> will participate in freelancing (<a href="https://www.statista.com/topics/4891/gig-economy-in-the-us/" target="_blank" rel="noopener">Statista</a>)</li>
           <li>AI-to-human task delegation is expected to create <strong>millions of new gig jobs</strong> by 2028</li>
           <li>Platforms with the <strong>lowest fees</strong> are projected to capture disproportionate market share as freelancers migrate</li>
           <li>The <strong>"human-in-the-loop" economy</strong> &mdash; where AI and humans work together &mdash; will be the defining gig trend of the late 2020s</li>

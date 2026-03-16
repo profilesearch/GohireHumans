@@ -13,14 +13,15 @@
   <meta name="description" content="GoHireHumans is the marketplace where humans and AI work together. Browse services, post jobs, or let AI agents hire verified humans for tasks that need a real person. Escrow-protected payments.">
   <meta name="saashub-verification" content="cru7123rmg9z" />
 
-  <!-- Google Analytics (GA4) — Replace G-XXXXXXXXXX with your Measurement ID -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <!-- Google Analytics (GA4) — Uncomment and replace YOUR_GA4_ID with your Measurement ID
+  <script async src="https://www.googletagmanager.com/gtag/js?id=YOUR_GA4_ID"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-    gtag('config', 'G-XXXXXXXXXX');
+    gtag('config', 'YOUR_GA4_ID');
   </script>
+  -->
 
   <!-- Canonical URL -->
   <link rel="canonical" href="https://www.gohirehumans.com/">
@@ -1169,7 +1170,12 @@ async function loadServicesGrid(page, filters) {
     const totalPages = Math.ceil(total / 12);
 
     if (services.length === 0) {
-      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div style="font-size:3rem;margin-bottom:var(--space-4)">🔍</div><p>No services found. Try adjusting your filters.</p></div>`;
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)">
+              <div style="font-size:3rem;margin-bottom:var(--space-4)">🚀</div>
+              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Be the first to list a service</h3>
+              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6);max-width:400px;margin-left:auto;margin-right:auto">GoHireHumans is a new marketplace — early sellers get maximum visibility and first-mover advantage.</p>
+              <button class="btn btn-primary" onclick="navigate('#/register')">Post Your Service — It's Free</button>
+            </div>`;
     } else {
       grid.innerHTML = services.map(s => serviceCard(s)).join('');
       // Inject dynamic ItemList structured data for loaded services
@@ -1197,7 +1203,12 @@ async function loadServicesGrid(page, filters) {
       }).join('');
     }
   } catch(err) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><p>Failed to load services: ${esc(err.message)}</p><button class="btn btn-primary btn-sm" onclick="renderServices()">Retry</button></div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)">
+              <div style="font-size:3rem;margin-bottom:var(--space-4)">⚡</div>
+              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Something went wrong</h3>
+              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6)">We couldn't load services right now. Please try again.</p>
+              <button class="btn btn-primary" onclick="renderServices()">Retry</button>
+            </div>`;
   }
 }
 
@@ -1491,7 +1502,12 @@ async function loadJobsList(page, filters) {
     const totalPages = Math.ceil(total / 15);
 
     if (jobs.length === 0) {
-      list.innerHTML = `<div class="empty-state"><p>No jobs found. Try adjusting your filters.</p></div>`;
+      list.innerHTML = `<div class="empty-state" style="text-align:center;padding:var(--space-12) var(--space-6)">
+              <div style="font-size:3rem;margin-bottom:var(--space-4)">💼</div>
+              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Be the first to post a job</h3>
+              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6);max-width:400px;margin-left:auto;margin-right:auto">Post a job and get matched with verified professionals. No account fee, just a 1% transaction fee when work is completed.</p>
+              <button class="btn btn-primary" onclick="navigate('#/register')">Post a Job — It's Free</button>
+            </div>`;
     } else {
       list.innerHTML = jobs.map(j => jobCard(j)).join('');
     }
@@ -1504,7 +1520,12 @@ async function loadJobsList(page, filters) {
       }).join('');
     }
   } catch(err) {
-    list.innerHTML = `<div class="empty-state"><p>Failed to load jobs: ${esc(err.message)}</p><button class="btn btn-primary btn-sm" onclick="renderJobs()">Retry</button></div>`;
+    list.innerHTML = `<div class="empty-state" style="text-align:center;padding:var(--space-12) var(--space-6)">
+              <div style="font-size:3rem;margin-bottom:var(--space-4)">⚡</div>
+              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Something went wrong</h3>
+              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6)">We couldn't load jobs right now. Please try again.</p>
+              <button class="btn btn-primary" onclick="renderJobs()">Retry</button>
+            </div>`;
   }
 }
 
