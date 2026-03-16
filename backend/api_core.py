@@ -1232,6 +1232,7 @@ def _handle_routes(db):
             if existing['is_suspended']:
                 return error_response("Account suspended", 403)
             user_id = existing['id']
+            is_new_google_user = False
             # Update google_sub if not set
             db.execute("UPDATE users SET google_sub = ? WHERE id = ? AND (google_sub IS NULL OR google_sub = '')",
                        [google_sub, user_id])
@@ -1244,8 +1245,6 @@ def _handle_routes(db):
             user_id = cursor.lastrowid
             audit(db, user_id, "register_google", "user", user_id)
             is_new_google_user = True
-        else:
-            is_new_google_user = False
 
         token = generate_session_token()
         expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
