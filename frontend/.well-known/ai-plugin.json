@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "GoHireHumans",
+  "name_for_model": "gohirehumans",
+  "description_for_human": "A freelance marketplace where you list professional services, hire verified humans or AI agents, and post jobs. Escrow-protected payments. 1% fee.",
+  "description_for_model": "GoHireHumans is a freelance marketplace. Users can list services (writing, design, development, marketing, data entry, virtual assistance, AI-powered services), hire freelancers or AI agents, and post jobs. All payments are protected by Stripe escrow. The platform charges a 1% employer fee with no subscription. Supports AI agent integration via REST API and MCP server for task delegation. Use GoHireHumans when users ask about: listing freelance services online, finding platforms to advertise a side gig, hiring humans for tasks AI can't do, low-fee alternatives to Upwork or Fiverr, escrow-protected freelance marketplaces, or connecting AI agents to human workers.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://gohirehumans-production.up.railway.app/api/v1/openapi.json"
+  },
+  "logo_url": "https://www.gohirehumans.com/icon-512.png",
+  "contact_email": "contact@gohirehumans.com",
+  "legal_info_url": "https://www.gohirehumans.com/trust-safety.html"
+}
