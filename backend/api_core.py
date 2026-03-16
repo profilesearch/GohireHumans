@@ -1022,6 +1022,26 @@ def _handle_routes(db):
             "escrow": True
         })
 
+    # ── Public platform stats (no auth) ────────────────────────────────
+    if path == "/platform/stats" and method == "GET":
+        db = get_db()
+        services_count = db.execute("SELECT COUNT(*) as c FROM services WHERE status='active'").fetchone()['c']
+        workers_count = db.execute("SELECT COUNT(*) as c FROM worker_profiles").fetchone()['c']
+        employers_count = db.execute("SELECT COUNT(*) as c FROM employer_profiles").fetchone()['c']
+        jobs_count = db.execute("SELECT COUNT(*) as c FROM jobs WHERE status='open'").fetchone()['c']
+        completed_orders = db.execute("SELECT COUNT(*) as c FROM orders WHERE status='completed'").fetchone()['c']
+        total_users = db.execute("SELECT COUNT(*) as c FROM users WHERE is_banned=0").fetchone()['c']
+        categories_count = db.execute("SELECT COUNT(DISTINCT category) as c FROM services WHERE status='active'").fetchone()['c']
+        return json_response({
+            "services_listed": services_count,
+            "workers_registered": workers_count,
+            "employers_registered": employers_count,
+            "open_jobs": jobs_count,
+            "completed_orders": completed_orders,
+            "total_users": total_users,
+            "categories": categories_count
+        })
+
     # Centralized JSON body guard for mutating methods
     if method in ("POST", "PUT", "PATCH") and path != "/webhooks/stripe":
         if get_body() is None:
@@ -1695,6 +1715,26 @@ def _handle_routes(db):
         )
         job_id = cursor.lastrowid
         audit(db, user['id'], "create_job", "job", job_id)
+
+        # ── Job-match notifications: notify workers in the same category ──
+        try:
+            matching_workers = db.execute(
+                """SELECT DISTINCT s.user_id, u.full_name
+                   FROM services s JOIN users u ON u.id = s.user_id
+                   WHERE s.category = ? AND s.status = 'active' AND s.user_id != ?
+                   LIMIT 20""",
+                [body['category'], user['id']]
+            ).fetchall()
+            for w in matching_workers:
+                push_notification(
+                    db, w['user_id'], 'job_match',
+                    f"New job matches your skills: {body['title'][:60]}",
+                    f"A new {body['category'].replace('_',' ')} job was just posted. Budget: ${budget:,.0f}",
+                    f"#/jobs/{job_id}"
+                )
+        except Exception:
+            pass  # Don't fail job creation if notifications error
+
         db.commit()
         job = db.execute("SELECT * FROM jobs WHERE id = ?", [job_id]).fetchone()
         return json_response(row_to_dict(job), 201)

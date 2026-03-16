@@ -863,23 +863,23 @@ async function renderLanding() {
       <!-- ═══ ANIMATED STATS / SOCIAL PROOF SECTION ═══ -->
       <section class="lp-stats-proof">
         <div class="lp-stats-inner">
-          <div class="lp-stats-grid">
+          <div class="lp-stats-grid" id="lp-live-stats">
             <div class="lp-stat-item lp-stat-animate">
-              <div class="lp-stat-icon">${I.users}</div>
-              <div class="lp-stat-label">Human + AI Ready</div>
-              <div class="lp-stat-detail">Both humans and AI agents can hire</div>
+              <div class="lp-stat-number" id="stat-services">--</div>
+              <div class="lp-stat-label">Services Listed</div>
+              <div class="lp-stat-detail">Browse and order instantly</div>
+            </div>
+            <div class="lp-stat-divider" aria-hidden="true"></div>
+            <div class="lp-stat-item lp-stat-animate">
+              <div class="lp-stat-number" id="stat-users">--</div>
+              <div class="lp-stat-label">Registered Users</div>
+              <div class="lp-stat-detail">Humans &amp; AI agents</div>
             </div>
             <div class="lp-stat-divider" aria-hidden="true"></div>
             <div class="lp-stat-item lp-stat-animate">
               <div class="lp-stat-icon">${I.shield}</div>
               <div class="lp-stat-label">Escrow Protected</div>
               <div class="lp-stat-detail">Every transaction secured</div>
-            </div>
-            <div class="lp-stat-divider" aria-hidden="true"></div>
-            <div class="lp-stat-item lp-stat-animate">
-              <div class="lp-stat-icon">${I.check}</div>
-              <div class="lp-stat-label">Verified Profiles</div>
-              <div class="lp-stat-detail">Workers &amp; employers screened</div>
             </div>
             <div class="lp-stat-divider" aria-hidden="true"></div>
             <div class="lp-stat-item lp-stat-animate">
@@ -970,6 +970,14 @@ async function renderLanding() {
 
   // Initialize scroll animations after DOM render
   requestAnimationFrame(() => initScrollAnimations());
+
+  // Fetch and display live platform stats
+  api('/platform/stats').then(stats => {
+    const sEl = document.getElementById('stat-services');
+    const uEl = document.getElementById('stat-users');
+    if (sEl) sEl.textContent = stats.services_listed || '0';
+    if (uEl) uEl.textContent = stats.total_users || '0';
+  }).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2245,7 +2253,13 @@ async function handleHire(jobId, applicationId, workerId) {
       </div>
       <div class="form-group">
         <label class="label">Milestone Amount ($)</label>
-        <input class="input" type="number" id="milestone-amount" placeholder="500.00" min="1" step="0.01">
+        <input class="input" type="number" id="milestone-amount" placeholder="500.00" min="1" step="0.01" oninput="updateHireFeeBreakdown()">
+      </div>
+      <div id="hire-fee-breakdown" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-3);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border);display:none">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Service amount</span><span id="hire-base">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Platform fee (1%)</span><span id="hire-platform-fee">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Processing fee (~3%)</span><span id="hire-processing-fee">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--color-border);padding-top:4px;margin-top:4px;color:var(--color-text)"><span>Total charged</span><span id="hire-total">$0.00</span></div>
       </div>
       <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
@@ -2257,6 +2271,24 @@ async function handleHire(jobId, applicationId, workerId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+}
+
+function updateHireFeeBreakdown() {
+  const amount = parseFloat(document.getElementById('milestone-amount')?.value || '0');
+  const box = document.getElementById('hire-fee-breakdown');
+  if (!box) return;
+  if (amount > 0) {
+    box.style.display = 'block';
+    const platformFee = Math.round(amount * 0.01 * 100) / 100;
+    const processingFee = Math.round(amount * 0.03 * 100) / 100;
+    const total = Math.round((amount + platformFee + processingFee) * 100) / 100;
+    document.getElementById('hire-base').textContent = `$${amount.toFixed(2)}`;
+    document.getElementById('hire-platform-fee').textContent = `$${platformFee.toFixed(2)}`;
+    document.getElementById('hire-processing-fee').textContent = `$${processingFee.toFixed(2)}`;
+    document.getElementById('hire-total').textContent = `$${total.toFixed(2)}`;
+  } else {
+    box.style.display = 'none';
+  }
 }
 
 async function confirmHire(jobId, applicationId) {
@@ -2405,6 +2437,11 @@ async function renderOrderDetail(id) {
               <div><span style="color:var(--color-text-faint)">Order ID:</span> #${id}</div>
               <div><span style="color:var(--color-text-faint)">Type:</span> ${isHourly ? 'Hourly' : 'Fixed Price'}</div>
               <div><span style="color:var(--color-text-faint)">Total:</span> $${Number(order.total_amount||order.amount||0).toFixed(2)}</div>
+              ${isEmployer ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Platform fee (1%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.01).toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Processing (~3%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.03).toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px"><span>You paid</span><span>$${(Number(order.total_amount||order.amount||0)*1.04).toFixed(2)}</span></div>
+              </div>` : ''}
               ${order.worker_name ? `<div><span style="color:var(--color-text-faint)">Worker:</span> ${esc(order.worker_name)}</div>` : ''}
               ${order.employer_name ? `<div><span style="color:var(--color-text-faint)">Client:</span> ${esc(order.employer_name)}</div>` : ''}
               <div><span style="color:var(--color-text-faint)">Created:</span> ${new Date(order.created_at).toLocaleDateString()}</div>
@@ -2459,23 +2496,64 @@ async function approveOrder(id) {
 }
 
 async function requestRevision(id) {
-  const msg = prompt('Describe what needs to be revised:');
-  if (!msg) return;
-  try {
-    await api(`/orders/${id}/request-revision`, { method: 'POST', body: { message: msg } });
-    toast('Revision requested.', 'info');
-    renderOrderDetail(id);
-  } catch(err) { toast(err.message, 'error'); }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Request Revision</div>
+      <form id="revisionForm">
+        <div class="form-group">
+          <label class="label">What needs to be revised?</label>
+          <textarea class="textarea" name="message" rows="4" required placeholder="Describe the changes you'd like..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Request Revision</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#revisionForm').onsubmit = async(e) => {
+    e.preventDefault();
+    const message = new FormData(e.target).get('message');
+    try {
+      await api(`/orders/${id}/request-revision`, { method: 'POST', body: { message } });
+      overlay.remove();
+      toast('Revision requested.', 'info');
+      renderOrderDetail(id);
+    } catch(err) { toast(err.message, 'error'); }
+  };
 }
 
 async function disputeOrder(id) {
-  const reason = prompt('Please describe the issue:');
-  if (!reason) return;
-  try {
-    await api(`/orders/${id}/dispute`, { method: 'POST', body: { reason } });
-    toast('Dispute opened. Our team will review shortly.', 'info');
-    renderOrderDetail(id);
-  } catch(err) { toast(err.message, 'error'); }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Open Dispute</div>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Our team will review this dispute and mediate a fair resolution. Funds remain in escrow until resolved.</p>
+      <form id="disputeForm">
+        <div class="form-group">
+          <label class="label">Describe the issue</label>
+          <textarea class="textarea" name="reason" rows="4" required placeholder="What went wrong? Be as specific as possible..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button type="submit" class="btn btn-danger">Open Dispute</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#disputeForm').onsubmit = async(e) => {
+    e.preventDefault();
+    const reason = new FormData(e.target).get('reason');
+    try {
+      await api(`/orders/${id}/dispute`, { method: 'POST', body: { reason } });
+      overlay.remove();
+      toast('Dispute opened. Our team will review shortly.', 'info');
+      renderOrderDetail(id);
+    } catch(err) { toast(err.message, 'error'); }
+  };
 }
 
 async function logHours(id) {
@@ -2949,12 +3027,14 @@ async function renderAdminUsers() {
 }
 
 async function adminToggleBan(id, currentlyBanned) {
-  if (!confirm(currentlyBanned ? 'Unban this user?' : 'Ban this user?')) return;
-  try {
-    await api(`/admin/users/${id}`, { method: 'PUT', body: { is_banned: currentlyBanned ? 0 : 1 } });
-    toast(currentlyBanned ? 'User unbanned' : 'User banned', 'success');
-    renderAdminUsers();
-  } catch(err) { toast(err.message, 'error'); }
+  const action = currentlyBanned ? 'Unban' : 'Ban';
+  showModal(`${action} User`, `Are you sure you want to ${action.toLowerCase()} this user?`, async () => {
+    try {
+      await api(`/admin/users/${id}`, { method: 'PUT', body: { is_banned: currentlyBanned ? 0 : 1 } });
+      toast(currentlyBanned ? 'User unbanned' : 'User banned', 'success');
+      renderAdminUsers();
+    } catch(err) { toast(err.message, 'error'); }
+  }, action, 'Cancel', !currentlyBanned);
 }
 
 async function renderAdminOrders() {
@@ -3039,12 +3119,14 @@ async function renderAdminDisputes() {
 }
 
 async function adminResolveDispute(orderId, resolution) {
-  if (!confirm(`Resolve in favor of ${resolution}?`)) return;
-  try {
-    await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution } });
-    toast('Dispute resolved', 'success');
-    renderAdminDisputes();
-  } catch(err) { toast(err.message, 'error'); }
+  const label = resolution === 'worker' ? 'Release funds to worker' : 'Refund employer';
+  showModal('Resolve Dispute', `<p>Are you sure you want to resolve this dispute?</p><p style="margin-top:var(--space-2);font-weight:600">${label}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This action cannot be undone.</p>`, async () => {
+    try {
+      await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution } });
+      toast('Dispute resolved', 'success');
+      renderAdminDisputes();
+    } catch(err) { toast(err.message, 'error'); }
+  }, 'Resolve', 'Cancel', true);
 }
 
 async function renderAdminAudit() {
