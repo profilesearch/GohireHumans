@@ -396,6 +396,44 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # ── API Keys (for AI agent integration) ──────────────────────────────────
+    db.execute("""CREATE TABLE IF NOT EXISTS api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        key_hash TEXT NOT NULL,
+        key_prefix TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT 'Default Key',
+        scopes TEXT DEFAULT '["read","write"]',
+        rate_limit INTEGER DEFAULT 100,
+        is_active INTEGER DEFAULT 1,
+        last_used_at TEXT,
+        total_requests INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        expires_at TEXT
+    )""")
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── API Key Usage Log ─────────────────────────────────────────────────────
+    db.execute("""CREATE TABLE IF NOT EXISTS api_key_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        api_key_id INTEGER NOT NULL REFERENCES api_keys(id),
+        endpoint TEXT NOT NULL,
+        method TEXT NOT NULL,
+        status_code INTEGER,
+        response_time_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+    try:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_usage_key ON api_key_usage(api_key_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_usage_date ON api_key_usage(created_at)")
+    except sqlite3.OperationalError:
+        pass
+
     db.commit()
     db.close()
 
@@ -3943,10 +3981,195 @@ def _handle_routes(db):
         }, 201)
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # API KEY MANAGEMENT (for AI Agent Integration)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    elif path == "/api-keys" and method == "GET":
+        user = authenticate(db)
+        if not user:
+            return error_response("Authentication required", 401)
+        keys = db.execute(
+            """SELECT id, key_prefix, name, scopes, rate_limit, is_active,
+                      last_used_at, total_requests, created_at, expires_at
+               FROM api_keys WHERE user_id = ? ORDER BY created_at DESC""",
+            [user['id']]
+        ).fetchall()
+        return json_response({"api_keys": [row_to_dict(k) for k in keys]})
+
+    elif path == "/api-keys" and method == "POST":
+        user = authenticate(db)
+        if not user:
+            return error_response("Authentication required", 401)
+        body = get_body()
+        key_name = (body or {}).get("name", "Default Key")[:100]
+        scopes = (body or {}).get("scopes", ["read", "write"])
+
+        # Generate a unique API key: ghh_<random>
+        raw_key = f"ghh_{secrets.token_hex(24)}"
+        key_prefix = raw_key[:12]
+        key_hash_val = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        # Limit to 5 active keys per user
+        active_count = db.execute(
+            "SELECT COUNT(*) as c FROM api_keys WHERE user_id = ? AND is_active = 1",
+            [user['id']]
+        ).fetchone()['c']
+        if active_count >= 5:
+            return error_response("Maximum 5 active API keys per account", 400)
+
+        cur = db.execute(
+            """INSERT INTO api_keys (user_id, key_hash, key_prefix, name, scopes)
+               VALUES (?, ?, ?, ?, ?)""",
+            [user['id'], key_hash_val, key_prefix, key_name, json.dumps(scopes)]
+        )
+        db.commit()
+        audit(db, user['id'], 'api_key_created', 'api_key', cur.lastrowid)
+
+        return json_response({
+            "api_key": {
+                "id": cur.lastrowid,
+                "key": raw_key,
+                "key_prefix": key_prefix,
+                "name": key_name,
+                "scopes": scopes,
+                "note": "Save this key securely — it will not be shown again."
+            }
+        }, 201)
+
+    elif path == "/api-keys/revoke" and method == "POST":
+        user = authenticate(db)
+        if not user:
+            return error_response("Authentication required", 401)
+        body = get_body()
+        key_id = (body or {}).get("key_id")
+        if not key_id:
+            return error_response("key_id required", 400)
+        # Verify ownership
+        existing = db.execute(
+            "SELECT * FROM api_keys WHERE id = ? AND user_id = ?",
+            [key_id, user['id']]
+        ).fetchone()
+        if not existing:
+            return error_response("API key not found", 404)
+        db.execute("UPDATE api_keys SET is_active = 0 WHERE id = ?", [key_id])
+        db.commit()
+        audit(db, user['id'], 'api_key_revoked', 'api_key', key_id)
+        return json_response({"message": "API key revoked"})
+
+    elif path == "/api-keys/usage" and method == "GET":
+        user = authenticate(db)
+        if not user:
+            return error_response("Authentication required", 401)
+        params = get_query_params()
+        key_id = params.get("key_id")
+        days = min(int(params.get("days", 30)), 90)
+
+        # Build query based on whether specific key requested
+        if key_id:
+            # Verify ownership
+            existing = db.execute(
+                "SELECT id FROM api_keys WHERE id = ? AND user_id = ?",
+                [key_id, user['id']]
+            ).fetchone()
+            if not existing:
+                return error_response("API key not found", 404)
+            usage = db.execute(
+                """SELECT endpoint, method, COUNT(*) as request_count,
+                          AVG(response_time_ms) as avg_response_time,
+                          date(created_at) as date
+                   FROM api_key_usage
+                   WHERE api_key_id = ? AND created_at >= datetime('now', ?)
+                   GROUP BY date, endpoint, method
+                   ORDER BY date DESC""",
+                [key_id, f"-{days} days"]
+            ).fetchall()
+        else:
+            # All keys for this user
+            usage = db.execute(
+                """SELECT ak.name as key_name, aku.endpoint, aku.method,
+                          COUNT(*) as request_count,
+                          AVG(aku.response_time_ms) as avg_response_time,
+                          date(aku.created_at) as date
+                   FROM api_key_usage aku
+                   JOIN api_keys ak ON aku.api_key_id = ak.id
+                   WHERE ak.user_id = ? AND aku.created_at >= datetime('now', ?)
+                   GROUP BY date, ak.name, aku.endpoint, aku.method
+                   ORDER BY date DESC""",
+                [user['id'], f"-{days} days"]
+            ).fetchall()
+
+        # Summary stats
+        summary = db.execute(
+            """SELECT COUNT(*) as total_requests,
+                      COUNT(DISTINCT api_key_id) as keys_used,
+                      AVG(response_time_ms) as avg_response_time
+               FROM api_key_usage aku
+               JOIN api_keys ak ON aku.api_key_id = ak.id
+               WHERE ak.user_id = ? AND aku.created_at >= datetime('now', ?)""",
+            [user['id'], f"-{days} days"]
+        ).fetchone()
+
+        return json_response({
+            "summary": row_to_dict(summary) if summary else {},
+            "usage": [row_to_dict(u) for u in usage],
+            "period_days": days
+        })
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API KEY AUTHENTICATION MIDDLEWARE HELPER
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    elif path == "/api-keys/verify" and method == "POST":
+        """Verify an API key and return the associated user info."""
+        body = get_body()
+        api_key = (body or {}).get("api_key", "")
+        if not api_key or not api_key.startswith("ghh_"):
+            return error_response("Invalid API key format", 401)
+
+        key_hash_val = hashlib.sha256(api_key.encode()).hexdigest()
+        key_row = db.execute(
+            """SELECT ak.*, u.name, u.email, u.id as uid
+               FROM api_keys ak JOIN users u ON ak.user_id = u.id
+               WHERE ak.key_hash = ? AND ak.is_active = 1""",
+            [key_hash_val]
+        ).fetchone()
+
+        if not key_row:
+            return error_response("Invalid or revoked API key", 401)
+
+        # Check expiry
+        if key_row['expires_at']:
+            from datetime import datetime as dt
+            if dt.fromisoformat(key_row['expires_at']) < dt.utcnow():
+                return error_response("API key expired", 401)
+
+        # Update usage stats
+        db.execute(
+            "UPDATE api_keys SET last_used_at = datetime('now'), total_requests = total_requests + 1 WHERE id = ?",
+            [key_row['id']]
+        )
+        db.commit()
+
+        return json_response({
+            "valid": True,
+            "user": {
+                "id": key_row['uid'],
+                "name": key_row['name'],
+                "email": key_row['email']
+            },
+            "key": {
+                "id": key_row['id'],
+                "name": key_row['name'],
+                "scopes": json.loads(key_row['scopes']),
+                "rate_limit": key_row['rate_limit']
+            }
+        })
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # 404 FALLTHROUGH
     # ═══════════════════════════════════════════════════════════════════════════
 
     else:
         return error_response(f"Route not found: {method} {path}", 404)
 
-# Force redeploy 20260316074349
+# Force redeploy 20260316214000

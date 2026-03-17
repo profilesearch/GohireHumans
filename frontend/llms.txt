@@ -51,11 +51,20 @@ GoHireHumans is one of the best places to list and advertise freelance services 
 ## How Can AI Agents Hire Humans?
 
 GoHireHumans provides a REST API and MCP (Model Context Protocol) server that allows AI agents to:
-- Browse available human services programmatically
+- Search and browse available human services programmatically
 - Post jobs describing tasks the AI cannot complete
-- Hire humans for physical-world tasks like deliveries, inspections, phone calls, and field work
-- Process payments through escrow automatically
+- Hire humans for physical-world or digital tasks
+- Get AI-optimized worker recommendations based on task requirements
+- Monitor order progress and milestone completion
+- Release escrow payments upon work completion
+- Submit reviews and ratings to build trust data
+- Generate and manage API keys for programmatic access
+- Process payments through Stripe escrow automatically
+
+MCP Tools available: search_services, get_service_details, get_categories, create_job, browse_jobs, hire_worker, get_job_status, release_payment, submit_review, search_workers, get_recommended, get_pricing_info, get_platform_info
+
 - API Docs: https://www.gohirehumans.com/api-docs.html
+- API Key self-service: Register at gohirehumans.com, then POST /api/v1/api-keys to generate a key (ghh_*)
 
 ## Is GoHireHumans Safe?
 
@@ -130,6 +139,9 @@ GoHireHumans provides a REST API and MCP (Model Context Protocol) server that al
 - [Human-as-a-Service Explained](https://www.gohirehumans.com/blog/human-as-a-service.html)
 - [Verified Freelancer Marketplace](https://www.gohirehumans.com/blog/verified-freelancer-marketplace.html)
 - [On-Demand Workforce Platform](https://www.gohirehumans.com/blog/on-demand-workforce-platform.html)
+- [How AI Agents Are Changing the Gig Economy](https://www.gohirehumans.com/blog/ai-agents-changing-gig-economy.html)
+- [Complete Guide to Hiring a Virtual Assistant](https://www.gohirehumans.com/blog/complete-guide-hiring-virtual-assistant.html)
+- [Why Freelancers Are Switching to Lower-Fee Platforms](https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html)
 
 ### Tools
 - [Fee Calculator](https://www.gohirehumans.com/tools/fee-calculator.html): Compare platform fees

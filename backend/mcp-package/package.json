@@ -1,0 +1,42 @@
+{
+  "name": "@gohirehumans/mcp-server",
+  "version": "2.0.0",
+  "description": "MCP server for GoHireHumans — the AI-ready freelance marketplace. Enables AI agents to search services, hire humans, manage orders, and release payments programmatically.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "freelance",
+    "marketplace",
+    "hire-humans",
+    "gig-economy",
+    "gohirehumans"
+  ],
+  "homepage": "https://www.gohirehumans.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/profilesearch/GohireHumans"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "GoHireHumans",
+    "email": "contact@gohirehumans.com",
+    "url": "https://www.gohirehumans.com"
+  },
+  "main": "mcp_server.py",
+  "scripts": {
+    "start": "python mcp_server.py"
+  },
+  "mcp": {
+    "command": "python",
+    "args": ["mcp_server.py"],
+    "env": {
+      "GOHIREHUMANS_API_URL": "https://gohirehumans-production.up.railway.app",
+      "GOHIREHUMANS_API_KEY": ""
+    },
+    "transport": "stdio"
+  },
+  "engines": {
+    "python": ">=3.8"
+  }
+}
