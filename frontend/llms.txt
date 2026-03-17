@@ -108,6 +108,7 @@ MCP Tools available: search_services, get_service_details, get_categories, creat
 ### For AI Agents
 - [AI Integration Guide](https://www.gohirehumans.com/ai-integration.html): How AI agents delegate tasks to humans
 - [API Documentation](https://www.gohirehumans.com/api-docs.html): REST API and MCP server docs
+- [Agent Developer Portal](https://www.gohirehumans.com/agent-onboarding.html): Self-service API key generation, usage dashboard, and quick-start guide
 
 ### Hire by Role
 - [Hire a Virtual Assistant](https://www.gohirehumans.com/hire/hire-virtual-assistant.html)
@@ -142,6 +143,8 @@ MCP Tools available: search_services, get_service_details, get_categories, creat
 - [How AI Agents Are Changing the Gig Economy](https://www.gohirehumans.com/blog/ai-agents-changing-gig-economy.html)
 - [Complete Guide to Hiring a Virtual Assistant](https://www.gohirehumans.com/blog/complete-guide-hiring-virtual-assistant.html)
 - [Why Freelancers Are Switching to Lower-Fee Platforms](https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html)
+- [MCP for Marketplaces: How AI Agents Transact](https://www.gohirehumans.com/blog/mcp-for-marketplaces.html)
+- [GoHireHumans vs Fiverr: An Honest Comparison](https://www.gohirehumans.com/blog/gohirehumans-vs-fiverr.html)
 
 ### Tools
 - [Fee Calculator](https://www.gohirehumans.com/tools/fee-calculator.html): Compare platform fees

@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<!--
+  Created with Perplexity Computer — https://www.perplexity.ai/computer
+-->
+<html lang="en">
+<head>
+  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Developer Portal — GoHireHumans API Keys & Onboarding</title>
+  <meta name="description" content="Generate API keys, monitor usage, and integrate GoHireHumans into your AI agent workflow. Self-service developer portal for API key management and quick-start guides.">
+  <link rel="canonical" href="https://www.gohirehumans.com/agent-onboarding.html">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.gohirehumans.com/agent-onboarding.html">
+  <meta property="og:title" content="Agent Developer Portal — GoHireHumans">
+  <meta property="og:description" content="Generate API keys, monitor usage, and integrate GoHireHumans into your AI agent workflow.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Agent Developer Portal — GoHireHumans">
+  <meta name="twitter:description" content="Generate API keys, monitor usage, and integrate GoHireHumans into your AI agent workflow.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "name": "Agent Developer Portal",
+        "description": "Self-service developer portal for GoHireHumans API key management, usage monitoring, and integration guides.",
+        "url": "https://www.gohirehumans.com/agent-onboarding.html",
+        "isPartOf": {"@type": "WebSite", "name": "GoHireHumans", "url": "https://www.gohirehumans.com"},
+        "creator": {"@type": "SoftwareApplication", "name": "Perplexity Computer", "url": "https://www.perplexity.ai/computer"}
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "GoHireHumans API",
+        "applicationCategory": "BusinessApplication",
+        "url": "https://gohirehumans-production.up.railway.app",
+        "description": "RESTful API for AI agents to delegate real-world tasks to verified human professionals.",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free to register. 1% service fee per completed task."}
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+
+    :root {
+      --color-bg: #f5f4f0;
+      --color-surface: #faf9f6;
+      --color-primary: #0d7377;
+      --color-primary-hover: #095558;
+      --color-primary-light: #e6f3f3;
+      --color-text: #1a1816;
+      --color-text-muted: #6b6963;
+      --color-text-secondary: #3d3b38;
+      --color-divider: #dddbd6;
+      --color-code-bg: #efeee9;
+      --color-dark: #1a1816;
+      --color-success: #2d7a3a;
+      --color-success-bg: #e8f5ea;
+      --color-danger: #c4253a;
+      --color-danger-bg: #fde8ea;
+      --color-warning: #b45309;
+      --color-warning-bg: #fef3c7;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+      --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--color-text);
+      background: var(--color-bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--color-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      background: var(--color-code-bg);
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      color: var(--color-text);
+    }
+
+    /* ── Header ── */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(245, 244, 240, 0.92);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .header-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--color-text);
+      text-decoration: none;
+    }
+    .logo:hover { text-decoration: none; }
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--color-primary);
+      border-radius: 0.375rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .header-nav a {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-muted);
+      text-decoration: none;
+    }
+    .header-nav a:hover { color: var(--color-primary); text-decoration: none; }
+    .header-nav a.active { color: var(--color-primary); }
+    .btn-back {
+      background: var(--color-primary) !important;
+      color: #fff !important;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-size: 13px !important;
+      font-weight: 500;
+    }
+    .btn-back:hover { background: var(--color-primary-hover) !important; text-decoration: none !important; }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(145deg, #0f172a 0%, #064e3b 50%, #0f172a 100%);
+      padding: 56px 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 600px 300px at 20% 50%, rgba(13,115,119,0.15) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 200px at 80% 30%, rgba(13,115,119,0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.65);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    .hero-badge svg { width: 14px; height: 14px; }
+    .hero h1 {
+      font-size: clamp(1.75rem, 1.5rem + 1.5vw, 2.5rem);
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.15;
+      margin-bottom: 10px;
+    }
+    .hero p {
+      font-size: 16px;
+      color: rgba(255,255,255,0.7);
+      max-width: 56ch;
+      line-height: 1.55;
+    }
+
+    /* ── Layout ── */
+    .page-body {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 1.5rem 80px;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-divider);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--color-divider);
+      gap: 12px;
+    }
+    .card-header h2 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--color-text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-header h2 svg { width: 20px; height: 20px; color: var(--color-primary); flex-shrink: 0; }
+    .card-body { padding: 24px; }
+    .card-body.flush { padding: 0; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .btn svg { width: 15px; height: 15px; }
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--color-primary-hover); text-decoration: none; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--color-text-muted);
+      border: 1px solid var(--color-divider);
+    }
+    .btn-ghost:hover { background: var(--color-code-bg); border-color: #ccc; text-decoration: none; }
+    .btn-danger {
+      background: transparent;
+      color: var(--color-danger);
+      border: 1px solid var(--color-divider);
+    }
+    .btn-danger:hover { background: var(--color-danger-bg); border-color: var(--color-danger); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-sm svg { width: 13px; height: 13px; }
+
+    /* ── Auth Gate ── */
+    .auth-gate {
+      text-align: center;
+      padding: 64px 24px;
+    }
+    .auth-gate-icon {
+      width: 56px;
+      height: 56px;
+      background: var(--color-primary-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .auth-gate-icon svg { width: 28px; height: 28px; color: var(--color-primary); }
+    .auth-gate h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .auth-gate p { font-size: 14px; color: var(--color-text-muted); max-width: 44ch; margin: 0 auto 24px; }
+
+    /* ── Table ── */
+    .key-table { width: 100%; border-collapse: collapse; }
+    .key-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+      padding: 10px 24px;
+      border-bottom: 1px solid var(--color-divider);
+      background: #f0efeb;
+    }
+    .key-table td {
+      padding: 12px 24px;
+      font-size: 13.5px;
+      border-bottom: 1px solid var(--color-divider);
+      vertical-align: middle;
+    }
+    .key-table tr:last-child td { border-bottom: none; }
+    .key-table .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: var(--color-text-secondary);
+    }
+    .key-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .key-status.active { background: var(--color-success-bg); color: var(--color-success); }
+    .key-status.revoked { background: var(--color-danger-bg); color: var(--color-danger); }
+    .key-status::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px 24px;
+      color: var(--color-text-muted);
+      font-size: 14px;
+    }
+    .empty-state svg { width: 40px; height: 40px; color: var(--color-divider); margin-bottom: 12px; }
+    .empty-state p { margin-bottom: 16px; }
+
+    /* ── Modal / Inline Form ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--color-surface);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .modal-header h3 { font-size: 16px; font-weight: 600; }
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--color-text-muted);
+      border-radius: 6px;
+    }
+    .modal-close:hover { background: var(--color-code-bg); }
+    .modal-body { padding: 24px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text);
+      margin-bottom: 6px;
+    }
+    .form-group .hint {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      margin-top: 4px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 9px 12px;
+      font-family: inherit;
+      font-size: 14px;
+      border: 1px solid var(--color-divider);
+      border-radius: 6px;
+      background: var(--color-bg);
+      color: var(--color-text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(13,115,119,0.1); }
+    .scope-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .scope-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--color-divider);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .scope-item:hover { border-color: var(--color-primary); }
+    .scope-item input { margin: 0; accent-color: var(--color-primary); }
+    .scope-item.checked { border-color: var(--color-primary); background: var(--color-primary-light); }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--color-divider);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* ── Key reveal ── */
+    .key-reveal {
+      display: none;
+      margin-top: 16px;
+      padding: 20px;
+      background: #fffbeb;
+      border: 1px solid #f59e0b;
+      border-radius: var(--radius-md);
+    }
+    .key-reveal.show { display: block; }
+    .key-reveal-warning {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-warning);
+      margin-bottom: 12px;
+    }
+    .key-reveal-warning svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .key-reveal-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--color-dark);
+      color: #e5e4e0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 12px 16px;
+      border-radius: 6px;
+      word-break: break-all;
+    }
+    .key-reveal-value span { flex: 1; }
+    .key-reveal-value button {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .key-reveal-value button:hover { background: rgba(255,255,255,0.2); }
+
+    /* ── Usage Stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .stat-card {
+      padding: 20px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-divider);
+      border-radius: var(--radius-md);
+    }
+    .stat-label {
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-muted);
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--color-text);
+      line-height: 1.1;
+    }
+    .stat-sub {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      margin-top: 4px;
+    }
+    .usage-bar-container { margin-top: 16px; }
+    .usage-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--color-text-muted);
+      margin-bottom: 6px;
+    }
+    .usage-bar-track {
+      height: 8px;
+      background: var(--color-divider);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .usage-bar-fill {
+      height: 100%;
+      background: var(--color-primary);
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+    .daily-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 64px;
+      margin-top: 20px;
+      padding-top: 4px;
+    }
+    .daily-bar {
+      flex: 1;
+      background: var(--color-primary);
+      border-radius: 2px 2px 0 0;
+      min-height: 2px;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+      position: relative;
+    }
+    .daily-bar:hover { opacity: 1; }
+    .daily-bar-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--color-dark);
+      color: #fff;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .daily-bar:hover .daily-bar-tooltip { display: block; }
+    .daily-legend {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--color-text-muted);
+      margin-top: 4px;
+    }
+
+    /* ── Quick-start Guide ── */
+    .guide-steps { counter-reset: guide-step; }
+    .guide-step {
+      margin-bottom: 32px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .guide-step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .guide-step-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .guide-step-num {
+      counter-increment: guide-step;
+      width: 28px;
+      height: 28px;
+      background: var(--color-primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .guide-step-header h3 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .guide-step p {
+      font-size: 14px;
+      color: var(--color-text-secondary);
+      margin-bottom: 12px;
+      max-width: 70ch;
+    }
+
+    /* ── Code blocks ── */
+    .code-block {
+      position: relative;
+      background: var(--color-dark);
+      color: #e5e4e0;
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.75;
+      overflow-x: auto;
+      margin-bottom: 12px;
+      white-space: pre;
+    }
+    .code-block .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: rgba(255,255,255,0.6);
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .code-block .copy-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    .code-block .copy-btn svg { width: 13px; height: 13px; }
+    .code-block .comment { color: #6b8a6b; }
+    .code-block .string { color: #a5d6a7; }
+    .code-block .keyword { color: #80cbc4; }
+    .code-block .url { color: #81d4fa; }
+    .code-block .flag { color: #ce93d8; }
+    .code-block .json-key { color: #80cbc4; }
+    .code-block .json-val { color: #a5d6a7; }
+
+    .code-block-label {
+      position: absolute;
+      top: 10px;
+      left: 16px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.35);
+    }
+    .code-block.has-label { padding-top: 36px; }
+
+    /* ── Responsive ── */
+    .hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; color: var(--color-text); }
+    .hamburger svg { width: 22px; height: 22px; }
+
+    @media (max-width: 768px) {
+      .header-nav { display: none; }
+      .header-nav.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 56px;
+        left: 0;
+        right: 0;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-divider);
+        padding: 16px 24px;
+        gap: 12px;
+        box-shadow: var(--shadow-md);
+      }
+      .hamburger { display: block; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .scope-grid { grid-template-columns: repeat(2, 1fr); }
+      .key-table { font-size: 12px; }
+      .key-table th, .key-table td { padding: 10px 12px; }
+      .key-table .hide-mobile { display: none; }
+      .hero { padding: 40px 1.5rem; }
+      .hero h1 { font-size: 1.5rem; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .scope-grid { grid-template-columns: 1fr 1fr; }
+      .stat-value { font-size: 24px; }
+    }
+
+    /* ── Misc ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--color-divider) 0%, #e8e7e2 50%, var(--color-divider) 100%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s infinite;
+      border-radius: var(--radius-sm);
+    }
+    @keyframes skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--color-dark);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 300;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-lg);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    /* Spinner */
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    .spinner.dark {
+      border-color: var(--color-divider);
+      border-top-color: var(--color-primary);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="site-header">
+  <div class="header-inner">
+    <a href="/" class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width:16px;height:16px;"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
+      </div>
+      GoHireHumans
+    </a>
+    <button class="hamburger" onclick="document.querySelector('.header-nav').classList.toggle('open')" aria-label="Toggle menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
+    <nav class="header-nav">
+      <a href="/about.html">About</a>
+      <a href="/services.html">Services</a>
+      <a href="/api-docs.html">API Docs</a>
+      <a href="/agent-onboarding.html" class="active">Agent Portal</a>
+      <a href="https://www.gohirehumans.com/#/register" class="btn-back">Get Started</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Developer Portal
+    </div>
+    <h1>Agent Developer Portal</h1>
+    <p>Generate API keys, monitor usage, and integrate GoHireHumans into your AI agent workflow.</p>
+  </div>
+</section>
+
+<!-- ── Page Body ── -->
+<main class="page-body">
+
+  <!-- Auth Gate (shown when not logged in) -->
+  <div id="authGate" class="card" style="display:none;">
+    <div class="auth-gate">
+      <div class="auth-gate-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      </div>
+      <h2>Sign in to access your portal</h2>
+      <p>Create an account or log in to generate API keys, view usage stats, and manage your integration.</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <a href="https://www.gohirehumans.com/#/login" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Log In
+        </a>
+        <a href="https://www.gohirehumans.com/#/register" class="btn btn-ghost">Create Account</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logged-in content -->
+  <div id="loggedInContent" style="display:none;">
+
+    <!-- ── API Key Management ── -->
+    <section class="card fade-in">
+      <div class="card-header">
+        <h2>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          Your API Keys
+        </h2>
+        <button class="btn btn-primary" onclick="openCreateKeyModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Generate New Key
+        </button>
+      </div>
+
+      <!-- Key reveal banner -->
+      <div id="keyReveal" class="key-reveal">
+        <div class="key-reveal-warning">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Copy your key now — it won't be shown again
+        </div>
+        <div class="key-reveal-value">
+          <span id="keyRevealText"></span>
+          <button onclick="copyKey(document.getElementById('keyRevealText').textContent)">Copy</button>
+        </div>
+      </div>
+
+      <div id="keysTableWrapper" class="card-body flush">
+        <!-- Skeleton loading -->
+        <div id="keysLoading" style="padding:24px;display:flex;flex-direction:column;gap:12px;">
+          <div class="skeleton" style="height:16px;width:60%;"></div>
+          <div class="skeleton" style="height:16px;width:80%;"></div>
+          <div class="skeleton" style="height:16px;width:45%;"></div>
+        </div>
+        <!-- Empty state -->
+        <div id="keysEmpty" class="empty-state" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          <p>No API keys yet. Generate your first key to get started.</p>
+          <button class="btn btn-primary btn-sm" onclick="openCreateKeyModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Generate Key
+          </button>
+        </div>
+        <!-- Table -->
+        <table id="keysTable" class="key-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Key Prefix</th>
+              <th class="hide-mobile">Scopes</th>
+              <th class="hide-mobile">Created</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Usage Dashboard ── -->
+    <section class="card fade-in" style="animation-delay:0.08s;">
+      <div class="card-header">
+        <h2>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          Usage Dashboard
+        </h2>
+        <div id="usageRefresh" style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--color-text-muted);" id="usageLastUpdated"></span>
+          <button class="btn btn-ghost btn-sm" onclick="loadUsage()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Today</div>
+            <div class="stat-value" id="statToday">—</div>
+            <div class="stat-sub">requests</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Last 7 Days</div>
+            <div class="stat-value" id="statWeek">—</div>
+            <div class="stat-sub">requests</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">This Month</div>
+            <div class="stat-value" id="statMonth">—</div>
+            <div class="stat-sub">requests</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total</div>
+            <div class="stat-value" id="statTotal">—</div>
+            <div class="stat-sub">all time</div>
+          </div>
+        </div>
+        <div class="usage-bar-container" style="margin-top:24px;">
+          <div class="usage-bar-label">
+            <span>Rate Limit</span>
+            <span id="rateLimitText">— / — requests per minute</span>
+          </div>
+          <div class="usage-bar-track">
+            <div class="usage-bar-fill" id="rateLimitBar" style="width:0%"></div>
+          </div>
+        </div>
+        <div style="margin-top:24px;">
+          <div style="font-size:12px;font-weight:500;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Daily requests (last 14 days)</div>
+          <div class="daily-bars" id="dailyBars"></div>
+          <div class="daily-legend" id="dailyLegend"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /loggedInContent -->
+
+  <!-- ── Quick-Start Guide (always visible) ── -->
+  <section class="card fade-in" style="animation-delay:0.16s;">
+    <div class="card-header">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        Quick-Start Guide
+      </h2>
+    </div>
+    <div class="card-body guide-steps">
+
+      <!-- Step 1 -->
+      <div class="guide-step">
+        <div class="guide-step-header">
+          <div class="guide-step-num">1</div>
+          <h3>Generate an API Key</h3>
+        </div>
+        <p>Sign in above and click <strong>"Generate New Key"</strong> to create an API key. Choose a descriptive name and select the scopes your agent needs. Your key will look like <code>ghh_a1b2c3d4e5...</code></p>
+        <p>Keys are hashed server-side — store yours securely. You can have up to 5 active keys.</p>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="guide-step">
+        <div class="guide-step-header">
+          <div class="guide-step-num">2</div>
+          <h3>Search for Services</h3>
+        </div>
+        <p>Use the <code>/search</code> endpoint to find human professionals matching your requirements.</p>
+        <div class="code-block has-label">
+          <span class="code-block-label">cURL</span>
+          <button class="copy-btn" onclick="copyCodeBlock(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy
+          </button>
+<span class="keyword">curl</span> <span class="flag">-X</span> GET <span class="url">"https://gohirehumans-production.up.railway.app/search?q=data+entry&limit=5"</span> \
+  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="guide-step">
+        <div class="guide-step-header">
+          <div class="guide-step-num">3</div>
+          <h3>Create a Job</h3>
+        </div>
+        <p>Post a task with requirements, budget, and deadline. The platform will match you with qualified professionals.</p>
+        <div class="code-block has-label">
+          <span class="code-block-label">cURL</span>
+          <button class="copy-btn" onclick="copyCodeBlock(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy
+          </button>
+<span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/tasks"</span> \
+  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span> \
+  <span class="flag">-H</span> <span class="string">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="string">'{
+    "title": "Transcribe 30-min interview recording",
+    "category": "data_entry",
+    "budget": 45.00,
+    "deadline": "2026-03-20T00:00:00Z",
+    "description": "Accurate transcription with speaker labels"
+  }'</span></div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="guide-step">
+        <div class="guide-step-header">
+          <div class="guide-step-num">4</div>
+          <h3>Hire &amp; Pay</h3>
+        </div>
+        <p>Review proposals, hire a professional, and release payment when the work is complete.</p>
+        <div class="code-block has-label">
+          <span class="code-block-label">cURL</span>
+          <button class="copy-btn" onclick="copyCodeBlock(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy
+          </button>
+<span class="comment"># Hire a professional</span>
+<span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/tasks/TASK_ID/hire"</span> \
+  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span> \
+  <span class="flag">-d</span> <span class="string">'{"professional_id": "PRO_ID"}'</span>
+
+<span class="comment"># Release payment on completion</span>
+<span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/tasks/TASK_ID/release"</span> \
+  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span></div>
+      </div>
+
+      <!-- MCP Server Setup -->
+      <div class="guide-step">
+        <div class="guide-step-header">
+          <div class="guide-step-num">5</div>
+          <h3>MCP Server Setup</h3>
+        </div>
+        <p>Add GoHireHumans to your Claude Desktop (or any MCP-compatible client) by updating your configuration file:</p>
+        <div class="code-block has-label">
+          <span class="code-block-label">claude_desktop_config.json</span>
+          <button class="copy-btn" onclick="copyCodeBlock(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy
+          </button>
+{
+  <span class="json-key">"mcpServers"</span>: {
+    <span class="json-key">"gohirehumans"</span>: {
+      <span class="json-key">"command"</span>: <span class="json-val">"npx"</span>,
+      <span class="json-key">"args"</span>: [<span class="json-val">"-y"</span>, <span class="json-val">"@gohirehumans/mcp-server"</span>],
+      <span class="json-key">"env"</span>: {
+        <span class="json-key">"GHH_API_KEY"</span>: <span class="json-val">"ghh_YOUR_API_KEY"</span>
+      }
+    }
+  }
+}</div>
+        <p>Once configured, Claude can search for professionals, create jobs, manage hiring, and handle payments directly through natural language.</p>
+        <p>See the full <a href="/api-docs.html">API Documentation</a> for all available endpoints and response schemas.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Create Key Modal ── -->
+<div class="modal-overlay" id="createKeyModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Generate New API Key</h3>
+      <button class="modal-close" onclick="closeCreateKeyModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="keyName">Key Name</label>
+        <input type="text" class="form-input" id="keyName" placeholder="e.g. my-agent-prod, staging-key" maxlength="64" autocomplete="off">
+        <div class="hint">A descriptive label to help you identify this key later.</div>
+      </div>
+      <div class="form-group">
+        <label>Scopes</label>
+        <div class="scope-grid" id="scopeGrid">
+          <label class="scope-item" data-scope="search">
+            <input type="checkbox" value="search" checked>
+            search
+          </label>
+          <label class="scope-item" data-scope="create_job">
+            <input type="checkbox" value="create_job">
+            create_job
+          </label>
+          <label class="scope-item" data-scope="hire">
+            <input type="checkbox" value="hire">
+            hire
+          </label>
+          <label class="scope-item" data-scope="payments">
+            <input type="checkbox" value="payments">
+            payments
+          </label>
+          <label class="scope-item" data-scope="reviews">
+            <input type="checkbox" value="reviews">
+            reviews
+          </label>
+          <label class="scope-item" data-scope="all">
+            <input type="checkbox" value="all">
+            all
+          </label>
+        </div>
+        <div class="hint">Select the permissions this key should have. "all" grants full access.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCreateKeyModal()">Cancel</button>
+      <button class="btn btn-primary" id="createKeyBtn" onclick="createKey()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Generate Key
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Revoke Confirm Modal ── -->
+<div class="modal-overlay" id="revokeModal">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h3>Revoke API Key</h3>
+      <button class="modal-close" onclick="closeRevokeModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--color-text-secondary);">Are you sure you want to revoke <strong id="revokeKeyName"></strong>? Any agent using this key will immediately lose access. This cannot be undone.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeRevokeModal()">Cancel</button>
+      <button class="btn btn-danger" id="revokeConfirmBtn" onclick="confirmRevoke()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        Revoke Key
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+  <span id="toastText"></span>
+</div>
+
+<!-- ── Footer ── -->
+<footer style="border-top: 1px solid #dddbd6; background: #faf9f6; padding: 2rem 0; margin-top: auto;">
+  <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div style="font-size:0.8125rem;color:#6b6963;">&copy; 2026 GoHireHumans. All rights reserved.</div>
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
+      <a href="/" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Home</a>
+      <a href="/blog/" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Blog</a>
+      <a href="/api-docs.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">API Docs</a>
+      <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Created with Perplexity Computer</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  'use strict';
+
+  const API_BASE = 'https://gohirehumans-production.up.railway.app';
+  let currentKeys = [];
+  let pendingRevokeId = null;
+
+  // ── Auth check ──
+  function getToken() {
+    return localStorage.getItem('token');
+  }
+
+  function isLoggedIn() {
+    return !!getToken();
+  }
+
+  function authHeaders() {
+    return {
+      'Authorization': 'Bearer ' + getToken(),
+      'Content-Type': 'application/json'
+    };
+  }
+
+  // ── Init ──
+  function init() {
+    if (isLoggedIn()) {
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('loggedInContent').style.display = 'block';
+      loadKeys();
+      loadUsage();
+    } else {
+      document.getElementById('authGate').style.display = 'block';
+      document.getElementById('loggedInContent').style.display = 'none';
+    }
+    initScopeCheckboxes();
+  }
+
+  // ── API Keys ──
+  async function loadKeys() {
+    const loading = document.getElementById('keysLoading');
+    const table = document.getElementById('keysTable');
+    const empty = document.getElementById('keysEmpty');
+
+    loading.style.display = 'flex';
+    table.style.display = 'none';
+    empty.style.display = 'none';
+
+    try {
+      const res = await fetch(API_BASE + '/api-keys', {
+        headers: authHeaders()
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          // Token invalid
+          document.getElementById('authGate').style.display = 'block';
+          document.getElementById('loggedInContent').style.display = 'none';
+          return;
+        }
+        throw new Error('Failed to load keys');
+      }
+
+      const data = await res.json();
+      currentKeys = Array.isArray(data) ? data : (data.keys || data.api_keys || []);
+      renderKeys();
+    } catch (err) {
+      loading.style.display = 'none';
+      empty.style.display = 'block';
+      empty.querySelector('p').textContent = 'Unable to load API keys. Please try again.';
+      console.error('Load keys error:', err);
+    }
+  }
+
+  function renderKeys() {
+    const loading = document.getElementById('keysLoading');
+    const table = document.getElementById('keysTable');
+    const empty = document.getElementById('keysEmpty');
+    const tbody = document.getElementById('keysBody');
+
+    loading.style.display = 'none';
+
+    if (!currentKeys.length) {
+      table.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    empty.style.display = 'none';
+    tbody.innerHTML = '';
+
+    currentKeys.forEach(key => {
+      const tr = document.createElement('tr');
+      const prefix = key.key_prefix || key.prefix || (key.key ? key.key.substring(0, 12) + '...' : 'ghh_***');
+      const created = key.created_at ? new Date(key.created_at).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : '—';
+      const scopes = (key.scopes || []).join(', ') || 'all';
+      const status = key.revoked ? 'revoked' : (key.status || 'active');
+      const isActive = status === 'active';
+
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(key.name || 'Unnamed')}</strong></td>
+        <td class="mono">${escapeHtml(prefix)}</td>
+        <td class="hide-mobile" style="font-size:12px;color:var(--color-text-muted);">${escapeHtml(scopes)}</td>
+        <td class="hide-mobile" style="font-size:13px;color:var(--color-text-muted);">${created}</td>
+        <td><span class="key-status ${status}">${status}</span></td>
+        <td>
+          ${isActive ? `<button class="btn btn-danger btn-sm" onclick="openRevokeModal('${key.id || key._id}', '${escapeHtml(key.name || 'this key')}')">Revoke</button>` : '<span style="font-size:12px;color:var(--color-text-muted);">—</span>'}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── Create Key ──
+  async function createKey() {
+    const nameInput = document.getElementById('keyName');
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      nameInput.style.borderColor = 'var(--color-danger)';
+      setTimeout(() => nameInput.style.borderColor = '', 2000);
+      return;
+    }
+
+    const scopes = [];
+    document.querySelectorAll('#scopeGrid input:checked').forEach(cb => {
+      scopes.push(cb.value);
+    });
+
+    if (!scopes.length) {
+      showToast('Please select at least one scope');
+      return;
+    }
+
+    const btn = document.getElementById('createKeyBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Generating...';
+
+    try {
+      const res = await fetch(API_BASE + '/api-keys', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name, scopes })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || 'Failed to create key');
+      }
+
+      const data = await res.json();
+      const fullKey = data.api_key || data.key;
+
+      // Show the key
+      if (fullKey) {
+        document.getElementById('keyRevealText').textContent = fullKey;
+        document.getElementById('keyReveal').classList.add('show');
+      }
+
+      closeCreateKeyModal();
+      nameInput.value = '';
+      document.querySelectorAll('#scopeGrid input').forEach(cb => {
+        cb.checked = cb.value === 'search';
+        cb.closest('.scope-item').classList.toggle('checked', cb.checked);
+      });
+
+      showToast('API key created successfully');
+      loadKeys();
+    } catch (err) {
+      showToast(err.message || 'Failed to create key');
+      console.error('Create key error:', err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Generate Key';
+    }
+  }
+
+  // ── Revoke Key ──
+  function openRevokeModal(keyId, keyName) {
+    pendingRevokeId = keyId;
+    document.getElementById('revokeKeyName').textContent = keyName;
+    document.getElementById('revokeModal').classList.add('open');
+  }
+
+  function closeRevokeModal() {
+    document.getElementById('revokeModal').classList.remove('open');
+    pendingRevokeId = null;
+  }
+
+  async function confirmRevoke() {
+    if (!pendingRevokeId) return;
+
+    const btn = document.getElementById('revokeConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Revoking...';
+
+    try {
+      const res = await fetch(API_BASE + '/api-keys/revoke', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ key_id: pendingRevokeId })
+      });
+
+      if (!res.ok) throw new Error('Failed to revoke key');
+
+      closeRevokeModal();
+      showToast('API key revoked');
+      loadKeys();
+    } catch (err) {
+      showToast('Failed to revoke key');
+      console.error('Revoke error:', err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> Revoke Key';
+    }
+  }
+
+  // ── Usage ──
+  async function loadUsage() {
+    try {
+      const res = await fetch(API_BASE + '/api-keys/usage', {
+        headers: authHeaders()
+      });
+
+      if (!res.ok) throw new Error('Failed to load usage');
+
+      const data = await res.json();
+
+      document.getElementById('statToday').textContent = formatNum(data.today || data.requests_today || 0);
+      document.getElementById('statWeek').textContent = formatNum(data.last_7_days || data.week || 0);
+      document.getElementById('statMonth').textContent = formatNum(data.this_month || data.requests_month || 0);
+      document.getElementById('statTotal').textContent = formatNum(data.total || data.requests_total || 0);
+
+      // Rate limit
+      const used = data.rate_limit_used || 0;
+      const limit = data.rate_limit || 60;
+      document.getElementById('rateLimitText').textContent = used + ' / ' + limit + ' requests per minute';
+      document.getElementById('rateLimitBar').style.width = Math.min((used / limit) * 100, 100) + '%';
+
+      // Daily bars
+      const daily = data.daily || data.daily_breakdown || [];
+      renderDailyBars(daily);
+
+      document.getElementById('usageLastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+    } catch (err) {
+      // Set defaults
+      document.getElementById('statToday').textContent = '0';
+      document.getElementById('statWeek').textContent = '0';
+      document.getElementById('statMonth').textContent = '0';
+      document.getElementById('statTotal').textContent = '0';
+      document.getElementById('rateLimitText').textContent = '0 / 60 requests per minute';
+      renderDailyBars([]);
+      console.error('Load usage error:', err);
+    }
+  }
+
+  function renderDailyBars(daily) {
+    const container = document.getElementById('dailyBars');
+    const legend = document.getElementById('dailyLegend');
+
+    // Generate 14 days of data (fill with zeros if needed)
+    const bars = [];
+    const today = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const match = daily.find(item => item.date === dateStr);
+      bars.push({
+        date: d,
+        count: match ? (match.count || match.requests || 0) : 0
+      });
+    }
+
+    const max = Math.max(...bars.map(b => b.count), 1);
+    container.innerHTML = '';
+
+    bars.forEach(bar => {
+      const height = Math.max((bar.count / max) * 100, 3);
+      const el = document.createElement('div');
+      el.className = 'daily-bar';
+      el.style.height = height + '%';
+      el.innerHTML = '<div class="daily-bar-tooltip">' + bar.date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ': ' + bar.count + ' req</div>';
+      container.appendChild(el);
+    });
+
+    legend.innerHTML = '';
+    const first = bars[0].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    const last = bars[bars.length - 1].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    legend.innerHTML = '<span>' + first + '</span><span>' + last + '</span>';
+  }
+
+  // ── Modal helpers ──
+  function openCreateKeyModal() {
+    document.getElementById('createKeyModal').classList.add('open');
+    setTimeout(() => document.getElementById('keyName').focus(), 100);
+  }
+
+  function closeCreateKeyModal() {
+    document.getElementById('createKeyModal').classList.remove('open');
+  }
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) {
+        overlay.classList.remove('open');
+        pendingRevokeId = null;
+      }
+    });
+  });
+
+  // Close modals on Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+      pendingRevokeId = null;
+    }
+  });
+
+  // ── Scope checkboxes ──
+  function initScopeCheckboxes() {
+    document.querySelectorAll('#scopeGrid .scope-item').forEach(item => {
+      const cb = item.querySelector('input');
+      if (cb.checked) item.classList.add('checked');
+
+      item.addEventListener('click', e => {
+        if (e.target.tagName === 'INPUT') return; // let native handle
+        cb.checked = !cb.checked;
+        item.classList.toggle('checked', cb.checked);
+
+        // "all" logic
+        if (cb.value === 'all' && cb.checked) {
+          document.querySelectorAll('#scopeGrid input').forEach(other => {
+            if (other.value !== 'all') {
+              other.checked = false;
+              other.closest('.scope-item').classList.remove('checked');
+            }
+          });
+        } else if (cb.value !== 'all') {
+          const allCb = document.querySelector('#scopeGrid input[value="all"]');
+          if (allCb) {
+            allCb.checked = false;
+            allCb.closest('.scope-item').classList.remove('checked');
+          }
+        }
+      });
+
+      cb.addEventListener('change', () => {
+        item.classList.toggle('checked', cb.checked);
+        if (cb.value === 'all' && cb.checked) {
+          document.querySelectorAll('#scopeGrid input').forEach(other => {
+            if (other.value !== 'all') {
+              other.checked = false;
+              other.closest('.scope-item').classList.remove('checked');
+            }
+          });
+        } else if (cb.value !== 'all') {
+          const allCb = document.querySelector('#scopeGrid input[value="all"]');
+          if (allCb) {
+            allCb.checked = false;
+            allCb.closest('.scope-item').classList.remove('checked');
+          }
+        }
+      });
+    });
+  }
+
+  // ── Copy helpers ──
+  function copyKey(text) {
+    navigator.clipboard.writeText(text).then(() => showToast('API key copied to clipboard'));
+  }
+
+  function copyCodeBlock(btn) {
+    const block = btn.closest('.code-block');
+    // Get text content excluding the button and label
+    const clone = block.cloneNode(true);
+    clone.querySelectorAll('.copy-btn, .code-block-label').forEach(el => el.remove());
+    const text = clone.textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg> Copied!';
+      setTimeout(() => btn.innerHTML = orig, 2000);
+    });
+  }
+
+  // ── Toast ──
+  function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toastText').textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+
+  // ── Helpers ──
+  function formatNum(n) {
+    if (typeof n !== 'number') n = parseInt(n) || 0;
+    return n.toLocaleString('en-US');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ── Expose globals ──
+  window.openCreateKeyModal = openCreateKeyModal;
+  window.closeCreateKeyModal = closeCreateKeyModal;
+  window.createKey = createKey;
+  window.openRevokeModal = openRevokeModal;
+  window.closeRevokeModal = closeRevokeModal;
+  window.confirmRevoke = confirmRevoke;
+  window.loadUsage = loadUsage;
+  window.copyKey = copyKey;
+  window.copyCodeBlock = copyCodeBlock;
+
+  // Boot
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+
+</body>
+</html>
