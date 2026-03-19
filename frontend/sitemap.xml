@@ -256,4 +256,29 @@
   <url><loc>https://www.gohirehumans.com/agent-onboarding.html</loc><lastmod>2026-03-17</lastmod><priority>0.9</priority></url>
   <url><loc>https://www.gohirehumans.com/blog/mcp-for-marketplaces.html</loc><lastmod>2026-03-17</lastmod><priority>0.8</priority></url>
   <url><loc>https://www.gohirehumans.com/blog/gohirehumans-vs-fiverr.html</loc><lastmod>2026-03-17</lastmod><priority>0.8</priority></url>
+  <!-- Missing pages added March 19, 2026 -->
+  <url>
+    <loc>https://www.gohirehumans.com/ai-marketplace.html</loc>
+    <lastmod>2026-03-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/compare.html</loc>
+    <lastmod>2026-03-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/blog/ai-agent-marketplace-guide.html</loc>
+    <lastmod>2026-03-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/blog/freelance-vs-full-time-2026.html</loc>
+    <lastmod>2026-03-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
 </urlset>
