@@ -39,7 +39,10 @@ sys.stdout = _ThreadLocalStdout()
 # ─── Flask App ────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+# SECURITY: Default to production origins only — never wildcard with credentials
+_default_origins = "https://www.gohirehumans.com,https://gohirehumans.com"
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
+allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
 CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 # ─── Import the CGI API module ────────────────────────────────────────────────

@@ -796,10 +796,8 @@ def authenticate_session(db):
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
 
-    if not token:
-        qs = getattr(_request_ctx, 'query_string', '')
-        params = dict(urllib.parse.parse_qsl(qs))
-        token = params.get("token") or params.get("auth")
+    # NOTE: Token via query string removed for security (URL leakage via referrer/logs)
+    # Tokens must be passed via Authorization: Bearer <token> header only.
 
     if not token:
         return None
@@ -1326,8 +1324,6 @@ def _handle_routes(db):
     elif path == "/auth/logout" and method == "POST":
         auth_header = getattr(_request_ctx, 'http_authorization', '')
         token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
-        if not token:
-            token = params.get("token")
         if token:
             db.execute("DELETE FROM sessions WHERE token = ?", [token])
             db.commit()
@@ -3971,9 +3967,9 @@ def _handle_routes(db):
 
         return json_response({
             "message": "Seed data created successfully",
-            "admin": {"email": "admin@gohirehumans.com", "password": "Admin1234!", "note": "Change password in production"},
-            "workers": [{"email": w['email'], "password": "Worker1234!"} for w in workers_data],
-            "employers": [{"email": e['email'], "password": "Employer1234!"} for e in employers_data],
+            "admin": {"email": "admin@gohirehumans.com", "note": "Credentials redacted. Change default password immediately."},
+            "workers": [{"email": w['email']} for w in workers_data],
+            "employers": [{"email": e['email']} for e in employers_data],
             "services_created": len(service_ids),
             "jobs_created": len(job_ids),
             "sample_completed_order_id": completed_order_id,

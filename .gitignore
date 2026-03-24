@@ -1,1 +1,41 @@
+# Python
 __pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database (local dev only — production uses Railway volume)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Node (if any)
+node_modules/
+
+# Vercel
+.vercel/
