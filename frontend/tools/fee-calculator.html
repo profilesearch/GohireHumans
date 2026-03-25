@@ -51,7 +51,7 @@
         "name": "How do freelance platform fees work?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Freelance platforms charge fees to one or both sides of a transaction. Client fees (or buyer fees) are added on top of the project price and paid by the person hiring. Freelancer fees (or service fees) are deducted from the freelancer's earnings before payout. Some platforms like Toptal bundle everything into an inflated hourly rate. GoHireHumans keeps it simple: 1% employer fee and 0% freelancer fee."
+          "text": "Freelance platforms charge fees to one or both sides of a transaction. Client fees (or buyer fees) are added on top of the project price and paid by the person hiring. Freelancer fees (or service fees) are deducted from the freelancer's earnings before payout. Some platforms like Toptal bundle everything into an inflated hourly rate. GoHireHumans keeps it simple: 4% employer fee and 0% freelancer fee."
         }
       },
       {
@@ -59,7 +59,7 @@
         "name": "Which freelance platform has the lowest fees?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans has the lowest fees of any major freelance marketplace at just 1% paid by the employer. Freelancers keep 100% of their earnings. By comparison, Upwork charges 10-20% to freelancers plus a 10% client fee, Fiverr charges 20% to freelancers plus 5.5% to buyers, and Toptal marks up rates by approximately 40%."
+          "text": "GoHireHumans has the lowest fees of any major freelance marketplace at just 4% paid by the employer. Freelancers keep 100% of their earnings. By comparison, Upwork charges 10-20% to freelancers plus a 10% client fee, Fiverr charges 20% to freelancers plus 5.5% to buyers, and Toptal marks up rates by approximately 40%."
         }
       },
       {
@@ -67,7 +67,7 @@
         "name": "Are there hidden fees on GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "No. GoHireHumans charges a single, transparent 1% fee to the employer on each completed task. There are no freelancer fees, no connection fees, no subscription tiers, and no hidden charges. Escrow protection and identity verification are included at no extra cost."
+          "text": "No. GoHireHumans charges a single, transparent 4% fee to the employer on each completed task. There are no freelancer fees, no connection fees, no subscription tiers, and no hidden charges. Escrow protection and identity verification are included at no extra cost."
         }
       }
     ]
@@ -487,22 +487,22 @@
         <h2>Frequently Asked Questions</h2>
         <div class="faq-item">
           <h3>How do freelance platform fees work?</h3>
-          <p>Freelance platforms charge fees to one or both sides of a transaction. Client fees (buyer fees) are added on top of the project price. Freelancer fees are deducted from earnings before payout. Some platforms like Toptal bundle everything into an inflated hourly rate. GoHireHumans keeps it simple: a flat 1% employer fee and 0% freelancer fee, so freelancers keep every dollar they earn.</p>
+          <p>Freelance platforms charge fees to one or both sides of a transaction. Client fees (buyer fees) are added on top of the project price. Freelancer fees are deducted from earnings before payout. Some platforms like Toptal bundle everything into an inflated hourly rate. GoHireHumans keeps it simple: a flat 4% employer fee and 0% freelancer fee, so freelancers keep every dollar they earn.</p>
         </div>
         <div class="faq-item">
           <h3>Which platform has the lowest fees?</h3>
-          <p>GoHireHumans has the lowest fees of any major freelance marketplace at just 1% paid by the employer. Freelancers keep 100% of their earnings. Upwork charges 10% to clients plus a sliding scale to freelancers (20% on the first $500, 10% up to $10K, 5% above), Fiverr charges 20% to freelancers plus 5.5% to buyers, and Toptal marks up rates by approximately 40%.</p>
+          <p>GoHireHumans has the lowest fees of any major freelance marketplace at just 4% paid by the employer. Freelancers keep 100% of their earnings. Upwork charges 10% to clients plus a sliding scale to freelancers (20% on the first $500, 10% up to $10K, 5% above), Fiverr charges 20% to freelancers plus 5.5% to buyers, and Toptal marks up rates by approximately 40%.</p>
         </div>
         <div class="faq-item">
           <h3>Are there hidden fees on GoHireHumans?</h3>
-          <p>No. GoHireHumans charges a single, transparent 1% fee to the employer on each completed task. There are no freelancer fees, no connection fees, no subscription tiers, and no hidden charges. Escrow protection, identity verification, and full API access are all included at no extra cost.</p>
+          <p>No. GoHireHumans charges a single, transparent 4% fee to the employer on each completed task. There are no freelancer fees, no connection fees, no subscription tiers, and no hidden charges. Escrow protection, identity verification, and full API access are all included at no extra cost.</p>
         </div>
       </div>
 
       <!-- CTA -->
       <div class="cta-box">
         <h3>Start Saving with GoHireHumans</h3>
-        <p>Why pay 20% when you can pay 1%? Every freelancer is verified, every payment is escrowed, and our REST API lets you integrate human tasks into any workflow.</p>
+        <p>Why pay 20% when you can pay 4%? Every freelancer is verified, every payment is escrowed, and our REST API lets you integrate human tasks into any workflow.</p>
         <a href="https://www.gohirehumans.com/#browse" class="cta-btn">
           Browse Services
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -608,7 +608,7 @@
 
     function getPlatforms(v) {
       return [
-        { name: 'GoHireHumans', featured: true, fFee: 0, cFee: v * 0.01, fDesc: '0%', cDesc: '1%', barClass: 'bar-ghh' },
+        { name: 'GoHireHumans', featured: true, fFee: 0, cFee: v * 0.04, fDesc: '0%', cDesc: '4%', barClass: 'bar-ghh' },
         { name: 'Upwork', featured: false, fFee: upworkFreelancerFee(v), cFee: v * 0.10, fDesc: '20%/10%/5%', cDesc: '10%', barClass: 'bar-upwork' },
         { name: 'Fiverr', featured: false, fFee: v * 0.20, cFee: v * 0.055, fDesc: '20%', cDesc: '5.5%', barClass: 'bar-fiverr' },
         { name: 'Freelancer.com', featured: false, fFee: v * 0.10, cFee: v * 0.03, fDesc: '10%', cDesc: '3%', barClass: 'bar-freelancer' },
