@@ -41,13 +41,15 @@ curl http://localhost:8080/health
 ### 2. Seed Demo Data
 
 ```bash
-curl -X POST http://localhost:8080/seed
+# Set SEED_SECRET in your .env first, then call /seed with the secret in the body.
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"secret":"YOUR_SEED_SECRET"}' http://localhost:8080/seed
 ```
 
 This creates demo accounts:
-- **Admin**: admin@gohirehumans.com / `admin1234`
-- **Workers**: worker1@gohirehumans.com, worker2@gohirehumans.com / `demo1234`
-- **AI Clients**: techcorp@gohirehumans.com, aiventures@gohirehumans.com / `demo1234`
+- **Admin**: `admin@gohirehumans.com` / `Admin1234!`
+- **Workers** (`Worker1234!`): `sarah.chen@example.com`, `marcus.johnson@example.com`, `elena.rodriguez@example.com`, `james.park@example.com`, `aisha.patel@example.com`
+- **Employers** (`Employer1234!`): `hire@techstartup.io`, `ops@growthagency.com`, `founder@bootstrapped.co`
 
 ### 3. Serve the Frontend
 

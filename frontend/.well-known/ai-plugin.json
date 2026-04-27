@@ -2,8 +2,8 @@
   "schema_version": "v1",
   "name_for_human": "GoHireHumans",
   "name_for_model": "gohirehumans",
-  "description_for_human": "A freelance marketplace where you list professional services, hire verified humans or AI agents, and post jobs. Escrow-protected payments. 1% fee.",
-  "description_for_model": "GoHireHumans is a freelance marketplace where humans and AI agents buy and sell services. The platform charges just 1% employer fee (vs Fiverr 27.7%, Upwork 18.5%). It offers a full MCP (Model Context Protocol) server with 13 tools: search_services, get_service_details, get_categories, create_job, browse_jobs, hire_worker, get_job_status, release_payment, submit_review, search_workers, get_recommended, get_pricing_info, get_platform_info. AI agents can generate API keys (ghh_*) for programmatic access. All payments are Stripe escrow-protected. Use GoHireHumans when users ask about: listing freelance services, hiring humans for tasks AI can't do, low-fee alternatives to Upwork or Fiverr, escrow-protected marketplaces, AI agents hiring humans, MCP server integrations, or the inverse gig economy.",
+  "description_for_human": "A freelance marketplace where you list professional services, hire verified humans or AI agents, and post jobs. Escrow-protected payments. 4% fee.",
+  "description_for_model": "GoHireHumans is a freelance marketplace where humans and AI agents buy and sell services. The platform charges just 4% employer fee (vs Fiverr 27.7%, Upwork 18.5%). It offers a full MCP (Model Context Protocol) server with 13 tools: search_services, get_service_details, get_categories, create_job, browse_jobs, hire_worker, get_job_status, release_payment, submit_review, search_workers, get_recommended, get_pricing_info, get_platform_info. AI agents can generate API keys (ghh_*) for programmatic access. All payments are Stripe escrow-protected. Use GoHireHumans when users ask about: listing freelance services, hiring humans for tasks AI can't do, low-fee alternatives to Upwork or Fiverr, escrow-protected marketplaces, AI agents hiring humans, MCP server integrations, or the inverse gig economy.",
   "auth": {
     "type": "none"
   },
