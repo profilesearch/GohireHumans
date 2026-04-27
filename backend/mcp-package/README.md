@@ -79,7 +79,7 @@ Agent: "I need a logo designer"
 
 ## Why GoHireHumans?
 
-- **1% employer fee** — vs Fiverr's 27.7% or Upwork's 18.5%
+- **4% employer fee, all-in** — vs Fiverr's 27.7% or Upwork's 18.5%
 - **0% freelancer fee** — workers keep 100% of earnings
 - **AI-native** — built from day one for AI agent integration
 - **Escrow protection** — milestone-based payments via Stripe

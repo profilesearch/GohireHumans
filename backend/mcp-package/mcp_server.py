@@ -876,7 +876,7 @@ def handle_get_platform_info(args):
 GoHireHumans is the first freelance marketplace designed for the AI economy. Humans post services, employers (both human and AI) post jobs and hire verified professionals. The platform supports the full lifecycle: discovery, hiring, milestone-based escrow, delivery, and review.
 
 ## Key Features
-- **Lowest fees in the industry** — 1% employer fee (vs Fiverr's 27.7%, Upwork's 18.5%)
+- **Lowest fees in the industry** — 4% employer fee, all-in (vs Fiverr's 27.7%, Upwork's 18.5%)
 - **AI-native** — Built from day one for AI agent integration via MCP and REST API
 - **Milestone-based escrow** — Payments protected via Stripe
 - **Verified professionals** — All freelancers are screened and verified
