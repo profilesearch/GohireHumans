@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KM69M3NES8');</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public Roadmap — GoHireHumans</title>
+  <meta name="description" content="What we're building, what's shipped, and what's next on GoHireHumans. Public, transparent, updated as work lands.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Public Roadmap — GoHireHumans">
+  <meta property="og:description" content="What we're building, what's shipped, and what's next on GoHireHumans.">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta property="og:url" content="https://www.gohirehumans.com/roadmap.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <link rel="canonical" href="https://www.gohirehumans.com/roadmap.html">
+  <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"WebPage","name":"Public Roadmap","url":"https://www.gohirehumans.com/roadmap.html","isPartOf":{"@type":"WebSite","name":"GoHireHumans","url":"https://www.gohirehumans.com"}}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--font:'Inter',system-ui,sans-serif;--bg:#f5f4f0;--surface:#faf9f6;--surface2:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--faint:#a8a6a0;--primary:#0d7377;--primary-subtle:#e6f3f3;--good:#2d7a3a;--good-subtle:#e8f5ea;--warn:#b45309;--warn-subtle:#fef3c7;--radius:.5rem;--radius-lg:.75rem}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.7}
+    .header{position:sticky;top:0;z-index:50;background:rgba(245,244,240,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--divider)}
+    .header-inner{max-width:1200px;margin:0 auto;padding:0 1.5rem;height:56px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:.9375rem;color:var(--text);text-decoration:none}
+    .logo-icon{width:28px;height:28px;background:var(--primary);border-radius:.375rem;display:flex;align-items:center;justify-content:center}
+    .logo-icon svg{width:16px;height:16px}
+    .header-nav{display:flex;align-items:center;gap:.5rem}
+    .header-nav a{font-size:.8125rem;font-weight:500;color:var(--muted);text-decoration:none;padding:.375rem .75rem;border-radius:.375rem}
+    .btn-cta{background:var(--primary)!important;color:#fff!important;font-weight:600!important}
+    main{max-width:920px;margin:0 auto;padding:3rem 1.5rem 4rem}
+    .hero{margin-bottom:3rem}
+    .hero h1{font-size:clamp(2rem,4.5vw,2.75rem);font-weight:800;letter-spacing:-.025em;margin-bottom:.75rem}
+    .hero p{color:var(--muted);font-size:1.0625rem;max-width:640px}
+    .col{margin-bottom:2.5rem}
+    .col-head{display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+    .col-head h2{font-size:1.25rem;font-weight:700;letter-spacing:-.01em}
+    .col-count{font-size:.75rem;font-weight:700;padding:.125rem .5rem;border-radius:99px;color:var(--muted);background:var(--surface);border:1px solid var(--divider)}
+    .item{padding:1rem 1.25rem;background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius);margin-bottom:.5rem}
+    .item.shipped{background:var(--good-subtle);border-color:#bce0c2}
+    .item.now{background:#fff;border-color:var(--primary);box-shadow:0 1px 4px rgba(13,115,119,.12)}
+    .item.next{background:var(--surface)}
+    .item.later{background:var(--surface);border-style:dashed;opacity:.92}
+    .item-row{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:.25rem}
+    .item-title{font-weight:600;font-size:.9375rem}
+    .item-tag{font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.125rem .375rem;border-radius:.25rem;color:var(--muted);background:var(--surface);border:1px solid var(--divider);white-space:nowrap}
+    .item-tag.t-ship{color:var(--good);background:var(--good-subtle);border-color:#bce0c2}
+    .item-tag.t-now{color:var(--primary);background:var(--primary-subtle);border-color:transparent}
+    .item-tag.t-soon{color:var(--warn);background:var(--warn-subtle);border-color:#fadf9d}
+    .item-desc{font-size:.875rem;color:var(--muted);line-height:1.6}
+    .footnote{margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--divider);font-size:.875rem;color:var(--muted)}
+    .footnote a{color:var(--primary);text-decoration:none}
+    .footnote a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        GoHireHumans
+      </a>
+      <nav class="header-nav">
+        <a href="/changelog.html">Changelog</a>
+        <a href="/blog/">Blog</a>
+        <a href="/stats.html">Stats</a>
+        <a href="/#/register" class="btn-cta">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Public Roadmap</h1>
+      <p>What's done, what's in progress, and what's next. Updated whenever something ships. We don't ship dates because dates lie — we ship priority order instead.</p>
+    </section>
+
+    <section class="col">
+      <div class="col-head"><h2>Now</h2><span class="col-count">In progress</span></div>
+      <div class="item now">
+        <div class="item-row"><div class="item-title">Stripe escrow live mode</div><span class="item-tag t-now">Now</span></div>
+        <div class="item-desc">Wiring up live Stripe keys and webhook signature verification. Test charges will run before the switch is flipped.</div>
+      </div>
+      <div class="item now">
+        <div class="item-row"><div class="item-title">Per-category landing pages</div><span class="item-tag t-now">Now</span></div>
+        <div class="item-desc">Dedicated SEO pages for top categories (web dev, design, writing, data entry, etc.) with live service feeds.</div>
+      </div>
+      <div class="item now">
+        <div class="item-row"><div class="item-title">/vs/ comparison microsites</div><span class="item-tag t-now">Now</span></div>
+        <div class="item-desc">Dedicated comparison hubs for each major competitor (Fiverr, Upwork, Toptal, Freelancer.com).</div>
+      </div>
+    </section>
+
+    <section class="col">
+      <div class="col-head"><h2>Next</h2><span class="col-count">Q2 2026</span></div>
+      <div class="item next">
+        <div class="item-row"><div class="item-title">Password reset + email verification</div><span class="item-tag t-soon">Next</span></div>
+        <div class="item-desc">Token-based reset flow with 1-hour expiry. Requires transactional email provider integration.</div>
+      </div>
+      <div class="item next">
+        <div class="item-row"><div class="item-title">Two-factor auth (TOTP)</div><span class="item-tag t-soon">Next</span></div>
+        <div class="item-desc">Optional 2FA for accounts with payouts above a threshold.</div>
+      </div>
+      <div class="item next">
+        <div class="item-row"><div class="item-title">Verified-pro embed badge</div><span class="item-tag t-soon">Next</span></div>
+        <div class="item-desc">Pros can drop a "Verified on GoHireHumans" badge on their portfolio site. Real-time rating.</div>
+      </div>
+      <div class="item next">
+        <div class="item-row"><div class="item-title">Service browser embed widget</div><span class="item-tag t-soon">Next</span></div>
+        <div class="item-desc">Bloggers and affiliates can embed a styled category browser on their own pages.</div>
+      </div>
+      <div class="item next">
+        <div class="item-row"><div class="item-title">Multi-device session management</div><span class="item-tag t-soon">Next</span></div>
+        <div class="item-desc">/account/sessions page with revoke-all and per-session details (IP, device).</div>
+      </div>
+    </section>
+
+    <section class="col">
+      <div class="col-head"><h2>Later</h2><span class="col-count">Considering</span></div>
+      <div class="item later">
+        <div class="item-row"><div class="item-title">Postgres migration</div><span class="item-tag">Later</span></div>
+        <div class="item-desc">SQLite is fine through ~1000 users; Postgres for scale.</div>
+      </div>
+      <div class="item later">
+        <div class="item-row"><div class="item-title">Time-tracked hourly billing</div><span class="item-tag">Later</span></div>
+        <div class="item-desc">For long-running engagements where milestone billing is too coarse.</div>
+      </div>
+      <div class="item later">
+        <div class="item-row"><div class="item-title">Mobile app (PWA-first)</div><span class="item-tag">Later</span></div>
+        <div class="item-desc">Service workers + manifest are the foundation. Native app comes later, if at all.</div>
+      </div>
+      <div class="item later">
+        <div class="item-row"><div class="item-title">Affiliate / partner program</div><span class="item-tag">Later</span></div>
+        <div class="item-desc">Cookie-based attribution, public partner directory, RSS integration.</div>
+      </div>
+    </section>
+
+    <section class="col">
+      <div class="col-head"><h2>Recently shipped</h2><span class="col-count">Last 30 days</span></div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">Freelance Fee Calculator</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc"><a href="/tools/freelance-fee-calculator.html">Live tool</a> comparing Fiverr / Upwork / Toptal / GoHireHumans across any earnings level.</div>
+      </div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">Live marketplace stats</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc"><a href="/stats.html">Public dashboard</a> with services, jobs, users, charts, and recent activity.</div>
+      </div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">RSS + Atom feeds</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc">Auto-generated <a href="/feed.xml">/feed.xml</a> and <a href="/atom.xml">/atom.xml</a> from blog posts.</div>
+      </div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">Hardened backend (server.py)</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc">Structured JSON logging, X-Request-Id headers, X-Forwarded-For trust, defensive init_db, WAL mode, JSON 404/405 handlers.</div>
+      </div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">Two new SEO blog posts</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc"><a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html">Fiverr vs Upwork vs GoHireHumans</a> + <a href="/blog/how-to-hire-ai-agent.html">How to Hire an AI Agent</a>.</div>
+      </div>
+      <div class="item shipped">
+        <div class="item-row"><div class="item-title">BreadcrumbList schema sitewide</div><span class="item-tag t-ship">Shipped</span></div>
+        <div class="item-desc">Boosted SERP CTR via Google's breadcrumb display. Added to all 25 blog posts.</div>
+      </div>
+    </section>
+
+    <p class="footnote">See <a href="/changelog.html">the full changelog</a> for every commit. Got an idea? Email <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a>.</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KM69M3NES8');</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Marketplace Stats — GoHireHumans</title>
+  <meta name="description" content="Real-time stats from the GoHireHumans marketplace: services listed, jobs open, registered users, categories, average price by category. Updated every load.">
+  <meta name="keywords" content="freelance marketplace stats, gig economy data, freelance platform statistics, gohirehumans data">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Live Marketplace Stats — GoHireHumans">
+  <meta property="og:description" content="Real-time stats from the GoHireHumans marketplace: services, jobs, users, categories, price ranges. Updated every load.">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta property="og:url" content="https://www.gohirehumans.com/stats.html">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <link rel="canonical" href="https://www.gohirehumans.com/stats.html">
+  <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"WebPage","name":"Live Marketplace Stats","url":"https://www.gohirehumans.com/stats.html","description":"Real-time public stats for the GoHireHumans marketplace.","isPartOf":{"@type":"WebSite","name":"GoHireHumans","url":"https://www.gohirehumans.com"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://www.gohirehumans.com/"},{"@type":"ListItem","position":2,"name":"Stats","item":"https://www.gohirehumans.com/stats.html"}]}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--bg:#f5f4f0;--surface:#faf9f6;--surface2:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--faint:#a8a6a0;--primary:#0d7377;--primary-hover:#095558;--primary-subtle:#e6f3f3;--accent:#b45309;--radius:.5rem;--radius-lg:.75rem}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+    .header{position:sticky;top:0;z-index:50;background:rgba(245,244,240,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--divider)}
+    .header-inner{max-width:1200px;margin:0 auto;padding:0 1.5rem;height:56px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:.9375rem;color:var(--text);text-decoration:none}
+    .logo-icon{width:28px;height:28px;background:var(--primary);border-radius:.375rem;display:flex;align-items:center;justify-content:center}
+    .logo-icon svg{width:16px;height:16px}
+    .header-nav{display:flex;align-items:center;gap:.5rem}
+    .header-nav a{font-size:.8125rem;font-weight:500;color:var(--muted);text-decoration:none;padding:.375rem .75rem;border-radius:.375rem}
+    .header-nav a:hover{color:var(--text);background:rgba(0,0,0,.03)}
+    .btn-cta{background:var(--primary)!important;color:#fff!important;font-weight:600!important}
+    .btn-cta:hover{background:var(--primary-hover)!important}
+    main{max-width:1200px;margin:0 auto;padding:3rem 1.5rem 4rem}
+    .hero{text-align:center;margin-bottom:2.5rem;max-width:680px;margin-left:auto;margin-right:auto}
+    .hero h1{font-size:clamp(1.75rem,4vw,2.5rem);font-weight:800;letter-spacing:-.025em;margin-bottom:.75rem}
+    .hero p{color:var(--muted);font-size:1.0625rem}
+    .live-pulse{display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .625rem;background:var(--primary-subtle);color:var(--primary);border-radius:99px;font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:1rem}
+    .live-pulse::before{content:'';width:.5rem;height:.5rem;background:var(--primary);border-radius:50%;animation:pulse 1.5s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:.4;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2.5rem}
+    .stat-card{background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius-lg);padding:1.5rem;text-align:center}
+    .stat-num{font-family:var(--mono);font-size:clamp(1.875rem,3vw,2.5rem);font-weight:700;color:var(--primary);line-height:1;letter-spacing:-.02em}
+    .stat-label{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:.5rem}
+    .charts{display:grid;grid-template-columns:1fr;gap:1.5rem;margin-bottom:2.5rem}
+    @media(min-width:880px){.charts{grid-template-columns:1fr 1fr}}
+    .chart-card{background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius-lg);padding:1.5rem}
+    .chart-card h2{font-size:.875rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:1rem}
+    .chart-canvas{height:280px}
+    .recent-list{display:flex;flex-direction:column;gap:.5rem}
+    .recent-item{padding:.875rem 1rem;background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;gap:1rem;font-size:.875rem;text-decoration:none;color:var(--text);transition:border-color .15s}
+    .recent-item:hover{border-color:var(--primary)}
+    .recent-meta{font-family:var(--mono);font-size:.75rem;color:var(--faint)}
+    .recent-cat{display:inline-block;padding:.125rem .5rem;background:var(--primary-subtle);color:var(--primary);border-radius:99px;font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:.5rem}
+    .loading{padding:2rem;text-align:center;color:var(--faint);font-size:.875rem}
+    .err{padding:1rem;background:#fde8eb;color:#c4253a;border-radius:var(--radius);font-size:.875rem;text-align:center}
+    .footnote{font-size:.75rem;color:var(--faint);text-align:center;margin-top:2rem}
+    .footnote a{color:var(--muted);text-decoration:none}
+    .footnote a:hover{color:var(--primary);text-decoration:underline}
+    .cta-row{margin-top:2rem;text-align:center;padding:1.5rem;background:var(--primary-subtle);border-radius:var(--radius-lg)}
+    .cta-row p{font-size:.9375rem;color:var(--text);margin-bottom:.875rem;font-weight:500}
+    .btn{display:inline-flex;align-items:center;gap:.375rem;padding:.625rem 1.25rem;border-radius:var(--radius);font-size:.875rem;font-weight:600;text-decoration:none;transition:all .15s;border:none;cursor:pointer}
+    .btn-primary{background:var(--primary);color:#fff}
+    .btn-primary:hover{background:var(--primary-hover)}
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        GoHireHumans
+      </a>
+      <nav class="header-nav">
+        <a href="/#/services">Services</a>
+        <a href="/#/jobs">Jobs</a>
+        <a href="/blog/">Blog</a>
+        <a href="/tools/">Tools</a>
+        <a href="/#/register" class="btn-cta">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="live-pulse">Live</div>
+      <h1>Marketplace Stats</h1>
+      <p>Real-time numbers pulled from the GoHireHumans API. No vanity metrics, no inflation — just what's actually on the platform right now.</p>
+    </section>
+
+    <section class="stat-grid" id="stats" aria-live="polite">
+      <div class="stat-card"><div class="stat-num" id="s-services">—</div><div class="stat-label">Services Listed</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-jobs">—</div><div class="stat-label">Open Jobs</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-users">—</div><div class="stat-label">Registered Users</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-cats">—</div><div class="stat-label">Categories</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-completed">—</div><div class="stat-label">Completed Orders</div></div>
+    </section>
+
+    <section class="charts">
+      <div class="chart-card">
+        <h2>Services by category</h2>
+        <div class="chart-canvas"><canvas id="cat-chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h2>Open jobs by category</h2>
+        <div class="chart-canvas"><canvas id="job-chart"></canvas></div>
+      </div>
+    </section>
+
+    <section class="chart-card" style="margin-bottom:1.5rem">
+      <h2>Recently posted services</h2>
+      <div id="recent-services" class="recent-list"><div class="loading">Loading…</div></div>
+    </section>
+
+    <section class="chart-card">
+      <h2>Recently posted jobs</h2>
+      <div id="recent-jobs" class="recent-list"><div class="loading">Loading…</div></div>
+    </section>
+
+    <div class="cta-row">
+      <p>Want to be on the next snapshot? Free to join. 4% employer fee. Stripe escrow.</p>
+      <a href="/#/register" class="btn btn-primary">Get started →</a>
+    </div>
+
+    <p class="footnote">Stats refresh on every page load. Source: <a href="https://gohirehumans-production.up.railway.app/platform/stats" target="_blank" rel="noopener noreferrer">/platform/stats</a> public API.</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+  <script>
+  (function(){
+    const API = 'https://gohirehumans-production.up.railway.app';
+    const fmt = n => Number(n||0).toLocaleString('en-US');
+    const titleCase = s => (s||'').replace(/_/g,' ').replace(/\b\w/g, m=>m.toUpperCase());
+
+    const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+
+    Promise.all([
+      fetch(API + '/platform/stats').then(r=>r.json()).catch(()=>null),
+      fetch(API + '/services?limit=100').then(r=>r.json()).catch(()=>null),
+      fetch(API + '/jobs?limit=100').then(r=>r.json()).catch(()=>null),
+    ]).then(([stats, services, jobs]) => {
+      // Top numbers
+      if (stats) {
+        setText('s-services', fmt(stats.services_listed));
+        setText('s-jobs', fmt(stats.open_jobs));
+        setText('s-users', fmt(stats.total_users));
+        setText('s-cats', fmt(stats.categories));
+        setText('s-completed', fmt(stats.completed_orders));
+      }
+
+      const drawChart = (canvasId, labels, data, color) => {
+        if (!window.Chart) return setTimeout(()=>drawChart(canvasId,labels,data,color), 200);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        new Chart(ctx, {
+          type: 'bar',
+          data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 6 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+            plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1a1816', padding: 8 } },
+            scales: { x: { grid: { display: false }, ticks: { color: '#6b6963', font: { size: 11 } } }, y: { grid: { display: false }, ticks: { color: '#1a1816', font: { size: 12, weight: 500 } } } }
+          }
+        });
+      };
+
+      if (services && services.services) {
+        const byCat = {};
+        services.services.forEach(s => { byCat[s.category] = (byCat[s.category]||0) + 1; });
+        const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+        drawChart('cat-chart', sorted.map(x=>titleCase(x[0])), sorted.map(x=>x[1]), '#0d7377');
+
+        const recent = services.services.slice(0, 8);
+        const list = document.getElementById('recent-services');
+        list.innerHTML = recent.map(s => `
+          <a class="recent-item" href="/#/services?search=${encodeURIComponent(s.title.split(' ').slice(0,3).join(' '))}">
+            <div><span class="recent-cat">${titleCase(s.category)}</span>${s.title}</div>
+            <div class="recent-meta">${s.pricing_type==='hourly'?'$'+s.hourly_rate+'/hr':s.pricing_type==='custom'?'Custom':'$'+(s.price||0)}</div>
+          </a>
+        `).join('');
+      }
+
+      if (jobs && jobs.jobs) {
+        const byCat = {};
+        jobs.jobs.forEach(j => { byCat[j.category] = (byCat[j.category]||0) + 1; });
+        const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+        drawChart('job-chart', sorted.map(x=>titleCase(x[0])), sorted.map(x=>x[1]), '#b45309');
+
+        const recent = jobs.jobs.slice(0, 8);
+        const list = document.getElementById('recent-jobs');
+        list.innerHTML = recent.map(j => `
+          <a class="recent-item" href="/#/jobs?search=${encodeURIComponent(j.title.split(' ').slice(0,3).join(' '))}">
+            <div><span class="recent-cat">${titleCase(j.category)}</span>${j.title}</div>
+            <div class="recent-meta">${j.budget_type==='hourly'?'$'+j.budget_amount+'/hr':'$'+(j.budget_amount||0)}</div>
+          </a>
+        `).join('');
+      }
+    }).catch(err => {
+      console.error(err);
+      ['recent-services','recent-jobs'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.innerHTML = '<div class="err">Couldn\'t load right now. The API may be sleeping. Try again in a moment.</div>';
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KM69M3NES8');</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — GoHireHumans</title>
+  <meta name="description" content="What shipped on GoHireHumans, in reverse chronological order. Auto-updated from git.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Changelog — GoHireHumans">
+  <meta property="og:description" content="What shipped on GoHireHumans, in reverse chronological order.">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta property="og:url" content="https://www.gohirehumans.com/changelog.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <link rel="canonical" href="https://www.gohirehumans.com/changelog.html">
+  <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--bg:#f5f4f0;--surface:#faf9f6;--surface2:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--faint:#a8a6a0;--primary:#0d7377;--primary-subtle:#e6f3f3;--radius:.5rem;--radius-lg:.75rem}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
+    .header{position:sticky;top:0;z-index:50;background:rgba(245,244,240,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--divider)}
+    .header-inner{max-width:1200px;margin:0 auto;padding:0 1.5rem;height:56px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:.9375rem;color:var(--text);text-decoration:none}
+    .logo-icon{width:28px;height:28px;background:var(--primary);border-radius:.375rem;display:flex;align-items:center;justify-content:center}
+    .logo-icon svg{width:16px;height:16px}
+    .header-nav{display:flex;align-items:center;gap:.5rem}
+    .header-nav a{font-size:.8125rem;font-weight:500;color:var(--muted);text-decoration:none;padding:.375rem .75rem;border-radius:.375rem}
+    .btn-cta{background:var(--primary)!important;color:#fff!important;font-weight:600!important}
+    main{max-width:760px;margin:0 auto;padding:3rem 1.5rem 4rem}
+    .hero{margin-bottom:2.5rem}
+    .hero h1{font-size:clamp(2rem,4.5vw,2.75rem);font-weight:800;letter-spacing:-.025em;margin-bottom:.5rem}
+    .hero p{color:var(--muted);font-size:1.0625rem}
+    .day{margin-bottom:2.5rem}
+    .day-head{display:flex;align-items:baseline;gap:1rem;margin-bottom:.875rem;padding-bottom:.5rem;border-bottom:1px solid var(--divider)}
+    .day-date{font-size:.875rem;font-weight:700;color:var(--primary);font-family:var(--mono)}
+    .day-meta{font-size:.75rem;color:var(--faint)}
+    .entry{padding:.875rem 1rem;background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius);margin-bottom:.5rem;font-size:.9375rem}
+    .entry-tag{display:inline-block;font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.125rem .5rem;background:var(--primary-subtle);color:var(--primary);border-radius:99px;margin-right:.5rem}
+    .entry-tag.fix{background:#fef3c7;color:#92400e}
+    .entry-tag.feat{background:var(--primary-subtle);color:var(--primary)}
+    .entry-tag.docs{background:#e8f5ea;color:#1e5f2a}
+    .entry-tag.seo{background:#e0e7ff;color:#3730a3}
+    .entry-sha{font-family:var(--mono);font-size:.75rem;color:var(--faint);margin-left:.375rem}
+    .entry-sha a{color:var(--faint);text-decoration:none}
+    .entry-sha a:hover{color:var(--primary);text-decoration:underline}
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        GoHireHumans
+      </a>
+      <nav class="header-nav">
+        <a href="/roadmap.html">Roadmap</a>
+        <a href="/blog/">Blog</a>
+        <a href="/stats.html">Stats</a>
+        <a href="/#/register" class="btn-cta">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Changelog</h1>
+      <p>Every shipped change, newest first. See <a href="https://github.com/profilesearch/GohireHumans/commits/main" style="color:var(--primary)">main on GitHub</a> for the full git log.</p>
+    </section>
+
+    <section class="day">
+      <div class="day-head"><span class="day-date">Apr 30, 2026</span><span class="day-meta">Autonomous SEO push</span></div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Public roadmap (<code>/roadmap</code>) and changelog (<code>/changelog</code>).</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Live stats dashboard at <code>/stats</code> with real-time charts pulling from <code>/platform/stats</code>.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Self-serve press kit at <code>/press</code> with copy-paste boilerplates, brand colors, and asset downloads.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Interactive <a href="/tools/freelance-fee-calculator.html">Freelance Fee Calculator</a> comparing Fiverr / Upwork / Toptal / GoHireHumans.</div>
+      <div class="entry"><span class="entry-tag seo">SEO</span>BreadcrumbList JSON-LD added to all 25 blog posts.</div>
+      <div class="entry"><span class="entry-tag seo">SEO</span>RSS 2.0 (<code>/feed.xml</code>) and Atom (<code>/atom.xml</code>) feeds auto-generated from blog posts.</div>
+      <div class="entry"><span class="entry-tag fix">Fix</span>Corrected stale "1% fee" claims sitewide → 4%, across pricing, instagram landing, and 9 blog posts.</div>
+      <div class="entry"><span class="entry-tag seo">SEO</span><code>/.well-known/security.txt</code>, <code>/llms.txt</code>, <code>/humans.txt</code> for AI crawlers and security researchers.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Branded 404 page with search box, popular pages grid, and trust strip.</div>
+      <div class="entry"><span class="entry-tag fix">Fix</span>Hero H1 line-break (was reading "Find Expert Freelancersin Minutes" as one word for screen readers).</div>
+      <div class="entry"><span class="entry-tag fix">Fix</span>Three-steps section animation failsafe (force-visible after 3s if IntersectionObserver doesn't fire).</div>
+      <div class="entry"><span class="entry-tag fix">Fix</span>Required Terms-of-Service checkbox on registration form.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Hardened <code>backend/server.py</code>: structured JSON logging, X-Request-Id, X-Forwarded-For trust, defensive init_db, WAL mode.</div>
+      <div class="entry"><span class="entry-tag fix">Fix</span>Permissions-Policy now allows Stripe payment APIs (was blocking <code>payment</code> entirely).</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Pinned <code>requirements.txt</code> versions, non-root Dockerfile, gunicorn log piping.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Two new SEO blog posts: <a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html">Fiverr vs Upwork vs GoHireHumans</a> and <a href="/blog/how-to-hire-ai-agent.html">How to Hire an AI Agent</a>.</div>
+    </section>
+
+    <section class="day">
+      <div class="day-head"><span class="day-date">Mar 17, 2026</span><span class="day-meta">Phase 2 launch</span></div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>MCP server for AI agent integration (<a href="/blog/mcp-for-marketplaces.html">how it works</a>).</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Public REST API + agent developer portal (<code>/agent-onboarding</code>).</div>
+    </section>
+
+    <section class="day">
+      <div class="day-head"><span class="day-date">Mar 16, 2026</span><span class="day-meta">Content sprint</span></div>
+      <div class="entry"><span class="entry-tag seo">SEO</span>20+ new blog posts and "hire by role" landing pages.</div>
+      <div class="entry"><span class="entry-tag seo">SEO</span>Sitemap.xml expanded; OG cards on all key pages.</div>
+    </section>
+
+    <section class="day">
+      <div class="day-head"><span class="day-date">Mar 04, 2026</span><span class="day-meta">Initial public launch</span></div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>GoHireHumans public marketplace launch.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>Stripe escrow integration for milestone-based payments.</div>
+      <div class="entry"><span class="entry-tag feat">Feat</span>4% employer fee, 0% seller commission.</div>
+    </section>
+  </main>
+</body>
+</html>
