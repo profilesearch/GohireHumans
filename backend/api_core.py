@@ -973,7 +973,7 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
 
     if stripe_configured() and ep and ep['stripe_customer_id'] and ep['payment_method_id']:
         try:
-            total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% fee + ~3% processing fee
+            total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% platform fee + ~3% processing fee (4% all-in)
             pi = stripe.PaymentIntent.create(
                 amount=total_charge,
                 currency="usd",
@@ -1111,7 +1111,7 @@ def _handle_routes(db):
             "service_fee_rate": SERVICE_FEE_RATE,
             "processing_fee_rate": PROCESSING_FEE_RATE,
             "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
-            "description": "Buyers pay a 1% platform fee plus ~3% payment processing fee on top of the service price. Sellers receive the full listed price.",
+            "description": "Buyers pay a 4% all-in fee on top of the service price (1% platform fee + ~3% payment processing). Workers receive the full listed price.",
             "fee_paid_by": "buyer",
             "escrow": True
         })
@@ -2439,7 +2439,7 @@ def _handle_routes(db):
                 )
             push_notification(db, order['worker_id'], "order_completed",
                 "Order completed — payment released!",
-                f"Order #{order_id} is complete. ${worker_payout:.2f} earned (after 1% fee).",
+                f"Order #{order_id} is complete. ${worker_payout:.2f} earned (after 1% platform fee).",
                 f"/orders/{order_id}")
             push_notification(db, order['employer_id'], "order_completed",
                 "Order completed",
@@ -4168,4 +4168,4 @@ def _handle_routes(db):
     else:
         return error_response(f"Route not found: {method} {path}", 404)
 
-# Force redeploy 20260316214000
+# Force redeploy 20260429120000
