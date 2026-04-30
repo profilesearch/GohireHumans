@@ -556,6 +556,16 @@ function toggleVideo() {
 
 // ─── Scroll Animations (Intersection Observer) ────────────────────
 function initScrollAnimations() {
+  // Honor prefers-reduced-motion: just show immediately.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => el.classList.add('lp-visible'));
+    return;
+  }
+  if (!('IntersectionObserver' in window)) {
+    // Fallback for old browsers — show everything.
+    document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => el.classList.add('lp-visible'));
+    return;
+  }
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -568,9 +578,20 @@ function initScrollAnimations() {
     });
   }, { threshold: 0.15 });
 
-  document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => {
-    observer.observe(el);
-  });
+  const targets = document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate');
+  targets.forEach(el => observer.observe(el));
+
+  // Failsafe: if any target is still hidden after 2s (e.g. Observer didn't
+  // fire because element was already in viewport but layout was settling),
+  // force-show it so the section is never blank.
+  setTimeout(() => {
+    targets.forEach(el => {
+      if (!el.classList.contains('lp-visible')) {
+        el.classList.add('lp-visible');
+        observer.unobserve(el);
+      }
+    });
+  }, 2000);
 }
 
 function renderPublicNav(activePage = '') {
@@ -839,7 +860,10 @@ async function renderLanding() {
       ${renderPublicNav()}
       <section class="lp-hero">
         <div class="lp-hero-eyebrow">${I.shield} Secure Escrow &bull; Verified Users &bull; Human + AI</div>
-        <h1>Find Expert Freelancers<br>in Minutes.<br><span class="accent">Pay only 4% — the lowest fee anywhere.</span></h1>
+        <h1 class="lp-hero-title">
+          <span class="lp-hero-line">Find expert freelancers in minutes.</span>
+          <span class="lp-hero-line accent">Pay only 4% — the lowest fee anywhere.</span>
+        </h1>
         <p>Browse verified professionals and AI agents. Order services instantly or post a job. Every payment protected by milestone escrow.</p>
         <div class="lp-hero-search">
           <input type="text" id="hero-search" placeholder="Try 'web developer', 'logo design', 'AI assistant'..." class="lp-hero-search-input">
@@ -1760,6 +1784,14 @@ function renderAuth(mode) {
               <input class="input" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required minlength="8" autocomplete="${isLogin ? 'current-password' : 'new-password'}">
               ${isLogin ? '<div style="text-align:right;margin-top:var(--space-1)"><a style="font-size:var(--text-xs);color:var(--color-primary);cursor:pointer" onclick="showForgotPassword()">Forgot password?</a></div>' : ''}
             </div>
+            ${!isLogin ? `
+              <div class="form-group" style="margin-bottom:var(--space-4)">
+                <label class="auth2-terms-label" style="display:flex;align-items:flex-start;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.5">
+                  <input type="checkbox" name="agreeTerms" id="agreeTerms" required style="margin-top:3px;flex-shrink:0;accent-color:var(--color-primary)">
+                  <span>I agree to the <a href="#/terms" style="color:var(--color-primary);text-decoration:none" onclick="event.stopPropagation()">Terms of Service</a> and <a href="#/terms" style="color:var(--color-primary);text-decoration:none" onclick="event.stopPropagation()">Acceptable Use Policy</a>.</span>
+                </label>
+              </div>
+            ` : ''}
             <button type="submit" class="btn btn-primary" style="width:100%;padding:var(--space-3);font-size:var(--text-base);font-weight:600">
               ${isLogin ? 'Sign in' : 'Create free account'}
             </button>

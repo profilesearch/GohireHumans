@@ -2079,3 +2079,16 @@
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ═══ Hero H1 — natural line wrapping with text-balance ═══════════════ */
+.lp-hero-title { text-wrap: balance; }
+.lp-hero-title .lp-hero-line { display: block; }
+.lp-hero-title .lp-hero-line.accent { color: var(--color-primary); }
+@media (max-width: 480px) {
+  .lp-hero-title .lp-hero-line { display: inline; }
+  .lp-hero-title .lp-hero-line + .lp-hero-line { margin-left: 0.25em; }
+}
+
+/* ═══ Auth — required terms checkbox label hover state ═══════════════ */
+.auth2-terms-label:hover { color: var(--color-text); }
+.auth2-terms-label input[type="checkbox"] { width: 16px; height: 16px; }
