@@ -262,6 +262,26 @@
   <!-- Tools -->
   <url><loc>https://www.gohirehumans.com/tools/</loc><lastmod>2026-04-30</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>
   <url><loc>https://www.gohirehumans.com/tools/freelance-fee-calculator.html</loc><lastmod>2026-04-30</lastmod><priority>0.95</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/tools/are-you-overpaying.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>monthly</changefreq></url>
+  <!-- /vs/ comparison microsites -->
+  <url><loc>https://www.gohirehumans.com/vs/</loc><lastmod>2026-04-30</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.gohirehumans.com/vs/fiverr.html</loc><lastmod>2026-04-30</lastmod><priority>0.95</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/vs/upwork.html</loc><lastmod>2026-04-30</lastmod><priority>0.95</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/vs/toptal.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/vs/freelancer.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>monthly</changefreq></url>
+  <!-- /categories/ landing pages -->
+  <url><loc>https://www.gohirehumans.com/categories/</loc><lastmod>2026-04-30</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.gohirehumans.com/categories/web-development.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/categories/graphic-design.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/categories/writing.html</loc><lastmod>2026-04-30</lastmod><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/categories/data-entry.html</loc><lastmod>2026-04-30</lastmod><priority>0.85</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/categories/translation.html</loc><lastmod>2026-04-30</lastmod><priority>0.85</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/categories/virtual-assistant.html</loc><lastmod>2026-04-30</lastmod><priority>0.85</priority><changefreq>weekly</changefreq></url>
+  <!-- Public utility pages -->
+  <url><loc>https://www.gohirehumans.com/stats.html</loc><lastmod>2026-04-30</lastmod><priority>0.7</priority><changefreq>daily</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/press.html</loc><lastmod>2026-04-30</lastmod><priority>0.7</priority></url>
+  <url><loc>https://www.gohirehumans.com/roadmap.html</loc><lastmod>2026-04-30</lastmod><priority>0.6</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/changelog.html</loc><lastmod>2026-04-30</lastmod><priority>0.6</priority><changefreq>weekly</changefreq></url>
   <!-- Feeds -->
   <url><loc>https://www.gohirehumans.com/feed.xml</loc><lastmod>2026-04-30</lastmod><priority>0.4</priority></url>
   <url><loc>https://www.gohirehumans.com/atom.xml</loc><lastmod>2026-04-30</lastmod><priority>0.4</priority></url>
