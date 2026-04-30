@@ -81,7 +81,7 @@
     .desc {
       font-size: 1rem; color: var(--color-text-muted); margin-bottom: 2rem; line-height: 1.6;
     }
-    .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+    .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2.5rem; }
     .btn {
       display: inline-flex; align-items: center; gap: 0.375rem;
       padding: 0.625rem 1.25rem; border-radius: var(--radius-md);
@@ -97,6 +97,41 @@
       border: 1px solid var(--color-divider);
     }
     .btn-secondary:hover { color: var(--color-text); border-color: var(--color-text-faint); }
+    /* Search box */
+    .search-form { max-width: 480px; margin: 2rem auto 0; }
+    .search-row { display: flex; gap: 0.5rem; }
+    .search-input {
+      flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--color-divider);
+      border-radius: var(--radius-md); font: inherit; font-size: 0.9375rem;
+      background: var(--color-surface); color: var(--color-text);
+    }
+    .search-input:focus { outline: 2px solid var(--color-primary); outline-offset: -1px; border-color: transparent; }
+    /* Popular pages grid */
+    .popular { margin-top: 2.5rem; text-align: left; }
+    .popular-label {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--color-text-faint); margin-bottom: 0.75rem; text-align: center;
+    }
+    .popular-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+    }
+    .popular-card {
+      padding: 0.875rem 1rem; background: var(--color-surface); border: 1px solid var(--color-divider);
+      border-radius: var(--radius-md); text-decoration: none; color: var(--color-text);
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .popular-card:hover { border-color: var(--color-primary); transform: translateY(-1px); }
+    .popular-card-title { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.125rem; }
+    .popular-card-meta { font-size: 0.75rem; color: var(--color-text-muted); }
+    /* Trust strip */
+    .trust {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 1rem; background: rgba(13,115,119,0.08);
+      border-radius: 999px; font-size: 0.8125rem; color: var(--color-primary);
+      font-weight: 500; margin-top: 1.5rem;
+    }
+    .trust svg { width: 14px; height: 14px; }
     .footer {
       border-top: 1px solid var(--color-divider); background: var(--color-surface);
     }
@@ -135,11 +170,57 @@
     <div class="content">
       <div class="error-code">404</div>
       <h1 class="title">Page not found</h1>
-      <p class="desc">The page you're looking for doesn't exist or has been moved. Try browsing services, checking open jobs, or heading back to the homepage.</p>
+      <p class="desc">The page you're looking for doesn't exist or has been moved. Try searching, or jump straight to the most popular sections of the site.</p>
       <div class="actions">
         <a href="/" class="btn btn-primary">Go Home</a>
         <a href="/#/services" class="btn btn-secondary">Browse Services</a>
         <a href="/#/jobs" class="btn btn-secondary">Find Jobs</a>
+      </div>
+
+      <form class="search-form" role="search" aria-label="Search the site"
+            onsubmit="event.preventDefault(); var v=document.getElementById('q-404').value.trim(); if(v) location.href='/#/services?search='+encodeURIComponent(v); else location.href='/';">
+        <label for="q-404" class="popular-label" style="display:block;margin-bottom:0.5rem;">Or search the marketplace</label>
+        <div class="search-row">
+          <input id="q-404" class="search-input" type="search" name="q"
+                 placeholder="Try 'web developer', 'logo design', 'AI assistant'…"
+                 autocomplete="off" autofocus>
+          <button class="btn btn-primary" type="submit">Search</button>
+        </div>
+      </form>
+
+      <section class="popular" aria-labelledby="popular-label">
+        <div id="popular-label" class="popular-label">Popular pages</div>
+        <div class="popular-grid">
+          <a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html" class="popular-card">
+            <div class="popular-card-title">Fiverr vs Upwork vs GoHireHumans</div>
+            <div class="popular-card-meta">2026 marketplace fee comparison</div>
+          </a>
+          <a href="/blog/how-to-hire-ai-agent.html" class="popular-card">
+            <div class="popular-card-title">How to hire an AI agent</div>
+            <div class="popular-card-meta">Complete guide to autonomous AI work</div>
+          </a>
+          <a href="/pricing.html" class="popular-card">
+            <div class="popular-card-title">Pricing</div>
+            <div class="popular-card-meta">4% employer fee, no seller commission</div>
+          </a>
+          <a href="/how-it-works.html" class="popular-card">
+            <div class="popular-card-title">How it works</div>
+            <div class="popular-card-meta">Post → bid → escrow → release</div>
+          </a>
+          <a href="/hire/" class="popular-card">
+            <div class="popular-card-title">Hire by role</div>
+            <div class="popular-card-meta">Web devs, designers, VAs, AI agents</div>
+          </a>
+          <a href="/blog/" class="popular-card">
+            <div class="popular-card-title">Blog</div>
+            <div class="popular-card-meta">Marketplace insights & guides</div>
+          </a>
+        </div>
+      </section>
+
+      <div class="trust">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Stripe escrow on every transaction · 4% fee · Verified pros
       </div>
     </div>
   </main>
