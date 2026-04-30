@@ -2080,6 +2080,21 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* CSS-only failsafe: even if initScrollAnimations() never runs (e.g. async
+   render replaces the cards after the rAF already fired), force the cards
+   to their final state after 3 seconds so the section is never blank. */
+@keyframes lpForceVisible {
+  to { opacity: 1; transform: none; }
+}
+.lp-hiw-animate {
+  animation: lpForceVisible 0.4s ease 3s forwards;
+}
+.lp-stat-animate {
+  animation: lpForceVisible 0.4s ease 3s forwards;
+}
+/* When JS adds .lp-visible, the transition takes over and the keyframe is
+   irrelevant (transition runs first and matches its end state). */
+
 /* ═══ Hero H1 — natural line wrapping with text-balance ═══════════════ */
 .lp-hero-title { text-wrap: balance; }
 .lp-hero-title .lp-hero-line { display: block; }
