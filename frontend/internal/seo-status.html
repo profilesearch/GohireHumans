@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SEO Status — Internal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--bg:#f5f4f0;--surface:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--good:#2d7a3a;--good-bg:#e8f5ea;--bad:#c4253a;--bad-bg:#fde8eb;--warn:#b45309;--warn-bg:#fef3c7}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;padding:2rem 1.5rem}
+    main{max-width:1080px;margin:0 auto}
+    h1{font-size:1.5rem;font-weight:700;margin-bottom:.5rem}
+    .sub{color:var(--muted);margin-bottom:1.5rem;font-size:.875rem}
+    .controls{display:flex;gap:.5rem;margin-bottom:1.5rem}
+    .btn{padding:.5rem 1rem;font:inherit;font-size:.875rem;font-weight:500;border:1px solid var(--divider);background:#fff;border-radius:.375rem;cursor:pointer}
+    .btn:hover{border-color:var(--good)}
+    .btn.primary{background:var(--good);color:#fff;border-color:var(--good)}
+    table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--divider);border-radius:.5rem;overflow:hidden;font-size:.875rem}
+    th,td{padding:.625rem .875rem;border-bottom:1px solid var(--divider);text-align:left;vertical-align:middle}
+    th{font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#faf9f6}
+    tbody tr:last-child td{border-bottom:none}
+    .status{display:inline-block;padding:.125rem .5rem;border-radius:99px;font-family:var(--mono);font-size:.6875rem;font-weight:700;letter-spacing:.04em}
+    .status.ok{background:var(--good-bg);color:var(--good)}
+    .status.fail{background:var(--bad-bg);color:var(--bad)}
+    .status.warn{background:var(--warn-bg);color:var(--warn)}
+    .status.pending{background:#eef;color:#33a}
+    .url{font-family:var(--mono);font-size:.8125rem;word-break:break-all}
+    .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1.5rem}
+    .stat{padding:.875rem 1rem;background:var(--surface);border:1px solid var(--divider);border-radius:.5rem;text-align:center}
+    .stat-num{font-family:var(--mono);font-size:1.5rem;font-weight:700}
+    .stat-label{font-size:.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:.125rem}
+    .stat.ok .stat-num{color:var(--good)}
+    .stat.fail .stat-num{color:var(--bad)}
+    code{font-family:var(--mono);font-size:.75rem;background:var(--bg);padding:.125rem .25rem;border-radius:.25rem}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SEO Status — Internal Dashboard</h1>
+    <p class="sub">Live in-browser checks. Hit <span class="btn">Run all checks</span> to verify URLs, schemas, and feeds. <strong>noindex,nofollow</strong> — never linked from public pages.</p>
+
+    <div class="controls">
+      <button class="btn primary" id="run">Run all checks</button>
+      <button class="btn" id="export">Export JSON</button>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:40%">URL</th>
+          <th style="width:80px">Status</th>
+          <th style="width:120px">Title</th>
+          <th>Description</th>
+          <th style="width:80px">Schema</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <script>
+  (function(){
+    const URLS = [
+      // Core
+      '/', '/about.html', '/how-it-works.html', '/pricing.html', '/services.html', '/faq.html',
+      '/trust-safety.html', '/api-docs.html', '/ai-integration.html', '/agent-onboarding.html',
+      '/ai-marketplace.html', '/compare.html', '/instagram.html',
+      // New utility pages
+      '/stats.html', '/press.html', '/roadmap.html', '/changelog.html',
+      // Tools
+      '/tools/', '/tools/freelance-fee-calculator.html', '/tools/are-you-overpaying.html',
+      // /vs/
+      '/vs/', '/vs/fiverr.html', '/vs/upwork.html', '/vs/toptal.html', '/vs/freelancer.html',
+      // Categories
+      '/categories/', '/categories/web-development.html', '/categories/graphic-design.html',
+      '/categories/writing.html', '/categories/data-entry.html', '/categories/translation.html',
+      '/categories/virtual-assistant.html',
+      // Blog
+      '/blog/', '/blog/fiverr-vs-upwork-vs-gohirehumans.html', '/blog/how-to-hire-ai-agent.html',
+      '/blog/gohirehumans-vs-fiverr.html', '/blog/alternatives-to-fiverr.html',
+      '/blog/alternatives-to-upwork.html', '/blog/alternatives-to-toptal.html',
+      // Hire
+      '/hire/', '/hire/hire-virtual-assistant.html', '/hire/hire-web-developer.html',
+      '/hire/hire-graphic-designer.html',
+      // Feeds
+      '/sitemap.xml', '/feed.xml', '/atom.xml', '/robots.txt',
+      '/.well-known/security.txt', '/llms.txt', '/humans.txt',
+    ];
+
+    const tbody = document.getElementById('rows');
+    const summary = document.getElementById('summary');
+    const results = [];
+
+    URLS.forEach((u, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="url">${u}</td><td><span class="status pending" id="st-${i}">…</span></td><td id="ti-${i}">—</td><td id="de-${i}">—</td><td id="sc-${i}">—</td>`;
+      tbody.appendChild(tr);
+    });
+
+    async function checkUrl(url, idx){
+      try {
+        const res = await fetch(url, { redirect: 'follow' });
+        const text = res.ok ? await res.text() : '';
+        const titleMatch = text.match(/<title>([^<]*)<\/title>/);
+        const descMatch = text.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)/i);
+        const schemaCount = (text.match(/application\/ld\+json/g) || []).length;
+        const result = {
+          url,
+          status: res.status,
+          ok: res.ok,
+          title: titleMatch ? titleMatch[1].trim() : '',
+          desc: descMatch ? descMatch[1].trim() : '',
+          schemas: schemaCount,
+        };
+        results[idx] = result;
+        document.getElementById('st-'+idx).className = 'status ' + (result.ok ? 'ok' : 'fail');
+        document.getElementById('st-'+idx).textContent = result.status;
+        document.getElementById('ti-'+idx).textContent = (result.title || '—').slice(0, 60) + (result.title.length > 60 ? '…' : '');
+        document.getElementById('de-'+idx).textContent = (result.desc || '—').slice(0, 100) + (result.desc.length > 100 ? '…' : '');
+        document.getElementById('sc-'+idx).textContent = result.schemas;
+        if (result.schemas === 0 && url.endsWith('.html') && !url.startsWith('/internal/')) {
+          document.getElementById('sc-'+idx).innerHTML = '<span class="status warn">0</span>';
+        } else if (result.schemas >= 2) {
+          document.getElementById('sc-'+idx).innerHTML = '<span class="status ok">' + result.schemas + '</span>';
+        }
+      } catch(e) {
+        results[idx] = { url, status: 0, ok: false, error: e.message };
+        document.getElementById('st-'+idx).className = 'status fail';
+        document.getElementById('st-'+idx).textContent = 'ERR';
+      }
+    }
+
+    function renderSummary() {
+      const ok = results.filter(r => r && r.ok).length;
+      const fail = results.filter(r => r && !r.ok).length;
+      const noTitle = results.filter(r => r && r.ok && !r.title && r.url.endsWith('.html')).length;
+      const noDesc = results.filter(r => r && r.ok && !r.desc && r.url.endsWith('.html')).length;
+      const noSchema = results.filter(r => r && r.ok && r.schemas === 0 && r.url.endsWith('.html')).length;
+      summary.innerHTML = `
+        <div class="stat ${ok===URLS.length?'ok':''}"><div class="stat-num">${ok}/${URLS.length}</div><div class="stat-label">200 OK</div></div>
+        <div class="stat ${fail?'fail':''}"><div class="stat-num">${fail}</div><div class="stat-label">Failed</div></div>
+        <div class="stat ${noTitle?'fail':'ok'}"><div class="stat-num">${noTitle}</div><div class="stat-label">Missing title</div></div>
+        <div class="stat ${noDesc?'fail':'ok'}"><div class="stat-num">${noDesc}</div><div class="stat-label">Missing desc</div></div>
+        <div class="stat ${noSchema?'fail':'ok'}"><div class="stat-num">${noSchema}</div><div class="stat-label">No JSON-LD</div></div>
+      `;
+    }
+
+    document.getElementById('run').addEventListener('click', async () => {
+      summary.innerHTML = '<div class="stat"><div class="stat-num">…</div><div class="stat-label">Running</div></div>';
+      // Run in batches of 6 to avoid overwhelming
+      for (let i = 0; i < URLS.length; i += 6) {
+        await Promise.all(URLS.slice(i, i+6).map((u, j) => checkUrl(u, i+j)));
+        renderSummary();
+      }
+    });
+
+    document.getElementById('export').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'seo-status-' + new Date().toISOString().slice(0,10) + '.json';
+      a.click();
+    });
+
+    // Auto-run on load
+    document.getElementById('run').click();
+  })();
+  </script>
+</body>
+</html>
