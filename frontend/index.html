@@ -860,6 +860,9 @@ async function renderLanding() {
   document.getElementById('app').innerHTML = `
     <div class="landing">
       ${renderPublicNav()}
+      <div class="lp-beta-notice" style="max-width:1120px;margin:16px auto 0;padding:12px 16px;border:1px solid rgba(217,119,6,.25);border-radius:12px;background:#fffbeb;color:#92400e;font-size:14px;line-height:1.5">
+        <strong>Public beta:</strong> GoHireHumans is live, but some marketplace listings and counts may include demo/sample data while launch data is being verified. Payment availability may vary by checkout configuration.
+      </div>
       <section class="lp-hero">
         <div class="lp-hero-eyebrow">${I.shield} Secure Escrow &bull; Verified Users &bull; Human + AI</div>
         <h1 class="lp-hero-title">
@@ -877,7 +880,7 @@ async function renderLanding() {
           <button class="btn btn-outline btn-lg" onclick="navigate('#/post-job')">Post a Job — Free</button>
         </div>
         <div class="lp-hero-trust-strip">
-          <div class="lp-hero-trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 500+ Services</div>
+          <div class="lp-hero-trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Public Beta Listings</div>
           <div class="lp-hero-trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Escrow Protected</div>
           <div class="lp-hero-trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><path d="M12 1v4M12 19v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M1 12h4M19 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Just 4% Fee</div>
         </div>
