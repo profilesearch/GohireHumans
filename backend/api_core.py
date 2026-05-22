@@ -3303,7 +3303,9 @@ def _handle_routes(db):
 
         return json_response({
             "worker_payout_status": worker_status,
-            "employer_payment_status": employer_status
+            "employer_payment_status": employer_status,
+            "worker_ready": bool(worker_status and worker_status.get("connected")),
+            "employer_ready": bool(employer_status and employer_status.get("has_payment_method"))
         })
 
     elif path == "/payments/fund-escrow" and method == "POST":
