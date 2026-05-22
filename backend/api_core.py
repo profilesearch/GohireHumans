@@ -456,6 +456,22 @@ def init_db():
     db.close()
 
 
+SEEDED_SAMPLE_EMAILS = {
+    "sarah.chen@example.com",
+    "marcus.johnson@example.com",
+    "elena.rodriguez@example.com",
+    "james.park@example.com",
+    "aisha.patel@example.com",
+    "hire@techstartup.io",
+    "ops@growthagency.com",
+    "founder@bootstrapped.co",
+}
+
+
+def is_seeded_sample_email(email):
+    return (email or "").strip().lower() in SEEDED_SAMPLE_EMAILS
+
+
 _seeded = False
 def auto_seed_if_empty():
     """Auto-seed sample data on first run if database is empty."""
@@ -1244,6 +1260,8 @@ def _handle_routes(db):
         user = db.execute("SELECT * FROM users WHERE email = ?", [email]).fetchone()
         if not user or not verify_password(password, user['password_hash']):
             return error_response("Invalid credentials", 401)
+        if is_seeded_sample_email(email):
+            return error_response("Sample account login disabled", 403)
         if user['is_banned']:
             return error_response("Account banned", 403)
         if user['is_suspended']:

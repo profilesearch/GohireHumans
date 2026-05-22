@@ -55,5 +55,13 @@ class DiagnosticEndpointGateTests(unittest.TestCase):
                 os.environ["HTTP_X_DIAGNOSTIC_SECRET"] = old
 
 
+class SeededSampleAccountTests(unittest.TestCase):
+    def test_seeded_sample_email_detection(self):
+        module = load_api_core()
+        self.assertTrue(module.is_seeded_sample_email("Sarah.Chen@Example.com"))
+        self.assertTrue(module.is_seeded_sample_email("hire@techstartup.io"))
+        self.assertFalse(module.is_seeded_sample_email("real.customer@example.org"))
+
+
 if __name__ == "__main__":
     unittest.main()
