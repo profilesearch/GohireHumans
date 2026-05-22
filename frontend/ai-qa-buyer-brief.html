@@ -20,7 +20,7 @@
 </head>
 <body>
 <div class="wrap">
-  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post job</a></div></nav>
+  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post job</a><a href="/request-managed-ai-qa.html" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_nav'})">Request managed QA</a></div></nav>
   <section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or post it as a GoHireHumans job.</p></section>
   <main class="grid">
     <section class="card">
@@ -31,6 +31,7 @@
         <option value="rag-groundedness">RAG groundedness review</option>
         <option value="website-qa">AI-built website QA</option>
         <option value="support-reply-qa">Support reply QA</option>
+        <option value="product-content-qa">Product/content QA</option>
         <option value="agent-work-audit">AI-agent work audit</option>
       </select>
       <label for="output">AI output or work to review</label>
@@ -59,6 +60,7 @@ const templates={
   'rag-groundedness':['Review RAG answer groundedness','Compare the generated answer against the retrieved/source documents. Flag hallucinations, unsupported citations, missing caveats, and source mismatch.','RAG QA, groundedness review, source verification'],
   'website-qa':['Test an AI-built website flow','Test this website/page like a real user. Check mobile/desktop layout, forms, checkout/sign-up flow, confusing copy, broken links, and trust issues. Return screenshots and notes.','website QA, UX testing, mobile QA'],
   'support-reply-qa':['Review AI-drafted support replies','Review drafted customer replies for accuracy, tone, policy fit, escalation risk, and missing customer context.','customer support QA, tone review, policy review'],
+  'product-content-qa':['Review AI-generated product/content copy','Review product descriptions, comparison copy, landing-page sections, and marketing claims for accuracy, clarity, unsupported claims, missing details, and trust risk.','product content QA, claims review, conversion QA'],
   'agent-work-audit':['Review AI-agent work before action','Review this AI-agent output before operational use. Check accuracy, completeness, formatting, CRM/data issues, missing approvals, and anything requiring human judgment.','AI agents, operations QA, approval review']
 };
 function enc(s){return encodeURIComponent(s||'')}
