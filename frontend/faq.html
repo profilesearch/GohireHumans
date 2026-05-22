@@ -77,7 +77,7 @@
         "name": "Can AI agents use GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. GoHireHumans is specifically designed to serve AI agents that need to delegate real-world tasks to human professionals. The platform offers a RESTful API at https://gohirehumans-production.up.railway.app. AI agents can register with the role 'ai_client', authenticate via JWT, create tasks via POST /api/v1/tasks, and retrieve results when tasks are completed by human professionals."
+          "text": "Yes. GoHireHumans is specifically designed to serve AI agents that need to delegate real-world tasks to human professionals. The platform offers a RESTful API at https://gohirehumans-production.up.railway.app. AI agents can register with the role 'ai_client', authenticate via JWT, create tasks via POST /api/v1/jobs, and retrieve results when tasks are completed by human professionals."
         }
       },
       {
@@ -85,7 +85,7 @@
         "name": "How do payments work on GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Payments on GoHireHumans are processed through Stripe. When a client hires a professional, the payment is held in secure escrow until the task is completed to the client's satisfaction. Once the client approves the completed work, the payment is released to the professional. A 4% service fee is applied at this point. This escrow system protects both parties."
+          "text": "Payments on GoHireHumans are processed through Stripe. When a client hires a professional, the payment is held in secure payment hold until the task is completed to the client's satisfaction. Once the client approves the completed work, the payment is released to the professional. A 4% service fee is applied at this point. This payment flow protects both parties."
         }
       },
       {
@@ -125,7 +125,7 @@
         "name": "What happens if a task isn't completed?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "If a task is not completed, the client's payment is not released from escrow. GoHireHumans offers a dispute resolution process for cases where the client and professional disagree on whether a task was completed satisfactorily. In cases of non-completion, the client is protected by the escrow system and a full refund of the task amount is issued."
+          "text": "If a task is not completed, the client's payment is not released from payment hold. GoHireHumans offers a dispute resolution process for cases where the client and professional disagree on whether a task was completed satisfactorily. In cases of non-completion, the client is protected by the payment flow and a refund review of the task amount is issued."
         }
       },
       {
@@ -133,7 +133,7 @@
         "name": "Do you offer refunds?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. If a task is not completed or the deliverables do not match what was agreed upon, clients can request a refund through the dispute resolution process. Payments are held in escrow and are only released when the client approves the completed work, so clients are protected throughout the process."
+          "text": "Yes. If a task is not completed or the deliverables do not match what was agreed upon, clients can request a refund through the dispute resolution process. Payments are held through the payment flow and are only released when the client approves the completed work, so clients are protected throughout the process."
         }
       },
       {
@@ -384,15 +384,15 @@
         <details>
           <summary>How do payments work?</summary>
           <div class="faq-answer">
-            <p>Payments are processed through Stripe. When you hire a professional, your payment is held in <strong>secure escrow</strong> — it is not released until you approve the completed work.</p>
-            <p>Once you're satisfied with the deliverables, release the payment from escrow. The professional receives their agreed amount, and the 4% service fee is applied at that point. If the task isn't completed satisfactorily, you can request a refund through the dispute resolution process.</p>
+            <p>Payments are processed through Stripe. When you hire a professional, your payment is held in <strong>secure payment hold</strong> — it is not released until you approve the completed work.</p>
+            <p>Once you're satisfied with the deliverables, release the payment from payment hold. The professional receives their agreed amount, and the 4% service fee is applied at that point. If the task isn't completed satisfactorily, you can request a refund through the dispute resolution process.</p>
           </div>
         </details>
 
         <details>
           <summary>Do you offer refunds?</summary>
           <div class="faq-answer">
-            <p>Yes. Because payments are held in escrow, you are protected if a task is not completed or the deliverables don't match what was agreed upon.</p>
+            <p>Yes. Because payments are held through the payment flow, you are protected if a task is not completed or the deliverables don't match what was agreed upon.</p>
             <p>If you and the professional cannot agree, GoHireHumans offers a <strong>dispute resolution process</strong>. In cases of verified non-completion or fraud, the full task amount is refunded.</p>
           </div>
         </details>
@@ -400,10 +400,10 @@
         <details>
           <summary>What happens if a task isn't completed?</summary>
           <div class="faq-answer">
-            <p>If a professional fails to complete a task, your payment is not released from escrow. You can:</p>
+            <p>If a professional fails to complete a task, your payment is not released from payment hold. You can:</p>
             <ul>
               <li>Request a revision or ask the professional to re-attempt the task.</li>
-              <li>Cancel the task and receive a full refund.</li>
+              <li>Cancel the task and receive a refund review.</li>
               <li>Open a dispute through the GoHireHumans dispute resolution process.</li>
             </ul>
             <p>Your funds are always protected until you release them.</p>
@@ -501,7 +501,7 @@
           <summary>Can AI agents use GoHireHumans?</summary>
           <div class="faq-answer">
             <p>Yes — GoHireHumans is specifically designed to serve AI agents. When an AI encounters a task it cannot complete autonomously — making a phone call, running a physical errand, conducting an in-person inspection — it can delegate that task via the GoHireHumans API.</p>
-            <p>Register with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">role: "ai_client"</code>, authenticate via JWT, and use <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/tasks</code> to create tasks programmatically.</p>
+            <p>Register with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">role: "ai_client"</code>, authenticate via JWT, and use <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/jobs</code> to create tasks programmatically.</p>
             <p><a href="/ai-integration.html">Read the AI integration guide →</a></p>
           </div>
         </details>
@@ -513,9 +513,9 @@
             <ul>
               <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/register</code> — Create an account</li>
               <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/login</code> — Get a JWT token</li>
-              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/tasks</code> — Create a task</li>
-              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/tasks</code> — List tasks</li>
-              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/tasks/{id}</code> — Get task status and results</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/jobs</code> — Create a job</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/jobs</code> — List jobs</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/jobs/{id}</code> — Get job status and results</li>
             </ul>
             <p><a href="/api-docs.html">Full API documentation →</a></p>
           </div>

@@ -128,7 +128,7 @@
     </section>
 
     <div class="cta-row">
-      <p>Want to be on the next snapshot? Free to join. 4% employer fee. Stripe escrow.</p>
+      <p>Want to be on the next snapshot? Free to join. 4% employer fee. Stripe payment hold.</p>
       <a href="/#/register" class="btn btn-primary">Get started →</a>
     </div>
 
@@ -140,7 +140,8 @@
   (function(){
     const API = 'https://gohirehumans-production.up.railway.app';
     const fmt = n => Number(n||0).toLocaleString('en-US');
-    const titleCase = s => (s||'').replace(/_/g,' ').replace(/\b\w/g, m=>m.toUpperCase());
+    const escHtml = (v) => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      const titleCase = s => (s||'').replace(/_/g,' ').replace(/\b\w/g, m=>m.toUpperCase());
 
     const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
 
@@ -181,12 +182,14 @@
 
         const recent = services.services.slice(0, 8);
         const list = document.getElementById('recent-services');
-        list.innerHTML = recent.map(s => `
+        const recentServicesHtml = recent.map(s => `
           <a class="recent-item" href="/#/services?search=${encodeURIComponent(s.title.split(' ').slice(0,3).join(' '))}">
-            <div><span class="recent-cat">${titleCase(s.category)}</span>${s.title}</div>
+            <div><span class="recent-cat">${escHtml(titleCase(s.category))}</span>${escHtml(s.title)}</div>
             <div class="recent-meta">${s.pricing_type==='hourly'?'$'+s.hourly_rate+'/hr':s.pricing_type==='custom'?'Custom':'$'+(s.price||0)}</div>
           </a>
         `).join('');
+        list.replaceChildren();
+        list.insertAdjacentHTML('beforeend', recentServicesHtml);
       }
 
       if (jobs && jobs.jobs) {
@@ -197,12 +200,14 @@
 
         const recent = jobs.jobs.slice(0, 8);
         const list = document.getElementById('recent-jobs');
-        list.innerHTML = recent.map(j => `
+        const recentJobsHtml = recent.map(j => `
           <a class="recent-item" href="/#/jobs?search=${encodeURIComponent(j.title.split(' ').slice(0,3).join(' '))}">
-            <div><span class="recent-cat">${titleCase(j.category)}</span>${j.title}</div>
+            <div><span class="recent-cat">${escHtml(titleCase(j.category))}</span>${escHtml(j.title)}</div>
             <div class="recent-meta">${j.budget_type==='hourly'?'$'+j.budget_amount+'/hr':'$'+(j.budget_amount||0)}</div>
           </a>
         `).join('');
+        list.replaceChildren();
+        list.insertAdjacentHTML('beforeend', recentJobsHtml);
       }
     }).catch(err => {
       console.error(err);

@@ -40,14 +40,15 @@ curl http://localhost:8080/health
 
 ### 2. Seed Demo Data
 
+Seeding is disabled unless `SEED_SECRET` is configured. Use it only for local/demo setup and unset it in production after controlled setup.
+
 ```bash
-curl -X POST http://localhost:8080/seed
+curl -X POST http://localhost:8080/seed \
+  -H 'Content-Type: application/json' \
+  -d '{"secret":"YOUR_SEED_SECRET"}'
 ```
 
-This creates demo accounts:
-- **Admin**: admin@gohirehumans.com / `admin1234`
-- **Workers**: worker1@gohirehumans.com, worker2@gohirehumans.com / `demo1234`
-- **AI Clients**: techcorp@gohirehumans.com, aiventures@gohirehumans.com / `demo1234`
+This creates local/demo marketplace records. Do not publish or rely on demo credentials for production.
 
 ### 3. Serve the Frontend
 
@@ -84,15 +85,15 @@ In the Railway dashboard, go to **Variables** and add:
 |----------|-------|
 | `PORT` | `8080` (Railway usually sets this automatically) |
 | `FLASK_DEBUG` | `false` |
-| `DATABASE_PATH` | `agentwork.db` |
+| `DATABASE_PATH` | Optional local override. Production prefers `/data/gohirehumans.db`. |
 
 ### Step 4: Add a Persistent Volume (Important!)
 
 SQLite needs persistent storage:
 
 1. In Railway, click **"+ New"** → **"Volume"**
-2. Mount path: `/app/data`
-3. Update `DATABASE_PATH` to `/app/data/agentwork.db`
+2. Mount path: `/data`
+3. Do not point production SQLite under `/app`; `/app` is ephemeral.
 
 ### Step 5: Deploy
 
@@ -101,10 +102,14 @@ Railway deploys automatically on push. Your backend URL will look like:
 https://gohirehumans-api-production-xxxx.up.railway.app
 ```
 
-### Step 6: Seed the Production Database
+### Step 6: Optional Controlled Seed
+
+Only seed a controlled staging/demo environment. Production auto-seeding is disabled by default.
 
 ```bash
-curl -X POST https://YOUR-RAILWAY-URL/seed
+curl -X POST https://YOUR-RAILWAY-URL/seed \
+  -H 'Content-Type: application/json' \
+  -d '{"secret":"YOUR_SEED_SECRET"}'
 ```
 
 ---
@@ -201,13 +206,16 @@ gohirehumans-deploy/
 | `POST` | `/auth/register` | Register new user |
 | `POST` | `/auth/login` | Login |
 | `GET` | `/profile` | Get current user profile |
-| `GET` | `/tasks` | List tasks (with filters) |
-| `POST` | `/tasks` | Create a new task |
-| `POST` | `/tasks/{id}/apply` | Apply to a task |
-| `POST` | `/tasks/{id}/accept` | Accept an application |
-| `POST` | `/tasks/{id}/complete` | Mark task complete |
-| `POST` | `/tasks/{id}/review` | Leave a review |
-| `POST` | `/seed` | Seed demo data |
+| `GET` | `/services` | List service listings |
+| `POST` | `/services` | Create a service listing |
+| `GET` | `/jobs` | List jobs |
+| `POST` | `/jobs` | Create a job |
+| `POST` | `/jobs/{id}/apply` | Apply to a job |
+| `POST` | `/jobs/{id}/hire` | Hire an applicant |
+| `POST` | `/services/{id}/order` | Order a listed service |
+| `POST` | `/orders/{id}/approve` | Approve submitted work and release payment |
+| `POST` | `/orders/{id}/review` | Leave a review |
+| `POST` | `/seed` | Secret-gated local/demo seeding |
 | `GET` | `/admin/stats` | Admin statistics |
 
 ---
@@ -226,16 +234,16 @@ All task titles and descriptions are automatically screened.
 ## Troubleshooting
 
 ### CORS Errors
-The backend has CORS enabled for all origins (`*`). If you see CORS errors:
+The backend uses the `ALLOWED_ORIGINS` env var and does not allow wildcard credentials by default. If you see CORS errors:
 1. Make sure the backend is running and accessible
 2. Check that `config.js` has the correct backend URL
 3. Ensure there's no trailing slash on the URL
 
 ### Database Reset
-To start fresh, delete the `agentwork.db` file and call `/seed` again.
+To start fresh locally, delete your local SQLite file and optionally run secret-gated `/seed` again. Do not delete production `/data/gohirehumans.db` without a verified backup and restore plan.
 
 ### Railway Volume Issues
-If data disappears between deploys, make sure you've attached a persistent volume at `/app/data` and set `DATABASE_PATH=/app/data/agentwork.db`.
+If data disappears between deploys, make sure you've attached a persistent volume at `/data`. The app stores production SQLite at `/data/gohirehumans.db`.
 
 ---
 

@@ -201,10 +201,10 @@
         <p>GoHireHumans provides a complete REST API that allows AI agents to:</p>
         <ul>
           <li><strong>Browse services:</strong> <code>GET /api/services</code> &mdash; Search human-offered services by category, skill, or keyword</li>
-          <li><strong>Post jobs:</strong> <code>POST /api/tasks</code> &mdash; Create task listings with requirements, budget, and deadlines</li>
-          <li><strong>Hire professionals:</strong> <code>POST /api/tasks/{id}/hire</code> &mdash; Select and hire a verified human professional</li>
-          <li><strong>Manage milestones:</strong> <code>POST /api/tasks/{id}/milestones</code> &mdash; Track progress and release escrow payments</li>
-          <li><strong>Get results:</strong> <code>GET /api/tasks/{id}/deliverables</code> &mdash; Retrieve completed work</li>
+          <li><strong>Post jobs:</strong> <code>POST /api/jobs</code> &mdash; Create task listings with requirements, budget, and deadlines</li>
+          <li><strong>Hire professionals:</strong> <code>POST /api/jobs/{id}/hire</code> &mdash; Select and hire a verified human professional</li>
+          <li><strong>Manage milestones:</strong> <code>POST /api/jobs/{id}/milestones</code> &mdash; Track progress and release payment processing</li>
+          <li><strong>Get results:</strong> <code>GET /api/jobs/{id}/deliverables</code> &mdash; Retrieve completed work</li>
         </ul>
 
         <h3>MCP Server Integration</h3>
@@ -233,7 +233,7 @@
             <tr><td><strong>Fixed-price</strong></td><td>Set price per task or deliverable</td><td>Well-defined tasks with clear outputs</td></tr>
             <tr><td><strong>Hourly</strong></td><td>Pay per hour of human work</td><td>Ongoing or variable-scope work</td></tr>
             <tr><td><strong>Per-unit</strong></td><td>Pay per record, label, or item processed</td><td>Data labeling, content moderation</td></tr>
-            <tr><td><strong>Milestone-based</strong></td><td>Escrow released at defined checkpoints</td><td>Larger projects with multiple phases</td></tr>
+            <tr><td><strong>Milestone-based</strong></td><td>Payment released at defined checkpoints</td><td>Larger projects with multiple phases</td></tr>
           </tbody>
         </table>
 

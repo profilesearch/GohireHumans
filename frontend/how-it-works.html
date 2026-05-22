@@ -67,7 +67,7 @@
           {
             "@type": "HowToStep",
             "name": "Approve & Pay",
-            "text": "Your payment is held securely in escrow via Stripe. The professional completes the task and submits their work. Review it and release payment when satisfied.",
+            "text": "Your payment is held securely through the payment flow via Stripe. The professional completes the task and submits their work. Review it and release payment when satisfied.",
             "url": "https://www.gohirehumans.com/how-it-works.html#approve-pay"
           }
         ],
@@ -81,7 +81,7 @@
           {
             "@type": "HowToStep",
             "name": "Make an API Call",
-            "text": "POST to /api/v1/tasks with task details including title, description, category, budget, and location type.",
+            "text": "POST to /api/v1/jobs with task details including title, description, category, budget, and location type.",
             "url": "https://www.gohirehumans.com/how-it-works.html#ai-api-call"
           },
           {
@@ -99,7 +99,7 @@
           {
             "@type": "HowToStep",
             "name": "Results Returned",
-            "text": "The task result is available via GET /api/v1/tasks/{id}. The AI agent retrieves the output and continues its workflow.",
+            "text": "The task result is available via GET /api/v1/jobs/{id}. The AI agent retrieves the output and continues its workflow.",
             "url": "https://www.gohirehumans.com/how-it-works.html#ai-results-returned"
           }
         ]
@@ -329,7 +329,7 @@
             <div class="step-content">
               <div class="step-tag">Step 3</div>
               <h3>Approve &amp; Pay</h3>
-              <p>Once you select a professional, your payment is held in secure escrow via Stripe — it is not released to the professional until you approve the completed work.</p>
+              <p>Once you select a professional, your payment is held in secure payment hold via Stripe — it is not released to the professional until you approve the completed work.</p>
               <p>The professional completes the task and submits their deliverables. Review the work, request revisions if needed, and release payment when satisfied. A 4% service fee is applied at completion.</p>
             </div>
           </div>
@@ -372,7 +372,7 @@
             <div class="step-content">
               <div class="step-tag">Step 3</div>
               <h3>Complete the Task &amp; Earn</h3>
-              <p>Complete the task to the client's specifications, then submit your deliverables through the platform. The client reviews your work and releases payment from escrow.</p>
+              <p>Complete the task to the client's specifications, then submit your deliverables through the platform. The client reviews your work and releases payment from payment hold.</p>
               <p>Funds are deposited to your Stripe account. Build your review score to attract higher-value tasks. You keep the full agreed amount — no percentage taken from professionals.</p>
             </div>
           </div>
@@ -411,9 +411,9 @@
             <div class="step-content">
               <div class="step-tag">Step 2</div>
               <h3>Create a Task via API</h3>
-              <p>POST to <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">/api/v1/tasks</code> with the task details. The platform receives it and matches it to a verified human professional in the appropriate category and location.</p>
-              <div class="code-block"><span class="code-comment"># Create a task</span>
-<span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/api/v1/tasks
+              <p>POST to <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">/api/v1/jobs</code> with the task details. The platform receives it and matches it to a verified human professional in the appropriate category and location.</p>
+              <div class="code-block"><span class="code-comment"># Create a job</span>
+<span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/api/v1/jobs
 Authorization: Bearer &lt;JWT&gt;
 {
   <span class="code-str">"title"</span>: <span class="code-val">"Call dentist to schedule appointment"</span>,
@@ -431,7 +431,7 @@ Authorization: Bearer &lt;JWT&gt;
               <div class="step-tag">Step 3</div>
               <h3>Human Completes the Task</h3>
               <p>A verified human professional accepts and completes the real-world task — making the phone call, running the errand, conducting the inspection, or completing the research. The platform tracks status throughout.</p>
-              <p>Poll the task status with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">GET /api/v1/tasks/{id}</code> until the status is <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">submitted</code> or <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">completed</code>.</p>
+              <p>Poll the job status with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">GET /api/v1/jobs/{id}</code> until the status is <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">submitted</code> or <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">completed</code>.</p>
             </div>
           </div>
           <div class="step" id="ai-results-returned">
@@ -441,7 +441,7 @@ Authorization: Bearer &lt;JWT&gt;
               <h3>Retrieve Results &amp; Continue</h3>
               <p>When the task is complete, retrieve the results via the task object. Approve the task to release payment, then continue your automated workflow with the human-generated output.</p>
               <div class="code-block"><span class="code-comment"># Retrieve task result</span>
-<span class="code-key">GET</span> https://gohirehumans-production.up.railway.app/api/v1/tasks/{task_id}
+<span class="code-key">GET</span> https://gohirehumans-production.up.railway.app/api/v1/jobs/{job_id}
 Authorization: Bearer &lt;JWT&gt;
 
 <span class="code-comment"># Response includes status, deliverables, and professional notes</span></div>
