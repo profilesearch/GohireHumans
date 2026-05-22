@@ -5,6 +5,8 @@ Two-sided marketplace: workers post services, employers post jobs.
 Routes via PATH_INFO. Called by server.py handle_request().
 """
 
+import base64
+import gzip
 import json
 import os
 import sys
@@ -12,6 +14,7 @@ import sqlite3
 import hashlib
 import hmac
 import secrets
+import tempfile
 import time
 import re
 import threading
@@ -87,6 +90,15 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://gohirehumans.com")
 SEED_SECRET = os.environ.get("SEED_SECRET", "")
 DIAGNOSTIC_ENDPOINT_ENABLED = os.environ.get("ENABLE_DIAGNOSTIC_ENDPOINT", "").strip().lower() in {"1", "true", "yes"}
 DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
+BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
+
+
+def _secret_header_matches(header_attr, expected_secret):
+    provided = (
+        getattr(_request_ctx, header_attr, "")
+        or os.environ.get(header_attr.upper(), "")
+    ).strip()
+    return bool(provided) and bool(expected_secret) and hmac.compare_digest(provided, expected_secret)
 
 
 def diagnostic_endpoint_allowed():
@@ -98,11 +110,12 @@ def diagnostic_endpoint_allowed():
     """
     if not DIAGNOSTIC_ENDPOINT_ENABLED or not DIAGNOSTIC_SECRET:
         return False
-    provided = (
-        getattr(_request_ctx, "http_x_diagnostic_secret", "")
-        or os.environ.get("HTTP_X_DIAGNOSTIC_SECRET", "")
-    ).strip()
-    return bool(provided) and hmac.compare_digest(provided, DIAGNOSTIC_SECRET)
+    return _secret_header_matches("http_x_diagnostic_secret", DIAGNOSTIC_SECRET)
+
+
+def backup_endpoint_allowed():
+    """Return True only when backup retrieval is protected by a strong secret."""
+    return _secret_header_matches("http_x_backup_secret", BACKUP_SECRET)
 
 
 def stripe_configured():
@@ -1143,6 +1156,45 @@ def _handle_routes(db):
             "env_RAILWAY_VOLUME_MOUNT_PATH": os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "(not set)"),
             "cwd": os.getcwd(),
         })
+
+    # ── Secret-gated SQLite backup endpoint ──────────────────────────────────
+    if path == "/admin/backup" and method == "GET":
+        if not backup_endpoint_allowed():
+            return error_response("Not found", 404)
+        db_path = _get_db_path()
+        if db_path == ":memory:" or not os.path.isfile(db_path):
+            return error_response("Database file not available", 503)
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fd, backup_path = tempfile.mkstemp(prefix="gohirehumans-backup-", suffix=".sqlite3")
+        os.close(fd)
+        try:
+            source = sqlite3.connect(db_path)
+            dest = sqlite3.connect(backup_path)
+            try:
+                source.backup(dest)
+            finally:
+                dest.close()
+                source.close()
+            with open(backup_path, "rb") as f:
+                raw = f.read()
+            integrity = sqlite3.connect(backup_path).execute("PRAGMA integrity_check").fetchone()[0]
+            compressed = gzip.compress(raw, mtime=0)
+            return json_response({
+                "created_at": created_at,
+                "format": "sqlite3+gzip+base64",
+                "filename": f"gohirehumans-{created_at.replace(':', '').replace('-', '')}.sqlite3.gz",
+                "database_size_bytes": len(raw),
+                "compressed_size_bytes": len(compressed),
+                "sha256_uncompressed": hashlib.sha256(raw).hexdigest(),
+                "sha256_compressed": hashlib.sha256(compressed).hexdigest(),
+                "integrity_check": integrity,
+                "backup_b64_gzip": base64.b64encode(compressed).decode("ascii"),
+            })
+        finally:
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
 
     # ── Public pricing info (no auth) ──────────────────────────────────────
     if path == "/pricing/info" and method == "GET":
