@@ -55,6 +55,18 @@ class DiagnosticEndpointGateTests(unittest.TestCase):
                 os.environ["HTTP_X_DIAGNOSTIC_SECRET"] = old
 
 
+class BackupEndpointGateTests(unittest.TestCase):
+    def test_backup_endpoint_requires_matching_secret(self):
+        module = load_api_core()
+        module.BACKUP_SECRET = "expected-backup-secret"
+
+        module._request_ctx.http_x_backup_secret = "wrong-secret"
+        self.assertFalse(module.backup_endpoint_allowed())
+
+        module._request_ctx.http_x_backup_secret = "expected-backup-secret"
+        self.assertTrue(module.backup_endpoint_allowed())
+
+
 class SeededSampleAccountTests(unittest.TestCase):
     def test_seeded_sample_email_detection(self):
         module = load_api_core()
