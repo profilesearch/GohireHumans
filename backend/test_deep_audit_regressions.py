@@ -250,8 +250,51 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "service_order_intent",
             "job_apply_intent",
             "explainer_video_play",
+            "guided_task_intake_start",
+            "guided_task_draft_created",
+            "worker_route_select",
+            "post_service_intent",
+            "browse_relevant_jobs_intent",
         ]
         for snippet in required_snippets:
+            self.assertIn(snippet, text)
+
+    def test_homepage_has_guided_task_intake_and_worker_agent_routes(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "Guided task intake",
+            "What needs to be done?",
+            "What type of human/agent is needed?",
+            "Suggested deliverable/result",
+            "Suggested budget range",
+            "Create draft in post-job form",
+            "query.get('draft_title')",
+            "query.get('draft_description')",
+            "Worker &amp; agent routing",
+            "Website testing",
+            "Lead research",
+            "AI-output review",
+            "Calls",
+            "Local verification",
+            "Data cleanup",
+            "selectWorkerRoute('website_testing'",
+            "postServiceIntent()",
+        ]:
+            self.assertIn(snippet, text)
+
+        guided_block = text[text.index("Guided task intake"):text.index("Worker &amp; agent routing")]
+        self.assertNotIn("fetch(", guided_block)
+        self.assertNotIn("api(", guided_block)
+        self.assertNotIn("mailto:", guided_block)
+        self.assertIn("does not submit a job, contact workers, send email, or promise a match", guided_block)
+
+    def test_homepage_has_safe_early_liquidity_messaging(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "If the right match is not visible yet, post the task or service anyway so the marketplace can route demand as supply grows.",
+            "Concierge-style help means clearer drafting and listing, not guaranteed fulfillment.",
+            "availability depends on current marketplace listings and is not guaranteed.",
+        ]:
             self.assertIn(snippet, text)
 
     def test_homepage_has_concierge_task_drafts_without_automatic_outreach(self):
@@ -263,7 +306,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "startTaskDraft('lead_research')",
             "startTaskDraft('ai_review')",
             "concierge_task_draft_click",
-            "getTaskDraftTemplate(getQuery().get('template'))",
+            "const templateDraft = getTaskDraftTemplate(query.get('template')) || {};",
             "Nothing is submitted until you review and post the listing.",
             "Workers receive the listed payout",
             "Employer pays Stripe processing + 1%",
@@ -298,6 +341,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "platform arbitration",
             "verified safe",
             "guarantee quality",
+            "guaranteed work",
+            "verified jobs",
+            "guaranteed matching",
         ]
         lower_public = public_landing.lower()
         for term in forbidden_terms:

@@ -123,11 +123,11 @@
       "Public browsing of services and jobs — no account needed",
       "Secure payment processing via Stripe",
       "Two-sided marketplace: post services or jobs",
-      "Milestone-based payment for fixed-price work",
-      "Weekly billing cycle for hourly contracts",
-      "Verified worker and employer profiles",
-      "Two-way ratings and reviews",
-      "Dispute resolution system",
+      "Payment processing support where configured",
+      "Draft and published listing workflows",
+      "Worker and employer profile pages",
+      "Public ratings and reviews where available",
+      "Suspicious listing reporting",
       "Transparent, low-cost pricing for buyers and sellers"
     ]
   }
@@ -243,7 +243,7 @@
       <h3>For Clients (hiring services)</h3>
       <ol>
         <li><strong>Browse services</strong> — Find the right professional for your needs.</li>
-        <li><strong>Order the service</strong> — Funds are held securely through the payment flow.</li>
+        <li><strong>Order the service</strong> — Payment processing is handled through the configured payment flow.</li>
         <li><strong>Review &amp; approve</strong> — Release payment when you're satisfied.</li>
       </ol>
       <h3>For Employers (posting jobs)</h3>
@@ -532,6 +532,62 @@ function startTaskDraft(templateKey, source = 'homepage_concierge') {
   trackEvent('concierge_task_draft_click', { source, template: templateKey || 'blank' });
   const suffix = templateKey ? '?template=' + encodeURIComponent(templateKey) : '';
   navigate('#/post-job' + suffix);
+}
+function markGuidedTaskIntakeStart(fieldName) {
+  trackEvent('guided_task_intake_start', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown' });
+}
+function createGuidedTaskDraft() {
+  const task = (document.getElementById('guided-task-need')?.value || '').trim();
+  const helper = (document.getElementById('guided-task-helper')?.value || '').trim();
+  const deliverable = (document.getElementById('guided-task-deliverable')?.value || '').trim();
+  const budget = (document.getElementById('guided-task-budget')?.value || '').trim();
+  const description = [
+    task ? `What needs to be done:\n${task}` : '',
+    helper ? `Type of human or agent needed:\n${helper}` : '',
+    deliverable ? `Suggested deliverable/result:\n${deliverable}` : '',
+    'Please review this draft and edit the scope before publishing. Nothing is submitted until you post the listing.'
+  ].filter(Boolean).join('\n\n');
+  const params = new URLSearchParams();
+  if (task) params.set('draft_title', task.slice(0, 100));
+  if (description) params.set('draft_description', description);
+  if (helper) params.set('draft_skills', helper);
+  const numericBudget = (budget.match(/\d+(?:\.\d{1,2})?/) || [])[0];
+  if (numericBudget) params.set('draft_budget', numericBudget);
+  try {
+    sessionStorage.setItem('ghh_guided_task_draft', JSON.stringify({
+      title: task.slice(0, 100),
+      description,
+      required_skills: helper,
+      budget_amount: numericBudget || '',
+      budget_type: 'fixed'
+    }));
+  } catch (_) {}
+  trackEvent('guided_task_draft_created', {
+    source: 'homepage_guided_task_intake',
+    has_task: Boolean(task),
+    has_helper: Boolean(helper),
+    has_deliverable: Boolean(deliverable),
+    has_budget: Boolean(budget)
+  });
+  navigate('#/post-job' + (params.toString() ? '?' + params.toString() : ''));
+}
+function consumeStoredGuidedTaskDraft() {
+  try {
+    const raw = sessionStorage.getItem('ghh_guided_task_draft');
+    if (!raw) return {};
+    const draft = JSON.parse(raw) || {};
+    sessionStorage.removeItem('ghh_guided_task_draft');
+    return draft;
+  } catch (_) { return {}; }
+}
+function selectWorkerRoute(routeKey, label, searchTerm) {
+  trackEvent('worker_route_select', { source: 'homepage_worker_agent_router', route: routeKey, label });
+  trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: searchTerm || label });
+  navigate('#/jobs?search=' + encodeURIComponent(searchTerm || label));
+}
+function postServiceIntent(source = 'homepage_worker_agent_router') {
+  trackEvent('post_service_intent', { source });
+  navigate('#/post-service');
 }
 function formValue(value) {
   return esc(value || '').replace(/"/g, '&quot;');
@@ -1003,6 +1059,59 @@ async function renderLanding() {
         </div>
       </section>
 
+      <section style="padding:clamp(2.5rem,5vw,4rem) var(--space-6);background:linear-gradient(180deg,#f7f3ea 0%,#ffffff 100%)">
+        <div style="max-width:var(--content-wide);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,520px);gap:var(--space-8);align-items:start">
+          <div>
+            <div class="lp-section-label">Guided task intake</div>
+            <h2 class="lp-section-head" style="text-align:left">Turn a rough task idea into a draft listing.</h2>
+            <p class="lp-section-sub" style="text-align:left;margin:0 0 var(--space-5)">Answer four quick prompts and GoHireHumans opens the existing post-job form with draft details filled in where possible. This creates a draft only — it does not submit a job, contact workers, send email, or promise a match.</p>
+            <p style="color:var(--color-text-muted);font-size:var(--text-sm);line-height:1.6">If the right match is not visible yet, post the task or service anyway so the marketplace can route demand as supply grows. Concierge-style help means clearer drafting and listing, not guaranteed fulfillment.</p>
+          </div>
+          <div class="lp-feed-card" style="cursor:default">
+            <div class="form-group">
+              <label class="label" for="guided-task-need">What needs to be done?</label>
+              <textarea class="textarea" id="guided-task-need" rows="3" onfocus="markGuidedTaskIntakeStart('what_needs_to_be_done')" placeholder="Example: test my landing page signup flow and note confusing steps"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="label" for="guided-task-helper">What type of human/agent is needed?</label>
+              <input class="input" id="guided-task-helper" onfocus="markGuidedTaskIntakeStart('human_or_agent_needed')" placeholder="Example: website tester, lead researcher, AI-output reviewer">
+            </div>
+            <div class="form-group">
+              <label class="label" for="guided-task-deliverable">Suggested deliverable/result</label>
+              <input class="input" id="guided-task-deliverable" onfocus="markGuidedTaskIntakeStart('suggested_deliverable')" placeholder="Example: bullet-point notes plus screenshots">
+            </div>
+            <div class="form-group">
+              <label class="label" for="guided-task-budget">Suggested budget range</label>
+              <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed or $15/hr">
+            </div>
+            <button class="btn btn-primary" style="width:100%" onclick="createGuidedTaskDraft()">Create draft in post-job form</button>
+            <p style="margin:var(--space-3) 0 0;color:var(--color-text-faint);font-size:var(--text-xs)">Draft only. You review and publish manually when ready.</p>
+          </div>
+        </div>
+      </section>
+
+      <section style="padding:clamp(2.5rem,5vw,4rem) var(--space-6);background:#fff">
+        <div style="max-width:var(--content-wide);margin:0 auto">
+          <div style="text-align:center;margin-bottom:var(--space-8)">
+            <div class="lp-section-label">Worker &amp; agent routing</div>
+            <h2 class="lp-section-head">Find relevant tasks without guessing where to click.</h2>
+            <p class="lp-section-sub" style="max-width:720px;margin:0 auto">Choose the kind of work you can do. We route you to matching job searches or the service posting flow; availability depends on current marketplace listings and is not guaranteed.</p>
+          </div>
+          <div class="lp-feed-grid">
+            <button class="lp-feed-card" onclick="selectWorkerRoute('website_testing','Website testing','website testing')"><div class="lp-feed-card-cat">Website testing</div><div class="lp-feed-title">Test signup, checkout, and landing-page flows</div></button>
+            <button class="lp-feed-card" onclick="selectWorkerRoute('lead_research','Lead research','lead research')"><div class="lp-feed-card-cat">Lead research</div><div class="lp-feed-title">Build lists, qualify companies, and verify links</div></button>
+            <button class="lp-feed-card" onclick="selectWorkerRoute('ai_output_review','AI-output review','AI review fact checking')"><div class="lp-feed-card-cat">AI-output review</div><div class="lp-feed-title">Check AI drafts for accuracy, clarity, and missing context</div></button>
+            <button class="lp-feed-card" onclick="selectWorkerRoute('calls','Calls','phone calls')"><div class="lp-feed-card-cat">Calls</div><div class="lp-feed-title">Make calls, confirm details, collect quotes, or schedule</div></button>
+            <button class="lp-feed-card" onclick="selectWorkerRoute('local_verification','Local verification','local verification')"><div class="lp-feed-card-cat">Local verification</div><div class="lp-feed-title">Verify real-world information, photos, or local details</div></button>
+            <button class="lp-feed-card" onclick="selectWorkerRoute('data_cleanup','Data cleanup','data cleanup')"><div class="lp-feed-card-cat">Data cleanup</div><div class="lp-feed-title">Clean spreadsheets, tag rows, and fill missing fields</div></button>
+          </div>
+          <div style="text-align:center;margin-top:var(--space-8);display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap">
+            <button class="btn btn-primary btn-lg" onclick="postServiceIntent()">Post a service you can offer</button>
+            <button class="btn btn-outline btn-lg" onclick="trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: 'all jobs' });navigate('#/jobs')">Browse all jobs</button>
+          </div>
+        </div>
+      </section>
+
       <!-- ═══ EXPLAINER VIDEO SECTION ═══ -->
       <section class="lp-video-section">
         <div class="lp-video-inner">
@@ -1099,7 +1208,7 @@ async function renderLanding() {
             <div class="lp-stat-item lp-stat-animate">
               <div class="lp-stat-icon">${I.shield}</div>
               <div class="lp-stat-label">Payment Processing</div>
-              <div class="lp-stat-detail">Every transaction secured</div>
+              <div class="lp-stat-detail">Stripe processing where configured</div>
             </div>
             <div class="lp-stat-divider" aria-hidden="true"></div>
             <div class="lp-stat-item lp-stat-animate">
@@ -2298,7 +2407,18 @@ async function handlePostService(e, editId) {
 async function renderPostJob() {
   let cats = [];
   try { cats = await loadCategories(); } catch {}
-  const draft = getTaskDraftTemplate(getQuery().get('template')) || {};
+  const query = getQuery();
+  const templateDraft = getTaskDraftTemplate(query.get('template')) || {};
+  const storedGuidedDraft = consumeStoredGuidedTaskDraft();
+  const draft = {
+    ...storedGuidedDraft,
+    ...templateDraft,
+    title: query.get('draft_title') || templateDraft.title || storedGuidedDraft.title,
+    description: query.get('draft_description') || templateDraft.description || storedGuidedDraft.description,
+    required_skills: query.get('draft_skills') || templateDraft.required_skills || storedGuidedDraft.required_skills,
+    budget_amount: query.get('draft_budget') || templateDraft.budget_amount || storedGuidedDraft.budget_amount,
+    budget_type: templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed'
+  };
   appShell(`
     <div style="max-width:640px">
       <h1 class="page-title">Post a Job</h1>
@@ -3666,7 +3786,8 @@ function render() {
 
   // ── Auth required ─────────────────────────────────────────
   if (!state.user || !state.token) {
-    navigate(`#/login?redirect=${encodeURIComponent(path.slice(1))}`);
+    const redirectTarget = hash.startsWith('/') ? hash.slice(1) : path.slice(1);
+    navigate(`#/login?redirect=${encodeURIComponent(redirectTarget)}`);
     return;
   }
 
