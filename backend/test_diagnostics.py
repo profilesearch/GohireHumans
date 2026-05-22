@@ -74,6 +74,18 @@ class SeededSampleAccountTests(unittest.TestCase):
         self.assertTrue(module.is_seeded_sample_email("hire@techstartup.io"))
         self.assertFalse(module.is_seeded_sample_email("real.customer@example.org"))
 
+    def test_public_seed_filters_build_safe_parameterized_sql(self):
+        module = load_api_core()
+        condition = module.public_non_seeded_user_condition("u")
+        subquery = module.public_non_seeded_user_subquery()
+        values = module.public_non_seeded_user_values()
+
+        self.assertIn("LOWER(u.email) NOT IN", condition)
+        self.assertIn("SELECT id FROM users WHERE LOWER(email) IN", subquery)
+        self.assertEqual(condition.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
+        self.assertEqual(subquery.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
+        self.assertEqual(set(values), module.SEEDED_SAMPLE_EMAILS)
+
 
 if __name__ == "__main__":
     unittest.main()
