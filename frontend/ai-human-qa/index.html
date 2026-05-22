@@ -20,16 +20,19 @@
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"Service","name":"Human AI QA services","provider":{"@type":"Organization","name":"GoHireHumans","url":"https://www.gohirehumans.com"},"areaServed":"US","serviceType":"Human review of AI-generated work","description":"Structured human QA for AI outputs, citations, RAG answers, websites, product listings, support replies, and AI-agent work.","offers":{"@type":"AggregateOffer","priceCurrency":"USD","lowPrice":"15","highPrice":"500","offerCount":"7"}}
   </script>
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KM69M3NES8');function trackGHH(eventName,params){try{if(typeof gtag==='function'){gtag('event',eventName,params||{});}else{window.dataLayer.push(Object.assign({event:eventName},params||{}));}}catch(e){}}</script>
 </head>
 <body>
 <div class="wrap">
   <nav class="nav" aria-label="Primary">
     <a class="brand" href="/">GoHireHumans</a>
     <div class="links">
-      <a href="/ai-qa-services.html">Services</a>
-      <a href="/ai-qa-buyer-brief.html">Buyer brief</a>
+      <a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a>
+      <a href="/ai-qa-buyer-brief.html" onclick="trackGHH('ai_qa_buyer_brief_click',{source:'static_ai_qa'})">Buyer brief</a>
       <a href="/ai-qa-report-template.html">Report template</a>
-      <a href="/#/post-job">Post job</a>
+      <a href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post job</a>
     </div>
   </nav>
 
@@ -39,8 +42,8 @@
       <h1>AI can draft it. A human should verify it.</h1>
       <p>GoHireHumans helps teams turn risky AI output into reviewable work: fact-checking, citation verification, RAG groundedness, website QA, support-reply review, and AI-agent audits.</p>
       <div class="btns">
-        <a class="btn" href="/ai-qa-buyer-brief.html">Create a QA brief</a>
-        <a class="btn secondary" href="/ai-qa-services.html">Browse fixed services</a>
+        <a class="btn" href="/ai-qa-buyer-brief.html" onclick="trackGHH('ai_qa_buyer_brief_click',{source:'static_ai_qa'})">Create a QA brief</a>
+        <a class="btn secondary" href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Browse fixed services</a>
       </div>
     </div>
     <aside class="hero-card">
@@ -57,6 +60,8 @@
     <article class="card"><h3>Verify citations</h3><p class="muted">Confirm cited sources exist, open correctly, and actually support the AI-generated claim.</p><a href="/ai-qa-services.html#citation-check">See citation QA →</a></article>
     <article class="card"><h3>Test AI-built websites</h3><p class="muted">Have a human check mobile UX, forms, checkout, broken links, confusing copy, and trust gaps.</p><a href="/ai-human-qa/ai-website-qa-testing.html">See website QA →</a></article>
     <article class="card"><h3>Audit AI-agent work</h3><p class="muted">Review agent output before it touches customers, CRM records, operations, or public pages.</p><a href="/ai-human-qa/ai-agent-task-review.html">See agent audits →</a></article>
+    <article class="card"><h3>Hire AI QA reviewers</h3><p class="muted">A buyer-focused page for teams searching for human reviewers to check AI-generated work.</p><a href="/ai-human-qa/hire-human-ai-qa-reviewers.html">Hire reviewers →</a></article>
+    <article class="card"><h3>RAG groundedness review</h3><p class="muted">Check whether generated answers are actually supported by retrieved sources and citations.</p><a href="/ai-human-qa/rag-groundedness-human-review.html">Review RAG answers →</a></article>
   </section>
 
   <section class="grid section" aria-label="How it works">
@@ -66,7 +71,7 @@
   </section>
 
   <section class="grid section">
-    <article class="card proof"><h2>For buyers</h2><p>Use GHH when an AI result is good enough to draft, but too risky to publish, email, import, or act on without human review.</p><a class="btn" href="/ai-qa-buyer-brief.html">Generate buyer brief</a></article>
+    <article class="card proof"><h2>For buyers</h2><p>Use GHH when an AI result is good enough to draft, but too risky to publish, email, import, or act on without human review.</p><a class="btn" href="/ai-qa-buyer-brief.html" onclick="trackGHH('ai_qa_buyer_brief_click',{source:'static_ai_qa'})">Generate buyer brief</a></article>
     <article class="card"><h2>For reviewers</h2><p class="muted">Show your ability to verify AI work, provide evidence, and communicate uncertainty clearly.</p><a href="/ai-qa-reviewer.html">Become an AI QA reviewer →</a></article>
   </section>
 
