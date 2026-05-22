@@ -535,6 +535,26 @@ def is_seeded_sample_email(email):
     return (email or "").strip().lower() in SEEDED_SAMPLE_EMAILS
 
 
+def seeded_sample_email_placeholders():
+    return ",".join("?" for _ in SEEDED_SAMPLE_EMAILS)
+
+
+def seeded_sample_email_values():
+    return list(SEEDED_SAMPLE_EMAILS)
+
+
+def public_non_seeded_user_condition(user_alias="u"):
+    return f"LOWER({user_alias}.email) NOT IN ({seeded_sample_email_placeholders()})"
+
+
+def public_non_seeded_user_values():
+    return seeded_sample_email_values()
+
+
+def public_non_seeded_user_subquery():
+    return f"SELECT id FROM users WHERE LOWER(email) IN ({seeded_sample_email_placeholders()})"
+
+
 _seeded = False
 def auto_seed_if_empty():
     """Auto-seed sample data only when explicitly enabled for demos/staging."""
@@ -1296,13 +1316,43 @@ def _handle_routes(db):
     # ── Public platform stats (no auth) ────────────────────────────────
     if path == "/platform/stats" and method == "GET":
         db = get_db()
-        services_count = db.execute("SELECT COUNT(*) as c FROM services WHERE status='active'").fetchone()['c']
-        workers_count = db.execute("SELECT COUNT(*) as c FROM worker_profiles").fetchone()['c']
-        employers_count = db.execute("SELECT COUNT(*) as c FROM employer_profiles").fetchone()['c']
-        jobs_count = db.execute("SELECT COUNT(*) as c FROM jobs WHERE status='open'").fetchone()['c']
-        completed_orders = db.execute("SELECT COUNT(*) as c FROM orders WHERE status='completed'").fetchone()['c']
-        total_users = db.execute("SELECT COUNT(*) as c FROM users WHERE is_banned=0").fetchone()['c']
-        categories_count = db.execute("SELECT COUNT(DISTINCT category) as c FROM services WHERE status='active'").fetchone()['c']
+        seeded_user_subquery = public_non_seeded_user_subquery()
+        seeded_values = seeded_sample_email_values()
+        services_count = db.execute(
+            f"SELECT COUNT(*) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            seeded_values
+        ).fetchone()['c']
+        workers_count = db.execute(
+            f"""SELECT COUNT(*) as c FROM worker_profiles wp
+                JOIN users u ON wp.user_id = u.id
+                WHERE {public_non_seeded_user_condition('u')}""",
+            public_non_seeded_user_values()
+        ).fetchone()['c']
+        employers_count = db.execute(
+            f"""SELECT COUNT(*) as c FROM employer_profiles ep
+                JOIN users u ON ep.user_id = u.id
+                WHERE {public_non_seeded_user_condition('u')}""",
+            public_non_seeded_user_values()
+        ).fetchone()['c']
+        jobs_count = db.execute(
+            f"SELECT COUNT(*) as c FROM jobs WHERE status='open' AND employer_id NOT IN ({seeded_user_subquery})",
+            seeded_values
+        ).fetchone()['c']
+        completed_orders = db.execute(
+            f"""SELECT COUNT(*) as c FROM orders
+                WHERE status='completed'
+                  AND worker_id NOT IN ({seeded_user_subquery})
+                  AND employer_id NOT IN ({seeded_user_subquery})""",
+            seeded_values + seeded_values
+        ).fetchone()['c']
+        total_users = db.execute(
+            f"SELECT COUNT(*) as c FROM users WHERE is_banned=0 AND {public_non_seeded_user_condition('users')}",
+            public_non_seeded_user_values()
+        ).fetchone()['c']
+        categories_count = db.execute(
+            f"SELECT COUNT(DISTINCT category) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            seeded_values
+        ).fetchone()['c']
         return json_response({
             "services_listed": services_count,
             "workers_registered": workers_count,
@@ -1700,8 +1750,8 @@ def _handle_routes(db):
         pricing_type = params.get("pricing_type")
         provider_type = params.get("provider_type")
 
-        conditions = ["s.status = 'active'"]
-        values = []
+        conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})"]
+        values = seeded_sample_email_values()
 
         if category:
             conditions.append("s.category = ?")
@@ -1761,8 +1811,9 @@ def _handle_routes(db):
                FROM services s
                JOIN users u ON s.worker_id = u.id
                LEFT JOIN worker_profiles wp ON s.worker_id = wp.user_id
-               WHERE s.id = ? AND s.status != 'removed'""",
-            [service_id]
+               WHERE s.id = ? AND s.status != 'removed'
+                 AND s.worker_id NOT IN (""" + public_non_seeded_user_subquery() + ")""",
+            [service_id] + seeded_sample_email_values()
         ).fetchone()
         if not row:
             return error_response("Service not found", 404)
@@ -1915,8 +1966,8 @@ def _handle_routes(db):
         max_budget = params.get("max_budget")
         status_filter = params.get("status", "open")
 
-        conditions = ["j.status = ?"]
-        values = [status_filter]
+        conditions = ["j.status = ?", f"j.employer_id NOT IN ({public_non_seeded_user_subquery()})"]
+        values = [status_filter] + seeded_sample_email_values()
 
         if category:
             conditions.append("j.category = ?")
@@ -1974,8 +2025,9 @@ def _handle_routes(db):
                FROM jobs j
                JOIN users u ON j.employer_id = u.id
                LEFT JOIN employer_profiles ep ON j.employer_id = ep.user_id
-               WHERE j.id = ?""",
-            [job_id]
+               WHERE j.id = ?
+                 AND j.employer_id NOT IN (""" + public_non_seeded_user_subquery() + ")""",
+            [job_id] + seeded_sample_email_values()
         ).fetchone()
         if not row:
             return error_response("Job not found", 404)
