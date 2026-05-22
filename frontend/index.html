@@ -784,6 +784,7 @@ function renderPublicNav(activePage = '') {
         <div class="lp-nav-links">
           ${navLinks.map(l => `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`).join('')}
           <a class="lp-nav-link" href="/ai-human-qa/">AI QA</a>
+          <a class="lp-nav-link" href="/ai-qa-task-generator.html">Task Generator</a>
           <a class="lp-nav-link" href="/use-cases/">Use Cases</a>
           <a class="lp-nav-link" href="/task-ideas.html">Task Ideas</a>
           <a class="lp-nav-link" href="/about.html">About</a>
@@ -802,6 +803,7 @@ function renderPublicNav(activePage = '') {
         <a class="lp-mobile-link" href="#/jobs" onclick="event.preventDefault();navigate('#/jobs');toggleMobileMenu()">Jobs</a>
         <a class="lp-mobile-link" href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers');toggleMobileMenu()">AI Marketplace</a>
         <a class="lp-mobile-link" href="/ai-human-qa/">AI QA</a>
+        <a class="lp-mobile-link" href="/ai-qa-task-generator.html">Task Generator</a>
         <a class="lp-mobile-link" href="/use-cases/">Use Cases</a>
         <a class="lp-mobile-link" href="/task-ideas.html">Task Ideas</a>
         <a class="lp-mobile-link" href="/about.html">About</a>
@@ -838,6 +840,8 @@ function publicFooter() {
               <li><a href="#/register" onclick="event.preventDefault();navigate('#/register')">Post a Job</a></li>
               <li><a href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers')">AI Marketplace</a></li>
               <li><a href="/ai-human-qa/">AI Human QA</a></li>
+              <li><a href="/ai-qa-task-generator.html">AI QA Task Generator</a></li>
+              <li><a href="/ai-qa-reviewer.html">Become an AI QA Reviewer</a></li>
               <li><a href="/use-cases/">Use Cases</a></li>
               <li><a href="/task-ideas.html">50 Task Ideas</a></li>
             </ul>
