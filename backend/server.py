@@ -173,6 +173,7 @@ def proxy(path):
     ctx.http_authorization = request.headers.get("Authorization", "")
     ctx.http_x_api_key = request.headers.get("X-API-Key", "")
     ctx.http_stripe_signature = request.headers.get("Stripe-Signature", "")
+    ctx.http_x_diagnostic_secret = request.headers.get("X-Diagnostic-Secret", "")
     ctx.stdin_data = body
     ctx.stdin_data_raw = body_bytes  # Raw bytes for Stripe webhook signature verification
 

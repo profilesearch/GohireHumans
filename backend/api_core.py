@@ -83,6 +83,24 @@ STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://gohirehumans.com")
 SEED_SECRET = os.environ.get("SEED_SECRET", "")
+DIAGNOSTIC_ENDPOINT_ENABLED = os.environ.get("ENABLE_DIAGNOSTIC_ENDPOINT", "").strip().lower() in {"1", "true", "yes"}
+DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
+
+
+def diagnostic_endpoint_allowed():
+    """Return True only when production diagnostics are explicitly enabled.
+
+    The diagnostic endpoint exposes operational internals and must remain off by
+    default. When temporarily needed, it requires both an opt-in env var and a
+    per-request secret header so accidental/public exposure fails closed.
+    """
+    if not DIAGNOSTIC_ENDPOINT_ENABLED or not DIAGNOSTIC_SECRET:
+        return False
+    provided = (
+        getattr(_request_ctx, "http_x_diagnostic_secret", "")
+        or os.environ.get("HTTP_X_DIAGNOSTIC_SECRET", "")
+    ).strip()
+    return bool(provided) and hmac.compare_digest(provided, DIAGNOSTIC_SECRET)
 
 
 def stripe_configured():
@@ -1026,6 +1044,7 @@ def handle_request():
         _request_ctx.http_authorization = os.environ.get("HTTP_AUTHORIZATION", "")
         _request_ctx.http_x_api_key = os.environ.get("HTTP_X_API_KEY", "")
         _request_ctx.http_stripe_signature = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
+        _request_ctx.http_x_diagnostic_secret = os.environ.get("HTTP_X_DIAGNOSTIC_SECRET", "")
         _request_ctx.stdin_data = sys.stdin.read() if sys.stdin else ""
 
     try:
@@ -1066,8 +1085,10 @@ def _handle_routes(db):
     if path.startswith("/api/v1"):
         path = path[len("/api/v1"):] or "/"
 
-    # ── Diagnostic endpoint (no auth) ──────────────────────────────────────
+    # ── Diagnostic endpoint (disabled by default; secret-gated when enabled) ──
     if path == "/diag/db" and method == "GET":
+        if not diagnostic_endpoint_allowed():
+            return error_response("Not found", 404)
         import stat as _stat
         volume_exists = os.path.isdir(_VOLUME_DIR)
         volume_contents = []
