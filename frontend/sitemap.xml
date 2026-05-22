@@ -335,4 +335,11 @@
     <priority>0.6</priority>
   </url>
   <url><loc>https://www.gohirehumans.com/blog/marketplace-pulse-2026-w18.html</loc><lastmod>2026-04-30</lastmod><priority>0.7</priority></url>
+  <!-- Human task template pages - May 22, 2026 -->
+  <url><loc>https://www.gohirehumans.com/hire/website-testers.html</loc><lastmod>2026-05-22</lastmod><priority>0.85</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/hire/lead-researchers.html</loc><lastmod>2026-05-22</lastmod><priority>0.85</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/hire/ai-reviewers.html</loc><lastmod>2026-05-22</lastmod><priority>0.85</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/hire/phone-call-help.html</loc><lastmod>2026-05-22</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/hire/local-verification.html</loc><lastmod>2026-05-22</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://www.gohirehumans.com/earn/get-paid-for-human-tasks.html</loc><lastmod>2026-05-22</lastmod><priority>0.85</priority><changefreq>monthly</changefreq></url>
 </urlset>

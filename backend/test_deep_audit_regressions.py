@@ -237,6 +237,60 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                     hits.append(f"{path.relative_to(REPO_ROOT)}: {term}")
         self.assertEqual(hits, [])
 
+    def test_task_template_pages_exist_with_safe_connector_framing(self):
+        required_pages = [
+            "frontend/hire/website-testers.html",
+            "frontend/hire/lead-researchers.html",
+            "frontend/hire/ai-reviewers.html",
+            "frontend/hire/phone-call-help.html",
+            "frontend/hire/local-verification.html",
+            "frontend/earn/get-paid-for-human-tasks.html",
+        ]
+        forbidden_claims = [
+            "guaranteed completion",
+            "escrow-protected",
+            "risk-free",
+            "platform arbitration",
+            "verified safe",
+            "guarantee quality",
+            "4% employer fee",
+        ]
+        missing = []
+        unsafe = []
+        for rel in required_pages:
+            path = REPO_ROOT / rel
+            if not path.exists():
+                missing.append(rel)
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            lower = text.lower()
+            for phrase in [
+                "Example tasks you can post",
+                "Suggested payout ranges",
+                "Connector framing",
+                "Workers receive the listed payout",
+                "Stripe processing plus a 1% GoHireHumans fee",
+            ]:
+                if phrase not in text:
+                    missing.append(f"{rel}: {phrase}")
+            for claim in forbidden_claims:
+                if claim in lower:
+                    unsafe.append(f"{rel}: {claim}")
+        self.assertEqual(missing, [])
+        self.assertEqual(unsafe, [])
+
+    def test_task_template_pages_are_discoverable_in_sitemap(self):
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8")
+        for loc in [
+            "https://www.gohirehumans.com/hire/website-testers.html",
+            "https://www.gohirehumans.com/hire/lead-researchers.html",
+            "https://www.gohirehumans.com/hire/ai-reviewers.html",
+            "https://www.gohirehumans.com/hire/phone-call-help.html",
+            "https://www.gohirehumans.com/hire/local-verification.html",
+            "https://www.gohirehumans.com/earn/get-paid-for-human-tasks.html",
+        ]:
+            self.assertIn(loc, sitemap)
+
 
 if __name__ == "__main__":
     unittest.main()
