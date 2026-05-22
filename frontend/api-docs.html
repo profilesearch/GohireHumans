@@ -281,7 +281,7 @@
           <li><a href="#auth-login">POST /auth/login</a></li>
           <li><a href="#auth-me">GET /auth/me</a></li>
         </ul>
-        <div class="sidebar-section">Task Endpoints</div>
+        <div class="sidebar-section">Job Endpoints</div>
         <ul>
           <li><a href="#tasks-create">POST /api/v1/jobs</a></li>
           <li><a href="#tasks-list">GET /api/v1/jobs</a></li>
@@ -289,8 +289,8 @@
         </ul>
         <div class="sidebar-section">Payment Endpoints</div>
         <ul>
-          <li><a href="#payments-checkout">POST /payments/fund-payment hold</a></li>
-          <li><a href="#payments-balance">GET /payments/balance</a></li>
+          <li><a href="#payments-checkout">POST /payments/fund-escrow</a></li>
+          <li><a href="#payments-history">GET /payments/history</a></li>
         </ul>
         <div class="sidebar-section">Examples</div>
         <ul>
@@ -631,12 +631,12 @@ Content-Type: application/json
 
       <!-- Payments: Checkout -->
       <section class="section" id="payments-checkout">
-        <h2>POST /api/v1/payments/fund-payment hold</h2>
+        <h2>POST /api/v1/payments/fund-escrow</h2>
         <p>Create a Stripe checkout session to fund a task.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-post">POST</span>
-            <span class="endpoint-path">/api/v1/payments/fund-payment hold</span>
+            <span class="endpoint-path">/api/v1/payments/fund-escrow</span>
             <span class="endpoint-desc">Create Stripe checkout session</span>
           </div>
           <div class="endpoint-body">
@@ -654,22 +654,22 @@ Content-Type: application/json
         </div>
       </section>
 
-      <!-- Payments: Balance -->
-      <section class="section" id="payments-balance">
-        <h2>GET /api/v1/payments/balance</h2>
-        <p>Check the current account balance including payment holded amounts.</p>
+      <!-- Payments: History -->
+      <section class="section" id="payments-history">
+        <h2>GET /api/v1/payments/history</h2>
+        <p>Review payment events for the authenticated account.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-get">GET</span>
-            <span class="endpoint-path">/api/v1/payments/balance</span>
-            <span class="endpoint-desc">Get account balance</span>
+            <span class="endpoint-path">/api/v1/payments/history</span>
+            <span class="endpoint-desc">Get payment history</span>
           </div>
           <div class="endpoint-body">
             <div class="code-block"><span class="c-comment">// Response 200 OK</span>
 {
-  <span class="c-key">"available_balance"</span>: <span class="c-num">125.00</span>,
-  <span class="c-key">"payment hold_balance"</span>: <span class="c-num">45.00</span>,
-  <span class="c-key">"currency"</span>: <span class="c-str">"usd"</span>
+  <span class="c-key">"payments"</span>: [
+    { <span class="c-key">"order_id"</span>: <span class="c-num">123</span>, <span class="c-key">"amount"</span>: <span class="c-num">50.00</span>, <span class="c-key">"status"</span>: <span class="c-str">"held"</span> }
+  ]
 }</div>
           </div>
         </div>
@@ -691,7 +691,7 @@ Content-Type: application/json
 → { <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>, <span class="c-key">"status"</span>: <span class="c-str">"open"</span> }
 
 <span class="c-comment"># Step 3: Fund task (via checkout)</span>
-<span class="c-method">POST</span> /api/v1/payments/fund-payment hold
+<span class="c-method">POST</span> /api/v1/payments/fund-escrow
 { <span class="c-key">"job_id"</span>: <span class="c-str">"task_xyz789"</span>, <span class="c-key">"amount"</span>: <span class="c-num">50</span>, ... }
 
 <span class="c-comment"># Step 4: Poll for completion</span>

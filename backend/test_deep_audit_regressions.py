@@ -149,6 +149,35 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_payment_status_returns_frontend_ready_booleans(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'ready@example.com','x','Ready User')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_sim_worker','stripe_connect_active')")
+            db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (1,'cus_sim','pm_sim')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-ready',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/payments/status"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = "Bearer tok-ready"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertIn("worker_payout_status", body)
+        self.assertIn("employer_payment_status", body)
+        self.assertIs(body["worker_ready"], True)
+        self.assertIs(body["employer_ready"], True)
+
 
 class FrontendStaticRegressionTests(unittest.TestCase):
     def test_public_marketplace_pages_do_not_render_api_strings_with_raw_innerhtml(self):
@@ -169,9 +198,17 @@ class FrontendStaticRegressionTests(unittest.TestCase):
 
     def test_docs_do_not_advertise_legacy_task_or_checkout_endpoints(self):
         bad = []
+        legacy_terms = [
+            "/api/v1/tasks",
+            "/api/v1/payments/checkout",
+            "/payments/fund-payment hold",
+            "/payments/balance",
+            "payment hold_balance",
+            "Task Endpoints",
+        ]
         for rel in ["frontend/api-docs.html", "frontend/how-it-works.html", "frontend/ai-integration.html", "frontend/faq.html", "README.md"]:
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-            if "/api/v1/tasks" in text or "/api/v1/payments/checkout" in text:
+            if any(term in text for term in legacy_terms):
                 bad.append(rel)
         self.assertEqual(bad, [])
 
@@ -180,6 +217,24 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for path in (REPO_ROOT / "frontend").rglob("*.html"):
             if "#browse" in path.read_text(encoding="utf-8", errors="ignore"):
                 hits.append(str(path.relative_to(REPO_ROOT)))
+        self.assertEqual(hits, [])
+
+    def test_no_known_broken_assets_links_or_payment_copy_typos(self):
+        bad_terms = [
+            "hiw-step2-payment hold.png",
+            "best-freelance-platforms-payment hold.html",
+            "Payment Payments",
+            "Payment payments",
+            "payment payment",
+            "payment hold payment",
+            "Platform fee (4%)",
+        ]
+        hits = []
+        for path in (REPO_ROOT / "frontend").rglob("*.html"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for term in bad_terms:
+                if term in text:
+                    hits.append(f"{path.relative_to(REPO_ROOT)}: {term}")
         self.assertEqual(hits, [])
 
 

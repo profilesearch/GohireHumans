@@ -70,7 +70,7 @@
       {
         "@type": "HowToStep",
         "name": "Fund the Task",
-        "text": "Use POST /api/v1/payments/fund-payment hold to create a Stripe checkout session and fund the task payment hold.",
+        "text": "Use POST /api/v1/payments/fund-escrow to create a Stripe checkout session and fund the task payment hold.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-fund"
       },
       {
@@ -359,7 +359,7 @@
             <div class="wf-content">
               <h3>Fund the Task</h3>
               <p>Create a Stripe checkout session to fund the task payment hold. Payment is held securely until you approve the completed work. The task moves to <code>"open"</code> status and becomes visible to professionals.</p>
-              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/fund-payment hold</span>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/fund-escrow</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
 {
