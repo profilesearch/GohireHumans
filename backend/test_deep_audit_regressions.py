@@ -254,6 +254,55 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for snippet in required_snippets:
             self.assertIn(snippet, text)
 
+    def test_homepage_has_concierge_task_drafts_without_automatic_outreach(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "Not sure what to post?",
+            "Concierge-style drafts",
+            "startTaskDraft('website_test')",
+            "startTaskDraft('lead_research')",
+            "startTaskDraft('ai_review')",
+            "concierge_task_draft_click",
+            "getTaskDraftTemplate(getQuery().get('template'))",
+            "Nothing is submitted until you review and post the listing.",
+            "Workers receive the listed payout",
+            "Employer pays Stripe processing + 1%",
+        ]:
+            self.assertIn(snippet, text)
+        concierge_block = text[text.index("Task drafting help"):text.index("<!-- ═══ EXPLAINER VIDEO SECTION ═══")]
+        self.assertNotIn("mailto:", concierge_block)
+        self.assertNotIn("fetch(", concierge_block)
+        self.assertNotIn("api(", concierge_block)
+
+    def test_homepage_public_copy_uses_connector_pricing_framing(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        public_landing = text[:text.index("// ═══════════════════════════════════════════════════════════════\n// SERVICES BROWSE")]
+        for snippet in [
+            "Workers receive the listed payout",
+            "Stripe processing plus a 1% GoHireHumans fee",
+            "Employer pays Stripe processing + 1%",
+        ]:
+            self.assertIn(snippet, public_landing)
+        forbidden_terms = [
+            "4% fee",
+            "4% platform fee",
+            "4% employer fee",
+            "verified human",
+            "verified professionals",
+            "verified profiles",
+            "protected by Stripe payment hold",
+            "protects every transaction",
+            "guaranteed completion",
+            "escrow-protected",
+            "risk-free",
+            "platform arbitration",
+            "verified safe",
+            "guarantee quality",
+        ]
+        lower_public = public_landing.lower()
+        for term in forbidden_terms:
+            self.assertNotIn(term, lower_public)
+
     def test_task_template_pages_exist_with_safe_connector_framing(self):
         required_pages = [
             "frontend/hire/website-testers.html",
