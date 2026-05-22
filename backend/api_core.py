@@ -91,6 +91,9 @@ SEED_SECRET = os.environ.get("SEED_SECRET", "")
 DIAGNOSTIC_ENDPOINT_ENABLED = os.environ.get("ENABLE_DIAGNOSTIC_ENDPOINT", "").strip().lower() in {"1", "true", "yes"}
 DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
 BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
+ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1", "true", "yes"}
+PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+
 
 
 def _secret_header_matches(header_attr, expected_secret):
@@ -116,6 +119,51 @@ def diagnostic_endpoint_allowed():
 def backup_endpoint_allowed():
     """Return True only when backup retrieval is protected by a strong secret."""
     return _secret_header_matches("http_x_backup_secret", BACKUP_SECRET)
+
+
+def google_oauth_configured():
+    """Google auth must fail closed unless the expected OAuth client ID is configured."""
+    return bool(os.environ.get("GOOGLE_CLIENT_ID", "").strip())
+
+
+def parse_int_param(params, name, default, min_value=None, max_value=None):
+    raw = params.get(name, default)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {name}: must be an integer")
+    if min_value is not None and value < min_value:
+        raise ValueError(f"Invalid {name}: must be at least {min_value}")
+    if max_value is not None and value > max_value:
+        value = max_value
+    return value
+
+
+def parse_float_param(params, name, default=None, min_value=None, max_value=None):
+    raw = params.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {name}: must be a number")
+    if min_value is not None and value < min_value:
+        raise ValueError(f"Invalid {name}: must be at least {min_value}")
+    if max_value is not None and value > max_value:
+        raise ValueError(f"Invalid {name}: must be at most {max_value}")
+    return value
+
+
+def safe_positive_amount(value, field_name, max_value=1000000):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a number")
+    if amount <= 0:
+        raise ValueError(f"{field_name} must be greater than zero")
+    if amount > max_value:
+        raise ValueError(f"{field_name} is too large")
+    return amount
 
 
 def stripe_configured():
@@ -489,9 +537,9 @@ def is_seeded_sample_email(email):
 
 _seeded = False
 def auto_seed_if_empty():
-    """Auto-seed sample data on first run if database is empty."""
+    """Auto-seed sample data only when explicitly enabled for demos/staging."""
     global _seeded
-    if _seeded:
+    if _seeded or not ENABLE_AUTO_SEED:
         return
     _seeded = True
     db = get_db()
@@ -862,8 +910,41 @@ def authenticate_session(db):
     return None
 
 
+def authenticate_api_key(db):
+    api_key = (getattr(_request_ctx, 'http_x_api_key', '') or os.environ.get('HTTP_X_API_KEY', '')).strip()
+    if not api_key or not api_key.startswith('ghh_'):
+        return None
+    key_hash_val = hashlib.sha256(api_key.encode()).hexdigest()
+    row = db.execute(
+        """SELECT ak.id as api_key_id, ak.scopes, ak.expires_at,
+                  u.*
+           FROM api_keys ak
+           JOIN users u ON ak.user_id = u.id
+           WHERE ak.key_hash = ? AND ak.is_active = 1""",
+        [key_hash_val]
+    ).fetchone()
+    if not row:
+        return None
+    if row['expires_at']:
+        try:
+            if datetime.fromisoformat(row['expires_at']) < datetime.now(timezone.utc):
+                return None
+        except ValueError:
+            return None
+    if not row['is_active'] or row['is_banned'] or row['is_suspended']:
+        return None
+    db.execute(
+        "UPDATE api_keys SET last_used_at=datetime('now'), total_requests=total_requests+1 WHERE id=?",
+        [row['api_key_id']]
+    )
+    user = row_to_dict(row)
+    user.pop('password_hash', None)
+    user.pop('api_key_id', None)
+    return user
+
+
 def authenticate(db):
-    return authenticate_session(db)
+    return authenticate_session(db) or authenticate_api_key(db)
 
 
 def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
@@ -984,9 +1065,10 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
         "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL) AND status='held'",
         [order_id, milestone_id]
     )
-    # Platform fee
+    # Employer pays the 1% platform margin on top of the listed amount.
+    # Workers receive the listed amount unless Enzo explicitly changes the model.
     fee = round(amount * SERVICE_FEE_RATE, 2)
-    worker_payout = round(amount - fee, 2)
+    worker_payout = round(amount, 2)
 
     db.execute(
         "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
@@ -1005,8 +1087,12 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
                     metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
                     description=f"GoHireHumans escrow release order #{order_id}"
                 )
-            except stripe.error.StripeError:
-                pass  # Log but don't fail the flow; admin can retry
+            except stripe.error.StripeError as e:
+                db.execute(
+                    "UPDATE escrow_holds SET status='held' WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL)",
+                    [order_id, milestone_id]
+                )
+                raise ValueError(f"Stripe transfer failed: {str(e)}")
 
     return worker_payout, fee
 
@@ -1354,9 +1440,13 @@ def _handle_routes(db):
         except Exception as e:
             return error_response(f"Google token verification failed: {str(e)}", 401)
 
-        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-        if google_client_id and payload.get("aud") != google_client_id:
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        if not google_client_id:
+            return error_response("Google sign-in is not configured", 503)
+        if payload.get("aud") != google_client_id:
             return error_response("Google token audience mismatch", 401)
+        if payload.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+            return error_response("Google token issuer mismatch", 401)
 
         email = payload.get("email", "").strip().lower()
         name = payload.get("name", "").strip()
@@ -1597,8 +1687,11 @@ def _handle_routes(db):
     # ═══════════════════════════════════════════════════════════════════════════
 
     elif path == "/services" and method == "GET":
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 20)), 100)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
         category = params.get("category")
         search = params.get("search", "").strip()
@@ -1619,12 +1712,17 @@ def _handle_routes(db):
         if provider_type:
             conditions.append("s.provider_type = ?")
             values.append(provider_type)
-        if min_price:
+        try:
+            min_price_val = parse_float_param(params, "min_price", min_value=0)
+            max_price_val = parse_float_param(params, "max_price", min_value=0)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if min_price_val is not None:
             conditions.append("(s.price >= ? OR s.hourly_rate >= ?)")
-            values.extend([float(min_price), float(min_price)])
-        if max_price:
+            values.extend([min_price_val, min_price_val])
+        if max_price_val is not None:
             conditions.append("(s.price <= ? OR s.hourly_rate <= ?)")
-            values.extend([float(max_price), float(max_price)])
+            values.extend([max_price_val, max_price_val])
         if search:
             conditions.append("(s.title LIKE ? OR s.description LIKE ? OR s.tags LIKE ?)")
             pct = f"%{search}%"
@@ -1803,8 +1901,11 @@ def _handle_routes(db):
     # ═══════════════════════════════════════════════════════════════════════════
 
     elif path == "/jobs" and method == "GET":
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 20)), 100)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
         category = params.get("category")
         search = params.get("search", "").strip()
@@ -1826,12 +1927,17 @@ def _handle_routes(db):
         if budget_type:
             conditions.append("j.budget_type = ?")
             values.append(budget_type)
-        if min_budget:
+        try:
+            min_budget_val = parse_float_param(params, "min_budget", min_value=0)
+            max_budget_val = parse_float_param(params, "max_budget", min_value=0)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if min_budget_val is not None:
             conditions.append("j.budget_amount >= ?")
-            values.append(float(min_budget))
-        if max_budget:
+            values.append(min_budget_val)
+        if max_budget_val is not None:
             conditions.append("j.budget_amount <= ?")
-            values.append(float(max_budget))
+            values.append(max_budget_val)
         if search:
             conditions.append("(j.title LIKE ? OR j.description LIKE ?)")
             pct = f"%{search}%"
@@ -1930,7 +2036,7 @@ def _handle_routes(db):
         # ── Job-match notifications: notify workers in the same category ──
         try:
             matching_workers = db.execute(
-                """SELECT DISTINCT s.user_id, u.full_name
+                """SELECT DISTINCT s.worker_id, u.name
                    FROM services s JOIN users u ON u.id = s.user_id
                    WHERE s.category = ? AND s.status = 'active' AND s.user_id != ?
                    LIMIT 20""",
@@ -2532,7 +2638,7 @@ def _handle_routes(db):
                 )
             push_notification(db, order['worker_id'], "order_completed",
                 "Order completed — payment released!",
-                f"Order #{order_id} is complete. ${worker_payout:.2f} earned (after 1% platform fee).",
+                f"Order #{order_id} is complete. ${worker_payout:.2f} earned. Platform margin is paid by the employer.",
                 f"/orders/{order_id}")
             push_notification(db, order['employer_id'], "order_completed",
                 "Order completed",
@@ -2655,6 +2761,20 @@ def _handle_routes(db):
             return error_response("Only the employer or admin can complete an order", 403)
         if order['status'] not in ('submitted', 'in_progress'):
             return error_response("Order must be submitted or in_progress to complete", 409)
+
+        held = db.execute("SELECT * FROM escrow_holds WHERE order_id=? AND status='held' ORDER BY id", [order_id]).fetchall()
+        if not held:
+            return error_response("No held payment found to release", 409)
+        worker_payout_total = 0
+        platform_fee_total = 0
+        for hold in held:
+            try:
+                worker_payout, fee = release_escrow_to_worker(db, order_id, hold['milestone_id'], float(hold['amount']), order['worker_id'])
+            except ValueError as e:
+                db.rollback()
+                return error_response(str(e), 502)
+            worker_payout_total += worker_payout
+            platform_fee_total += fee
 
         db.execute(
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
@@ -4151,7 +4271,11 @@ def _handle_routes(db):
             return error_response("Authentication required", 401)
         params = get_query_params()
         key_id = params.get("key_id")
-        days = min(int(params.get("days", 30)), 90)
+
+        try:
+            days = parse_int_param(params, "days", 30, min_value=1, max_value=90)
+        except ValueError as e:
+            return error_response(str(e), 400)
 
         # Build query based on whether specific key requested
         if key_id:

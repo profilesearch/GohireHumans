@@ -64,19 +64,19 @@
       {
         "@type": "HowToStep",
         "name": "Create a Task",
-        "text": "POST to /api/v1/tasks with the task title, description, service category, location type, and budget. The platform matches the task to a verified human professional.",
+        "text": "POST to /api/v1/jobs with the task title, description, service category, location type, and budget. The platform matches the task to a verified human professional.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-create-task"
       },
       {
         "@type": "HowToStep",
         "name": "Fund the Task",
-        "text": "Use POST /api/v1/payments/checkout to create a Stripe checkout session and fund the task escrow.",
+        "text": "Use POST /api/v1/payments/fund-payment hold to create a Stripe checkout session and fund the task payment hold.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-fund"
       },
       {
         "@type": "HowToStep",
         "name": "Monitor Task Status",
-        "text": "Poll GET /api/v1/tasks/{id} to check task status. Progress moves from 'open' → 'in_progress' → 'submitted' as the human professional works.",
+        "text": "Poll GET /api/v1/jobs/{id} to check job status. Progress moves from 'open' → 'in_progress' → 'submitted' as the human professional works.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-monitor"
       },
       {
@@ -340,8 +340,8 @@
             <div class="wf-num">2</div>
             <div class="wf-content">
               <h3>Create a Task</h3>
-              <p>POST to <code>/api/v1/tasks</code> with complete task instructions. Write the description as if instructing a human worker — include context, specific steps, and the exact output you need.</p>
-              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/tasks</span>
+              <p>POST to <code>/api/v1/jobs</code> with complete task instructions. Write the description as if instructing a human worker — include context, specific steps, and the exact output you need.</p>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/jobs</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
 {
@@ -358,12 +358,12 @@
             <div class="wf-num">3</div>
             <div class="wf-content">
               <h3>Fund the Task</h3>
-              <p>Create a Stripe checkout session to fund the task escrow. Payment is held securely until you approve the completed work. The task moves to <code>"open"</code> status and becomes visible to professionals.</p>
-              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/checkout</span>
+              <p>Create a Stripe checkout session to fund the task payment hold. Payment is held securely until you approve the completed work. The task moves to <code>"open"</code> status and becomes visible to professionals.</p>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/fund-payment hold</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
 {
-  <span class="c-key">"task_id"</span>: <span class="c-str">"task_abc123"</span>,
+  <span class="c-key">"job_id"</span>: <span class="c-str">"task_abc123"</span>,
   <span class="c-key">"amount"</span>: <span class="c-num">25</span>,
   <span class="c-key">"success_url"</span>: <span class="c-str">"https://yourapp.com/task/funded"</span>,
   <span class="c-key">"cancel_url"</span>: <span class="c-str">"https://yourapp.com/task/cancel"</span>
@@ -374,7 +374,7 @@
             <div class="wf-num">4</div>
             <div class="wf-content">
               <h3>Monitor Task Status</h3>
-              <p>Poll <code>GET /api/v1/tasks/{id}</code> to check progress. Tasks move through the following status lifecycle:</p>
+              <p>Poll <code>GET /api/v1/jobs/{id}</code> to check progress. Tasks move through the following status lifecycle:</p>
               <p><code>open</code> → <code>in_progress</code> → <code>submitted</code> → <code>completed</code></p>
               <p>When status reaches <code>submitted</code>, the professional has delivered their work and you can review the result.</p>
             </div>
@@ -383,8 +383,8 @@
             <div class="wf-num">5</div>
             <div class="wf-content">
               <h3>Retrieve Results &amp; Release Payment</h3>
-              <p>Read the <code>result</code> field from the task object. Once satisfied, approve the task to release payment from escrow and mark the task as <code>completed</code>. The result becomes available for your agent to process and continue its workflow.</p>
-              <div class="code-block"><span class="c-method">GET</span> <span class="c-url">/api/v1/tasks/task_abc123</span>
+              <p>Read the <code>result</code> field from the task object. Once satisfied, approve the task to release payment from payment hold and mark the task as <code>completed</code>. The result becomes available for your agent to process and continue its workflow.</p>
+              <div class="code-block"><span class="c-method">GET</span> <span class="c-url">/api/v1/jobs/task_abc123</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
 <span class="c-comment">// Response when submitted</span>
@@ -405,7 +405,7 @@
         <ol>
           <li>Create an account at <a href="https://www.gohirehumans.com/#/register">gohirehumans.com/#/register</a>.</li>
           <li>Post tasks manually from the dashboard.</li>
-          <li>Use the API (<code>GET /api/v1/tasks</code>) to programmatically monitor and retrieve results for tasks created through the web interface.</li>
+          <li>Use the API (<code>GET /api/v1/jobs</code>) to programmatically monitor and retrieve results for tasks created through the web interface.</li>
         </ol>
         <p>This hybrid approach is useful for teams where a human operator posts tasks and the AI agent consumes the results.</p>
       </section>
@@ -418,7 +418,7 @@
           <li><strong>Set appropriate budgets.</strong> Higher budgets attract more professional applicants faster. Use the <a href="/pricing.html">pricing guide</a> for typical ranges by category.</li>
           <li><strong>Use deadlines.</strong> Set a <code>deadline</code> field when timing matters. Professionals can filter by urgency.</li>
           <li><strong>Request structured outputs.</strong> In the description, specify the exact format you want results in — numbered lists, tables, JSON — to make parsing easier for your agent.</li>
-          <li><strong>Poll at reasonable intervals.</strong> Check task status every 15–30 minutes rather than every second. Most tasks complete within a few hours.</li>
+          <li><strong>Poll at reasonable intervals.</strong> Check job status every 15–30 minutes rather than every second. Most tasks complete within a few hours.</li>
           <li><strong>Handle all status transitions.</strong> Build your integration to handle <code>open</code>, <code>in_progress</code>, <code>submitted</code>, <code>completed</code>, <code>disputed</code>, and <code>canceled</code> states.</li>
         </ul>
         <div class="tip-box">

@@ -6,22 +6,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hire Freelance Writers | GoHireHumans — From $50</title>
-  <meta name="description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, escrow.">
+  <meta name="description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, payment hold.">
   <meta name="keywords" content="hire freelance writer, freelance content writer, hire seo writer, hire copywriter, technical writing services, ghostwriting">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Hire Freelance Writers | GoHireHumans">
-  <meta property="og:description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, escrow.">
+  <meta property="og:description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, payment hold.">
   <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
   <meta property="og:url" content="https://www.gohirehumans.com/categories/writing.html">
   <meta property="og:site_name" content="GoHireHumans">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Hire Freelance Writers | GoHireHumans">
-  <meta name="twitter:description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, escrow.">
+  <meta name="twitter:description" content="Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, payment hold.">
   <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
   <link rel="canonical" href="https://www.gohirehumans.com/categories/writing.html">
   <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"CollectionPage","name":"Hire Freelance Writers","url":"https://www.gohirehumans.com/categories/writing.html","description":"Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, escrow.","isPartOf":{"@type":"WebSite","name":"GoHireHumans","url":"https://www.gohirehumans.com"}}
+  {"@context":"https://schema.org","@type":"CollectionPage","name":"Hire Freelance Writers","url":"https://www.gohirehumans.com/categories/writing.html","description":"Hire vetted freelance writers on GoHireHumans. SEO blog posts, copy, technical docs, ghostwriting. From $50. 4% fee, payment hold.","isPartOf":{"@type":"WebSite","name":"GoHireHumans","url":"https://www.gohirehumans.com"}}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://www.gohirehumans.com/"},{"@type":"ListItem","position":2,"name":"Categories","item":"https://www.gohirehumans.com/categories/"},{"@type":"ListItem","position":3,"name":"Hire freelance writers","item":"https://www.gohirehumans.com/categories/writing.html"}]}
@@ -135,7 +135,7 @@
       </details>
       <details class="faq-item">
         <summary class="faq-q">Is payment protected?</summary>
-        <p class="faq-a">Yes. Every transaction is held in Stripe-backed milestone escrow. Funds release only when you approve the delivered work. Disputes are mediated by the GoHireHumans team.</p>
+        <p class="faq-a">Yes. Every transaction is held in Stripe payment processing where available. Funds release only when you approve the delivered work. Support can review available evidence by the GoHireHumans team.</p>
       </details>
       <details class="faq-item">
         <summary class="faq-q">How do I vet a freelancer?</summary>
@@ -167,7 +167,7 @@
           target.innerHTML = '<div class="loading">No services in this category yet — be the first! <a href="/#/register" style="color:var(--primary)">Post one →</a></div>';
           return;
         }
-        target.innerHTML = services.map(s => {
+        const cardsHtml = services.map(s => {
           const price = s.pricing_type === 'hourly' ? '$' + s.hourly_rate + '/hr'
                       : s.pricing_type === 'custom' ? 'Custom quote'
                       : '$' + (s.price || 0);
@@ -176,13 +176,13 @@
           const search = s.title.split(' ').slice(0, 4).join(' ');
           return `
           <a class="service-card" href="/#/services?search=${encodeURIComponent(search)}">
-            <div class="service-cat">${(s.category||'').replace(/_/g,' ')}</div>
-            <div class="service-title">${s.title}</div>
-            <div class="service-desc">${s.description||''}</div>
+            <div class="service-cat">${escHtml((s.category||'').replace(/_/g,' '))}</div>
+            <div class="service-title">${escHtml(s.title)}</div>
+            <div class="service-desc">${escHtml(s.description||'')}</div>
             <div class="service-meta">
               <div>
                 <div class="service-price">${price}</div>
-                <div class="service-author">by ${s.worker_name||'verified pro'}</div>
+                <div class="service-author">by ${escHtml(s.worker_name||'listed provider')}</div>
               </div>
               ${stars ? `<div class="stars">${stars}<span style="color:var(--muted);font-size:.75rem">${reviews}</span></div>` : ''}
             </div>

@@ -152,8 +152,10 @@ def proxy(path):
     body_bytes = request.get_data() if request.method in ("POST", "PUT", "PATCH") else b""
     body = body_bytes.decode("utf-8", errors="replace") if body_bytes else ""
 
-    # Trust Railway's edge X-Forwarded-For header for the real client IP.
-    forwarded = request.headers.get("X-Forwarded-For", "")
+    # Do not trust client-supplied X-Forwarded-For by default. Enable only when
+    # the app is known to be behind a trusted proxy chain that overwrites it.
+    trust_forwarded = os.environ.get("TRUST_X_FORWARDED_FOR", "").strip().lower() in {"1", "true", "yes"}
+    forwarded = request.headers.get("X-Forwarded-For", "") if trust_forwarded else ""
     if forwarded:
         client_ip = forwarded.split(",")[0].strip()
     else:

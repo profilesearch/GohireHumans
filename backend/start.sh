@@ -1,9 +1,9 @@
-#!/bin/bash
-# Ensure /data directory is writable (Railway volume permissions fix)
+#!/usr/bin/env bash
+set -euo pipefail
+
 if [ -d "/data" ]; then
-    chmod 777 /data 2>/dev/null || true
-    echo "[GoHireHumans] /data directory permissions: $(ls -ld /data)"
+    chmod 700 /data 2>/dev/null || true
+    echo "[GoHireHumans] /data directory ready"
 fi
 
-# Start gunicorn
-exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 120 server:app
+exec python server.py

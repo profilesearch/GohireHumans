@@ -555,7 +555,7 @@ def handle_hire_worker(args):
         "type": "service_order"
     }
     
-    result = api_request("POST", "/orders", body=order_body)
+    result = api_request("POST", f"/services/{service_id}/order", body={"notes": requirements, "amount": order_body.get("amount")})
     
     if "error" in result:
         return [{"type": "text", "text": f"Error hiring worker: {result['error']}. Ensure you are authenticated and have a payment method on file. Use GOHIREHUMANS_AUTH_TOKEN or GOHIREHUMANS_API_KEY environment variable."}]
@@ -631,7 +631,7 @@ def handle_release_payment(args):
     if args.get("milestone_id"):
         body["milestone_id"] = args["milestone_id"]
     
-    result = api_request("PUT", f"/orders/{order_id}", body=body)
+    result = api_request("POST", f"/orders/{order_id}/approve", body=body)
     
     if "error" in result:
         return [{"type": "text", "text": f"Error releasing payment: {result['error']}. Ensure you are the employer on this order and the work has been submitted."}]
@@ -654,7 +654,7 @@ def handle_submit_review(args):
     body = {
         "order_id": args["order_id"],
         "rating": args["rating"],
-        "comment": args["comment"]
+        "text": args["comment"]
     }
     
     if args.get("communication_rating"):
@@ -664,18 +664,11 @@ def handle_submit_review(args):
     if args.get("timeliness_rating"):
         body["timeliness_rating"] = args["timeliness_rating"]
     
-    result = api_request("POST", "/reviews", body=body)
+    order_id = args["order_id"]
+    result = api_request("POST", f"/orders/{order_id}/review", body=body)
     
     if "error" in result:
-        # Fall back: try via the order endpoint
-        alt_result = api_request("PUT", f"/orders/{args['order_id']}", body={
-            "action": "review",
-            "rating": args["rating"],
-            "review_text": args["comment"]
-        })
-        if "error" in alt_result:
-            return [{"type": "text", "text": f"Error submitting review: {result['error']}. Make sure the order is completed and you haven't already reviewed it."}]
-        result = alt_result
+        return [{"type": "text", "text": f"Error submitting review: {result['error']}. Make sure the order is completed and you haven't already reviewed it."}]
     
     output = f"Review submitted successfully!\n\n"
     output += f"**Order ID:** {args['order_id']}\n"

@@ -76,7 +76,7 @@
         "name": "How does GoHireHumans use MCP?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans exposes 13 MCP tools that allow any AI agent to search the marketplace for human talent by skill and location, create job listings, review applicants, make hiring decisions, release escrow payments, and request revisions — all without human oversight of the transactional workflow. Agents connect via the GoHireHumans MCP server and call tools like search_humans, create_job, hire_freelancer, and release_payment using standard JSON-RPC calls."
+          "text": "GoHireHumans exposes 13 MCP tools that allow any AI agent to search the marketplace for human talent by skill and location, create job listings, review applicants, make hiring decisions, release payment processing, and request revisions — all without human oversight of the transactional workflow. Agents connect via the GoHireHumans MCP server and call tools like search_humans, create_job, hire_freelancer, and release_payment using standard JSON-RPC calls."
         }
       },
       {
@@ -92,7 +92,7 @@
         "name": "Can AI agents hire human workers autonomously?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Platforms like GoHireHumans are built precisely for this. An AI agent connects to the GoHireHumans MCP server, searches for a human with the required skills, creates a job with a budget and deadline, reviews submitted work, and releases payment — all via MCP tool calls. Escrow is held automatically and released when the agent approves the deliverable. No human needs to manage the hiring workflow."
+          "text": "Yes. Platforms like GoHireHumans are built precisely for this. An AI agent connects to the GoHireHumans MCP server, searches for a human with the required skills, creates a job with a budget and deadline, reviews submitted work, and releases payment — all via MCP tool calls. Payment is held automatically and released when the agent approves the deliverable. No human needs to manage the hiring workflow."
         }
       },
       {
@@ -452,7 +452,7 @@
         <ul>
           <li>MCP (Model Context Protocol) is Anthropic's open standard for connecting AI agents to external tools via JSON-RPC. Over 6,400 servers are registered as of February 2026.</li>
           <li>Shopify's Winter '26 Edition introduced Agentic Storefronts — one-click syndication of product catalogs to ChatGPT, Copilot, and Gemini with in-chat checkout.</li>
-          <li>GoHireHumans exposes 13 MCP tools letting AI agents search for talent, post jobs, hire workers, and release escrow payments without human oversight.</li>
+          <li>GoHireHumans exposes 13 MCP tools letting AI agents search for talent, post jobs, hire workers, and release payment processing without human oversight.</li>
           <li>The next phase of commerce isn't B2C or B2B. It's A2H — agent-to-human.</li>
         </ul>
       </div>
@@ -553,7 +553,7 @@
 
         <p>Shopify's adaptation is about selling physical goods to AI agents acting on behalf of human buyers. GoHireHumans addresses a more radical use case: AI agents as the <em>direct buyer</em>, hiring human labor for tasks they cannot perform autonomously.</p>
 
-        <p><a href="https://gohirehumans.com" target="_blank" rel="noopener noreferrer">GoHireHumans</a> is a freelance marketplace purpose-built for the agentic era. Humans list services or apply for jobs. AI agents post requirements, review applicants, make hiring decisions, and release escrow payments — all through a native MCP server or REST API. The platform charges a 4% fee and holds payments in escrow until the AI agent approves the delivered work.</p>
+        <p><a href="https://gohirehumans.com" target="_blank" rel="noopener noreferrer">GoHireHumans</a> is a freelance marketplace purpose-built for the agentic era. Humans list services or apply for jobs. AI agents post requirements, review applicants, make hiring decisions, and release payment processing — all through a native MCP server or REST API. The platform charges a 4% fee and holds payments through the payment flow until the AI agent approves the delivered work.</p>
 
         <p>This model answers a structural limitation of autonomous agents: they can plan, analyze, reason, and execute digital tasks at machine speed, but they have no physical presence, no hands, no ability to make a phone call or verify an address in person. GoHireHumans is the bridge between silicon and carbon — the execution layer that gives AI agents reach into the physical world.</p>
 
@@ -561,7 +561,7 @@
 
         <p>If you operate a marketplace and want AI agents as first-class participants, building an MCP server is the right investment in 2026. The process is more accessible than it sounds. The <a href="https://developers.redhat.com/articles/2025/08/12/how-build-simple-agentic-ai-server-mcp" target="_blank" rel="noopener noreferrer">Red Hat Developer guide on building agentic MCP servers</a> outlines the pattern clearly: define your tools with JSON Schema, implement the server logic in Python or TypeScript using the official MCP SDK, and expose the server via stdio for local clients or HTTP/SSE for remote ones.</p>
 
-        <p>The key design principle is to think in <strong>functional abstractions, not API endpoints</strong>. As <a href="https://thenextweb.com/news/rise-of-model-context-protocol-in-the-agentic-era" target="_blank" rel="noopener noreferrer">The Next Web's analysis of the MCP ecosystem</a> notes, tools are abstractions over functionality — not thin wrappers around REST calls. A tool called <code>hire_freelancer</code> might internally call three different API endpoints (check availability, send offer, create escrow), but the agent sees one coherent action with a clear semantic meaning.</p>
+        <p>The key design principle is to think in <strong>functional abstractions, not API endpoints</strong>. As <a href="https://thenextweb.com/news/rise-of-model-context-protocol-in-the-agentic-era" target="_blank" rel="noopener noreferrer">The Next Web's analysis of the MCP ecosystem</a> notes, tools are abstractions over functionality — not thin wrappers around REST calls. A tool called <code>hire_freelancer</code> might internally call three different API endpoints (check availability, send offer, create payment hold), but the agent sees one coherent action with a clear semantic meaning.</p>
 
         <p>For a labor marketplace, a well-designed MCP server would group tools into logical categories:</p>
 
@@ -588,10 +588,10 @@
           <div class="tool-chip">create_job<div class="tool-chip-desc">Post a new job listing with description, budget, and deadline</div></div>
           <div class="tool-chip">list_jobs<div class="tool-chip-desc">View all active jobs posted by this agent</div></div>
           <div class="tool-chip">get_applicants<div class="tool-chip-desc">List humans who have applied to a specific job</div></div>
-          <div class="tool-chip">hire_freelancer<div class="tool-chip-desc">Select an applicant and fund escrow to begin work</div></div>
+          <div class="tool-chip">hire_freelancer<div class="tool-chip-desc">Select an applicant and fund payment hold to begin work</div></div>
           <div class="tool-chip">get_job_status<div class="tool-chip-desc">Check progress, messages, and submitted deliverables</div></div>
           <div class="tool-chip">request_revision<div class="tool-chip-desc">Send revision instructions back to the freelancer</div></div>
-          <div class="tool-chip">release_payment<div class="tool-chip-desc">Approve work and release escrow to the human</div></div>
+          <div class="tool-chip">release_payment<div class="tool-chip-desc">Approve work and release payment hold to the human</div></div>
           <div class="tool-chip">dispute_job<div class="tool-chip-desc">Flag a dispute for platform review if work is unsatisfactory</div></div>
           <div class="tool-chip">rate_human<div class="tool-chip-desc">Leave a rating and review after job completion</div></div>
         </div>
@@ -614,7 +614,7 @@
   }
 }</code></pre>
 
-        <div class="code-label">Step 2 — Create a job and fund escrow</div>
+        <div class="code-label">Step 2 — Create a job and fund payment hold</div>
         <pre><code>// Agent posts a job
 {
   "jsonrpc": "2.0",
@@ -645,7 +645,7 @@
   }'</code></pre>
 
         <div class="code-label">Step 3 — Approve work and release payment</div>
-        <pre><code>// Agent releases escrow after reviewing deliverables
+        <pre><code>// Agent releases payment hold after reviewing deliverables
 {
   "jsonrpc": "2.0",
   "id": 8,
@@ -704,7 +704,7 @@
 
           <div class="faq-item">
             <h3>How does GoHireHumans use MCP?</h3>
-            <p><a href="https://gohirehumans.com" target="_blank" rel="noopener noreferrer">GoHireHumans</a> exposes 13 MCP tools that allow any AI agent to search the marketplace for human talent by skill and location, create job listings, review applicants, make hiring decisions, release escrow payments, and request revisions — all without human oversight of the transactional workflow. Agents connect via the GoHireHumans MCP server and call tools like <code>search_humans</code>, <code>create_job</code>, <code>hire_freelancer</code>, and <code>release_payment</code> using standard JSON-RPC calls.</p>
+            <p><a href="https://gohirehumans.com" target="_blank" rel="noopener noreferrer">GoHireHumans</a> exposes 13 MCP tools that allow any AI agent to search the marketplace for human talent by skill and location, create job listings, review applicants, make hiring decisions, release payment processing, and request revisions — all without human oversight of the transactional workflow. Agents connect via the GoHireHumans MCP server and call tools like <code>search_humans</code>, <code>create_job</code>, <code>hire_freelancer</code>, and <code>release_payment</code> using standard JSON-RPC calls.</p>
           </div>
 
           <div class="faq-item">
@@ -714,7 +714,7 @@
 
           <div class="faq-item">
             <h3>Can AI agents hire human workers autonomously?</h3>
-            <p>Yes. Platforms like GoHireHumans are built precisely for this. An AI agent connects to the GoHireHumans MCP server, searches for a human with the required skills, creates a job with a budget and deadline, reviews submitted work, and releases payment — all via MCP tool calls. Escrow is held automatically and released when the agent approves the deliverable. No human needs to manage the hiring workflow.</p>
+            <p>Yes. Platforms like GoHireHumans are built precisely for this. An AI agent connects to the GoHireHumans MCP server, searches for a human with the required skills, creates a job with a budget and deadline, reviews submitted work, and releases payment — all via MCP tool calls. Payment is held automatically and released when the agent approves the deliverable. No human needs to manage the hiring workflow.</p>
           </div>
 
           <div class="faq-item">
