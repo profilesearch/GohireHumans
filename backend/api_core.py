@@ -25,8 +25,10 @@ _request_ctx = threading.local()
 try:
     import stripe
     STRIPE_AVAILABLE = True
+    STRIPE_SIGNATURE_ERROR = getattr(stripe, "SignatureVerificationError", ValueError)
 except ImportError:
     STRIPE_AVAILABLE = False
+    STRIPE_SIGNATURE_ERROR = ValueError
 
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -3222,7 +3224,7 @@ def _handle_routes(db):
             event = stripe.Webhook.construct_event(body_raw, sig_header, STRIPE_WEBHOOK_SECRET)
         except ValueError:
             return error_response("Invalid payload", 400)
-        except stripe.error.SignatureVerificationError:
+        except STRIPE_SIGNATURE_ERROR:
             return error_response("Invalid signature", 400)
 
         event_type = event['type']
