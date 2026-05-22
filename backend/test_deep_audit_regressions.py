@@ -237,6 +237,23 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                     hits.append(f"{path.relative_to(REPO_ROOT)}: {term}")
         self.assertEqual(hits, [])
 
+    def test_homepage_has_low_risk_funnel_analytics_events(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        required_snippets = [
+            "function trackEvent(eventName, params = {})",
+            "gtag('event', eventName, params)",
+            "function searchHeroServices()",
+            "hero_search_submit",
+            "post_task_cta_click",
+            "browse_humans_cta_click",
+            "find_paid_tasks_cta_click",
+            "service_order_intent",
+            "job_apply_intent",
+            "explainer_video_play",
+        ]
+        for snippet in required_snippets:
+            self.assertIn(snippet, text)
+
     def test_task_template_pages_exist_with_safe_connector_framing(self):
         required_pages = [
             "frontend/hire/website-testers.html",

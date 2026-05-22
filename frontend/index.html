@@ -481,6 +481,23 @@ function statusBadge(status) {
   return `<span class="badge badge-${cls}">${esc(status ? status.replace(/_/g,' ') : 'unknown')}</span>`;
 }
 function navigate(hash) { window.location.hash = hash; }
+function trackEvent(eventName, params = {}) {
+  try {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', eventName, params);
+    } else if (Array.isArray(window.dataLayer)) {
+      window.dataLayer.push({ event: eventName, ...params });
+    }
+  } catch (_) {
+    // Analytics must never block marketplace navigation or checkout intent.
+  }
+}
+function searchHeroServices() {
+  const input = document.getElementById('hero-search');
+  const query = input ? input.value.trim() : '';
+  trackEvent('hero_search_submit', { search_term: query, source: 'homepage_hero' });
+  navigate('#/services?search=' + encodeURIComponent(query));
+}
 function getPath() {
   const h = window.location.hash.slice(1) || '/';
   return h.split('?')[0];
@@ -539,6 +556,7 @@ function toggleVideo() {
   const btn = document.querySelector('.lp-video-play-btn');
   if (!video) return;
   if (video.paused) {
+    trackEvent('explainer_video_play', { source: 'homepage_video' });
     video.play();
     btn.style.opacity = '0';
     btn.style.pointerEvents = 'none';
@@ -872,12 +890,12 @@ async function renderLanding() {
         <p>Use GoHireHumans for website testing, lead research, data cleanup, phone calls, local verification, AI-output review, and other work that still needs human judgment.</p>
         <div class="lp-hero-search">
           <input type="text" id="hero-search" placeholder="Try 'website tester', 'lead researcher', 'AI reviewer'..." class="lp-hero-search-input">
-          <button class="btn btn-primary lp-hero-search-btn" onclick="const v=document.getElementById('hero-search').value;navigate('#/services?search='+encodeURIComponent(v))">Search</button>
+          <button class="btn btn-primary lp-hero-search-btn" onclick="searchHeroServices()">Search</button>
         </div>
         <div class="lp-hero-ctas">
-          <button class="btn btn-primary btn-lg" onclick="navigate('#/post-job')">Post a Task — Free</button>
-          <button class="btn btn-secondary btn-lg" onclick="navigate('#/services')">Browse Humans</button>
-          <button class="btn btn-outline btn-lg" onclick="navigate('#/jobs')">Find Paid Tasks</button>
+          <button class="btn btn-primary btn-lg" onclick="trackEvent('post_task_cta_click', { source: 'homepage_hero' });navigate('#/post-job')">Post a Task — Free</button>
+          <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero' });navigate('#/services')">Browse Humans</button>
+          <button class="btn btn-outline btn-lg" onclick="trackEvent('find_paid_tasks_cta_click', { source: 'homepage_hero' });navigate('#/jobs')">Find Paid Tasks</button>
         </div>
         <div class="lp-hero-trust-strip">
           <div class="lp-hero-trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Public Beta Listings</div>
@@ -902,7 +920,7 @@ async function renderLanding() {
             <div class="lp-feed-card"><div class="lp-feed-card-cat">Data cleanup</div><div class="lp-feed-title">Clean spreadsheets, verify rows, tag data, or fill missing fields</div><div class="lp-feed-meta"><span>Suggested payout</span><span>$10–$30/hr</span></div></div>
           </div>
           <div style="text-align:center;margin-top:var(--space-8)">
-            <button class="btn btn-primary btn-lg" onclick="navigate('#/post-job')">Use these ideas to post a task →</button>
+            <button class="btn btn-primary btn-lg" onclick="trackEvent('post_task_cta_click', { source: 'homepage_examples' });navigate('#/post-job')">Use these ideas to post a task →</button>
           </div>
         </div>
       </section>
@@ -941,7 +959,7 @@ async function renderLanding() {
           </div>
           <div class="lp-feed-grid">${previewCards}</div>
           <div style="text-align:center;margin-top:var(--space-8)">
-            <button class="btn btn-primary btn-lg" onclick="navigate('#/services')">
+            <button class="btn btn-primary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_featured_services' });navigate('#/services')">
               View all services →
             </button>
           </div>
@@ -1098,8 +1116,7 @@ async function renderLanding() {
   // Hero search enter key
   document.getElementById('hero-search')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
-      const v = e.target.value;
-      navigate('#/services?search=' + encodeURIComponent(v));
+      searchHeroServices();
     }
   });
 
@@ -1447,6 +1464,7 @@ async function renderServiceDetail(id) {
 }
 
 async function handleOrderService(id) {
+  trackEvent('service_order_intent', { service_id: String(id), source: 'service_detail' });
   if (!requireAuth(`services/${id}`)) return;
   // Check payment status
   try {
@@ -1734,6 +1752,7 @@ async function renderJobDetail(id) {
 }
 
 async function handleJobApply(id) {
+  trackEvent('job_apply_intent', { job_id: String(id), source: 'job_detail' });
   if (!requireAuth(`jobs/${id}`)) return;
   // Show application modal
   const overlay = document.createElement('div');
