@@ -193,6 +193,26 @@
   }
   </script>
 
+  <!-- ItemList schema for high-intent human task templates -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Human Task Templates on GoHireHumans",
+    "description": "Focused task templates for employers who need human judgment, research, phone help, local verification, or AI-output review.",
+    "url": "https://www.gohirehumans.com/hire/",
+    "numberOfItems": 6,
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "Hire website testers", "url": "https://www.gohirehumans.com/hire/website-testers.html"},
+      {"@type": "ListItem", "position": 2, "name": "Hire lead researchers", "url": "https://www.gohirehumans.com/hire/lead-researchers.html"},
+      {"@type": "ListItem", "position": 3, "name": "Hire AI reviewers", "url": "https://www.gohirehumans.com/hire/ai-reviewers.html"},
+      {"@type": "ListItem", "position": 4, "name": "Hire phone-call help", "url": "https://www.gohirehumans.com/hire/phone-call-help.html"},
+      {"@type": "ListItem", "position": 5, "name": "Hire local verification help", "url": "https://www.gohirehumans.com/hire/local-verification.html"},
+      {"@type": "ListItem", "position": 6, "name": "Get paid for human tasks", "url": "https://www.gohirehumans.com/earn/get-paid-for-human-tasks.html"}
+    ]
+  }
+  </script>
+
   <!-- Dynamic structured data placeholder for individual listings -->
   <script id="dynamic-structured-data" type="application/ld+json">{}</script>
 
@@ -1045,6 +1065,11 @@ async function renderLanding() {
               <div class="lp-hero-trust-item">Workers receive the listed payout</div>
               <div class="lp-hero-trust-item">Employer pays Stripe processing + 1%</div>
             </div>
+            <div style="display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-5);font-size:var(--text-sm)">
+              <a href="/hire/website-testers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'website_testers' })">Website tester template</a>
+              <a href="/hire/lead-researchers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'lead_researchers' })">Lead researcher template</a>
+              <a href="/hire/ai-reviewers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'ai_reviewers' })">AI reviewer template</a>
+            </div>
           </div>
           <div class="lp-feed-card" style="cursor:default">
             <div class="lp-feed-card-cat">Concierge-style drafts</div>
@@ -1106,6 +1131,7 @@ async function renderLanding() {
             <button class="lp-feed-card" onclick="selectWorkerRoute('data_cleanup','Data cleanup','data cleanup')"><div class="lp-feed-card-cat">Data cleanup</div><div class="lp-feed-title">Clean spreadsheets, tag rows, and fill missing fields</div></button>
           </div>
           <div style="text-align:center;margin-top:var(--space-8);display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap">
+            <a class="btn btn-secondary btn-lg" href="/earn/get-paid-for-human-tasks.html" onclick="trackEvent('earn_tasks_page_click', { source: 'homepage_worker_agent_router' })">How to earn from human tasks</a>
             <button class="btn btn-primary btn-lg" onclick="postServiceIntent()">Post a service you can offer</button>
             <button class="btn btn-outline btn-lg" onclick="trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: 'all jobs' });navigate('#/jobs')">Browse all jobs</button>
           </div>

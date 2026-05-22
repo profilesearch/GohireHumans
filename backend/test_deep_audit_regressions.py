@@ -403,6 +403,43 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(loc, sitemap)
 
+    def test_homepage_routes_to_task_templates_and_worker_earn_page(self):
+        home = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+        for href in [
+            "/hire/website-testers.html",
+            "/hire/lead-researchers.html",
+            "/hire/ai-reviewers.html",
+            "/earn/get-paid-for-human-tasks.html",
+        ]:
+            self.assertIn(href, home)
+        self.assertIn("Human Task Templates on GoHireHumans", home)
+        self.assertIn("seo_template_link_click", home)
+
+    def test_hire_index_uses_safe_connector_copy(self):
+        hire_index = (REPO_ROOT / "frontend/hire/index.html").read_text(encoding="utf-8")
+        lower = hire_index.lower()
+        for phrase in [
+            "workers receive the listed payout",
+            "employers pay stripe processing plus 1%",
+            "website-testers.html",
+            "lead-researchers.html",
+            "ai-reviewers.html",
+            "phone-call-help.html",
+            "local-verification.html",
+            "get-paid-for-human-tasks.html",
+        ]:
+            self.assertIn(phrase, lower)
+        for unsupported in [
+            "verified freelancers",
+            "verified professionals",
+            "4% employer fee",
+            "guaranteed matching",
+            "guaranteed completion",
+            "escrow-protected",
+            "platform arbitration",
+        ]:
+            self.assertNotIn(unsupported, lower)
+
 
 if __name__ == "__main__":
     unittest.main()
