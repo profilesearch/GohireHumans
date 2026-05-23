@@ -400,6 +400,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "https://www.gohirehumans.com/hire/phone-call-help.html",
             "https://www.gohirehumans.com/hire/local-verification.html",
             "https://www.gohirehumans.com/earn/get-paid-for-human-tasks.html",
+            "https://www.gohirehumans.com/ai-human-qa/ai-support-reply-qa.html",
+            "https://www.gohirehumans.com/ai-human-qa/ai-product-content-qa.html",
         ]:
             self.assertIn(loc, sitemap)
 
