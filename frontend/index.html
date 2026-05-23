@@ -247,9 +247,9 @@
 </head>
 <body>
 <section style="background:#eefafa;border:1px solid #bdeaea;border-radius:22px;padding:24px;margin:28px 0;">
-  <h2>New: fixed AI QA services</h2>
-  <p><strong>AI can draft it. A human should verify it.</strong> Choose a structured service — fact-checking, citation verification, RAG groundedness, support reply QA, product listing QA, marketing review, or agent audit.</p>
-  <p><a href="/ai-qa-services.html">See fixed AI QA services →</a> · <a href="/ai-qa-report-template.html">View report template →</a></p>
+  <h2>Human AI QA services</h2>
+  <p><strong>AI can draft it. A human should verify it.</strong> Hire reviewers for fact-checking, citation verification, RAG groundedness, AI-built website QA, support reply review, and agent audits.</p>
+  <p><a href="/ai-human-qa/">Explore AI QA hub →</a> · <a href="/ai-qa-buyer-brief.html">Create a buyer brief →</a> · <a href="/ai-qa-services.html">See fixed services →</a></p>
 </section>
 
   <noscript>
@@ -543,6 +543,46 @@ function trackEvent(eventName, params = {}) {
     // Analytics must never block marketplace navigation or checkout intent.
   }
 }
+const analyticsSeenForms = new Set();
+function analyticsFormName(form) {
+  if (!form) return 'unknown_form';
+  if (form.id) return form.id;
+  const submit = form.getAttribute('onsubmit') || '';
+  if (submit.includes('handleAuth')) return 'auth_form';
+  if (submit.includes('handlePostJob')) return 'post_job';
+  if (submit.includes('handlePostService')) return 'post_service';
+  if (submit.includes('updateProfile')) return 'profile_update';
+  return 'unnamed_form';
+}
+function installAnalyticsIntentTracking() {
+  if (window.__ghhAnalyticsIntentTrackingInstalled) return;
+  window.__ghhAnalyticsIntentTrackingInstalled = true;
+  document.addEventListener('focusin', (event) => {
+    const form = event.target && event.target.closest ? event.target.closest('form') : null;
+    if (!form) return;
+    const formName = analyticsFormName(form);
+    if (analyticsSeenForms.has(formName)) return;
+    analyticsSeenForms.add(formName);
+    trackEvent('form_start', { form_name: formName, path: location.pathname + location.hash });
+  }, true);
+  document.addEventListener('submit', (event) => {
+    const formName = analyticsFormName(event.target);
+    trackEvent('form_submit_intent', { form_name: formName, path: location.pathname + location.hash });
+  }, true);
+  document.addEventListener('click', (event) => {
+    const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    if (href.startsWith('mailto:') || href.startsWith('tel:')) {
+      trackEvent('contact_click', { link_type: href.startsWith('mailto:') ? 'email' : 'phone', source: location.pathname + location.hash });
+    } else if (/stripe|checkout|buy|payment/i.test(href)) {
+      trackEvent('payment_intent_click', { destination: href, source: location.pathname + location.hash });
+    } else if (link.hostname && link.hostname !== location.hostname) {
+      trackEvent('outbound_click', { destination: link.href, source: location.pathname + location.hash });
+    }
+  }, true);
+}
+installAnalyticsIntentTracking();
 function searchHeroServices() {
   const input = document.getElementById('hero-search');
   const query = input ? input.value.trim() : '';
@@ -2198,7 +2238,7 @@ async function handleAuth(e, mode, encodedRedirect) {
     toast(mode === 'login' ? 'Welcome back!' : 'Account created! Welcome to GoHireHumans.', 'success');
     const redirect = encodedRedirect ? decodeURIComponent(encodedRedirect) : '';
     navigate(redirect ? `#/${redirect}` : '#/');
-  } catch(err) { toast(err.message, 'error'); }
+  } catch(err) { trackEvent(mode === 'login' ? 'login_failed' : 'signup_failed', { source: 'auth_form', error_message: String(err.message || '').slice(0, 120) }); toast(err.message, 'error'); }
 }
 
 function logout() {
@@ -2518,7 +2558,7 @@ async function handlePostService(e, editId) {
       toast('Service posted!', 'success');
       navigate(`#/services/${svc.id}`);
     }
-  } catch(err) { toast(err.message, 'error'); }
+  } catch(err) { trackEvent(editId ? 'service_update_failed' : 'service_post_failed', { error_message: String(err.message || '').slice(0, 120), pricing_type: pricingType, provider_type: body.provider_type || 'human' }); toast(err.message, 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2644,7 +2684,7 @@ async function handlePostJob(e) {
     trackEvent('job_post_completed', { job_id: String(job.id || ''), budget_type: body.budget_type, category: body.category || '' });
     toast('Job posted!', 'success');
     navigate(`#/jobs/${job.id}`);
-  } catch(err) { toast(err.message, 'error'); }
+  } catch(err) { trackEvent('job_post_failed', { error_message: String(err.message || '').slice(0, 120), budget_type: body.budget_type, category: body.category || '' }); toast(err.message, 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════════

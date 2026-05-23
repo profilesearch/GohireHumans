@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI QA Buyer Brief Generator | GoHireHumans</title>
+  <meta name="description" content="Create a clear buyer brief for hiring a human to review AI-generated work. Includes review type, source context, deliverables, budget, and acceptance criteria.">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <link rel="canonical" href="https://www.gohirehumans.com/ai-qa-buyer-brief.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="AI QA Buyer Brief Generator | GoHireHumans">
+  <meta property="og:description" content="Turn AI output into a clear human QA task with acceptance criteria and deliverables.">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <style>
+    :root{--ink:#102223;--muted:#587071;--teal:#0d7377;--paper:#f7fbfa;--card:#fff;--line:#d8eeee;--dark:#07191a}*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--paper);color:var(--ink);margin:0;line-height:1.6}a{color:var(--teal);font-weight:850}.wrap{max-width:1120px;margin:0 auto;padding:30px 20px 70px}.nav{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:30px}.brand{font-weight:950;text-decoration:none;color:var(--ink)}.links{display:flex;gap:14px;flex-wrap:wrap}.links a{text-decoration:none;color:var(--muted)}.hero{background:linear-gradient(135deg,var(--dark),var(--teal));color:white;border-radius:30px;padding:42px;margin-bottom:24px}.hero h1{font-size:clamp(34px,6vw,64px);line-height:1;margin:.2rem 0}.hero p{font-size:19px;color:rgba(255,255,255,.86);max-width:780px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 12px 32px rgba(13,115,119,.07)}label{display:block;font-weight:900;margin:14px 0 7px}select,textarea,input{width:100%;border:1px solid #cbe4e4;border-radius:14px;padding:12px 13px;font:inherit;background:white;color:var(--ink)}textarea{min-height:110px;resize:vertical}.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--teal);color:white;text-decoration:none;border-radius:14px;padding:12px 16px;font-weight:950;border:0;cursor:pointer}.btn.secondary{background:white;color:var(--teal);border:1px solid #bdeaea}.out{white-space:pre-wrap;background:#07191a;color:#e9fbfb;border-radius:18px;padding:18px;min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}.muted{color:var(--muted)}.pill{display:inline-flex;background:#e9fbfb;color:var(--teal);border:1px solid #bdeaea;border-radius:999px;padding:6px 10px;font-weight:900;font-size:13px;margin:4px 5px 4px 0}.footer{margin-top:38px;color:var(--muted);font-size:14px;display:flex;gap:12px;flex-wrap:wrap}@media(max-width:880px){.grid{grid-template-columns:1fr}.hero{padding:30px}}
+  </style>
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KM69M3NES8');function trackGHH(eventName,params){try{if(typeof gtag==='function'){gtag('event',eventName,params||{});}else{window.dataLayer.push(Object.assign({event:eventName},params||{}));}}catch(e){}}</script>
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post job</a><a href="/request-managed-ai-qa.html" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_nav'})">Request managed QA</a></div></nav>
+  <section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or post it as a GoHireHumans job.</p></section>
+  <main class="grid">
+    <section class="card">
+      <label for="type">Review type</label>
+      <select id="type">
+        <option value="fact-check">Fact-check / hallucination review</option>
+        <option value="citation-check">Source and citation verification</option>
+        <option value="rag-groundedness">RAG groundedness review</option>
+        <option value="website-qa">AI-built website QA</option>
+        <option value="support-reply-qa">Support reply QA</option>
+        <option value="product-content-qa">Product/content QA</option>
+        <option value="agent-work-audit">AI-agent work audit</option>
+      </select>
+      <label for="output">AI output or work to review</label>
+      <textarea id="output" placeholder="Paste the AI answer, page URL, support reply, agent output, spreadsheet notes, product listing, or draft content..."></textarea>
+      <label for="context">Source/context reviewers should compare against</label>
+      <textarea id="context" placeholder="Paste source links, company policy, customer brief, retrieved docs, expected behavior, acceptance criteria, or notes..."></textarea>
+      <label for="budget">Budget</label>
+      <select id="budget"><option>$15–$35 quick review</option><option>$25–$75 detailed review</option><option>$75–$200 multi-step QA</option><option>$200–$500 batch or high-context review</option></select>
+      <div class="btns"><button class="btn" onclick="gen()">Generate brief</button><button class="btn secondary" onclick="copyOut()">Copy brief</button><a class="btn secondary" id="post" href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post as job</a></div>
+    </section>
+    <aside class="card">
+      <h2>Good reviewer deliverable</h2>
+      <p class="muted">Ask for evidence, not vibes. The brief should make the expected output obvious.</p>
+      <span class="pill">pass / revise / high risk</span><span class="pill">issue severity</span><span class="pill">source notes</span><span class="pill">screenshots</span><span class="pill">corrected wording</span><span class="pill">confidence notes</span>
+      <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
+      <p><strong>Buyer tip:</strong> include enough source/context so the reviewer can verify instead of guessing.</p>
+    </aside>
+    <section class="card" style="grid-column:1/-1"><h2>Generated brief</h2><div id="out" class="out">Fill the fields and click “Generate brief.”</div></section>
+  </main>
+  <footer class="footer"><a href="/ai-human-qa/">AI QA hub</a> · <a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Fixed services</a> · <a href="/ai-qa-trust-policy.html">Trust policy</a></footer>
+</div>
+<script>
+const templates={
+  'fact-check':['Fact-check AI output for hallucinations','Review the AI output against the source/context. Mark incorrect, unsupported, unclear, risky, or missing-context claims. Return a concise issue list and corrected wording where useful.','AI review, fact checking, source verification'],
+  'citation-check':['Verify AI sources and citations','Check whether each cited source exists, opens correctly, and actually supports the AI-generated claim. Flag unsupported claims, broken links, weak sources, and missing context.','source review, citations, research QA'],
+  'rag-groundedness':['Review RAG answer groundedness','Compare the generated answer against the retrieved/source documents. Flag hallucinations, unsupported citations, missing caveats, and source mismatch.','RAG QA, groundedness review, source verification'],
+  'website-qa':['Test an AI-built website flow','Test this website/page like a real user. Check mobile/desktop layout, forms, checkout/sign-up flow, confusing copy, broken links, and trust issues. Return screenshots and notes.','website QA, UX testing, mobile QA'],
+  'support-reply-qa':['Review AI-drafted support replies','Review drafted customer replies for accuracy, tone, policy fit, escalation risk, and missing customer context.','customer support QA, tone review, policy review'],
+  'product-content-qa':['Review AI-generated product/content copy','Review product descriptions, comparison copy, landing-page sections, and marketing claims for accuracy, clarity, unsupported claims, missing details, and trust risk.','product content QA, claims review, conversion QA'],
+  'agent-work-audit':['Review AI-agent work before action','Review this AI-agent output before operational use. Check accuracy, completeness, formatting, CRM/data issues, missing approvals, and anything requiring human judgment.','AI agents, operations QA, approval review']
+};
+function enc(s){return encodeURIComponent(s||'')}
+function serviceFromUrl(){const p=new URLSearchParams(location.search);const svc=p.get('service');if(svc&&templates[svc])document.getElementById('type').value=svc}
+function gen(shouldTrack=true){if(shouldTrack)trackGHH('ai_qa_brief_generate',{source:'buyer_brief'});const key=document.getElementById('type').value,t=templates[key],o=document.getElementById('output').value.trim(),c=document.getElementById('context').value.trim(),b=document.getElementById('budget').value;const desc=`${t[1]}\n\nAI output/work to review:\n${o||'[paste AI output/work here]'}\n\nSource/context:\n${c||'[paste source/context here]'}\n\nExpected deliverable:\n- pass / revise / high-risk recommendation\n- issue list with severity\n- source links, notes, or screenshots where relevant\n- corrected wording/data where useful\n- confidence and uncertainty notes\n\nSuggested budget: ${b}`;const text=`Title: ${t[0]}\n\nDescription:\n${desc}\n\nRequired skills: ${t[2]}`;document.getElementById('out').textContent=text;document.getElementById('post').href=`/#/post-job?draft_title=${enc(t[0])}&draft_description=${enc(desc)}&draft_skills=${enc(t[2])}&draft_budget=${enc((b.match(/\d+/)||['25'])[0])}`}
+async function copyOut(){trackGHH('ai_qa_brief_copy',{source:'buyer_brief'});const text=document.getElementById('out').textContent;try{await navigator.clipboard.writeText(text);alert('Copied brief')}catch(e){alert('Copy failed; select the brief text manually.')}}
+serviceFromUrl();gen(false);
+</script>
+</body>
+</html>

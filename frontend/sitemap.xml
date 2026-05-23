@@ -517,21 +517,45 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://www.gohirehumans.com/ai-human-qa/hire-human-ai-qa-reviewers.html</loc>
+    <lastmod>2026-05-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/ai-human-qa/rag-groundedness-human-review.html</loc>
+    <lastmod>2026-05-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/ai-qa-buyer-brief.html</loc>
+    <lastmod>2026-05-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.83</priority>
+  </url>
+  <url>
     <loc>https://www.gohirehumans.com/managed-ai-qa.html</loc>
     <lastmod>2026-05-22</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.gohirehumans.com/ai-human-qa/ai-support-reply-qa.html</loc>
-    <lastmod>2026-05-23</lastmod>
+    <loc>https://www.gohirehumans.com/ai-human-qa/support-reply-human-qa.html</loc>
+    <lastmod>2026-05-22</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.78</priority>
+    <priority>0.84</priority>
   </url>
   <url>
-    <loc>https://www.gohirehumans.com/ai-human-qa/ai-product-content-qa.html</loc>
-    <lastmod>2026-05-23</lastmod>
+    <loc>https://www.gohirehumans.com/ai-human-qa/product-content-human-qa.html</loc>
+    <lastmod>2026-05-22</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.78</priority>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/request-managed-ai-qa.html</loc>
+    <lastmod>2026-05-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.86</priority>
   </url>
 </urlset>

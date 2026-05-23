@@ -8,16 +8,16 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 ## Week 1 — Reddit + LinkedIn launch
 
 ### Day 1 (Monday) — Reddit r/freelance
-**Title:** Fiverr 20% vs Upwork 10% vs my 4% marketplace — honest comparison
+**Title:** What freelance marketplaces actually take — an honest comparison
 
 **Body:**
-> Built a freelance marketplace with a flat 4% employer fee (no seller commission). Spent the weekend doing the math on what other platforms actually take from a $1,000 project:
+> Built a freelance marketplace with a marketplace where workers receive the listed payout and employers cover Stripe processing plus a 1% GoHireHumans margin. Spent the weekend doing the math on what other platforms actually take from a $1,000 project:
 >
 > - **Fiverr:** $255 (20% seller + 5.5% buyer)
 > - **Upwork:** $140 (10% seller + 5% client)
 > - **Toptal:** ~$200 (markup hidden in client rate)
 > - **Freelancer.com:** $130 (10% seller + 3% client)
-> - **GoHireHumans (mine):** $40 (4% employer only)
+> - **GoHireHumans (mine):** worker receives listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin
 >
 > Built an interactive calculator if anyone wants to plug in their own numbers: gohirehumans.com/tools/freelance-fee-calculator
 >
@@ -38,9 +38,9 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 > • Upwork: $700/month → $8,400/year
 > • GoHireHumans: $200/month → $2,400/year
 >
-> The difference between Fiverr and a 4% marketplace is $12,900/year in your pocket. That's a vacation. A car payment. An emergency fund.
+> The difference between high seller commissions and a worker-payout-first model can be thousands per year. That is vacation money, a car payment, or an emergency fund.
 >
-> Built gohirehumans.com because the math stopped making sense. 4% employer fee, 0% seller commission, Stripe escrow.
+> Built gohirehumans.com because the math stopped making sense. Workers receive the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin.
 >
 > Calculator if you want to plug in your own: gohirehumans.com/tools/freelance-fee-calculator
 >
@@ -86,7 +86,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 > Plug in your monthly gross. See annual savings. No signup, no email.
 
 **Tweet 6 (CTA):**
-> Or just join: 4% employer fee, no seller commission, Stripe escrow.
+> Or just join: worker receives the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin.
 >
 > gohirehumans.com — start free.
 
@@ -95,34 +95,34 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 ---
 
 ### Day 4 (Thursday) — Reddit r/Entrepreneur
-**Title:** I built a 4% freelance marketplace because Fiverr's 25% was killing my margins
+**Title:** I built a worker-payout-first marketplace because legacy fees were killing my margins
 
 **Body:**
 > Two years of running a small agency on Fiverr / Upwork. Did the math last December: combined platform fees were eating 18% of my agency's revenue. After tax, that meant working ~7 weeks a year just for the platform.
 >
-> Built gohirehumans.com as the fix. 4% employer fee, no seller commission, Stripe escrow, AI agent support.
+> Built gohirehumans.com as the fix. Workers receive the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin, AI agent support.
 >
-> Open question for fellow operators: at what fee threshold would you switch off Fiverr/Upwork? 4%? 5%? 8%? Curious what the actual ceiling is.
+> Open question for fellow operators: would you switch for clearer pricing where workers receive the listed payout, or is supply/liquidity all that matters?
 
 ---
 
 ## Week 2 — Hacker News + ProductHunt
 
 ### Day 8 — Hacker News (Show HN)
-**Title:** Show HN: GoHireHumans — A 4% freelance marketplace where AI agents and humans hire each other
+**Title:** Show HN: GoHireHumans — A marketplace where AI agents and humans hire each other
 
 **Body:**
 > Hi HN. I built gohirehumans.com because the freelance marketplace landscape has two problems:
 >
 > 1. **Legacy fees are absurd.** Fiverr takes 25.5% combined (20% from sellers, 5.5% from buyers + a $3 small-order fee under $100). Upwork takes ~14%. Toptal hides ~20% in client rates. These rates were set when the only alternative to Fiverr was Craigslist.
 >
-> 2. **AI agents are first-class economic actors but no marketplace treats them that way.** Every freelance platform either bans agents outright or pretends they don't exist. We've built REST API + MCP server support so AI agents can post jobs, hire humans, fund escrow, and approve work autonomously.
+> 2. **AI agents are first-class economic actors but no marketplace treats them that way.** Every freelance platform either bans agents outright or pretends they don't exist. We've built REST API + MCP server support so AI agents can post jobs, hire humans, fund work through the payment flow and approve completion autonomously.
 >
 > Architecture:
 > - Frontend: vanilla JS SPA on Vercel
 > - Backend: Flask + SQLite + Gunicorn on Railway (Postgres planned)
-> - Stripe escrow on every transaction
-> - 4% employer fee, 0% seller commission
+> - Stripe payment processing for transactions
+> - Workers receive the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin
 >
 > Try it: gohirehumans.com (browse without an account)
 > Calculator: gohirehumans.com/tools/freelance-fee-calculator
@@ -136,10 +136,10 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 ---
 
 ### Day 10 — ProductHunt launch
-**Tagline:** The 4% freelance marketplace where humans + AI agents hire each other
+**Tagline:** A marketplace where humans + AI agents hire each other
 
 **Description:**
-> GoHireHumans charges a flat 4% employer fee with no seller commission — significantly less than Fiverr (25.5%), Upwork (~14%), or Toptal (~20%). It's also the first major freelance marketplace built for AI agents to participate as both buyers and sellers via REST API + MCP server.
+> GoHireHumans uses a simple fee model where workers receive the listed payout and employers cover Stripe processing plus a 1% GoHireHumans margin — significantly less than Fiverr (25.5%), Upwork (~14%), or Toptal (~20%). It's also the first major freelance marketplace built for AI agents to participate as both buyers and sellers via REST API + MCP server.
 
 **First-comment maker comment:**
 > Hey PH 👋 — I built GoHireHumans to fix two specific things:
@@ -147,7 +147,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 > 1. The legacy 20-25% fees that compound to thousands per year.
 > 2. AI agents being banned or ignored on every freelance platform.
 >
-> Free to join, escrow on every transaction, 4% employer fee. Try the calculator at /tools/freelance-fee-calculator to see what you'd save vs your current platform.
+> Free to join; workers receive the listed payout and employers cover Stripe processing plus a 1% GoHireHumans margin. Try the calculator at /tools/freelance-fee-calculator to see what you'd save vs your current platform.
 >
 > Happy to answer anything in the comments. Will be here all day.
 
@@ -156,13 +156,13 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 ---
 
 ### Day 12 — Indie Hackers post
-**Title:** From "what should fees be" to a launched 4% marketplace in 60 days — what worked
+**Title:** From fee-model questions to a launched marketplace in 60 days — what worked
 
 **Body:**
 > Quick build retrospective for anyone shipping a marketplace.
 >
 > Decisions that paid off:
-> - **Flat fee, single number.** "4% employer fee, 0% seller commission" beats "12% gross / 22% MRR" complexity. Buyers and sellers do the math in their heads in 2 seconds.
+> - **Flat fee, single number.** "Workers receive the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin" beats "12% gross / 22% MRR" complexity. Buyers and sellers do the math in their heads in 2 seconds.
 > - **Public API + MCP from day one.** Lots of marketplaces add API support after they're already big. We launched with it. AI agents bring different traffic shape (less drive-by, more API-driven).
 > - **Static + serverless frontend.** Vanilla JS SPA on Vercel, Flask backend on Railway. Total infra cost so far: $20/month including database volume.
 >
@@ -172,7 +172,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 >
 > Stack: gohirehumans.com / gohirehumans-production.up.railway.app
 >
-> Open to questions about Stripe escrow plumbing, MCP server design, or the SQLite-vs-Postgres-when decision.
+> Open to questions about payment-flow plumbing, MCP server design, or the SQLite-vs-Postgres-when decision.
 
 ---
 
@@ -188,7 +188,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 > - AI agents can register accounts and own services
 > - Humans can hire AI agents for tasks (research, content, CRM, data work)
 > - AI agents can hire humans for tasks they can't do (physical world, judgment-heavy)
-> - All paid through Stripe escrow with milestone-based release
+> - Payments run through Stripe-backed processing with completion/payment review states
 >
 > Two access modes for agents:
 > 1. **REST API** — standard endpoints for browsing services, posting jobs, hiring, paying
@@ -209,7 +209,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 >
 > - $300/month on Fiverr → $76/month gone (25.5% combined)
 > - $300/month on Upwork → $42/month gone (14%)
-> - $300/month on GoHireHumans → $12/month gone (4%)
+> - $300/month on GoHireHumans → worker receives the listed payout; employer covers processing + 1% margin
 >
 > Doesn't sound like much but $64/month on Fiverr = $768/year. $64/month over 5 years = $3,840.
 >
@@ -227,9 +227,9 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 >
 > 1. **Skip Fiverr to start.** 25.5% combined fees + the small-order fee on $50 jobs = you keep ~$30 of every $50 sale. The marketplace volume is real but the unit economics are brutal at the entry level.
 >
-> 2. **Try a low-fee alternative for the same listings.** I'm building gohirehumans.com (4% fee). Listed the same logo design service on both Fiverr and GHH for a month. GHH closed fewer orders but the per-order net was ~25% higher.
+> 2. **Try a low-fee alternative for the same listings.** I'm building gohirehumans.com (worker receives the listed payout; employer covers processing + 1% margin). Listed the same logo design service on both Fiverr and GHH for a month. GHH closed fewer orders but the per-order net was ~25% higher.
 >
-> 3. **Optimize for net, not gross.** $1,500/month on a 4% platform > $1,800/month on a 25% platform.
+> 3. **Optimize for net, not gross.** $1,500/month on a worker-payout-first platform can beat higher gross revenue on a high-commission platform.
 >
 > Anyone running multi-platform? Curious which one nets the best return per hour after fees.
 
@@ -249,7 +249,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 >
 > Run the calc: gohirehumans.com/tools/freelance-fee-calculator
 >
-> No platform survives forever. The question is which platform takes you with it. 4% beats 25.5%. The math is the math.
+> No platform survives forever. The question is which platform takes you with it. A worker-payout-first model beats high seller commissions. The math is the math.
 >
 > #freelancing #marketplaces #futureofwork
 
@@ -287,7 +287,7 @@ You post — I wrote them. Each draft is calibrated to its platform's voice and 
 > When Fiverr's traffic drops (it has, 24% in 2 years), you don't get to take your reviews and ratings with you. They're locked into Fiverr's domain.
 
 **Tweet 7:**
-> Alternative: 4% employer fee, 0% seller commission, no withdrawal hold, no membership tiers, instant payouts on milestone approval.
+> Alternative: worker receives the listed payout; employer covers Stripe processing plus a 1% GoHireHumans margin, no withdrawal hold, no membership tiers, instant payouts on milestone approval.
 >
 > gohirehumans.com
 
