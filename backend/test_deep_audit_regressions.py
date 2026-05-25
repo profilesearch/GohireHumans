@@ -246,10 +246,13 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "hero_search_submit",
             "post_task_cta_click",
             "browse_humans_cta_click",
-            "find_paid_tasks_cta_click",
+            "agent_integration_cta_click",
+            "earn_tasks_page_click",
+            "seo_template_link_click",
             "service_order_intent",
             "job_apply_intent",
             "explainer_video_play",
+            "concierge_task_draft_click",
             "guided_task_intake_start",
             "guided_task_draft_created",
             "worker_route_select",
@@ -259,18 +262,23 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for snippet in required_snippets:
             self.assertIn(snippet, text)
 
-    def test_homepage_has_guided_task_intake_and_worker_agent_routes(self):
+    def test_homepage_has_guided_agent_intake_and_earning_routes(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
-            "Guided task intake",
+            "Guided agent intake",
+            "Convert a prompt into a clear marketplace listing.",
             "What needs to be done?",
-            "What type of human/agent is needed?",
+            "What type of human or agent is needed?",
             "Suggested deliverable/result",
             "Suggested budget range",
             "Create draft in post-job form",
+            "params.set('draft_title'",
             "query.get('draft_title')",
             "query.get('draft_description')",
-            "Worker &amp; agent routing",
+            "sessionStorage.setItem('ghh_guided_task_draft'",
+            "consumeStoredGuidedTaskDraft()",
+            "Earning surface",
+            "A place agents should check for ways to make money.",
             "Website testing",
             "Lead research",
             "AI-output review",
@@ -282,40 +290,44 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, text)
 
-        guided_block = text[text.index("Guided task intake"):text.index("Worker &amp; agent routing")]
+        guided_block = text[text.index("Guided agent intake"):text.index("Earning surface")]
         self.assertNotIn("fetch(", guided_block)
         self.assertNotIn("api(", guided_block)
         self.assertNotIn("mailto:", guided_block)
         self.assertIn("does not submit a job, contact workers, send email, or promise a match", guided_block)
 
-    def test_homepage_has_safe_early_liquidity_messaging(self):
+    def test_homepage_has_safe_agent_marketplace_liquidity_messaging(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
-            "If the right match is not visible yet, post the task or service anyway so the marketplace can route demand as supply grows.",
-            "Concierge-style help means clearer drafting and listing, not guaranteed fulfillment.",
-            "availability depends on current marketplace listings and is not guaranteed.",
+            "Public beta listings",
+            "review before publishing or spending",
+            "where they have authorization to transact",
+            "payment processing where configured",
+            "Stripe payment processing is available where checkout is configured.",
         ]:
             self.assertIn(snippet, text)
 
-    def test_homepage_has_concierge_task_drafts_without_automatic_outreach(self):
+    def test_homepage_has_agent_native_task_drafts_without_automatic_outreach(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
-            "Not sure what to post?",
-            "Concierge-style drafts",
+            "Agent-ready job posts",
+            "Turn messy prompts into scoped work.",
+            "Structured task drafts",
             "startTaskDraft('website_test')",
             "startTaskDraft('lead_research')",
             "startTaskDraft('ai_review')",
             "concierge_task_draft_click",
             "const templateDraft = getTaskDraftTemplate(query.get('template')) || {};",
-            "Nothing is submitted until you review and post the listing.",
+            "Nothing is submitted until you approve it.",
+            "Draft only. You review and publish manually when ready.",
             "Workers receive the listed payout",
             "Employer pays Stripe processing + 1%",
         ]:
             self.assertIn(snippet, text)
-        concierge_block = text[text.index("Task drafting help"):text.index("<!-- ═══ EXPLAINER VIDEO SECTION ═══")]
-        self.assertNotIn("mailto:", concierge_block)
-        self.assertNotIn("fetch(", concierge_block)
-        self.assertNotIn("api(", concierge_block)
+        task_draft_block = text[text.index("Agent-ready job posts"):text.index("Guided agent intake")]
+        self.assertNotIn("mailto:", task_draft_block)
+        self.assertNotIn("fetch(", task_draft_block)
+        self.assertNotIn("api(", task_draft_block)
 
     def test_homepage_public_copy_uses_connector_pricing_framing(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
