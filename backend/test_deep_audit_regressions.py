@@ -403,6 +403,41 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(loc, sitemap)
 
+    def test_ai_citation_source_page_is_linked_safe_and_structured(self):
+        slug = "ai-human-qa/ai-citation-source-verification.html"
+        page = (REPO_ROOT / "frontend" / slug).read_text(encoding="utf-8")
+        for snippet in [
+            "AI Citation and Source Verification",
+            "Build a citation QA brief",
+            "links, sources, quotes, statistics, and citations are real",
+            "GoHireHumans is a listing and payment connector",
+            "does not guarantee perfect accuracy",
+            "/ai-qa-buyer-brief.html?service=citation-check",
+        ]:
+            self.assertIn(snippet, page)
+        for unsupported in [
+            "guaranteed outcomes",
+            "escrow-protected",
+            "platform arbitration",
+            "legal review service",
+        ]:
+            self.assertNotIn(unsupported, page.lower())
+
+        marker = '<script type="application/ld+json">'
+        start = page.index(marker) + len(marker)
+        end = page.index("</script>", start)
+        structured = json.loads(page[start:end].strip())
+        self.assertEqual(structured["@type"], "Service")
+        self.assertEqual(structured["name"], "AI citation and source verification")
+
+        hub = (REPO_ROOT / "frontend/ai-human-qa/index.html").read_text(encoding="utf-8")
+        services = (REPO_ROOT / "frontend/ai-qa-services.html").read_text(encoding="utf-8")
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8")
+        href = f"/{slug}"
+        self.assertIn(href, hub)
+        self.assertIn(href, services)
+        self.assertIn(f"https://www.gohirehumans.com/{slug}", sitemap)
+
     def test_homepage_routes_to_task_templates_and_worker_earn_page(self):
         home = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
         for href in [
