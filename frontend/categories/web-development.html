@@ -29,7 +29,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <style>
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--bg:#f5f4f0;--surface:#faf9f6;--surface2:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--faint:#a8a6a0;--primary:#0d7377;--primary-hover:#095558;--primary-subtle:#e6f3f3;--good:#2d7a3a;--radius:.5rem;--radius-lg:.75rem}
     body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.7}
@@ -85,22 +85,23 @@
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
 <body>
-  <header class="header">
-    <div class="header-inner">
-      <a href="/" class="logo">
-        <div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-        GoHireHumans
-      </a>
-      <nav class="header-nav">
-        <a href="/categories/">Categories</a>
-        <a href="/blog/">Blog</a>
-        <a href="/tools/">Tools</a>
-        <a href="/#/register" class="btn-cta">Get started</a>
-      </nav>
-    </div>
-  </header>
+<div class="lp-nav-wrap">
+    <nav class="lp-nav" aria-label="Main navigation">
+      <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    </nav>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div></div>
+  </div>
 
-  <nav class="breadcrumbs"><a href="/">Home</a> &rarr; <a href="/categories/">Categories</a> &rarr; <span>Hire web developers</span></nav>
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  </script>
+<nav class="breadcrumbs"><a href="/">Home</a> &rarr; <a href="/categories/">Categories</a> &rarr; <span>Hire web developers</span></nav>
 
   <main>
     <section class="hero">

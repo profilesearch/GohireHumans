@@ -18,14 +18,29 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <style>
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:Inter,system-ui,sans-serif;background:#f5f4f0;color:#1a1816;line-height:1.7}.site-header{position:sticky;top:0;background:rgba(245,244,240,.94);backdrop-filter:blur(14px);border-bottom:1px solid #dddbd6;z-index:10}.header-inner{max-width:1120px;margin:0 auto;padding:0 1.5rem;height:56px;display:flex;align-items:center;justify-content:space-between}.logo{font-weight:800;color:#1a1816;text-decoration:none}.nav{display:flex;gap:.75rem;align-items:center}.nav a{font-size:.85rem;color:#6b6963;text-decoration:none}.btn,.btn-secondary{display:inline-block;border-radius:.5rem;padding:.8rem 1.1rem;text-decoration:none;font-weight:700}.btn{background:#0d7377;color:white}.btn-secondary{background:white;color:#0d7377;border:1px solid #d0cec8}.container{max-width:960px;margin:0 auto;padding:0 1.5rem}.hero{padding:4.5rem 0 3rem;background:linear-gradient(135deg,#e6f3f3,#faf9f6 48%,#fef3c7);text-align:center}.eyebrow{color:#0d7377;font-weight:800;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.75rem}.hero h1{font-size:clamp(2.1rem,6vw,4rem);line-height:1.03;letter-spacing:-.04em;margin-bottom:1rem}.subtitle{max-width:720px;margin:0 auto 1.5rem;color:#5f5c57;font-size:1.1rem}.cta-row{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap}.section{padding:3rem 0}.section-alt{background:#fff;border-top:1px solid #dddbd6;border-bottom:1px solid #dddbd6}.section h2{font-size:clamp(1.4rem,3vw,2rem);line-height:1.15;margin-bottom:1rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;margin-top:1.25rem}.card{background:#fff;border:1px solid #dddbd6;border-radius:.85rem;padding:1.25rem}.section-alt .card{background:#faf9f6}.card h3{font-size:1rem;margin-bottom:.35rem}.muted,.card p,li{color:#6b6963}.checklist{list-style:none;display:grid;gap:.7rem;margin-top:1rem}.checklist li{padding-left:1.5rem;position:relative}.checklist li::before{content:'✓';position:absolute;left:0;color:#0d7377;font-weight:800}.price{font-weight:800;color:#1a1816}.notice{background:#e6f3f3;border:1px solid #b8dddd;border-radius:.85rem;padding:1.25rem;margin-top:1.25rem}.related a{color:#0d7377;text-decoration:none;font-weight:700}.footer{padding:2rem 0;text-align:center;color:#8a8780;font-size:.8rem}@media(max-width:640px){.hero{padding:3rem 0 2rem}.nav a:not(.btn){display:none}}
 </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
 <body>
-  <header class="site-header"><div class="header-inner"><a class="logo" href="/">GoHireHumans</a><nav class="nav"><a href="/hire/">Hire</a><a href="/#/jobs">Paid tasks</a><a class="btn" href="/#/services">Browse services</a></nav></div></header>
-  <main>
+<div class="lp-nav-wrap">
+    <nav class="lp-nav" aria-label="Main navigation">
+      <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    </nav>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div></div>
+  </div>
+
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  </script>
+<main>
     <section class="hero"><div class="container"><div class="eyebrow">Task template</div><h1>Hire local verification and photo task help</h1><p class="subtitle">Use GoHireHumans for location-based tasks where a real person needs to observe, photograph, or verify something locally.</p><div class="cta-row"><a class="btn" href="https://www.gohirehumans.com/#/jobs">Post a local verification task</a><a class="btn-secondary" href="https://www.gohirehumans.com/#/services">Browse humans for local tasks</a></div></div></section>
     <section class="section"><div class="container"><h2>Example tasks you can post</h2><ul class="checklist">
           <li>Take current photos of a storefront, sign, menu, or property exterior</li>
