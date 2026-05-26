@@ -251,9 +251,22 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         failures = self._assert_shared_landing_nav(use_case_pages)
         self.assertEqual(failures, [])
 
+    def test_public_nav_active_state_uses_light_pill_for_all_tabs(self):
+        css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
+        required_snippets = [
+            ".lp-nav-link.lp-nav-link-active,",
+            ".lp-nav-link.lp-nav-link-active:hover,",
+            ".lp-mobile-link.lp-nav-link-active,",
+            "color: #0d7377 !important;",
+            "background: #e6f3f3 !important;",
+            "text-decoration: none !important;",
+        ]
+        missing = [snippet for snippet in required_snippets if snippet not in css]
+        self.assertEqual(missing, [])
+
     def _assert_shared_landing_nav(self, pages):
         shared_snippets = [
-            '<link rel="stylesheet" href="/style.css?v=20260525-static-navfix">',
+            '<link rel="stylesheet" href="/style.css?v=20260525-nav-active-light">',
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
             '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
