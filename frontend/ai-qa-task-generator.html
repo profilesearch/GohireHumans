@@ -11,7 +11,7 @@
   <meta property="og:description" content="Paste AI output and context, choose a fixed AI QA SKU, and generate an email-ready managed QA brief.">
   <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
   <meta name="twitter:card" content="summary_large_image">
-  <style>
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
     :root{--ink:#102223;--muted:#587071;--teal:#0d7377;--teal2:#14a3a7;--paper:#f7fbfa;--card:#fff;--line:#d8eeee;--dark:#07191a;--cream:#fff8e8}*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;margin:0;color:var(--ink);background:var(--paper);line-height:1.6}a{color:var(--teal);font-weight:850}.wrap{max-width:1120px;margin:0 auto;padding:30px 20px 70px}.nav{display:flex;gap:16px;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap}.brand{font-weight:950;text-decoration:none;color:var(--ink)}.navlinks{display:flex;gap:14px;flex-wrap:wrap}.navlinks a{text-decoration:none;color:var(--muted)}.hero{background:linear-gradient(135deg,var(--dark),var(--teal));color:white;border-radius:30px;padding:44px}.eyebrow{display:inline-flex;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 12px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}.hero h1{font-size:clamp(34px,6vw,64px);line-height:1;margin:12px 0}.hero p{font-size:20px;color:rgba(255,255,255,.86);max-width:820px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.75fr);gap:18px;margin:28px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 12px 32px rgba(13,115,119,.07)}.card h2,.card h3{margin:.1rem 0 .55rem;color:#0d5154;line-height:1.16}label{display:block;font-weight:900;margin:14px 0 7px}select,textarea{width:100%;border:1px solid #cbe4e4;border-radius:14px;padding:12px 13px;font:inherit;background:white;color:var(--ink)}textarea{min-height:112px;resize:vertical}.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--teal);color:white;text-decoration:none;border-radius:14px;padding:12px 16px;font-weight:950;border:0;cursor:pointer}.btn.secondary{background:white;color:var(--teal);border:1px solid #bdeaea}.out{white-space:pre-wrap;background:var(--dark);color:#e9fbfb;border-radius:18px;padding:18px;min-height:330px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}.muted{color:var(--muted)}.pill{display:inline-flex;background:#e9fbfb;color:var(--teal);border:1px solid #bdeaea;border-radius:999px;padding:6px 10px;font-weight:900;font-size:13px;margin:4px 5px 4px 0}.notice{background:var(--cream);border-color:#f0dca4}.footer{color:var(--muted);margin-top:30px}.full{grid-column:1/-1}@media(max-width:760px){.wrap{padding:20px 14px 50px}.hero{padding:28px}.grid{grid-template-columns:1fr}.card{padding:18px}.btn{width:100%}}
   </style>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
@@ -19,13 +19,23 @@
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
 <body>
-<div class="wrap">
-  <nav class="nav" aria-label="Primary">
-    <a class="brand" href="/">GoHireHumans</a>
-    <div class="navlinks"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html">Fixed services</a><a href="/ai-qa-buyer-brief.html">Buyer brief</a><a href="/request-managed-ai-qa.html">Managed pilot</a></div>
-  </nav>
+<div class="lp-nav-wrap">
+    <nav class="lp-nav" aria-label="Main navigation">
+      <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    </nav>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div></div>
+  </div>
 
-  <section class="hero">
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  </script>
+<div class="wrap"><section class="hero">
     <span class="eyebrow">AI human QA</span>
     <h1>Paste AI output. Generate a managed human QA brief.</h1>
     <p>Choose a fixed AI QA SKU, paste the work and source context, then copy or email an evidence-first brief into the manual concierge pilot. No checkout or job is created automatically.</p>

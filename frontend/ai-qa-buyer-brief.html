@@ -11,7 +11,7 @@
   <meta property="og:title" content="AI QA Buyer Brief Generator | GoHireHumans">
   <meta property="og:description" content="Turn AI output into a clear human QA task with acceptance criteria and deliverables.">
   <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
-  <style>
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
     :root{--ink:#102223;--muted:#587071;--teal:#0d7377;--paper:#f7fbfa;--card:#fff;--line:#d8eeee;--dark:#07191a}*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--paper);color:var(--ink);margin:0;line-height:1.6}a{color:var(--teal);font-weight:850}.wrap{max-width:1120px;margin:0 auto;padding:30px 20px 70px}.nav{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:30px}.brand{font-weight:950;text-decoration:none;color:var(--ink)}.links{display:flex;gap:14px;flex-wrap:wrap}.links a{text-decoration:none;color:var(--muted)}.hero{background:linear-gradient(135deg,var(--dark),var(--teal));color:white;border-radius:30px;padding:42px;margin-bottom:24px}.hero h1{font-size:clamp(34px,6vw,64px);line-height:1;margin:.2rem 0}.hero p{font-size:19px;color:rgba(255,255,255,.86);max-width:780px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 12px 32px rgba(13,115,119,.07)}label{display:block;font-weight:900;margin:14px 0 7px}select,textarea,input{width:100%;border:1px solid #cbe4e4;border-radius:14px;padding:12px 13px;font:inherit;background:white;color:var(--ink)}textarea{min-height:110px;resize:vertical}.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--teal);color:white;text-decoration:none;border-radius:14px;padding:12px 16px;font-weight:950;border:0;cursor:pointer}.btn.secondary{background:white;color:var(--teal);border:1px solid #bdeaea}.out{white-space:pre-wrap;background:#07191a;color:#e9fbfb;border-radius:18px;padding:18px;min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}.muted{color:var(--muted)}.pill{display:inline-flex;background:#e9fbfb;color:var(--teal);border:1px solid #bdeaea;border-radius:999px;padding:6px 10px;font-weight:900;font-size:13px;margin:4px 5px 4px 0}.footer{margin-top:38px;color:var(--muted);font-size:14px;display:flex;gap:12px;flex-wrap:wrap}@media(max-width:880px){.grid{grid-template-columns:1fr}.hero{padding:30px}}
   </style>
 
@@ -20,9 +20,23 @@
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
 <body>
-<div class="wrap">
-  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/request-managed-ai-qa.html" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_nav'})">Managed pilot</a></div></nav>
-  <section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or email it into the managed concierge pilot. No checkout or job is created automatically.</p></section>
+<div class="lp-nav-wrap">
+    <nav class="lp-nav" aria-label="Main navigation">
+      <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    </nav>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div></div>
+  </div>
+
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+  </script>
+<div class="wrap"><section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or email it into the managed concierge pilot. No checkout or job is created automatically.</p></section>
   <main class="grid">
     <section class="card">
       <label for="type">Review type</label>

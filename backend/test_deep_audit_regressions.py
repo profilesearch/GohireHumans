@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -264,9 +265,86 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         missing = [snippet for snippet in required_snippets if snippet not in css]
         self.assertEqual(missing, [])
 
+    def test_sitemapped_html_pages_use_single_canonical_public_nav(self):
+        expected_labels = [
+            "GoHireHumans",
+            "Marketplace",
+            "Open Jobs",
+            "For Agents",
+            "Agent Guide",
+            "Use Cases",
+            "About",
+            "FAQ",
+        ]
+        failures = []
+        for rel in self._sitemapped_html_pages():
+            if rel == "frontend/index.html":
+                continue
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            nav = self._first_nav(text)
+            labels = self._nav_labels(nav)
+            missing = []
+            if '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">' not in text:
+                missing.append("cache-busted shared stylesheet")
+            if text.count('<div class="lp-nav-wrap">') != 1:
+                missing.append("exactly one shared nav wrapper")
+            if text.count('function toggleMobileMenu()') != 1:
+                missing.append("exactly one mobile menu toggle")
+            if '<nav class="lp-nav" aria-label="Main navigation">' not in nav:
+                missing.append("first nav uses canonical lp-nav + aria label")
+            if labels[:8] != expected_labels:
+                missing.append(f"top nav labels {labels[:8]!r}")
+            if '<nav class="nav"' in nav or 'class="header-nav"' in nav:
+                missing.append("legacy top nav class removed")
+            if missing:
+                failures.append({"file": rel, "missing": missing})
+        self.assertEqual(failures, [])
+
+    def test_homepage_public_nav_template_keeps_desktop_and_mobile_active_states(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        snippets = [
+            '<nav class="lp-nav" aria-label="Main navigation">',
+            "lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}",
+            "lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}",
+            '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
+            '<link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">',
+        ]
+        missing = [snippet for snippet in snippets if snippet not in text]
+        self.assertEqual(missing, [])
+
+    def _sitemapped_html_pages(self):
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8", errors="ignore")
+        pages = set()
+        for loc in re.findall(r"<loc>https://www\.gohirehumans\.com([^<]*)</loc>", sitemap):
+            if loc in ("", "/"):
+                rel = "frontend/index.html"
+            elif loc.endswith("/"):
+                rel = f"frontend{loc}index.html"
+            elif loc.endswith(".html"):
+                rel = f"frontend{loc}"
+            else:
+                continue
+            if (REPO_ROOT / rel).exists():
+                pages.add(rel)
+        pages.add("frontend/404.html")
+        return sorted(pages)
+
+    def _first_nav(self, text):
+        match = re.search(r"<nav\b[^>]*>.*?</nav>", text, flags=re.S | re.I)
+        return match.group(0) if match else ""
+
+    def _nav_labels(self, nav):
+        labels = []
+        for anchor in re.findall(r"<a\b[^>]*>(.*?)</a>", nav, flags=re.S | re.I):
+            label = re.sub(r"<[^>]+>", " ", anchor)
+            label = " ".join(label.split())
+            if label:
+                labels.append(label)
+        return labels
+
     def _assert_shared_landing_nav(self, pages):
         shared_snippets = [
-            '<link rel="stylesheet" href="/style.css?v=20260525-nav-active-light">',
+            '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
             '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
@@ -370,10 +448,11 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         self.assertNotIn("mailto:", guided_block)
         self.assertIn("does not submit a job, contact workers, send email, or promise a match", guided_block)
 
-    def test_homepage_has_safe_agent_marketplace_liquidity_messaging(self):
+    def test_homepage_has_credible_agent_marketplace_liquidity_messaging(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertNotRegex(text, r"(?i)\bpublic beta listings\b")
         for snippet in [
-            "Public beta listings",
+            "Open tasks and services",
             "review before publishing or spending",
             "where they have authorization to transact",
             "payment processing where configured",

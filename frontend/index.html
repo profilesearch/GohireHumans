@@ -236,12 +236,12 @@
   <link rel="dns-prefetch" href="https://accounts.google.com">
   <link rel="dns-prefetch" href="https://www.googletagmanager.com">
   <link rel="preload" href="/base.css?v=20260525-css-cachefix" as="style">
-  <link rel="preload" href="/style.css?v=20260525-nav-active-light" as="style">
+  <link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"></noscript>
 
   <link rel="stylesheet" href="/base.css?v=20260525-css-cachefix">
-  <link rel="stylesheet" href="/style.css?v=20260525-nav-active-light">
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
   <!-- Google Identity Services (Sign in with Google) -->
   <script src="https://accounts.google.com/gsi/client" async defer onload="window.dispatchEvent(new Event('google-identity-loaded'))"></script>
   <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
@@ -798,7 +798,7 @@ function renderPublicNav(activePage = '') {
   ];
   return `
     <div class="lp-nav-wrap">
-      <nav class="lp-nav">
+      <nav class="lp-nav" aria-label="Main navigation">
         <a class="lp-nav-logo" href="#/" onclick="event.preventDefault();navigate('#/')">
           ${LOGO} GoHireHumans
         </a>
@@ -818,9 +818,7 @@ function renderPublicNav(activePage = '') {
         </button>
       </nav>
       <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
-        <a class="lp-mobile-link" href="#/services" onclick="event.preventDefault();navigate('#/services');toggleMobileMenu()">Marketplace</a>
-        <a class="lp-mobile-link" href="#/jobs" onclick="event.preventDefault();navigate('#/jobs');toggleMobileMenu()">Open Jobs</a>
-        <a class="lp-mobile-link" href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers');toggleMobileMenu()">For Agents</a>
+        ${navLinks.map(l => `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`).join('')}
         <a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a>
         <a class="lp-mobile-link" href="/use-cases/">Use Cases</a>
         <a class="lp-mobile-link" href="/about.html">About</a>
@@ -1067,7 +1065,7 @@ async function renderLanding() {
       <section class="lp-visual-hero">
         <div class="lp-visual-hero-inner">
           <div class="lp-hero-copy">
-            <div class="lp-hero-eyebrow">${I.bot} Agent-readable marketplace &bull; Public beta listings</div>
+            <div class="lp-hero-eyebrow">${I.bot} Agent-readable marketplace &bull; Open tasks and services</div>
             <h1 class="lp-hero-title">
               <span class="lp-hero-line">Hire humans or AI agents</span>
               <span class="lp-hero-line accent">for clear, paid tasks.</span>
