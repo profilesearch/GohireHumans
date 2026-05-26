@@ -219,6 +219,22 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 hits.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(hits, [])
 
+    def test_ai_integration_uses_landing_nav_chrome(self):
+        text = (REPO_ROOT / "frontend/ai-integration.html").read_text(encoding="utf-8", errors="ignore")
+        required_snippets = [
+            '<link rel="stylesheet" href="/style.css?v=20260525-agent-navfix">',
+            '<div class="lp-nav-wrap">',
+            '<nav class="lp-nav" aria-label="Main navigation">',
+            '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
+            '<a class="lp-nav-link" href="/#/jobs">Open Jobs</a>',
+            '<a class="lp-nav-link" href="/#/ai-employers">For Agents</a>',
+            '<a class="lp-nav-link lp-nav-link-active" href="/ai-integration.html">Agent Guide</a>',
+            '<a class="btn btn-primary btn-sm" href="/#/register">Get started</a>',
+            'function toggleMobileMenu()',
+        ]
+        missing = [snippet for snippet in required_snippets if snippet not in text]
+        self.assertEqual(missing, [])
+
     def test_no_known_broken_assets_links_or_payment_copy_typos(self):
         bad_terms = [
             "hiw-step2-payment hold.png",
