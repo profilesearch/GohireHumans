@@ -1185,9 +1185,15 @@
 /* ─── GoHireHumans Two-Sided Marketplace Components ─────────── */
 
 /* Public Nav additions */
-.lp-nav-link-active {
-  color: var(--color-primary) !important;
-  background: var(--color-primary-subtle) !important;
+.lp-nav-link.lp-nav-link-active,
+.lp-nav-link.lp-nav-link-active:hover,
+.lp-nav-link.lp-nav-link-active:focus-visible,
+.lp-mobile-link.lp-nav-link-active,
+.lp-mobile-link.lp-nav-link-active:hover,
+.lp-mobile-link.lp-nav-link-active:focus-visible {
+  color: #0d7377 !important;
+  background: #e6f3f3 !important;
+  text-decoration: none !important;
 }
 .lp-hamburger {
   display: none;
