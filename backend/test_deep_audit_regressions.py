@@ -32,6 +32,22 @@ def parse_cgi_output(output: str):
     return status, json.loads(body or "{}")
 
 
+def dispatch(module, method: str, path: str, body: Any | None = None, token: str = ""):
+    payload = "" if body is None else json.dumps(body)
+    module._request_ctx.request_method = method
+    module._request_ctx.path_info = path
+    module._request_ctx.query_string = ""
+    module._request_ctx.http_authorization = f"Bearer {token}" if token else ""
+    module._request_ctx.http_x_api_key = ""
+    module._request_ctx.stdin_data = payload
+    module._request_ctx.content_type = "application/json" if body is not None else ""
+    module._request_ctx.content_length = str(len(payload))
+    module._request_ctx.remote_addr = "127.0.0.1"
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        module.handle_request()
+    return parse_cgi_output(out.getvalue())
+
+
 class BackendRegressionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -160,23 +176,95 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
-        self.module._request_ctx.request_method = "GET"
-        self.module._request_ctx.path_info = "/payments/status"
-        self.module._request_ctx.query_string = ""
-        self.module._request_ctx.http_authorization = "Bearer tok-ready"
-        self.module._request_ctx.http_x_api_key = ""
-        self.module._request_ctx.stdin_data = ""
-        self.module._request_ctx.content_type = ""
-        self.module._request_ctx.content_length = "0"
-        self.module._request_ctx.remote_addr = "127.0.0.1"
-        with contextlib.redirect_stdout(io.StringIO()) as out:
-            self.module.handle_request()
-        status, body = parse_cgi_output(out.getvalue())
+        status, body = dispatch(self.module, "GET", "/payments/status", token="tok-ready")
         self.assertEqual(status, 200, body)
         self.assertIn("worker_payout_status", body)
         self.assertIn("employer_payment_status", body)
         self.assertIs(body["worker_ready"], True)
         self.assertIs(body["employer_ready"], True)
+
+    def test_pricing_info_uses_connector_posture_and_exposes_checkout_readiness(self):
+        status, body = dispatch(self.module, "GET", "/pricing/info")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["payment_model"], "listing_payment_connector")
+        self.assertEqual(body["fee_paid_by"], "employer")
+        self.assertIs(body["worker_receives_listed_amount"], True)
+        self.assertIs(body["escrow"], False)
+        self.assertIs(body["self_serve_checkout_ready"], False)
+        self.assertIn("Stripe processing plus a 1% GoHireHumans fee", body["description"])
+        self.assertNotIn("4% all-in", body["description"].lower())
+        self.assertNotIn("escrow", body["description"].lower())
+
+    def test_approve_hours_pays_worker_listed_hours_and_records_employer_margin(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_sim_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (1,'job_hire',1,2,'in_progress',200)")
+            db.execute("INSERT INTO hourly_contracts (id,order_id,hourly_rate,weekly_hour_cap,current_week_escrow_amount,status,week_start_date) VALUES (1,1,80,10,200,'active','2026-05-18')")
+            db.execute("INSERT INTO time_entries (contract_id,date,hours,description,week_of,status) VALUES (1,'2026-05-18',1.5,'Review AI answers','2026-05-18','pending')")
+            db.execute("INSERT INTO time_entries (contract_id,date,hours,description,week_of,status) VALUES (1,'2026-05-19',1.0,'Validate citations','2026-05-18','pending')")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,200,'held','pi_sim_hourly')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-employer',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        status, body = dispatch(
+            self.module,
+            "POST",
+            "/orders/1/approve-hours",
+            {"week_of": "2026-05-18"},
+            token="tok-employer",
+        )
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["worker_pay"], 200)
+        self.assertEqual(body["platform_fee"], 2)
+
+        db = self.module.get_db()
+        try:
+            fee = db.execute("SELECT fee_amount FROM platform_revenue WHERE order_id=1 AND fee_type='hourly_service_fee'").fetchone()[0]
+            notif = db.execute("SELECT message FROM notifications WHERE user_id=1 AND type='hours_approved'").fetchone()[0]
+            self.assertEqual(fee, 2)
+            self.assertIn("$200.00 released", notif)
+        finally:
+            db.close()
+
+    def test_dispute_release_pays_worker_released_amount_and_records_employer_margin(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_sim_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (3,'admin@example.com','x','Admin',1)")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,2,'disputed',150)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_sim_dispute_1')")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,50,'held','pi_sim_dispute_2')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (3,'tok-admin',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        status, body = dispatch(
+            self.module,
+            "POST",
+            "/admin/resolve-dispute",
+            {"order_id": 1, "resolution": "release_to_worker"},
+            token="tok-admin",
+        )
+        self.assertEqual(status, 200, body)
+
+        db = self.module.get_db()
+        try:
+            fee = db.execute("SELECT fee_amount FROM platform_revenue WHERE order_id=1 AND fee_type='dispute_resolution'").fetchone()[0]
+            notif = db.execute("SELECT message FROM notifications WHERE user_id=1 AND type='dispute_resolved'").fetchone()[0]
+            self.assertEqual(fee, 1.5)
+            self.assertIn("$150.00 has been released", notif)
+        finally:
+            db.close()
 
 
 class FrontendStaticRegressionTests(unittest.TestCase):
@@ -488,6 +576,62 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "platform arbitration",
         ]:
             self.assertNotIn(unsupported, lower)
+
+    def test_growth_pages_use_connector_pricing_posture(self):
+        required_by_page = {
+            "frontend/instagram.html": [
+                "Workers receive the listed payout",
+                "Employer pays Stripe processing + 1%",
+                "Payment connector",
+            ],
+            "frontend/stats.html": [
+                "Workers receive the listed payout",
+                "employers pay Stripe processing plus 1%",
+            ],
+        }
+        forbidden = [
+            "4% fee",
+            "4% employer fee",
+            "verified professionals",
+            "verified humans",
+            "verified profiles",
+            "payment is held",
+            "stripe payment hold",
+            "platform fee",
+        ]
+        for rel, required in required_by_page.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            lower = text.lower()
+            for phrase in required:
+                self.assertIn(phrase, text, rel)
+            for phrase in forbidden:
+                self.assertNotIn(phrase, lower, rel)
+
+    def test_mcp_copy_uses_connector_payment_posture(self):
+        required = [
+            "listing and payment connector",
+            "Workers receive the listed payout",
+            "Stripe processing plus a 1% GoHireHumans fee",
+        ]
+        forbidden = [
+            "escrow",
+            "~4%",
+            "4% fee",
+            "verified professionals",
+            "screened and verified",
+            "payment protected",
+            "Funds are released only",
+        ]
+        for rel in ["backend/mcp_server.py", "backend/mcp-package/mcp_server.py"]:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            start = text.index("def handle_get_pricing_info")
+            end = text.index("def handle_resource", start)
+            public_copy = text[start:end]
+            for phrase in required:
+                self.assertIn(phrase, public_copy, rel)
+            lower = public_copy.lower()
+            for phrase in forbidden:
+                self.assertNotIn(phrase.lower(), lower, rel)
 
 
 if __name__ == "__main__":
