@@ -149,8 +149,18 @@
   .lp-ai-grid,
   .lp-ai-usecases,
   .lp-ai-problem-grid,
+  .lp-home-split-grid,
   .lp-how-col {
     grid-template-columns: 1fr !important;
+  }
+
+  .lp-home-split-grid {
+    gap: var(--space-5) !important;
+  }
+
+  .lp-home-split-grid > * {
+    min-width: 0;
+    width: 100%;
   }
 
   .job-card-header,
