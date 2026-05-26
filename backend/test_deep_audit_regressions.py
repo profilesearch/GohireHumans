@@ -226,6 +226,32 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "frontend/about.html": '<a class="lp-nav-link lp-nav-link-active" href="/about.html">About</a>',
             "frontend/faq.html": '<a class="lp-nav-link lp-nav-link-active" href="/faq.html">FAQ</a>',
         }
+        failures = self._assert_shared_landing_nav(static_tabs)
+        self.assertEqual(failures, [])
+
+    def test_core_static_pages_use_landing_nav_chrome(self):
+        core_pages = {
+            "frontend/404.html": None,
+            "frontend/api-docs.html": None,
+            "frontend/how-it-works.html": None,
+            "frontend/pricing.html": None,
+            "frontend/services.html": None,
+            "frontend/trust-safety.html": None,
+        }
+        failures = self._assert_shared_landing_nav(core_pages)
+        self.assertEqual(failures, [])
+
+    def test_use_case_detail_pages_keep_use_cases_nav_active(self):
+        use_case_pages = {
+            str(path.relative_to(REPO_ROOT)): '<a class="lp-nav-link lp-nav-link-active" href="/use-cases/">Use Cases</a>'
+            for path in (REPO_ROOT / "frontend/use-cases").glob("*.html")
+            if path.name != "index.html"
+        }
+        self.assertGreater(len(use_case_pages), 0)
+        failures = self._assert_shared_landing_nav(use_case_pages)
+        self.assertEqual(failures, [])
+
+    def _assert_shared_landing_nav(self, pages):
         shared_snippets = [
             '<link rel="stylesheet" href="/style.css?v=20260525-static-navfix">',
             '<div class="lp-nav-wrap">',
@@ -237,18 +263,22 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             'function toggleMobileMenu()',
         ]
         failures = []
-        for rel, active_snippet in static_tabs.items():
+        for rel, active_snippet in pages.items():
             text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
-            missing = [snippet for snippet in [*shared_snippets, active_snippet] if snippet not in text]
+            missing = [snippet for snippet in shared_snippets if snippet not in text]
+            if active_snippet and active_snippet not in text:
+                missing.append(active_snippet)
             if '<nav class="nav"' in text:
                 missing.append('old <nav class="nav"> removed')
+            if '<header class="header">' in text and rel == "frontend/404.html":
+                missing.append('old 404 header removed')
             if text.count('<div class="lp-nav-wrap">') != 1:
                 missing.append('exactly one shared nav wrapper')
             if text.count('function toggleMobileMenu()') != 1:
                 missing.append('exactly one mobile menu toggle')
             if missing:
                 failures.append({"file": rel, "missing": missing})
-        self.assertEqual(failures, [])
+        return failures
 
     def test_no_known_broken_assets_links_or_payment_copy_typos(self):
         bad_terms = [
