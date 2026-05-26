@@ -219,6 +219,37 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 hits.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(hits, [])
 
+    def test_static_top_tabs_use_landing_nav_chrome(self):
+        static_tabs = {
+            "frontend/ai-integration.html": '<a class="lp-nav-link lp-nav-link-active" href="/ai-integration.html">Agent Guide</a>',
+            "frontend/use-cases/index.html": '<a class="lp-nav-link lp-nav-link-active" href="/use-cases/">Use Cases</a>',
+            "frontend/about.html": '<a class="lp-nav-link lp-nav-link-active" href="/about.html">About</a>',
+            "frontend/faq.html": '<a class="lp-nav-link lp-nav-link-active" href="/faq.html">FAQ</a>',
+        }
+        shared_snippets = [
+            '<link rel="stylesheet" href="/style.css?v=20260525-static-navfix">',
+            '<div class="lp-nav-wrap">',
+            '<nav class="lp-nav" aria-label="Main navigation">',
+            '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
+            '<a class="lp-nav-link" href="/#/jobs">Open Jobs</a>',
+            '<a class="lp-nav-link" href="/#/ai-employers">For Agents</a>',
+            '<a class="btn btn-primary btn-sm" href="/#/register">Get started</a>',
+            'function toggleMobileMenu()',
+        ]
+        failures = []
+        for rel, active_snippet in static_tabs.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            missing = [snippet for snippet in [*shared_snippets, active_snippet] if snippet not in text]
+            if '<nav class="nav"' in text:
+                missing.append('old <nav class="nav"> removed')
+            if text.count('<div class="lp-nav-wrap">') != 1:
+                missing.append('exactly one shared nav wrapper')
+            if text.count('function toggleMobileMenu()') != 1:
+                missing.append('exactly one mobile menu toggle')
+            if missing:
+                failures.append({"file": rel, "missing": missing})
+        self.assertEqual(failures, [])
+
     def test_no_known_broken_assets_links_or_payment_copy_typos(self):
         bad_terms = [
             "hiw-step2-payment hold.png",
