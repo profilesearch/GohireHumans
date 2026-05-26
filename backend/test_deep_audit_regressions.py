@@ -489,6 +489,62 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertNotIn(unsupported, lower)
 
+    def test_managed_ai_qa_pilot_is_manual_concierge_not_self_serve_checkout(self):
+        request_page = (REPO_ROOT / "frontend/request-managed-ai-qa.html").read_text(encoding="utf-8")
+        for phrase in [
+            "Manual concierge pilot",
+            "No self-serve checkout",
+            "no payment is collected on this page",
+            "no Stripe session is created",
+            "no job is automatically published",
+            "You approve the quote and review plan before any reviewer starts",
+            "mailto:contact@gohirehumans.com",
+            "managed_ai_qa_request_click",
+        ]:
+            self.assertIn(phrase, request_page)
+        for forbidden in ["<form", "fetch(", "/api/", "stripe.redirectToCheckout", "/payments/checkout"]:
+            self.assertNotIn(forbidden, request_page)
+
+        manual_pilot_pages = sorted({
+            str(path.relative_to(REPO_ROOT))
+            for pattern in ["frontend/ai-qa-*.html", "frontend/ai-human-qa/*.html"]
+            for path in REPO_ROOT.glob(pattern)
+        } | {
+            "frontend/ai-agents-need-human-auditors.html",
+            "frontend/managed-ai-qa.html",
+            "frontend/request-managed-ai-qa.html",
+        })
+        forbidden_ctas = [
+            'href="/#/post-job',
+            "ai_qa_post_job_click",
+            "draft_title=",
+            "draft_description=",
+            "stripe.redirectToCheckout",
+            "/payments/checkout",
+            "create a Stripe session",
+        ]
+        offenders = []
+        for rel in manual_pilot_pages:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            for forbidden in forbidden_ctas:
+                if forbidden in text:
+                    offenders.append(f"{rel}: {forbidden}")
+        self.assertEqual(offenders, [])
+
+    def test_manual_ai_qa_pilot_pages_have_current_sitemap_lastmods(self):
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8")
+        for loc in [
+            "https://www.gohirehumans.com/ai-human-qa/",
+            "https://www.gohirehumans.com/ai-qa-services.html",
+            "https://www.gohirehumans.com/ai-qa-buyer-brief.html",
+            "https://www.gohirehumans.com/managed-ai-qa.html",
+            "https://www.gohirehumans.com/request-managed-ai-qa.html",
+        ]:
+            start = sitemap.index(f"<loc>{loc}</loc>")
+            end = sitemap.index("</url>", start)
+            block = sitemap[start:end]
+            self.assertIn("<lastmod>2026-05-25</lastmod>", block, loc)
+
 
 if __name__ == "__main__":
     unittest.main()
