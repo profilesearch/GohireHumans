@@ -1304,13 +1304,21 @@ def _handle_routes(db):
 
     # ── Public pricing info (no auth) ──────────────────────────────────────
     if path == "/pricing/info" and method == "GET":
+        public_key_configured = bool(STRIPE_PUBLISHABLE_KEY) and re.match(r"^pk_(live|test)_", STRIPE_PUBLISHABLE_KEY) is not None
         return json_response({
             "service_fee_rate": SERVICE_FEE_RATE,
             "processing_fee_rate": PROCESSING_FEE_RATE,
             "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
-            "description": "Buyers pay a 4% all-in fee on top of the service price (1% platform fee + ~3% payment processing). Workers receive the full listed price.",
-            "fee_paid_by": "buyer",
-            "escrow": True
+            "platform_margin_rate": SERVICE_FEE_RATE,
+            "payment_model": "listing_payment_connector",
+            "description": "Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee on top of the listed amount.",
+            "fee_paid_by": "employer",
+            "worker_receives_listed_amount": True,
+            "escrow": False,
+            "payment_connector": True,
+            "stripe_secret_configured": stripe_configured(),
+            "stripe_publishable_key_configured": public_key_configured,
+            "self_serve_checkout_ready": bool(stripe_configured() and public_key_configured),
         })
 
     # ── Public platform stats (no auth) ────────────────────────────────
@@ -2943,7 +2951,9 @@ def _handle_routes(db):
         total_hours = sum(float(e['hours']) for e in entries)
         total_pay = round(total_hours * float(hc['hourly_rate']), 2)
         fee = round(total_pay * SERVICE_FEE_RATE, 2)
-        worker_pay = round(total_pay - fee, 2)
+        # Employer margin is charged on top of the listed hourly amount;
+        # workers receive the full approved hourly pay.
+        worker_pay = round(total_pay, 2)
 
         # Mark entries approved
         db.execute(
@@ -3773,7 +3783,9 @@ def _handle_routes(db):
                 total_released += float(hold['amount'])
 
             fee = round(total_released * SERVICE_FEE_RATE, 2)
-            worker_pay = round(total_released - fee, 2)
+            # Employer margin is charged on top of the released amount;
+            # workers receive the full amount released in their favor.
+            worker_pay = round(total_released, 2)
             db.execute(
                 "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,'dispute_resolution')",
                 [order_id, fee]

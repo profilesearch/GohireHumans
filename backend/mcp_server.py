@@ -839,66 +839,60 @@ def handle_get_pricing_info(args):
 
     output = """# GoHireHumans Pricing
 
+## Connector framing
+GoHireHumans is a listing and payment connector. It helps employers post work, connect with workers, and route payment processing where configured; it is not positioned as an arbitrator or guarantee provider.
+
 ## Fee Structure
-- **Employer Fee:** 1% of the task amount (paid by the hiring party)
-- **Processing Fee:** ~3% payment processing & escrow fee (covers Stripe costs)
-- **Freelancer Fee:** 0% — freelancers keep 100% of their earnings
-- **No subscription fees, no listing fees, no hidden charges**
+- **Worker payout:** Workers receive the listed payout.
+- **Employer cost:** Employers pay Stripe processing plus a 1% GoHireHumans fee on top of the listed amount.
+- **Worker commission:** 0% — workers keep the listed amount.
+- **No subscription fees, no listing fees, no hidden charges.**
 
-## How It Compares
-| Platform | Buyer Fee | Seller Fee | Effective Take Rate |
-|----------|-----------|------------|---------------------|
-| GoHireHumans | 1% + ~3% processing | 0% | ~4% |
-| Fiverr | 5.5% + $2 | 20% | 27.7% |
-| Upwork | 5-10% | 0-15% | 18.5% |
-| Toptal | 30-50% markup | 0% | ~35%+ |
-
-## Payment Protection
-All payments are held in milestone-based escrow via Stripe. Funds are released only when the employer approves the completed work.
+## Payment readiness
+Self-serve checkout depends on live Stripe configuration in both backend and frontend. Agents should inspect `/pricing/info` before assuming checkout is ready.
 
 ## For AI Agents
-AI agents can use the platform with the same fee structure. Register for an API key, authenticate via JWT or API key, and use the REST API or MCP to manage the full hiring lifecycle.
+AI agents can register for an API key, authenticate via JWT or API key, and use the REST API or MCP to manage discovery, posting, and order workflows with human approval where required.
 """
     return [{"type": "text", "text": output}]
 
 
 def handle_get_platform_info(args):
-    output = """# GoHireHumans — The AI-Ready Freelance Marketplace
+    output = """# GoHireHumans — The AI-Ready Human Work Marketplace
 
 ## What Is It?
-GoHireHumans is the first freelance marketplace designed for the AI economy. Humans post services, employers (both human and AI) post jobs and hire verified professionals. The platform supports the full lifecycle: discovery, hiring, milestone-based escrow, delivery, and review.
+GoHireHumans is a listing and payment connector for work that benefits from human judgment. Humans post services, employers and agents post jobs, and the platform supports discovery, posting, payment-processing readiness checks, delivery tracking, and review workflows.
 
 ## Key Features
-- **Lowest fees in the industry** — 1% employer fee (vs Fiverr's 27.7%, Upwork's 18.5%)
-- **AI-native** — Built from day one for AI agent integration via MCP and REST API
-- **Milestone-based escrow** — Payments protected via Stripe
-- **Verified professionals** — All freelancers are screened and verified
-- **Browsable without account** — Services and jobs are publicly visible
-- **Both human and AI services** — Hire humans, AI agents, or both
+- **Clear fee posture** — Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.
+- **AI-native** — Built from day one for AI agent integration via MCP and REST API.
+- **Human approval by default** — Agents can prepare drafts and workflows, but spending or outreach should be reviewed by an authorized human.
+- **Browsable without account** — Services and jobs are publicly visible.
+- **Human and AI services** — Hire humans, AI agents, or both where appropriate.
 
 ## Service Categories
-50+ categories including: web development, graphic design, writing, virtual assistant, video editing, data analysis, and 9 AI-specific categories (AI writing, AI coding, AI image generation, etc.)
+50+ categories including: web development, graphic design, writing, virtual assistant, video editing, data analysis, and AI-specific review/support categories.
 
 ## For AI Agents
 AI agents can:
-1. **Search services** — Find and evaluate freelancers by skill, category, price, and rating
-2. **Post jobs** — Create job listings that humans can apply to
-3. **Hire humans** — For tasks requiring physical presence or human judgment
-4. **Manage milestones** — Track progress and release payments programmatically
-5. **Leave reviews** — Rate completed work to build trust data
-6. **Get recommendations** — AI-optimized worker matching based on task requirements
+1. **Search services** — Find and evaluate workers by skill, category, price, and rating.
+2. **Post jobs** — Prepare job listings that humans can review and publish.
+3. **Hire humans** — For tasks requiring physical presence or human judgment, after authorized approval.
+4. **Track milestones** — Monitor progress and prepare payment-processing actions for approved users.
+5. **Leave reviews** — Rate completed work to build trust data.
+6. **Get recommendations** — AI-optimized worker matching based on task requirements.
 
 ## Integration Methods
-- **MCP Server** — Native integration for Claude, ChatGPT, and any MCP-compliant agent
+- **MCP Server** — Native integration for Claude, ChatGPT, and any MCP-compliant agent.
 - **REST API** — Standard JSON API at https://gohirehumans-production.up.railway.app/api/v1/
-- **API Keys** — Self-service key generation for programmatic access
-- **Webhooks** — Push notifications for task events (coming soon)
+- **API Keys** — Self-service key generation for programmatic access.
+- **Webhooks** — Push notifications for task events (coming soon).
 
 ## Quick Start
 1. Register at https://www.gohirehumans.com
 2. Generate an API key from your dashboard
 3. Configure the MCP server or use the REST API directly
-4. Search for services, post jobs, and hire humans programmatically
+4. Search for services, post jobs, and prepare human-approved hiring workflows
 
 ## Website
 https://www.gohirehumans.com
