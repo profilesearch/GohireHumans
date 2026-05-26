@@ -544,6 +544,39 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             end = sitemap.index("</url>", start)
             block = sitemap[start:end]
             self.assertIn("<lastmod>2026-05-25</lastmod>", block, loc)
+    def test_ai_qa_task_generator_supports_fixed_sku_shortcuts(self):
+        generator = (REPO_ROOT / "frontend/ai-qa-task-generator.html").read_text(encoding="utf-8")
+        services = (REPO_ROOT / "frontend/ai-qa-services.html").read_text(encoding="utf-8")
+        buyer_brief = (REPO_ROOT / "frontend/ai-qa-buyer-brief.html").read_text(encoding="utf-8")
+        for service in [
+            "fact-check",
+            "citation-check",
+            "rag-groundedness",
+            "support-reply-qa",
+            "product-content-qa",
+            "website-qa",
+            "agent-work-audit",
+        ]:
+            self.assertIn(f'value="{service}"', generator)
+            self.assertIn(f"/ai-qa-task-generator.html?service={service}", services)
+        for snippet in [
+            "serviceAliases",
+            "'blog-fact-check':'fact-check'",
+            "Generate managed brief",
+            "No checkout or job is created automatically.",
+            "managed_ai_qa_request_click",
+            "Managed pilot note: no checkout or job should be created",
+        ]:
+            self.assertIn(snippet, generator)
+        self.assertIn("serviceAliases", buyer_brief)
+        for forbidden in [
+            'href="/#/post-job',
+            "draft_title=",
+            "draft_description=",
+            "stripe.redirectToCheckout",
+            "/payments/checkout",
+        ]:
+            self.assertNotIn(forbidden, generator)
 
 
 if __name__ == "__main__":
