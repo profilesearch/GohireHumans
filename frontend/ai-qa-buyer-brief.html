@@ -21,8 +21,8 @@
 </head>
 <body>
 <div class="wrap">
-  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post job</a><a href="/request-managed-ai-qa.html" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_nav'})">Request managed QA</a></div></nav>
-  <section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or post it as a GoHireHumans job.</p></section>
+  <nav class="nav"><a class="brand" href="/">GoHireHumans</a><div class="links"><a href="/ai-human-qa/">AI QA hub</a><a href="/ai-qa-services.html" onclick="trackGHH('ai_qa_services_click',{source:'static_ai_qa'})">Services</a><a href="/ai-qa-report-template.html">Report template</a><a href="/request-managed-ai-qa.html" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_nav'})">Managed pilot</a></div></nav>
+  <section class="hero"><h1>Create a buyer brief for human AI QA.</h1><p>Paste the AI work, add context, choose a review type, then copy a clear task brief or email it into the managed concierge pilot. No checkout or job is created automatically.</p></section>
   <main class="grid">
     <section class="card">
       <label for="type">Review type</label>
@@ -41,7 +41,7 @@
       <textarea id="context" placeholder="Paste source links, company policy, customer brief, retrieved docs, expected behavior, acceptance criteria, or notes..."></textarea>
       <label for="budget">Budget</label>
       <select id="budget"><option>$15–$35 quick review</option><option>$25–$75 detailed review</option><option>$75–$200 multi-step QA</option><option>$200–$500 batch or high-context review</option></select>
-      <div class="btns"><button class="btn" onclick="gen()">Generate brief</button><button class="btn secondary" onclick="copyOut()">Copy brief</button><a class="btn secondary" id="post" href="/#/post-job" onclick="trackGHH('ai_qa_post_job_click',{source:'static_ai_qa'})">Post as job</a></div>
+      <div class="btns"><button class="btn" onclick="gen()">Generate brief</button><button class="btn secondary" onclick="copyOut()">Copy brief</button><a class="btn secondary" id="managedRequest" href="mailto:contact@gohirehumans.com?subject=Managed%20AI%20QA%20pilot%20request" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_email'})">Email managed request</a></div>
     </section>
     <aside class="card">
       <h2>Good reviewer deliverable</h2>
@@ -66,7 +66,7 @@ const templates={
 };
 function enc(s){return encodeURIComponent(s||'')}
 function serviceFromUrl(){const p=new URLSearchParams(location.search);const svc=p.get('service');if(svc&&templates[svc])document.getElementById('type').value=svc}
-function gen(shouldTrack=true){if(shouldTrack)trackGHH('ai_qa_brief_generate',{source:'buyer_brief'});const key=document.getElementById('type').value,t=templates[key],o=document.getElementById('output').value.trim(),c=document.getElementById('context').value.trim(),b=document.getElementById('budget').value;const desc=`${t[1]}\n\nAI output/work to review:\n${o||'[paste AI output/work here]'}\n\nSource/context:\n${c||'[paste source/context here]'}\n\nExpected deliverable:\n- pass / revise / high-risk recommendation\n- issue list with severity\n- source links, notes, or screenshots where relevant\n- corrected wording/data where useful\n- confidence and uncertainty notes\n\nSuggested budget: ${b}`;const text=`Title: ${t[0]}\n\nDescription:\n${desc}\n\nRequired skills: ${t[2]}`;document.getElementById('out').textContent=text;document.getElementById('post').href=`/#/post-job?draft_title=${enc(t[0])}&draft_description=${enc(desc)}&draft_skills=${enc(t[2])}&draft_budget=${enc((b.match(/\d+/)||['25'])[0])}`}
+function gen(shouldTrack=true){if(shouldTrack)trackGHH('ai_qa_brief_generate',{source:'buyer_brief'});const key=document.getElementById('type').value,t=templates[key],o=document.getElementById('output').value.trim(),c=document.getElementById('context').value.trim(),b=document.getElementById('budget').value;const desc=`${t[1]}\n\nAI output/work to review:\n${o||'[paste AI output/work here]'}\n\nSource/context:\n${c||'[paste source/context here]'}\n\nExpected deliverable:\n- pass / revise / high-risk recommendation\n- issue list with severity\n- source links, notes, or screenshots where relevant\n- corrected wording/data where useful\n- confidence and uncertainty notes\n\nSuggested budget: ${b}\n\nManaged pilot note: no checkout or job should be created until the scope, reviewer, quote, and payment-processing path are approved.`;const text=`Title: ${t[0]}\n\nDescription:\n${desc}\n\nRequired skills: ${t[2]}`;document.getElementById('out').textContent=text;document.getElementById('managedRequest').href=`mailto:contact@gohirehumans.com?subject=${enc('Managed AI QA pilot request: '+t[0])}&body=${enc(text)}`}
 async function copyOut(){trackGHH('ai_qa_brief_copy',{source:'buyer_brief'});const text=document.getElementById('out').textContent;try{await navigator.clipboard.writeText(text);alert('Copied brief')}catch(e){alert('Copy failed; select the brief text manually.')}}
 serviceFromUrl();gen(false);
 </script>
