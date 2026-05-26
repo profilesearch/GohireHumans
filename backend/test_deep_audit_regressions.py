@@ -697,6 +697,49 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             end = sitemap.index("</url>", start)
             block = sitemap[start:end]
             self.assertIn("<lastmod>2026-05-25</lastmod>", block, loc)
+
+    def test_ai_qa_example_deliverables_cover_every_fixed_sku(self):
+        page = (REPO_ROOT / "frontend/ai-qa-example-deliverables.html").read_text(encoding="utf-8")
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8")
+        for snippet in [
+            "AI blog post fact-check sample",
+            "AI citation and source verification sample",
+            "AI support reply QA sample",
+            "RAG answer groundedness sample",
+            "AI-built website QA sample",
+            "AI-agent work audit sample",
+            "AI product content QA sample",
+            "No checkout or job is created automatically from this page.",
+            "does not replace professional legal, medical, financial, or compliance advice",
+        ]:
+            self.assertIn(snippet, page)
+        for card_id in [
+            "blog-fact-check-sample",
+            "citation-check-sample",
+            "support-reply-qa-sample",
+            "rag-groundedness-sample",
+            "website-qa-sample",
+            "agent-work-audit-sample",
+            "product-content-qa-sample",
+        ]:
+            self.assertIn(f'id="{card_id}"', page)
+        for forbidden in [
+            'href="/#/post-job',
+            "draft_title=",
+            "draft_description=",
+            "stripe.redirectToCheckout",
+            "/payments/checkout",
+            "create a Stripe session",
+            "guaranteed outcomes",
+            "platform arbitration",
+        ]:
+            self.assertNotIn(forbidden, page)
+        loc = "https://www.gohirehumans.com/ai-qa-example-deliverables.html"
+        start = sitemap.index(f"<loc>{loc}</loc>")
+        end = sitemap.index("</url>", start)
+        block = sitemap[start:end]
+        self.assertIn("<lastmod>2026-05-26</lastmod>", block)
+
     def test_ai_qa_task_generator_supports_fixed_sku_shortcuts(self):
         generator = (REPO_ROOT / "frontend/ai-qa-task-generator.html").read_text(encoding="utf-8")
         services = (REPO_ROOT / "frontend/ai-qa-services.html").read_text(encoding="utf-8")
