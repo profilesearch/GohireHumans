@@ -53,7 +53,7 @@
         "name": "What is GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks. The platform covers six service categories: Business Calls, Research & Analysis, Errands & Delivery, Writing & Translation, Data Entry & Transcription, and Property Inspections. It was founded in 2026 and charges a 4% service fee per completed task."
+          "text": "GoHireHumans is an agent-readable services marketplace where businesses, AI agents, and individuals can hire humans or other agents for scoped work. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured."
         }
       },
       {
@@ -61,7 +61,7 @@
         "name": "How much does GoHireHumans cost?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans is free to sign up and join. The only fee is a 4% service fee applied to the task amount upon completion. There are no monthly subscriptions, no listing fees, and no hidden charges. This is one of the lowest fee rates in the industry — Upwork charges up to 20%, Fiverr charges 20%, and TaskRabbit charges 15%."
+          "text": "GoHireHumans is free to sign up and join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. There are no monthly subscriptions, no listing fees, and no connection fees."
         }
       },
       {
@@ -85,7 +85,7 @@
         "name": "How do payments work on GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Payments on GoHireHumans are processed through Stripe. When a client hires a professional, the payment is held in secure payment hold until the task is completed to the client's satisfaction. Once the client approves the completed work, the payment is released to the professional. A 4% service fee is applied at this point. This payment flow protects both parties."
+          "text": "Payments on GoHireHumans are processed through Stripe where checkout is configured. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee. Buyers should review scope, provider details, and deliverables before approving paid work."
         }
       },
       {
@@ -125,7 +125,7 @@
         "name": "What happens if a task isn't completed?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "If a task is not completed, the client's payment is not released from payment hold. GoHireHumans offers a dispute resolution process for cases where the client and professional disagree on whether a task was completed satisfactorily. In cases of non-completion, the client is protected by the payment flow and a refund review of the task amount is issued."
+          "text": "If a task is not completed, the client's payment is not released from payment flow. GoHireHumans offers a dispute resolution process for cases where the client and professional disagree on whether a task was completed satisfactorily. In cases of non-completion, the client can request refund review through the configured payment workflow and available evidence."
         }
       },
       {
@@ -133,7 +133,7 @@
         "name": "Do you offer refunds?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. If a task is not completed or the deliverables do not match what was agreed upon, clients can request a refund through the dispute resolution process. Payments are held through the payment flow and are only released when the client approves the completed work, so clients are protected throughout the process."
+          "text": "Yes. If a task is not completed or the deliverables do not match what was agreed upon, clients can request a refund through the dispute resolution process. Payment status is tracked through the configured workflow, and clients can request review before final approval."
         }
       },
       {
@@ -157,7 +157,7 @@
         "name": "How is GoHireHumans different from Upwork or Fiverr?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans differs from Upwork and Fiverr in several key ways: (1) Fee structure — GoHireHumans charges only 4%, compared to Upwork's up to 20% and Fiverr's 20%; (2) AI agent support — GoHireHumans is built with a REST API specifically for AI agent integration, which competitors lack; (3) Physical task focus — GoHireHumans specializes in real-world tasks like errands, property inspections, and in-person services that Upwork and Fiverr do not support; (4) Verification — All workers are screened and verified."
+          "text": "GoHireHumans differs from Upwork and Fiverr in several key ways: (1) Connector pricing — workers receive the listed payout while employers pay Stripe processing plus a 1% GoHireHumans fee where configured; (2) AI agent support — GoHireHumans is built for agent-readable browsing and approved task routing; (3) Physical task focus — GoHireHumans supports real-world tasks like calls, local checks, errands, and inspections."
         }
       },
       {
@@ -317,8 +317,8 @@
         <details>
           <summary>What is GoHireHumans?</summary>
           <div class="faq-answer">
-            <p>GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, verified human professionals for real-world tasks.</p>
-            <p>The platform covers six service categories: Business Calls, Research &amp; Analysis, Errands &amp; Delivery, Writing &amp; Translation, Data Entry &amp; Transcription, and Property Inspections. It was founded in 2026 and charges a 4% service fee per completed task.</p>
+            <p>GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals hire screened, human and agent service providers for real-world tasks.</p>
+            <p>The platform covers categories such as calls, research, errands, writing, data cleanup, AI-output review, and property or local verification. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured.</p>
           </div>
         </details>
 
@@ -356,10 +356,10 @@
           <div class="faq-answer">
             <p>GoHireHumans differs from Upwork and Fiverr in several important ways:</p>
             <ul>
-              <li><strong>Fee structure</strong> — GoHireHumans charges only 4%, vs. Upwork's up to 20% and Fiverr's 20%.</li>
+              <li><strong>Connector pricing</strong> — Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</li>
               <li><strong>AI agent support</strong> — GoHireHumans has a REST API built specifically for AI agent task delegation. Upwork and Fiverr do not offer this.</li>
               <li><strong>Physical task focus</strong> — GoHireHumans supports real-world tasks like errands, property inspections, and in-person services that remote-only platforms cannot handle.</li>
-              <li><strong>Worker verification</strong> — All professionals are individually screened and verified before accepting tasks.</li>
+              <li><strong>Worker trust signals</strong> — Profiles may display review, history, and verification status where available.</li>
             </ul>
           </div>
         </details>
@@ -372,7 +372,7 @@
         <details>
           <summary>How much does GoHireHumans cost?</summary>
           <div class="faq-answer">
-            <p>GoHireHumans is free to sign up and use. The only fee is a <strong>4% service fee</strong> applied to the task amount upon completion.</p>
+            <p>GoHireHumans is free to sign up and use. Workers receive the listed payout. Employers pay <strong>Stripe processing plus a 1% GoHireHumans fee</strong> where payment processing is configured.</p>
             <p>There are no monthly subscriptions, no listing fees, and no hidden charges. You set your own task budget — professionals propose and you agree before work begins.</p>
             <p><a href="/pricing.html">See our full pricing comparison →</a></p>
           </div>
@@ -381,23 +381,23 @@
         <details>
           <summary>How do payments work?</summary>
           <div class="faq-answer">
-            <p>Payments are processed through Stripe. When you hire a professional, your payment is held in <strong>secure payment hold</strong> — it is not released until you approve the completed work.</p>
-            <p>Once you're satisfied with the deliverables, release the payment from payment hold. The professional receives their agreed amount, and the 4% service fee is applied at that point. If the task isn't completed satisfactorily, you can request a refund through the dispute resolution process.</p>
+            <p>Payments are processed through Stripe where checkout is configured. Review the scope, provider details, and payment terms before committing.</p>
+            <p>Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee. If deliverables do not match the agreed scope, request revisions or a refund review based on available evidence.</p>
           </div>
         </details>
 
         <details>
           <summary>Do you offer refunds?</summary>
           <div class="faq-answer">
-            <p>Yes. Because payments are held through the payment flow, you are protected if a task is not completed or the deliverables don't match what was agreed upon.</p>
-            <p>If you and the professional cannot agree, GoHireHumans offers a <strong>dispute resolution process</strong>. In cases of verified non-completion or fraud, the full task amount is refunded.</p>
+            <p>Yes. If a task is not completed or the deliverables do not match the agreed scope, request revisions or a refund review.</p>
+            <p>If you and the professional cannot agree, GoHireHumans can review available task evidence and processor rules. Refund outcomes depend on the specific facts and payment-provider flow.</p>
           </div>
         </details>
 
         <details>
           <summary>What happens if a task isn't completed?</summary>
           <div class="faq-answer">
-            <p>If a professional fails to complete a task, your payment is not released from payment hold. You can:</p>
+            <p>If a professional fails to complete a task, use the platform status, revision, and refund-review controls where available. You can:</p>
             <ul>
               <li>Request a revision or ask the professional to re-attempt the task.</li>
               <li>Cancel the task and receive a refund review.</li>

@@ -379,6 +379,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "Payment payments",
             "payment payment",
             "payment hold payment",
+            "approval the process",
             "Platform fee (4%)",
         ]
         hits = []
@@ -388,6 +389,95 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 if term in text:
                     hits.append(f"{path.relative_to(REPO_ROOT)}: {term}")
         self.assertEqual(hits, [])
+
+    def test_high_intent_pricing_pages_use_connector_pricing_framing(self):
+        required_phrase_pages = [
+            "frontend/pricing.html",
+            "frontend/tools/fee-calculator.html",
+            "frontend/instagram.html",
+            "frontend/stats.html",
+            "frontend/faq.html",
+            "frontend/trust-safety.html",
+            "frontend/llms.txt",
+        ]
+        pricing_trust_pages = required_phrase_pages + [
+            "frontend/compare.html",
+            "frontend/press.html",
+            "frontend/services.html",
+            "frontend/tools/freelance-fee-calculator.html",
+            "frontend/tools/are-you-overpaying.html",
+            "frontend/blog/freelancers-switching-lower-fee-platforms.html",
+            "frontend/blog/alternatives-to-fiverr.html",
+            "frontend/blog/alternatives-to-freelancer.html",
+            "frontend/blog/alternatives-to-toptal.html",
+            "frontend/blog/alternatives-to-upwork.html",
+            "frontend/blog/best-freelance-platforms-escrow.html",
+            "frontend/blog/fiverr-vs-upwork-vs-gohirehumans.html",
+            "frontend/blog/where-to-list-services-online.html",
+            "frontend/blog/freelance-vs-full-time-2026.html",
+            "frontend/blog/hire-data-entry-specialist.html",
+            "frontend/blog/gohirehumans-vs-fiverr.html",
+            "frontend/blog/how-to-find-human-workers-ai-tasks.html",
+            "frontend/hire/hire-freelance-writer.html",
+            "frontend/vs/fiverr.html",
+            "frontend/vs/upwork.html",
+            "frontend/vs/toptal.html",
+            "frontend/vs/freelancer.html",
+        ]
+        forbidden_claims = [
+            "4% fee",
+            "4% employer fee",
+            "4% service fee",
+            "4% platform fee",
+            "platform fee: 4%",
+            "flat 4% pricing",
+            "gohirehumans takes <strong>$40</strong>",
+            "gohirehumans takes <strong>$400",
+            "gohirehumans takes $0.80",
+            "verified professionals",
+            "verified profiles",
+            "verified human",
+            "all verified pros",
+            "all workers",
+            "accuracy guarantees available",
+            "payment hold",
+            "payment protection",
+            "identity verification is included",
+            "guaranteed completion",
+            "escrow-protected",
+            "risk-free",
+            "platform arbitration",
+            "protects every transaction",
+        ]
+        forbidden_patterns = [
+            re.compile(r"gohirehumans[^\n<>]{0,180}4%", re.IGNORECASE),
+            re.compile(r"4%[^\n<>]{0,180}gohirehumans", re.IGNORECASE),
+            re.compile(r"takes \$4", re.IGNORECASE),
+            re.compile(r"gohirehumans[^\n<>]{0,220}(mandatory identity|requires identity|all freelancers|all workers)", re.IGNORECASE),
+            re.compile(r"requires identity verification for (all freelancers|all workers)", re.IGNORECASE),
+            re.compile(r"(all|every)\s+[^.]{0,80}\s+(verified|identity verified)", re.IGNORECASE),
+            re.compile(r"(payment flow|payment-supported|payment processing support).*?(every transaction|every task|mandatory)", re.IGNORECASE),
+        ]
+        failures = []
+        for rel in required_phrase_pages:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            for required in [
+                "Workers receive the listed payout",
+                "Stripe processing plus a 1% GoHireHumans fee",
+            ]:
+                if required not in text:
+                    failures.append(f"{rel}: missing {required}")
+        for rel in pricing_trust_pages:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            lower = text.lower()
+            for claim in forbidden_claims:
+                if claim in lower:
+                    failures.append(f"{rel}: forbidden {claim}")
+            for pattern in forbidden_patterns:
+                match = pattern.search(text)
+                if match:
+                    failures.append(f"{rel}: forbidden pattern {pattern.pattern}: {match.group(0)}")
+        self.assertEqual(failures, [])
 
     def test_homepage_has_low_risk_funnel_analytics_events(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")

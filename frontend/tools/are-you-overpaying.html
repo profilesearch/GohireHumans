@@ -227,7 +227,7 @@
       freelancer:{ seller: 0.10, buyer: 0.03,  name: 'Freelancer.com',  extra: 'Plus bid fees over the free monthly cap' },
       other:     { seller: 0.10, buyer: 0.03,  name: 'most platforms',  extra: 'Average across legacy marketplaces' },
     };
-    const GHH_FEE = 0.04;  // employer pays
+    const GHH_FEE = 0.01;  // employer pays platform fee; Stripe processing separate
 
     let current = 1;
     const TOTAL = 5;
@@ -271,13 +271,13 @@
 
       $('#r-amount').textContent = fmt(savings);
       $('#r-headline').textContent = savings > 0 ? `Switching saves you` : `You're already on the cheapest platform`;
-      $('#r-sub').textContent = savings > 0 ? `per year on GoHireHumans vs ${fees.name}` : `Nothing to gain by switching from ${fees.name}.`;
-      $('#r-tag').textContent = savings > 1000 ? `You're losing real money` : savings > 0 ? `There's room to save` : `Already optimized`;
+      $('#r-sub').textContent = savings > 0 ? `per year on GoHireHumans vs ${fees.name}` : `This path is already low-fee compared with ${fees.name}.`;
+      $('#r-tag').textContent = savings > 1000 ? `You're losing real money` : savings > 0 ? `There's room to save` : `Already low-fee`;
 
       $('#b-gross').textContent = fmt(annual);
       $('#b-current-label').textContent = `${fees.name} takes (${Math.round(currentRate*100)}%)`;
       $('#b-current').textContent = fmt(currentTake);
-      $('#b-ghh').textContent = fmt(ghhTake) + (role === 'seller' ? ' (you pay nothing)' : ' (4%)');
+      $('#b-ghh').textContent = fmt(ghhTake) + (role === 'seller' ? ' (you pay nothing)' : ' (1% + Stripe)');
       $('#b-savings').textContent = fmt(savings) + ' / year';
 
       // Build shareable text + URL

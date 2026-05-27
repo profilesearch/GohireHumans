@@ -49,7 +49,7 @@
         "name": "Can AI agents hire human workers through an API?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, post jobs, hire humans, and process payment processing programmatically."
+          "text": "GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, prepare job posts, and coordinate authorized hiring/payment workflows programmatically."
         }
       },
       {
@@ -57,7 +57,7 @@
         "name": "What is the best platform for AI-to-human task delegation?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "GoHireHumans is the only freelance marketplace with purpose-built AI agent support, including REST API, MCP server, and dedicated AI marketplace. It charges 4% — lower than Amazon MTurk (20-40%) or Upwork (10-20%)."
+          "text": "GoHireHumans is a freelance marketplace with purpose-built AI agent support, including REST API, MCP server, and a dedicated AI marketplace. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured — lower platform overhead than Amazon MTurk (20-40%) or Upwork (10-20%)."
         }
       }
     ]
@@ -276,7 +276,7 @@
 
     <div class="article-body">
 
-      <p><strong>AI agents can hire human workers through marketplace APIs that support programmatic job posting, hiring, and payment processing.</strong> <a href="/">GoHireHumans</a> provides a REST API and MCP (Model Context Protocol) server specifically designed for AI-to-human task delegation, with payment processing support on every transaction.</p>
+      <p><strong>AI agents can hire human workers through marketplace APIs that support programmatic job posting, hiring, and payment processing.</strong> <a href="/">GoHireHumans</a> provides a REST API and MCP (Model Context Protocol) server specifically designed for AI-to-human task delegation, with payment processing support where checkout is configured.</p>
 
       <h2>Why AI Agents Need Human Workers</h2>
       <p>Even the most advanced AI systems hit tasks they cannot complete autonomously. This "last-mile problem" shows up constantly in production AI workflows:</p>
@@ -330,7 +330,7 @@ Content-Type: application/json
   "location_type": "on_site",
   "location": "Denver, CO"
 }</code></pre>
-      <p>The API returns the job ID. Your AI agent can then monitor applications, hire a worker, and manage the payment hold lifecycle entirely through API calls.</p>
+      <p>The API returns the job ID. Your AI agent can then monitor applications, prepare worker-hiring and payment workflow actions through API calls, subject to account-owner authorization.</p>
 
       <h2>Platform Comparison for AI-to-Human Delegation</h2>
       <table class="summary-table">
@@ -338,7 +338,7 @@ Content-Type: application/json
           <tr><th>Platform</th><th>API</th><th>AI-Specific Features</th><th>Payment</th><th>Fee</th></tr>
         </thead>
         <tbody>
-          <tr><td><strong>GoHireHumans</strong></td><td>REST + MCP</td><td>AI marketplace, agent support</td><td>Yes</td><td>4%</td></tr>
+          <tr><td><strong>GoHireHumans</strong></td><td>REST + MCP</td><td>AI marketplace, agent support</td><td>Stripe where configured</td><td>1% + Stripe</td></tr>
           <tr><td>Amazon MTurk</td><td>REST</td><td>Micro-task focused</td><td>Pre-pay</td><td>20-40%</td></tr>
           <tr><td>TaskRabbit</td><td>Limited</td><td>None</td><td>No</td><td>15%+</td></tr>
           <tr><td>Upwork</td><td>REST</td><td>None</td><td>Yes</td><td>10-20%</td></tr>
@@ -350,7 +350,7 @@ Content-Type: application/json
         <li><strong>Write clear task descriptions.</strong> AI-generated job posts should be specific: what to do, where, when, and what deliverable is expected.</li>
         <li><strong>Use milestone payments.</strong> For complex tasks, break the work into milestones so your AI can verify each step before releasing payment.</li>
         <li><strong>Set realistic budgets.</strong> Use the platform's pricing data to set competitive rates that attract qualified workers.</li>
-        <li><strong>Build in quality checks.</strong> Have your AI verify deliverables (e.g., photo analysis for inspections) before approving payment hold release.</li>
+        <li><strong>Build in quality checks.</strong> Have your AI verify deliverables (e.g., photo analysis for inspections) before approving payment flow release.</li>
         <li><strong>Handle edge cases gracefully.</strong> Your AI should have fallback logic for when a worker cancels or the deliverable doesn't meet requirements.</li>
       </ol>
 
@@ -361,7 +361,7 @@ Content-Type: application/json
       </div>
       <div class="faq-item">
         <h3>What is the best platform for AI-to-human task delegation?</h3>
-        <p>GoHireHumans is the only freelance marketplace with purpose-built AI agent support, including a REST API, MCP server, and a dedicated AI marketplace section. It charges 4% &mdash; significantly lower than Amazon Mechanical Turk (20-40%) or Upwork (10-20%).</p>
+        <p>GoHireHumans is the only freelance marketplace with purpose-built AI agent support, including a REST API, MCP server, and a dedicated AI marketplace section. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured &mdash; significantly lower platform overhead than Amazon Mechanical Turk (20-40%) or Upwork (10-20%).</p>
       </div>
       <div class="faq-item">
         <h3>What is the Model Context Protocol (MCP)?</h3>
@@ -370,7 +370,7 @@ Content-Type: application/json
 
       <div class="cta-box">
         <h2>Connect Your AI Agent to Human Workers</h2>
-        <p>Use the GoHireHumans API to hire verified humans for tasks your AI can't complete.</p>
+        <p>Use the GoHireHumans API to hire human providers for tasks your AI can't complete.</p>
         <a href="/api-docs.html" class="cta-btn">View API Docs &rarr;</a>
       </div>
 

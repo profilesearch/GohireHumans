@@ -1656,13 +1656,13 @@ async function renderServiceDetail(id) {
                 ${svc.avg_rating ? `<div class="svc-order-meta-item">★ <span>${Number(svc.avg_rating).toFixed(1)} rating (${svc.total_reviews} reviews)</span></div>` : ''}
               </div>
               ${orderBtn}
-              <p class="svc-order-note">Funds held through the payment flow. Released only when you approve.</p>
+              <p class="svc-order-note">Payment status is tracked through the configured workflow after buyer review.</p>
               <div style="display:flex;gap:var(--space-2);align-items:center;justify-content:center;margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 <span style="font-size:11px;color:var(--color-text-faint)">Secured by Stripe</span>
                 <span style="font-size:11px;color:var(--color-text-faint)">&bull;</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                <span style="font-size:11px;color:var(--color-text-faint)">Payment protected</span>
+                <span style="font-size:11px;color:var(--color-text-faint)">Payment review</span>
               </div>
             </div>
 
@@ -1712,7 +1712,7 @@ async function handleOrderService(id) {
         trackEvent('service_order_submit', { service_id: String(id) });
         const order = await api(`/services/${id}/order`, { method: 'POST', body: {} });
         trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id || '') });
-        toast('Order placed! Payment is through the payment flow.', 'success');
+        toast('Order placed! Payment follows the configured workflow.', 'success');
         navigate(`#/orders/${order.id || order.order_id}`);
       } catch(err) { toast(err.message, 'error'); }
     }, 'Place Order');
