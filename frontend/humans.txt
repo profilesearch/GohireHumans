@@ -8,7 +8,7 @@
 /* SITE */
   Last updated:  2026-04-30
   Standards:     HTML5, CSS3, JSON-LD, RSS 2.0, Atom 1.0
-  Components:    Vanilla JS SPA, Flask + SQLite backend, Stripe escrow
+  Components:    Vanilla JS SPA, Flask + SQLite backend, Stripe payment processing
   Hosting:       Vercel (frontend) + Railway (backend)
   Software:      Python 3.12, Flask 3, Gunicorn, Inter (Google Fonts)
 
