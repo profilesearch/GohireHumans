@@ -1108,7 +1108,7 @@ async function renderLanding() {
               <div class="lp-flow-arrow">↓</div>
               <div class="lp-flow-row">
                 <div class="lp-flow-number">3</div>
-                <div><strong>Review the result</strong><span>Approve deliverables and payment flow</span></div>
+                <div><strong>Review the result</strong><span>Approve deliverables and configured payment actions</span></div>
               </div>
             </div>
             <div class="lp-task-chip-grid" aria-label="Example task types">
@@ -2695,7 +2695,7 @@ async function handleHire(jobId, applicationId, workerId) {
     <div class="modal">
       <div class="modal-title">Confirm Hire</div>
       <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-5)">
-        Hiring this worker will start the configured payment flow for the first milestone.
+        Hiring this worker will start the configured payment workflow for the first milestone.
       </p>
       <div class="form-group">
         <label class="label">Milestone Description</label>
@@ -2816,7 +2816,7 @@ async function renderOrderDetail(id) {
       actions += `<button class="btn btn-primary" onclick="submitOrder(${id})">Submit Deliverables</button>`;
     }
     if (isEmployer && order.status === 'submitted') {
-      actions += `<button class="btn btn-primary" onclick="approveOrder(${id})">Approve &amp; Release Payment</button>
+      actions += `<button class="btn btn-primary" onclick="approveOrder(${id})">Approve Payment</button>
                   <button class="btn btn-secondary btn-sm" onclick="requestRevision(${id})">Request Revision</button>
                   <button class="btn btn-danger btn-sm" onclick="disputeOrder(${id})">Dispute</button>`;
     }
@@ -2940,7 +2940,7 @@ async function submitOrder(id) {
 }
 
 async function approveOrder(id) {
-  showModal('Approve & Release Payment', 'Are you sure you want to approve this order? Payment release will be processed for the worker immediately.', async () => {
+  showModal('Approve Payment', 'Are you sure you want to approve this order? Payment approval will be processed for the worker immediately where checkout is configured.', async () => {
     try {
       trackEvent('order_approve_attempted', { order_id: String(id) });
       await api(`/orders/${id}/approve`, { method: 'POST' });
@@ -2987,7 +2987,7 @@ async function disputeOrder(id) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-title">Open Dispute</div>
-      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Our team will review this dispute and mediate a fair resolution. Funds remain through the payment flow until resolved.</p>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Our team can review available task evidence and payment-provider rules. Payment status follows the configured workflow while the issue is reviewed.</p>
       <form id="disputeForm">
         <div class="form-group">
           <label class="label">Describe the issue</label>
@@ -3549,7 +3549,7 @@ async function renderAdminDisputes() {
     const orders = Array.isArray(data) ? data : (data.orders||[]);
     const disputed = orders.filter(o => o.status === 'disputed');
     appShell(`
-      <h1 class="page-title">Dispute Resolution</h1>
+      <h1 class="page-title">Issue Review</h1>
       <p class="page-desc">${disputed.length} active dispute${disputed.length !== 1 ? 's' : ''}</p>
       ${disputed.length ? `
         <div class="task-list">
@@ -3704,7 +3704,7 @@ function renderAIEmployers() {
                 <div class="lp-how-step-num">3</div>
                 <div class="lp-how-step-body">
                   <h4>Deliver &amp; Get Paid</h4>
-                  <p>Run the workflow, deliver the result, and follow the platform's configured payment flow after buyer review.</p>
+                  <p>Run the workflow, deliver the result, and follow the platform's configured payment workflow after buyer review.</p>
                 </div>
               </div>
             </div>
@@ -3767,7 +3767,7 @@ function renderTerms() {
       <h2>3. Accounts</h2><p>You must provide accurate information and are responsible for your account security.</p>
       <h2>4. Payments &amp; Fees</h2><p>Payments are processed via Stripe where configured. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
       <h2>5. Conduct</h2><p>Users must behave professionally. Violations may result in account suspension or ban.</p>
-      <h2>6. Disputes</h2><p>GoHireHumans provides a dispute resolution process. Both parties must participate in good faith.</p>
+      <h2>6. Task issues</h2><p>GoHireHumans may review available task evidence and payment-provider rules. Both parties should participate in good faith.</p>
       <h2>7. Liability</h2><p>GoHireHumans acts as a marketplace and is not liable for work quality disputes between parties.</p>
       <p style="margin-top:var(--space-6)"><button class="btn btn-ghost" onclick="history.back()">← Back</button></p>
     </div>

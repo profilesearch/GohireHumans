@@ -966,7 +966,7 @@ def handle_resource(uri):
 
 ### Payments
 - `POST /payments/setup-employer` — Set up Stripe payment method
-- `POST /payments/fund-escrow` — Fund escrow for an order
+- `POST /payments/prepare-order-payment` — Prepare an owner-approved payment workflow for an order
 - `GET /payments/status` — Check payment setup status
 - `GET /payments/history` — Get payment history
 

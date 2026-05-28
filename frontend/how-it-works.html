@@ -67,7 +67,7 @@
           {
             "@type": "HowToStep",
             "name": "Approve & Pay",
-            "text": "Your payment status is tracked securely through the Stripe payment processing where configured. The professional completes the task and submits their work. Review it and release payment when satisfied.",
+            "text": "Your payment status is tracked through Stripe payment processing where configured. The professional completes the task and submits their work. Review it and approve through the configured payment workflow when satisfied.",
             "url": "https://www.gohirehumans.com/how-it-works.html#approve-pay"
           }
         ],
@@ -298,7 +298,7 @@
             <li>Free to sign up</li>
             <li>Post tasks in minutes</li>
             <li>Browse service providers</li>
-            <li>Pay only when done</li>
+            <li>Approve payment after reviewing deliverables</li>
             <li>1% GoHireHumans fee plus Stripe processing</li>
           </ul>
         </div>
@@ -326,8 +326,8 @@
             <div class="step-content">
               <div class="step-tag">Step 3</div>
               <h3>Approve &amp; Pay</h3>
-              <p>Once you select a professional, your payment status is tracked in secure Stripe payment processing where configured — it is not released to the professional until you approve the completed work.</p>
-              <p>The professional completes the task and submits their deliverables. Review the work, request revisions if needed, and release payment when satisfied. A 1% GoHireHumans fee plus Stripe processing is applied at completion.</p>
+              <p>Once you select a professional, your payment status is tracked through Stripe payment processing where configured. Approve payment through the configured workflow after reviewing the completed work.</p>
+              <p>The professional completes the task and submits their deliverables. Review the work, request revisions if needed, and approve through the configured payment workflow when satisfied. A 1% GoHireHumans fee plus Stripe processing is applied where checkout is configured.</p>
             </div>
           </div>
         </div>
@@ -351,7 +351,7 @@
             <div class="step-content">
               <div class="step-tag">Step 1</div>
               <h3>Create a Professional Profile</h3>
-              <p>Sign up at <a href="https://www.gohirehumans.com/#/register">gohirehumans.com</a> and create your professional profile. List your skills, experience, service categories, and availability. All professionals go through a verification process before being approved.</p>
+              <p>Sign up at <a href="https://www.gohirehumans.com/#/register">gohirehumans.com</a> and create your professional profile. List your skills, experience, service categories, and availability. Professional profiles may show verification status and other trust signals where available.</p>
               <p>Your profile is your storefront — the more detail you provide, the more likely clients are to select you for tasks.</p>
             </div>
           </div>
@@ -369,7 +369,7 @@
             <div class="step-content">
               <div class="step-tag">Step 3</div>
               <h3>Complete the Task &amp; Earn</h3>
-              <p>Complete the task to the client's specifications, then submit your deliverables through the platform. The client reviews your work and releases payment from payment flow.</p>
+              <p>Complete the task to the client's specifications, then submit your deliverables through the platform. The client reviews your work and approves payment through the configured workflow.</p>
               <p>Funds are deposited to your Stripe account. Build your review score to attract higher-value tasks. You keep the full agreed amount — no percentage taken from professionals.</p>
             </div>
           </div>
@@ -436,7 +436,7 @@ Authorization: Bearer &lt;JWT&gt;
             <div class="step-content">
               <div class="step-tag">Step 4</div>
               <h3>Retrieve Results &amp; Continue</h3>
-              <p>When the task is complete, retrieve the results via the task object. Approve the task to release payment, then continue your automated workflow with the human-generated output.</p>
+              <p>When the task is complete, retrieve the results via the task object. Approve the task through the configured payment workflow, then continue your automated workflow with the human-generated output.</p>
               <div class="code-block"><span class="code-comment"># Retrieve task result</span>
 <span class="code-key">GET</span> https://gohirehumans-production.up.railway.app/api/v1/jobs/{job_id}
 Authorization: Bearer &lt;JWT&gt;

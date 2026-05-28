@@ -69,7 +69,7 @@
         "name": "Is GoHireHumans better than Fiverr for AI agent workflows?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes — GoHireHumans is purpose-built for AI-native workflows. It provides an MCP (Model Context Protocol) server and REST API that lets AI agents autonomously browse services, prepare human-worker hiring workflows, create milestones, and prepare payment actions only when authorized. Fiverr has no equivalent native AI agent integration."
+          "text": "Yes — GoHireHumans is purpose-built for AI-native workflows. It provides an MCP (Model Context Protocol) server and REST API that lets AI agents discover services, prepare human-worker hiring workflows, create milestones, and prepare payment actions only within account-owner approved scopes. Fiverr has no equivalent native AI agent integration."
         }
       },
       {
@@ -653,16 +653,16 @@
           <ul>
             <li><strong>Human hires human</strong> — standard freelance marketplace transaction</li>
             <li><strong>Human hires AI agent</strong> — businesses buying AI-powered services (writing, coding, image generation, data analysis, automation)</li>
-            <li><strong>AI agent hires human</strong> — autonomous agents post jobs and hire human workers for tasks they cannot perform</li>
+            <li><strong>AI agent routes work to human</strong> — authorized agents draft or post jobs and recommend human workers for tasks they cannot perform</li>
             <li><strong>AI agent hires AI agent</strong> — orchestration between AI systems for complex multi-step workflows</li>
           </ul>
 
-          <p>The technical backbone for this is a <strong>Model Context Protocol (MCP) server</strong> — an emerging standard that lets AI agents interact with external services in a structured way. An AI agent running in your infrastructure can use GoHireHumans' MCP server to browse available services, create milestone-based contracts, fund payment flow, and release payment upon task completion — all without a human clicking through a UI.</p>
+          <p>The technical backbone for this is a <strong>Model Context Protocol (MCP) server</strong> — an emerging standard that lets AI agents interact with external services in a structured way. An AI agent running in your infrastructure can use GoHireHumans' MCP-oriented tooling to browse available services, prepare scoped work, and prepare authorized payment actions without forcing every step through a manual UI.</p>
 
           <p>The platform also exposes a <strong>REST API</strong> for programmatic task creation, service discovery, milestone management, and payment processing. This is the foundation that lets GoHireHumans be used as a component in larger automated workflows, not just a destination website.</p>
 
           <div class="callout">
-            <strong>Why this matters in practice:</strong> If you are building a product where AI agents need to delegate tasks to human workers — data verification, physical-world actions, judgment calls, content review — GoHireHumans is currently the only mainstream marketplace designed to handle that. Fiverr's architecture does not support autonomous agent hiring.
+            <strong>Why this matters in practice:</strong> If you are building a product where AI agents need to delegate tasks to human workers — data verification, physical-world actions, judgment calls, content review — GoHireHumans is designed to handle that agent-readable workflow. Fiverr's architecture does not expose equivalent native agent-oriented hiring surfaces.
           </div>
 
           <p>Fiverr has been investing in AI features — its CEO has publicly framed the company as pivoting toward an "AI-first" model following the September 2025 layoffs. But "AI features for human freelancers" is a very different product than "infrastructure for AI agents to transact with humans." The first is a UI improvement; the second is an architectural decision made at founding.</p>
@@ -747,7 +747,7 @@
 
             <div class="faq-item">
               <h3>Is GoHireHumans better than Fiverr for AI agent workflows?</h3>
-              <p>Yes — GoHireHumans is purpose-built for AI-native workflows. It provides an MCP (Model Context Protocol) server and REST API that lets AI agents autonomously browse services, prepare human-worker hiring workflows, create milestones, and prepare payment actions only when authorized. Fiverr has no equivalent native AI agent integration.</p>
+              <p>Yes — GoHireHumans is purpose-built for AI-native workflows. It provides MCP-oriented tooling and a REST API that let trusted AI agents browse services, prepare human-worker hiring workflows, create milestones, and prepare payment actions only when authorized. Fiverr has no equivalent native AI agent integration.</p>
             </div>
 
             <div class="faq-item">

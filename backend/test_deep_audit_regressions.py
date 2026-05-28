@@ -118,6 +118,27 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_public_pricing_info_uses_connector_fee_language(self):
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/pricing/info"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["service_fee_rate"], self.module.SERVICE_FEE_RATE)
+        self.assertIn("Stripe processing plus a 1% GoHireHumans fee", body["description"])
+        self.assertIn("Workers receive the listed payout", body["description"])
+        self.assertFalse(body["escrow"])
+        self.assertNotIn("4%", body["description"])
+        self.assertNotIn("escrow", body["description"].lower())
+
     def test_public_bad_numeric_query_params_return_400_not_500(self):
         for path, query in [("/services", "per_page=abc"), ("/services", "min_price=abc"), ("/jobs", "per_page=abc"), ("/jobs", "min_budget=abc")]:
             self.module._request_ctx.request_method = "GET"
@@ -448,6 +469,25 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "risk-free",
             "platform arbitration",
             "protects every transaction",
+            "process payments programmatically",
+            "process payment processing programmatically",
+            "hire humans through natural language commands",
+            "resolves disputes",
+            "verifies every worker",
+            "requires every worker",
+            "all professionals must verify",
+            "every task on gohirehumans is backed by payment flow",
+            "eliminates the risk of non-payment",
+            "bank-grade security",
+            "instant payouts",
+            "every transaction is payment-supported",
+            "payment systems that hold funds",
+            "submit to the identity and background verification process",
+            "submit to the verification process",
+            "complete identity verification",
+            "verified seo professionals",
+            "background screening should be mandatory",
+            "checks all these boxes with identity",
         ]
         forbidden_patterns = [
             re.compile(r"gohirehumans[^\n<>]{0,180}4%", re.IGNORECASE),
@@ -457,6 +497,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             re.compile(r"requires identity verification for (all freelancers|all workers)", re.IGNORECASE),
             re.compile(r"(all|every)\s+[^.]{0,80}\s+(verified|identity verified)", re.IGNORECASE),
             re.compile(r"(payment flow|payment-supported|payment processing support).*?(every transaction|every task|mandatory)", re.IGNORECASE),
+            re.compile(r"(hire|create)\s+[^.]{0,80}\s+(humans|professionals|workers)\s+[^.]{0,120}\s+(programmatically|autonomously)", re.IGNORECASE),
+            re.compile(r"(autonomous ai agents|ai agents)\s+[^.]{0,200}\s+(process payments|approve payment|without human)", re.IGNORECASE),
         ]
         failures = []
         for rel in required_phrase_pages:
@@ -477,6 +519,145 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 match = pattern.search(text)
                 if match:
                     failures.append(f"{rel}: forbidden pattern {pattern.pattern}: {match.group(0)}")
+        self.assertEqual(failures, [])
+
+    def test_agent_surfaces_keep_spend_and_trust_claims_owner_authorized(self):
+        high_visibility_pages = [
+            "frontend/ai-integration.html",
+            "frontend/api-docs.html",
+            "frontend/agent-onboarding.html",
+            "frontend/faq.html",
+            "frontend/press.html",
+            "frontend/hire/hire-ai-agent.html",
+            "frontend/blog/mcp-for-marketplaces.html",
+            "frontend/blog/how-to-hire-ai-agent.html",
+            "frontend/blog/gohirehumans-vs-fiverr.html",
+            "frontend/blog/ai-agent-marketplace-guide.html",
+            "frontend/blog/hire-human-for-ai-tasks.html",
+            "frontend/blog/how-to-find-human-workers-ai-tasks.html",
+            "frontend/blog/how-to-hire-ai-agents-safely.html",
+            "frontend/blog/on-demand-workforce-platform.html",
+            "frontend/blog/freelancers-switching-lower-fee-platforms.html",
+            "frontend/blog/alternatives-to-upwork.html",
+            "frontend/trust-safety.html",
+        ]
+        forbidden_phrases = [
+            "without human oversight",
+            "without human intervention",
+            "without human involvement",
+            "no human in the loop required",
+            "No human needs to manage",
+            "requires zero human involvement",
+            "autonomously browse services, create tasks, hire humans, manage milestones, and process payments",
+            "autonomously browse services, post jobs, fund payment flow, and approve work",
+            "autonomously browse services, post jobs",
+            "browse services, post jobs, hire humans, and process payments programmatically",
+            "browse services, post jobs, hire humans, and process payment processing programmatically",
+            "hire workers through natural language commands",
+            "fund payment flow, and approve work",
+            "release payment processing",
+            "release payment when the work is complete",
+            "release payment on completion",
+            "release payment upon task completion",
+            "Your funds are always protected until you release them",
+            "All professionals who apply",
+            "Only approved professionals",
+            '<div class="stat-num">4%</div><div class="stat-label">Employer Fee</div>',
+        ]
+        failures = []
+        for rel in high_visibility_pages:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            for phrase in forbidden_phrases:
+                if phrase in text:
+                    failures.append(f"{rel}: forbidden {phrase}")
+        self.assertEqual(failures, [])
+
+        required_snippets = {
+            "frontend/ai-integration.html": [
+                "account-owner approval before any spend",
+                "listing and payment connector, not as escrow, a guarantor, or an arbitrator",
+            ],
+            "frontend/api-docs.html": [
+                "account-owner authorization",
+                "use connector/payment-processing language",
+            ],
+            "frontend/press.html": [
+                "prepare approved workflows",
+                '<div class="stat-num">1%</div><div class="stat-label">GoHireHumans Fee</div>',
+            ],
+            "frontend/blog/mcp-for-marketplaces.html": [
+                "account-owner authorization before spend or hiring actions",
+                "scoped credentials, and audit logs",
+            ],
+            "frontend/hire/hire-ai-agent.html": [
+                "owner-approved scopes",
+                "Review the specific provider, scope, and deliverables before approving paid work",
+            ],
+            "frontend/blog/hire-human-for-ai-tasks.html": [
+                "account-owner approved scopes",
+                "Worker profiles may display identity, skill, review, and history signals where available",
+            ],
+        }
+        missing = []
+        for rel, snippets in required_snippets.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            for snippet in snippets:
+                if snippet not in text:
+                    missing.append(f"{rel}: missing {snippet}")
+        self.assertEqual(missing, [])
+
+    def test_public_pages_do_not_reintroduce_stale_payment_or_pricing_claims(self):
+        html_files = sorted((REPO_ROOT / "frontend").rglob("*.html"))
+        forbidden_phrases = [
+            "autonomously browse services",
+            "fund the payment flow",
+            "release payment",
+            "releasing payment",
+            "Your money stays protected",
+            "money stays protected",
+            "protected until you approve",
+            "payment protection",
+            "protects every transaction",
+            "protected at every step",
+            "fund-escrow",
+            "fund escrow",
+            "quality guarantees",
+            "let your AI agent hire for you",
+            "programmatic job posting, hiring, and payment processing",
+            "GoHireHumans identity verification adds",
+            "platforms with identity verification and payment processing support like GoHireHumans",
+            "order_123",
+            '"owner_approved"',
+            '"name": "Background Check"',
+            '"name": "Skills Screening"',
+            "workers are verified",
+            "professionals are verified",
+            "every professional on GoHireHumans is screened",
+            "all professionals who apply",
+            "only approved professionals",
+            "4% buyer-side service fee",
+            "pay just 4%",
+            "fees (4%)",
+            "Service fee 4%",
+        ]
+        stale_four_percent_patterns = [
+            re.compile(r"gohirehumans.{0,240}(?<![\d.])4%(?!\d)", re.IGNORECASE),
+            re.compile(r"(?<![\d.])4%(?!\d).{0,240}gohirehumans", re.IGNORECASE),
+        ]
+        failures = []
+        for path in html_files:
+            rel = str(path.relative_to(REPO_ROOT))
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            rendered = re.sub(r"<[^>]+>", " ", text)
+            rendered = re.sub(r"\s+", " ", rendered)
+            lower_rendered = rendered.lower()
+            for phrase in forbidden_phrases:
+                if phrase.lower() in lower_rendered:
+                    failures.append(f"{rel}: forbidden phrase {phrase}")
+            for pattern in stale_four_percent_patterns:
+                match = pattern.search(rendered)
+                if match:
+                    failures.append(f"{rel}: stale GoHireHumans 4% pricing context: {match.group(0)}")
         self.assertEqual(failures, [])
 
     def test_homepage_has_low_risk_funnel_analytics_events(self):

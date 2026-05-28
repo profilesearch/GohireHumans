@@ -1308,9 +1308,9 @@ def _handle_routes(db):
             "service_fee_rate": SERVICE_FEE_RATE,
             "processing_fee_rate": PROCESSING_FEE_RATE,
             "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
-            "description": "Buyers pay a 4% all-in fee on top of the service price (1% platform fee + ~3% payment processing). Workers receive the full listed price.",
+            "description": "Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Workers receive the listed payout.",
             "fee_paid_by": "buyer",
-            "escrow": True
+            "escrow": False
         })
 
     # ── Public platform stats (no auth) ────────────────────────────────
@@ -3360,8 +3360,12 @@ def _handle_routes(db):
             "employer_ready": bool(employer_status and employer_status.get("has_payment_method"))
         })
 
-    elif path == "/payments/fund-escrow" and method == "POST":
-        """Manually fund escrow for a milestone (employer only)."""
+    elif path in ("/payments/prepare-order-payment", "/payments/fund-escrow") and method == "POST":
+        """Create an owner-approved payment session for a milestone (employer only).
+
+        /payments/prepare-order-payment is the public connector-language route.
+        /payments/fund-escrow remains as a legacy alias for existing clients.
+        """
         user = authenticate(db)
         if not user:
             return error_response("Unauthorized", 401)
@@ -3383,7 +3387,7 @@ def _handle_routes(db):
             return error_response("amount must be positive")
 
         try:
-            pi_id, mode = fund_escrow_stripe(db, user['id'], amount, order_id, milestone_id, "Manual escrow funding")
+            pi_id, mode = fund_escrow_stripe(db, user['id'], amount, order_id, milestone_id, "Owner-approved checkout funding")
         except ValueError as e:
             return error_response(str(e), 402)
 

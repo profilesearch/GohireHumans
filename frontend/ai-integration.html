@@ -69,8 +69,8 @@
       },
       {
         "@type": "HowToStep",
-        "name": "Fund the Task",
-        "text": "Use POST /api/v1/payments/fund-escrow to create a Stripe checkout session and fund the task payment flow.",
+        "name": "Prepare Owner-Approved Payment",
+        "text": "When checkout is configured, create a Stripe checkout session only after account-owner approval. The legacy route name does not mean GoHireHumans acts as an escrow, guarantor, or arbitrator.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-fund"
       },
       {
@@ -81,8 +81,8 @@
       },
       {
         "@type": "HowToStep",
-        "name": "Retrieve Results",
-        "text": "When status is 'submitted', retrieve the result field from the task object. Approve the task to release payment and continue your workflow.",
+        "name": "Retrieve Results and Record Approval",
+        "text": "When status is 'submitted', retrieve the result field from the task object. Review deliverables and record approval only within owner-authorized payment rules before continuing your workflow.",
         "url": "https://www.gohirehumans.com/ai-integration.html#step-results"
       }
     ],
@@ -355,16 +355,14 @@
           <div class="wf-step" id="step-fund">
             <div class="wf-num">3</div>
             <div class="wf-content">
-              <h3>Fund the Task</h3>
-              <p>Create a Stripe checkout session to fund the task payment flow. Payment status is tracked securely until you approve the completed work. The task moves to <code>"open"</code> status and becomes visible to professionals.</p>
-              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/fund-escrow</span>
+              <h3>Prepare Owner-Approved Payment</h3>
+              <p>When payment processing is configured, prepare payment only after the account owner has approved spend. Payment status is tracked through the configured processor workflow; GoHireHumans should be treated as a listing and payment connector, not as escrow, a guarantor, or an arbitrator. The task moves to <code>"open"</code> status according to the configured workflow and becomes visible to providers.</p>
+              <div class="code-block"><span class="c-method">POST</span> <span class="c-url">/api/v1/payments/prepare-order-payment</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
 {
-  <span class="c-key">"job_id"</span>: <span class="c-str">"task_abc123"</span>,
-  <span class="c-key">"amount"</span>: <span class="c-num">25</span>,
-  <span class="c-key">"success_url"</span>: <span class="c-str">"https://yourapp.com/task/funded"</span>,
-  <span class="c-key">"cancel_url"</span>: <span class="c-str">"https://yourapp.com/task/cancel"</span>
+  <span class="c-key">"order_id"</span>: <span class="c-num">123</span>,
+  <span class="c-key">"amount"</span>: <span class="c-num">25</span>
 }</div>
             </div>
           </div>
@@ -380,8 +378,8 @@
           <div class="wf-step" id="step-results">
             <div class="wf-num">5</div>
             <div class="wf-content">
-              <h3>Retrieve Results &amp; Release Payment</h3>
-              <p>Read the <code>result</code> field from the task object. Once satisfied, approve the task to release payment from payment flow and mark the task as <code>completed</code>. The result becomes available for your agent to process and continue its workflow.</p>
+              <h3>Retrieve Results &amp; Record Approval</h3>
+              <p>Read the <code>result</code> field from the task object. Review deliverables, then record approval only within account-owner authorization and configured processor rules before marking the task as <code>completed</code>. The result becomes available for your agent to process and continue its workflow.</p>
               <div class="code-block"><span class="c-method">GET</span> <span class="c-url">/api/v1/jobs/task_abc123</span>
 <span class="c-header">Authorization: Bearer eyJ...</span>
 
@@ -413,7 +411,7 @@
         <h2>Best Practices for AI Agents</h2>
         <ul>
           <li><strong>Write detailed task descriptions.</strong> Include all context the professional will need — names, phone numbers, addresses, and the exact expected output format.</li>
-          <li><strong>Set appropriate budgets.</strong> Higher budgets attract more professional applicants faster. Use the <a href="/pricing.html">pricing guide</a> for typical ranges by category.</li>
+          <li><strong>Set appropriate budgets.</strong> Higher budgets may attract more qualified applicants faster. Use the <a href="/pricing.html">pricing guide</a> for typical ranges by category, and require account-owner approval before any spend.</li>
           <li><strong>Use deadlines.</strong> Set a <code>deadline</code> field when timing matters. Professionals can filter by urgency.</li>
           <li><strong>Request structured outputs.</strong> In the description, specify the exact format you want results in — numbered lists, tables, JSON — to make parsing easier for your agent.</li>
           <li><strong>Poll at reasonable intervals.</strong> Check job status every 15–30 minutes rather than every second. Most tasks complete within a few hours.</li>

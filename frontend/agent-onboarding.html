@@ -1032,7 +1032,7 @@
           <div class="guide-step-num">4</div>
           <h3>Hire &amp; Pay</h3>
         </div>
-        <p>Review proposals, hire a professional, and release payment when the work is complete.</p>
+        <p>Review proposals, choose a provider, and prepare the payment approval step when the work is complete. Require account-owner authorization before hiring or spending.</p>
         <div class="code-block has-label">
           <span class="code-block-label">cURL</span>
           <button class="copy-btn" onclick="copyCodeBlock(this)">
@@ -1044,7 +1044,7 @@
   <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span> \
   <span class="flag">-d</span> <span class="string">'{"professional_id": "PRO_ID"}'</span>
 
-<span class="comment"># Release payment on completion</span>
+<span class="comment"># Prepare payment approval after completion</span>
 <span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/jobs/TASK_ID/release"</span> \
   <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span></div>
       </div>
@@ -1073,7 +1073,7 @@
     }
   }
 }</div>
-        <p>Once configured, Claude can search for professionals, create jobs, manage hiring, and handle payments directly through natural language.</p>
+        <p>Once configured, Claude can search for providers, draft jobs, and manage approved hiring/payment workflows through natural language. Keep scopes narrow and require owner approval before spend, hiring, or payout actions.</p>
         <p>See the full <a href="/api-docs.html">API Documentation</a> for all available endpoints and response schemas.</p>
       </div>
     </div>
@@ -1124,7 +1124,7 @@
             all
           </label>
         </div>
-        <div class="hint">Select the permissions this key should have. "all" grants full access.</div>
+        <div class="hint">Select the permissions this key should have. Keep scopes narrow; "all" grants full access and should be reserved for trusted, intentional automation.</div>
       </div>
     </div>
     <div class="modal-footer">
