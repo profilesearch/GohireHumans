@@ -557,7 +557,26 @@ function installAnalyticsIntentTracking() {
     }
   }, true);
 }
+function trackSocialAttribution() {
+  if (window.__ghhSocialAttributionTracked) return;
+  window.__ghhSocialAttributionTracked = true;
+  const params = new URLSearchParams(location.search);
+  const utmSource = (params.get('utm_source') || '').toLowerCase();
+  let referrerHost = '';
+  try {
+    referrerHost = document.referrer ? new URL(document.referrer).hostname.toLowerCase() : '';
+  } catch (_) {}
+  if (utmSource === 'instagram' || referrerHost.includes('instagram.com')) {
+    trackEvent('instagram_profile_visit', {
+      source: 'instagram_bio',
+      attribution_method: utmSource === 'instagram' ? 'utm' : 'referrer',
+      landing_path: location.pathname + location.search + location.hash,
+      referrer_host: referrerHost || 'unknown'
+    });
+  }
+}
 installAnalyticsIntentTracking();
+trackSocialAttribution();
 function searchHeroServices() {
   const input = document.getElementById('hero-search');
   const query = input ? input.value.trim() : '';

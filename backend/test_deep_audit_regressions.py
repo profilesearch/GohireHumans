@@ -685,6 +685,52 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for snippet in required_snippets:
             self.assertIn(snippet, text)
 
+    def test_homepage_tracks_instagram_bio_and_referrer_attribution(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "function trackSocialAttribution()",
+            "params.get('utm_source')",
+            "utmSource === 'instagram'",
+            "referrerHost.includes('instagram.com')",
+            "instagram_profile_visit",
+            "attribution_method",
+            "trackSocialAttribution();",
+        ]:
+            self.assertIn(snippet, text)
+
+    def test_growth_opportunity_pages_route_to_tracked_ai_qa_conversion_offer(self):
+        expected_pages = {
+            "frontend/hire/hire-web-developer.html": [
+                "Hire Web Developers for Website Fixes, QA & Landing Pages",
+                "utm_content=hire_web_developer",
+            ],
+            "frontend/blog/verified-freelancer-marketplace.html": [
+                "Verified Freelancer Marketplace: Trust Signals to Check Before Hiring",
+                "utm_content=verified_freelancer_marketplace",
+            ],
+            "frontend/blog/on-demand-workforce-platform.html": [
+                "On-Demand Workforce Platforms for AI + Human Workflows",
+                "utm_content=on_demand_workforce_platform",
+            ],
+            "frontend/tools/fee-calculator.html": [
+                "Freelancer Fee Calculator: Workers Keep the Listed Payout",
+                "utm_content=fee_calculator",
+            ],
+        }
+        required_shared_snippets = [
+            "Turn AI output into a human QA task",
+            "/ai-human-qa/?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression",
+            "/request-managed-ai-qa.html?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression",
+            "No checkout or job is created automatically from this page",
+        ]
+        failures = []
+        for rel, page_snippets in expected_pages.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            for snippet in required_shared_snippets + page_snippets:
+                if snippet not in text:
+                    failures.append(f"{rel}: missing {snippet}")
+        self.assertEqual(failures, [])
+
     def test_homepage_has_guided_agent_intake_and_earning_routes(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
