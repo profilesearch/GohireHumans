@@ -689,6 +689,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "worker_route_select",
             "post_service_intent",
             "browse_relevant_jobs_intent",
+            "Need the first job scoped?",
+            "first_task_concierge_cta_click",
+            "homepage_first_task_experiment",
         ]
         for snippet in required_snippets:
             self.assertIn(snippet, text)
@@ -703,6 +706,27 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "instagram_profile_visit",
             "attribution_method",
             "trackSocialAttribution();",
+        ]:
+            self.assertIn(snippet, text)
+
+    def test_gig_economy_stats_routes_drive_by_readers_to_first_task_draft(self):
+        text = (REPO_ROOT / "frontend/blog/gig-economy-statistics-2026.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "Turn the data into one clear task",
+            "blog_demand_capture",
+            "Draft your first task",
+            "first_task_blog_cta_click",
+            "trackBlogCTA('qualify_lead'",
+            "/#/post-job?template=website_test",
+        ]:
+            self.assertIn(snippet, text)
+
+    def test_llms_txt_surfaces_first_task_and_ai_qa_entry_points(self):
+        text = (REPO_ROOT / "frontend/llms.txt").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "First task draft: https://www.gohirehumans.com/#/post-job",
+            "AI human QA services: https://www.gohirehumans.com/ai-human-qa/",
+            "Managed AI QA request: https://www.gohirehumans.com/request-managed-ai-qa.html",
         ]:
             self.assertIn(snippet, text)
 

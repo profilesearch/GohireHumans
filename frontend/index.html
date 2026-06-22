@@ -1144,6 +1144,11 @@ async function renderLanding() {
               <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero' });navigate('#/services')">Browse helpers</button>
               <a class="btn btn-outline btn-lg" href="/ai-integration.html" onclick="trackEvent('agent_integration_cta_click', { source: 'homepage_hero' })">Agent guide</a>
             </div>
+            <div style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:rgba(13,115,119,.07);max-width:620px">
+              <div style="font-weight:700;color:var(--color-text);margin-bottom:var(--space-1)">Need the first job scoped?</div>
+              <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Start with a draft for website QA, AI-output review, lead research, local verification, or any small task. You review before anything is published.</p>
+              <button class="btn btn-primary" onclick="trackEvent('first_task_concierge_cta_click', { source: 'homepage_hero_experiment' });trackRecommendedEvent('generate_lead', { lead_type: 'first_task_concierge_click', source: 'homepage_hero_experiment' });trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_concierge_click', source: 'homepage_hero_experiment' });startTaskDraft('', 'homepage_first_task_experiment')">Draft my first task</button>
+            </div>
             <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
               <div class="lp-hero-trust-item">Workers receive the listed payout</div>
               <div class="lp-hero-trust-item">Employer pays Stripe processing + 1%</div>
