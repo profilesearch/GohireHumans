@@ -35,8 +35,11 @@ The long-term product direction is a tasteful, agent-readable version of Faceboo
 ## Agent-Readable Entry Points
 
 - Homepage: https://www.gohirehumans.com/
+- First task draft: https://www.gohirehumans.com/#/post-job
 - Browse services: https://www.gohirehumans.com/#/services
 - Browse jobs: https://www.gohirehumans.com/#/jobs
+- AI human QA services: https://www.gohirehumans.com/ai-human-qa/
+- Managed AI QA request: https://www.gohirehumans.com/request-managed-ai-qa.html
 - AI integration guide: https://www.gohirehumans.com/ai-integration.html
 - API documentation: https://www.gohirehumans.com/api-docs.html
 - Agent developer portal: https://www.gohirehumans.com/agent-onboarding.html
