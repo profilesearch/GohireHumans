@@ -20,7 +20,9 @@
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-    gtag('config', 'G-KM69M3NES8');
+    // SPA routes are hash-based, so disable the automatic initial page_view
+    // and send explicit virtual page_view events from the router instead.
+    gtag('config', 'G-KM69M3NES8', { send_page_view: false });
   </script>
 
 
@@ -353,6 +355,7 @@ function handleGoogleCredential(response) {
         localStorage.setItem('ghh_user', JSON.stringify(user));
       } catch(e) {}
       toast('Welcome to GoHireHumans!', 'success');
+      trackRecommendedEvent('login', { method: 'google' });
       navigate('#/');
     })
     .catch(err => toast(err.message || 'Google sign-in failed', 'error'));
@@ -518,6 +521,41 @@ function trackEvent(eventName, params = {}) {
     // Analytics must never block marketplace navigation or checkout intent.
   }
 }
+function trackRecommendedEvent(eventName, params = {}) {
+  // GA4 recommended event names make acquisition and conversion reporting work
+  // without relying only on custom events that must be separately interpreted.
+  trackEvent(eventName, {
+    ...params,
+    recommended_event: true,
+    marketplace: 'gohirehumans'
+  });
+}
+function trackConfiguredKeyEvent(eventName, params = {}) {
+  // These event names are already configured as GA4 key events for the
+  // GoHireHumans property, so emit them for comparable funnel reporting.
+  trackEvent(eventName, {
+    ...params,
+    key_event: true,
+    marketplace: 'gohirehumans'
+  });
+}
+let lastTrackedSpaPath = '';
+function trackSpaPageView(path) {
+  const pagePath = location.pathname + location.search + location.hash;
+  if (lastTrackedSpaPath === pagePath) return;
+  lastTrackedSpaPath = pagePath;
+  trackEvent('spa_page_view', { path, page_path: pagePath });
+  try {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'page_view', {
+        page_title: document.title,
+        page_location: location.href,
+        page_path: pagePath,
+        spa_route: path
+      });
+    }
+  } catch (_) {}
+}
 const analyticsSeenForms = new Set();
 function analyticsFormName(form) {
   if (!form) return 'unknown_form';
@@ -549,7 +587,10 @@ function installAnalyticsIntentTracking() {
     if (!link) return;
     const href = link.getAttribute('href') || '';
     if (href.startsWith('mailto:') || href.startsWith('tel:')) {
-      trackEvent('contact_click', { link_type: href.startsWith('mailto:') ? 'email' : 'phone', source: location.pathname + location.hash });
+      const linkType = href.startsWith('mailto:') ? 'email' : 'phone';
+      trackEvent('contact_click', { link_type: linkType, source: location.pathname + location.hash });
+      trackRecommendedEvent('generate_lead', { lead_type: 'contact_click', link_type: linkType, source: location.pathname + location.hash });
+      trackConfiguredKeyEvent('qualify_lead', { lead_type: 'contact_click', link_type: linkType, source: location.pathname + location.hash });
     } else if (/stripe|checkout|buy|payment/i.test(href)) {
       trackEvent('payment_intent_click', { destination: href, source: location.pathname + location.hash });
     } else if (link.hostname && link.hostname !== location.hostname) {
@@ -1729,8 +1770,12 @@ async function handleOrderService(id) {
     showModal('Confirm Order', `<p>Your payment will be processed through the configured checkout flow after you confirm the order.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p><div style="display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span style="font-size:11px;color:var(--color-text-muted)">Payment processing by <strong style="color:#635bff">Stripe</strong> where configured</span></div>`, async () => {
       try {
         trackEvent('service_order_submit', { service_id: String(id) });
+        trackRecommendedEvent('generate_lead', { lead_type: 'service_order_submit', service_id: String(id) });
+        trackConfiguredKeyEvent('qualify_lead', { lead_type: 'service_order_submit', service_id: String(id) });
         const order = await api(`/services/${id}/order`, { method: 'POST', body: {} });
         trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id || '') });
+        trackRecommendedEvent('generate_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
+        trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
         toast('Order placed! Payment follows the configured workflow.', 'success');
         navigate(`#/orders/${order.id || order.order_id}`);
       } catch(err) { toast(err.message, 'error'); }
@@ -2149,6 +2194,11 @@ async function handleAuth(e, mode, encodedRedirect) {
       localStorage.setItem('ghh_user', JSON.stringify(user));
     } catch(e) {}
     trackEvent(mode === 'login' ? 'login_completed' : 'signup_completed', { source: 'auth_form' });
+    if (mode === 'login') {
+      trackRecommendedEvent('login', { method: 'email' });
+    } else {
+      trackRecommendedEvent('sign_up', { method: 'email', source: 'auth_form' });
+    }
     toast(mode === 'login' ? 'Welcome back!' : 'Account created! Welcome to GoHireHumans.', 'success');
     const redirect = encodedRedirect ? decodeURIComponent(encodedRedirect) : '';
     navigate(redirect ? `#/${redirect}` : '#/');
@@ -2469,6 +2519,8 @@ async function handlePostService(e, editId) {
     } else {
       const svc = await api('/services', { method: 'POST', body });
       trackEvent('service_post_completed', { service_id: String(svc.id || '') });
+      trackRecommendedEvent('generate_lead', { lead_type: 'service_post_completed', service_id: String(svc.id || ''), provider_type: body.provider_type || 'human' });
+      trackConfiguredKeyEvent('qualify_lead', { lead_type: 'service_post_completed', service_id: String(svc.id || ''), provider_type: body.provider_type || 'human' });
       toast('Service posted!', 'success');
       navigate(`#/services/${svc.id}`);
     }
@@ -2596,6 +2648,8 @@ async function handlePostJob(e) {
     trackEvent('job_post_submit', { budget_type: body.budget_type, category: body.category || '' });
     const job = await api('/jobs', { method: 'POST', body });
     trackEvent('job_post_completed', { job_id: String(job.id || ''), budget_type: body.budget_type, category: body.category || '' });
+    trackRecommendedEvent('generate_lead', { lead_type: 'job_post_completed', job_id: String(job.id || ''), budget_type: body.budget_type, category: body.category || '' });
+    trackConfiguredKeyEvent('qualify_lead', { lead_type: 'job_post_completed', job_id: String(job.id || ''), budget_type: body.budget_type, category: body.category || '' });
     toast('Job posted!', 'success');
     navigate(`#/jobs/${job.id}`);
   } catch(err) { trackEvent('job_post_failed', { error_message: String(err.message || '').slice(0, 120), budget_type: body.budget_type, category: body.category || '' }); toast(err.message, 'error'); }
@@ -3849,7 +3903,7 @@ function renderGuidelines() {
 function render() {
   const hash = location.hash.slice(1) || '/';
   const path = hash.split('?')[0];
-  trackEvent('spa_page_view', { path });
+  trackSpaPageView(path);
   const segments = path.split('/').filter(Boolean);
 
   // ── Public routes ────────────────────────────────────────
