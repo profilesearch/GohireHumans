@@ -118,6 +118,53 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_job_creation_notifies_matching_service_workers(self):
+        db = self.module.get_db()
+        token = "tok-employer"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price,status) VALUES (1,1,'Testing Svc','Desc','testing','fixed',25,'active')")
+            db.commit()
+        finally:
+            db.close()
+
+        payload = {
+            "title": "Website QA pass",
+            "description": "Review a public website flow and provide screenshots and prioritized notes.",
+            "category": "testing",
+            "budget_type": "fixed",
+            "budget_amount": 25,
+        }
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/jobs"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 201, response)
+
+        db = self.module.get_db()
+        try:
+            notif = db.execute(
+                "SELECT user_id, type, title, link FROM notifications WHERE type='job_match'"
+            ).fetchone()
+            self.assertIsNotNone(notif)
+            self.assertEqual(notif["user_id"], 1)
+            self.assertEqual(notif["link"], f"#/jobs/{response['id']}")
+        finally:
+            db.close()
+
     def test_public_pricing_info_uses_connector_fee_language(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/pricing/info"
