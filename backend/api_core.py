@@ -2089,14 +2089,14 @@ def _handle_routes(db):
         try:
             matching_workers = db.execute(
                 """SELECT DISTINCT s.worker_id, u.name
-                   FROM services s JOIN users u ON u.id = s.user_id
-                   WHERE s.category = ? AND s.status = 'active' AND s.user_id != ?
+                   FROM services s JOIN users u ON u.id = s.worker_id
+                   WHERE s.category = ? AND s.status = 'active' AND s.worker_id != ?
                    LIMIT 20""",
                 [body['category'], user['id']]
             ).fetchall()
             for w in matching_workers:
                 push_notification(
-                    db, w['user_id'], 'job_match',
+                    db, w['worker_id'], 'job_match',
                     f"New job matches your skills: {body['title'][:60]}",
                     f"A new {body['category'].replace('_',' ')} job was just posted. Budget: ${budget:,.0f}",
                     f"#/jobs/{job_id}"
