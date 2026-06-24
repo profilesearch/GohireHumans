@@ -3567,6 +3567,79 @@ def _handle_routes(db):
     # ADMIN ROUTES
     # ═══════════════════════════════════════════════════════════════════════════
 
+    elif path == "/admin/marketplace-ops" and method == "GET":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+
+        limit = min(max(1, int(params.get("limit", 20))), 100)
+        job_rows = db.execute(
+            """SELECT j.*, u.name as employer_name,
+                      COUNT(DISTINCT a.id) as application_count
+               FROM jobs j
+               JOIN users u ON u.id = j.employer_id
+               LEFT JOIN applications a ON a.job_id = j.id
+               GROUP BY j.id
+               ORDER BY j.created_at DESC
+               LIMIT ?""",
+            [limit]
+        ).fetchall()
+
+        recent_jobs = []
+        for job in job_rows:
+            job_dict = row_to_dict(job)
+            job_id = job_dict["id"]
+            job_link = f"#/jobs/{job_id}"
+            notification_rows = db.execute(
+                """SELECT n.id, n.user_id, n.type, n.title, n.link, n.is_read, n.created_at,
+                          u.name as user_name
+                   FROM notifications n
+                   JOIN users u ON u.id = n.user_id
+                   WHERE n.link = ? AND n.type = 'job_match'
+                   ORDER BY n.created_at DESC""",
+                [job_link]
+            ).fetchall()
+            application_rows = db.execute(
+                """SELECT a.id, a.worker_id, a.status, a.created_at,
+                          u.name as worker_name
+                   FROM applications a
+                   JOIN users u ON u.id = a.worker_id
+                   WHERE a.job_id = ?
+                   ORDER BY a.created_at DESC""",
+                [job_id]
+            ).fetchall()
+            matching_worker_rows = db.execute(
+                """SELECT DISTINCT s.worker_id, u.name as worker_name, COUNT(s.id) as matching_service_count
+                   FROM services s
+                   JOIN users u ON u.id = s.worker_id
+                   WHERE s.category = ? AND s.status = 'active' AND s.worker_id != ?
+                   GROUP BY s.worker_id, u.name
+                   ORDER BY matching_service_count DESC, u.name ASC
+                   LIMIT 50""",
+                [job_dict["category"], job_dict["employer_id"]]
+            ).fetchall()
+            job_dict["job_match_notifications"] = [row_to_dict(n) for n in notification_rows]
+            job_dict["job_match_notification_count"] = len(notification_rows)
+            job_dict["applications"] = [row_to_dict(a) for a in application_rows]
+            job_dict["matching_workers"] = [row_to_dict(w) for w in matching_worker_rows]
+            job_dict["matching_worker_count"] = len(matching_worker_rows)
+            recent_jobs.append(job_dict)
+
+        summary = {
+            "total_users": db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c'],
+            "workers_registered": db.execute("SELECT COUNT(*) as c FROM worker_profiles").fetchone()['c'],
+            "employers_registered": db.execute("SELECT COUNT(*) as c FROM employer_profiles").fetchone()['c'],
+            "active_services": db.execute("SELECT COUNT(*) as c FROM services WHERE status='active'").fetchone()['c'],
+            "open_jobs": db.execute("SELECT COUNT(*) as c FROM jobs WHERE status='open'").fetchone()['c'],
+            "total_applications": db.execute("SELECT COUNT(*) as c FROM applications").fetchone()['c'],
+            "job_match_notifications_24h": db.execute("SELECT COUNT(*) as c FROM notifications WHERE type='job_match' AND datetime(created_at) >= datetime('now','-1 day')").fetchone()['c'],
+        }
+        return json_response({
+            "summary": summary,
+            "recent_jobs": recent_jobs,
+            "limit": limit,
+        })
+
     elif path == "/admin/dashboard" and method == "GET":
         user = authenticate(db)
         if not user or not user['is_admin']:
