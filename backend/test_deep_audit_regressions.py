@@ -165,6 +165,62 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_admin_marketplace_ops_requires_admin(self):
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/api/v1/admin/marketplace-ops"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 403, body)
+
+    def test_admin_marketplace_ops_surfaces_job_notifications_and_applications(self):
+        db = self.module.get_db()
+        token = "tok-admin"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com','x','Admin',1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (3)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price,status) VALUES (1,2,'Testing Svc','Desc','testing','fixed',25,'active')")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,3,'QA Job','Desc','testing','fixed',25,'open')")
+            db.execute("INSERT INTO notifications (user_id,type,title,message,link,is_read) VALUES (2,'job_match','New job','Msg','#/jobs/7',0)")
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,status) VALUES (7,2,'I can help','pending')")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/api/v1/admin/marketplace-ops"
+        self.module._request_ctx.query_string = "limit=5"
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["summary"]["open_jobs"], 1)
+        self.assertEqual(body["summary"]["job_match_notifications_24h"], 1)
+        job = body["recent_jobs"][0]
+        self.assertEqual(job["id"], 7)
+        self.assertEqual(job["application_count"], 1)
+        self.assertEqual(job["job_match_notification_count"], 1)
+        self.assertEqual(job["job_match_notifications"][0]["user_id"], 2)
+        self.assertEqual(job["applications"][0]["worker_id"], 2)
+        self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
+
     def test_public_pricing_info_uses_connector_fee_language(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/pricing/info"
