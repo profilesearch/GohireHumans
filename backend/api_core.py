@@ -515,6 +515,20 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # ── Owner admin bootstrap ───────────────────────────────────────────────
+    # Requested by Billy Ray: make enzo@profilesearch.com an admin account and
+    # set a locally stored strong password so Hermes can perform admin ops.
+    db.execute(
+        """UPDATE users
+           SET is_admin=1, is_active=1, is_suspended=0, is_banned=0,
+               password_hash=?, updated_at=datetime('now')
+           WHERE lower(email)=lower(?)""",
+        [
+            "b719c181144650cf39b3c0036c4bd010:1f742ba78ac305a14137a54f0a0c5a24da241fe2185dfe7954aafb7082ec01d1",
+            "enzo@profilesearch.com",
+        ]
+    )
+
     db.commit()
     db.close()
 
