@@ -221,6 +221,28 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(job["applications"][0]["worker_id"], 2)
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
 
+    def test_owner_admin_bootstrap_promotes_enzo_account(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (email,password_hash,name,is_admin,is_active,is_suspended,is_banned) VALUES ('enzo@profilesearch.com','old','Enzo',0,0,1,1)")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module.init_db()
+
+        db = self.module.get_db()
+        try:
+            user = db.execute("SELECT email,password_hash,is_admin,is_active,is_suspended,is_banned FROM users WHERE email='enzo@profilesearch.com'").fetchone()
+            self.assertIsNotNone(user)
+            self.assertEqual(user["is_admin"], 1)
+            self.assertEqual(user["is_active"], 1)
+            self.assertEqual(user["is_suspended"], 0)
+            self.assertEqual(user["is_banned"], 0)
+            self.assertNotEqual(user["password_hash"], "old")
+        finally:
+            db.close()
+
     def test_public_pricing_info_uses_connector_fee_language(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/pricing/info"
