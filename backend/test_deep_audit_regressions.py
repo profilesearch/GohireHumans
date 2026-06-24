@@ -221,6 +221,76 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(job["applications"][0]["worker_id"], 2)
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
 
+    def test_admin_worker_activation_notifications_requires_admin(self):
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/admin/worker-activation-notifications"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = json.dumps({"user_ids": [2], "title": "Paid jobs are live", "message": "Apply through the marketplace."})
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 403, body)
+
+    def test_admin_worker_activation_notifications_create_in_app_notifications(self):
+        db = self.module.get_db()
+        token = "tok-admin"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com','x','Admin',1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'worker2@example.com','x','Worker 2')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+
+        body = {
+            "user_ids": [2, 2, 3],
+            "title": "Paid jobs are live",
+            "message": "Please apply directly through the marketplace jobs page.",
+            "link": "#/jobs",
+        }
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/admin/worker-activation-notifications"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = json.dumps(body)
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, response)
+        self.assertEqual(response["sent_user_ids"], [2, 3])
+        db = self.module.get_db()
+        try:
+            rows = db.execute("SELECT user_id,type,title,message,link FROM notifications WHERE type='worker_activation' ORDER BY user_id").fetchall()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual([row["user_id"] for row in rows], [2, 3])
+            self.assertEqual(rows[0]["title"], "Paid jobs are live")
+            self.assertEqual(rows[0]["link"], "#/jobs")
+        finally:
+            db.close()
+
+    def test_jobs_page_highlights_worker_activation_path(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "New paid jobs",
+            "Apply directly through GoHireHumans",
+            "Newest open jobs are shown first",
+            "worker_jobs_apply_cta_click",
+            "worker_job_card_apply_click",
+            "Apply now",
+            "const sortedJobs = [...jobs].sort",
+        ]:
+            self.assertIn(snippet, text)
+
     def test_owner_admin_bootstrap_promotes_enzo_account(self):
         db = self.module.get_db()
         try:

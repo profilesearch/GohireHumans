@@ -3654,6 +3654,54 @@ def _handle_routes(db):
             "limit": limit,
         })
 
+    elif path == "/admin/worker-activation-notifications" and method == "POST":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+
+        body = get_body()
+        user_ids = body.get("user_ids", [])
+        title = (body.get("title") or "").strip()
+        message = (body.get("message") or "").strip()
+        link = (body.get("link") or "#/jobs").strip()
+        if not isinstance(user_ids, list) or not user_ids:
+            return error_response("user_ids must be a non-empty list")
+        if not title or not message:
+            return error_response("title and message are required")
+        if len(title) > 140:
+            return error_response("title must be 140 characters or less")
+        if len(message) > 1200:
+            return error_response("message must be 1200 characters or less")
+
+        normalized_user_ids = []
+        seen_user_ids = set()
+        for raw_id in user_ids:
+            try:
+                worker_user_id = int(raw_id)
+            except (TypeError, ValueError):
+                return error_response("user_ids must contain integer user IDs")
+            if worker_user_id in seen_user_ids:
+                continue
+            seen_user_ids.add(worker_user_id)
+            normalized_user_ids.append(worker_user_id)
+
+        existing_users = db.execute(
+            f"SELECT id, name FROM users WHERE id IN ({','.join('?' for _ in normalized_user_ids)}) AND is_active=1 AND is_banned=0 AND is_suspended=0",
+            normalized_user_ids
+        ).fetchall()
+        existing_ids = {row['id'] for row in existing_users}
+        missing_ids = [uid for uid in normalized_user_ids if uid not in existing_ids]
+        if missing_ids:
+            return error_response(f"Unknown or inactive user_ids: {missing_ids}", 404)
+
+        sent = []
+        for worker_user_id in normalized_user_ids:
+            push_notification(db, worker_user_id, "worker_activation", title, message, link)
+            sent.append(worker_user_id)
+        audit(db, user['id'], "send_worker_activation_notifications", "notification", None, {"user_ids": sent, "link": link})
+        db.commit()
+        return json_response({"ok": True, "sent_user_ids": sent, "count": len(sent)})
+
     elif path == "/admin/dashboard" and method == "GET":
         user = authenticate(db)
         if not user or not user['is_admin']:
