@@ -213,13 +213,20 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(body["summary"]["open_jobs"], 1)
         self.assertEqual(body["summary"]["job_match_notifications_24h"], 1)
+        self.assertEqual(body["summary"]["stuck_open_jobs"], 0)
         job = body["recent_jobs"][0]
         self.assertEqual(job["id"], 7)
         self.assertEqual(job["application_count"], 1)
         self.assertEqual(job["job_match_notification_count"], 1)
+        self.assertEqual(job["job_match_unread_count"], 1)
+        self.assertEqual(job["activation_funnel"]["notifications_sent"], 1)
+        self.assertEqual(job["activation_funnel"]["notifications_unread"], 1)
+        self.assertEqual(job["activation_funnel"]["applications_submitted"], 1)
+        self.assertEqual(job["activation_funnel"]["status"], "has_applications")
         self.assertEqual(job["job_match_notifications"][0]["user_id"], 2)
         self.assertEqual(job["applications"][0]["worker_id"], 2)
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
+        self.assertEqual(body["stuck_jobs"], [])
 
     def test_admin_worker_activation_notifications_requires_admin(self):
         self.module._request_ctx.request_method = "POST"
@@ -319,6 +326,46 @@ class BackendRegressionTests(unittest.TestCase):
                 "Market Discovery Entry Points",
                 "request-any-task.html",
                 "ideas.html",
+            ],
+        }
+        missing = {}
+        for rel, snippets in required.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            misses = [s for s in snippets if s not in text]
+            if misses:
+                missing[rel] = misses
+        self.assertEqual(missing, {})
+
+    def test_first_orders_conversion_infrastructure_is_discoverable(self):
+        required = {
+            "frontend/index.html": [
+                "lp-first-orders-proof",
+                "homepage_starter_offers_click",
+                "homepage_sample_deliverables_click",
+                "What a strong application says",
+                "job_application_cover_focus",
+            ],
+            "frontend/starter-offers.html": [
+                "Start with a small task that can actually get done.",
+                "starter_offer_draft_click",
+                "Website QA quick check",
+                "AI-output trust review",
+                "Lead research starter list",
+            ],
+            "frontend/examples/sample-deliverables.html": [
+                "Sample website QA report",
+                "Sample AI-output review scorecard",
+                "Sample lead research spreadsheet preview",
+                "sample_deliverable_cta_click",
+            ],
+            "frontend/sitemap.xml": [
+                "https://www.gohirehumans.com/starter-offers.html",
+                "https://www.gohirehumans.com/examples/sample-deliverables.html",
+            ],
+            "frontend/llms.txt": [
+                "First Completed Orders Entry Points",
+                "starter-offers.html",
+                "sample-deliverables.html",
             ],
         }
         missing = {}
