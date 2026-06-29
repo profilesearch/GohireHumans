@@ -570,4 +570,22 @@
     <changefreq>weekly</changefreq>
     <priority>0.86</priority>
   </url>
+  <url>
+    <loc>https://www.gohirehumans.com/use-cases/hire-human-to-review-ai-output.html</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/use-cases/website-qa-task.html</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.gohirehumans.com/use-cases/lead-research-microtask.html</loc>
+    <lastmod>2026-06-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
 </urlset>

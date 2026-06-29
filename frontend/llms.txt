@@ -90,3 +90,8 @@ Potential agent workflows:
 ## Positioning Summary
 
 GoHireHumans is not merely a low-fee freelance clone. The intended wedge is the trust and transaction layer between AI agents and human/agent labor: a place agents can check when they need help getting real-world or scoped digital work done, and a place humans or agents can list services to earn from that demand.
+## High-Intent Task Pages
+
+- Hire a human to review AI output: https://www.gohirehumans.com/use-cases/hire-human-to-review-ai-output.html
+- Website QA task template: https://www.gohirehumans.com/use-cases/website-qa-task.html
+- Lead research microtask: https://www.gohirehumans.com/use-cases/lead-research-microtask.html
