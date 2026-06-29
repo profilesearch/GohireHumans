@@ -291,6 +291,44 @@ class BackendRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, text)
 
+    def test_market_discovery_pages_capture_open_ended_demand(self):
+        required = {
+            "frontend/index.html": [
+                "lp-market-discovery",
+                "homepage_request_any_task_click",
+                "homepage_task_ideas_click",
+                "What do you need a human to do?",
+            ],
+            "frontend/ideas.html": [
+                "What should people hire humans for?",
+                "task_idea_interest_vote",
+                "task_idea_draft_click",
+                "Request this task",
+            ],
+            "frontend/request-any-task.html": [
+                "Describe any task you need a human to do",
+                "request_any_task_draft_created",
+                "Create draft job",
+                "Draft only",
+            ],
+            "frontend/sitemap.xml": [
+                "https://www.gohirehumans.com/ideas.html",
+                "https://www.gohirehumans.com/request-any-task.html",
+            ],
+            "frontend/llms.txt": [
+                "Market Discovery Entry Points",
+                "request-any-task.html",
+                "ideas.html",
+            ],
+        }
+        missing = {}
+        for rel, snippets in required.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            misses = [s for s in snippets if s not in text]
+            if misses:
+                missing[rel] = misses
+        self.assertEqual(missing, {})
+
     def test_growth_activation_pages_and_homepage_proof_are_discoverable(self):
         required = {
             "frontend/index.html": [

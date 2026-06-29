@@ -99,3 +99,9 @@ GoHireHumans is not merely a low-fee freelance clone. The intended wedge is the 
 
 - Post a small human task: https://www.gohirehumans.com/post-a-small-task.html
 - Open paid tasks for workers: https://www.gohirehumans.com/earn/open-paid-tasks.html
+
+## Market Discovery Entry Points
+
+- Describe any human task: https://www.gohirehumans.com/request-any-task.html
+- Vote on task ideas / signal demand: https://www.gohirehumans.com/ideas.html
+- Use these when the task does not fit an existing category; create a draft first and review before publishing.

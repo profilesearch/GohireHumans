@@ -1247,6 +1247,27 @@ async function renderLanding() {
         </div>
       </section>
 
+
+      <section class="lp-compact-section lp-light-band lp-market-discovery">
+        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
+          <div>
+            <div class="lp-section-label">Help define GoHireHumans</div>
+            <h2 class="lp-section-head" style="text-align:left">What do you need a human to do?</h2>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">Use GoHireHumans broadly: review AI output, test websites, make calls, check local places, research leads, clean data, or suggest a task category we have not thought of yet.</p>
+            <div class="lp-mini-points"><span>Open-ended task requests</span><span>Buyer and worker signals</span><span>Draft before publishing</span></div>
+          </div>
+          <div class="lp-action-panel" style="cursor:default">
+            <div class="lp-feed-card-cat">Market discovery</div>
+            <div class="lp-panel-title">Tell us what the marketplace should become.</div>
+            <div class="lp-action-button-stack">
+              <a class="btn btn-primary" href="/request-any-task.html" onclick="trackEvent('homepage_request_any_task_click',{source:'market_discovery'});trackRecommendedEvent('generate_lead',{lead_type:'request_any_task',source:'market_discovery'});">Describe any task</a>
+              <a class="btn btn-secondary" href="/ideas.html" onclick="trackEvent('homepage_task_ideas_click',{source:'market_discovery'});">Vote on task ideas</a>
+              <button class="btn btn-ghost" onclick="postServiceIntent('homepage_market_discovery')">List what you can do</button>
+            </div>
+            <p class="lp-fine-print">Signals help decide which categories deserve more jobs, workers, pages, and product support.</p>
+          </div>
+        </div>
+      </section>
       <section class="lp-compact-section lp-light-band">
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>
