@@ -3632,13 +3632,40 @@ def _handle_routes(db):
                    LIMIT 50""",
                 [job_dict["category"], job_dict["employer_id"]]
             ).fetchall()
-            job_dict["job_match_notifications"] = [row_to_dict(n) for n in notification_rows]
-            job_dict["job_match_notification_count"] = len(notification_rows)
-            job_dict["applications"] = [row_to_dict(a) for a in application_rows]
+            notifications = [row_to_dict(n) for n in notification_rows]
+            applications = [row_to_dict(a) for a in application_rows]
+            unread_notifications = [n for n in notifications if not n.get("is_read")]
+            job_dict["job_match_notifications"] = notifications
+            job_dict["job_match_notification_count"] = len(notifications)
+            job_dict["job_match_unread_count"] = len(unread_notifications)
+            job_dict["applications"] = applications
             job_dict["matching_workers"] = [row_to_dict(w) for w in matching_worker_rows]
             job_dict["matching_worker_count"] = len(matching_worker_rows)
+            job_dict["activation_funnel"] = {
+                "matching_workers": job_dict["matching_worker_count"],
+                "notifications_sent": len(notifications),
+                "notifications_unread": len(unread_notifications),
+                "applications_submitted": len(applications),
+                "status": (
+                    "needs_matching_workers" if job_dict["matching_worker_count"] == 0 else
+                    "needs_notifications" if len(notifications) == 0 else
+                    "workers_not_reading" if len(unread_notifications) == len(notifications) and len(applications) == 0 else
+                    "read_no_applications" if len(applications) == 0 else
+                    "has_applications"
+                )
+            }
             recent_jobs.append(job_dict)
 
+        stuck_jobs = [
+            {
+                "id": j["id"],
+                "title": j["title"],
+                "category": j["category"],
+                "activation_funnel": j["activation_funnel"],
+            }
+            for j in recent_jobs
+            if j.get("status") == "open" and j["activation_funnel"]["notifications_sent"] > 0 and j["activation_funnel"]["applications_submitted"] == 0
+        ]
         summary = {
             "total_users": db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c'],
             "workers_registered": db.execute("SELECT COUNT(*) as c FROM worker_profiles").fetchone()['c'],
@@ -3647,10 +3674,12 @@ def _handle_routes(db):
             "open_jobs": db.execute("SELECT COUNT(*) as c FROM jobs WHERE status='open'").fetchone()['c'],
             "total_applications": db.execute("SELECT COUNT(*) as c FROM applications").fetchone()['c'],
             "job_match_notifications_24h": db.execute("SELECT COUNT(*) as c FROM notifications WHERE type='job_match' AND datetime(created_at) >= datetime('now','-1 day')").fetchone()['c'],
+            "stuck_open_jobs": len(stuck_jobs),
         }
         return json_response({
             "summary": summary,
             "recent_jobs": recent_jobs,
+            "stuck_jobs": stuck_jobs,
             "limit": limit,
         })
 

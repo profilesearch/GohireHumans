@@ -1248,6 +1248,25 @@ async function renderLanding() {
       </section>
 
 
+
+      <section class="lp-compact-section lp-first-orders-proof">
+        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
+          <div>
+            <div class="lp-section-label">First completed orders</div>
+            <h2 class="lp-section-head" style="text-align:left">Start with a small, checkable task.</h2>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">See sample deliverables and draft a starter task for website QA, AI-output review, lead research, or a phone/local verification. The goal is clear work that a buyer can review and accept.</p>
+          </div>
+          <div class="lp-action-panel" style="cursor:default">
+            <div class="lp-feed-card-cat">Transaction proof</div>
+            <div class="lp-panel-title">Make the first order easy to scope.</div>
+            <div class="lp-action-button-stack">
+              <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click',{source:'first_orders'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offers',source:'first_orders'});">View starter offers</a>
+              <a class="btn btn-secondary" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click',{source:'first_orders'});">See sample deliverables</a>
+              <a class="btn btn-ghost" href="/#/jobs" onclick="trackEvent('homepage_open_jobs_first_orders_click',{source:'first_orders'});">Browse open jobs</a>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="lp-compact-section lp-light-band lp-market-discovery">
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>
@@ -2111,15 +2130,23 @@ async function handleJobApply(id) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-title">Apply to This Job</div>
-      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-5)">Tell the employer why you're the right person for this role.</p>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Apply in about 2 minutes. Strong applications are specific, short, and tied to the buyer's requested deliverable.</p>
+      <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4);background:rgba(13,115,119,.06)">
+        <div style="font-weight:700;margin-bottom:var(--space-2)">What a strong application says</div>
+        <ul style="margin:0;padding-left:var(--space-5);font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.6">
+          <li>One relevant example or experience signal.</li>
+          <li>How you will complete the specific deliverable.</li>
+          <li>When you can deliver and what you need from the buyer.</li>
+        </ul>
+      </div>
       <form id="applyForm">
         <div class="form-group">
           <label class="label">Cover Message *</label>
-          <textarea class="textarea" name="cover_message" rows="5" placeholder="Describe your relevant experience and why you'd be a great fit..." required></textarea>
+          <textarea class="textarea" name="cover_message" rows="7" placeholder="Example: I can complete this by tomorrow. I will test the flow on mobile and desktop, report confusing steps, and include screenshots for anything broken. I need the URL and any test account instructions." required onfocus="trackEvent('job_application_cover_focus', { job_id: String(id), source: 'job_apply_modal' })"></textarea>
         </div>
         <div class="form-group">
-          <label class="label">Portfolio URL <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
-          <input class="input" name="portfolio_url" type="url" placeholder="https://your-portfolio.com">
+          <label class="label">Portfolio or proof URL <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
+          <input class="input" name="portfolio_url" type="url" placeholder="Relevant profile, portfolio, or previous work sample">
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
