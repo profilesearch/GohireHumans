@@ -1141,6 +1141,7 @@ async function renderLanding() {
             </div>
             <div class="lp-hero-ctas lp-hero-ctas-left">
               <button class="btn btn-primary btn-lg" onclick="trackEvent('post_task_cta_click', { source: 'homepage_hero' });navigate('#/post-job')">Post a task</button>
+              <a class="btn btn-outline btn-lg" href="/post-a-small-task.html" onclick="trackEvent('post_small_task_page_click', { source: 'homepage_hero' });trackRecommendedEvent('generate_lead', { lead_type: 'post_small_task_page', source: 'homepage_hero' })">First-task templates</a>
               <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero' });navigate('#/services')">Browse helpers</button>
               <a class="btn btn-outline btn-lg" href="/ai-integration.html" onclick="trackEvent('agent_integration_cta_click', { source: 'homepage_hero' })">Agent guide</a>
             </div>
@@ -1157,6 +1158,11 @@ async function renderLanding() {
             <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
               <div class="lp-hero-trust-item">Workers receive the listed payout</div>
               <div class="lp-hero-trust-item">Employer pays Stripe processing + 1%</div>
+            </div>
+            <div class="lp-marketplace-proof" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-3);margin-top:var(--space-4);max-width:700px">
+              <a href="/#/jobs" onclick="trackEvent('homepage_live_proof_click',{target:'jobs'});trackRecommendedEvent('generate_lead',{lead_type:'homepage_live_jobs'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">3</div><div style="font-size:var(--text-xs);font-weight:700">open paid jobs</div></a>
+              <a href="/#/services" onclick="trackEvent('homepage_live_proof_click',{target:'services'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">33</div><div style="font-size:var(--text-xs);font-weight:700">public services listed</div></a>
+              <a href="/post-a-small-task.html" onclick="trackEvent('homepage_first_task_page_click',{source:'live_proof'});trackRecommendedEvent('generate_lead',{lead_type:'post_small_task_page'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">$25+</div><div style="font-size:var(--text-xs);font-weight:700">starter task budgets</div></a>
             </div>
           </div>
 
@@ -2077,6 +2083,7 @@ async function renderJobDetail(id) {
 async function handleJobApply(id) {
   trackEvent('job_apply_intent', { job_id: String(id), source: 'job_detail' });
   if (!requireAuth(`jobs/${id}`)) return;
+  trackEvent('job_apply_form_opened', { job_id: String(id), source: 'job_detail' });
   // Show application modal
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
@@ -2107,8 +2114,10 @@ async function handleJobApply(id) {
     const pu = fd.get('portfolio_url');
     if (pu) body.portfolio_url = pu;
     try {
+      trackEvent('job_application_started', { job_id: String(id), source: 'job_apply_modal' });
       trackEvent('job_application_submit', { job_id: String(id) });
       await api(`/jobs/${id}/apply`, { method: 'POST', body });
+      trackEvent('job_application_submitted', { job_id: String(id), source: 'job_apply_modal' });
       trackEvent('job_application_completed', { job_id: String(id) });
       overlay.remove();
       toast('Application submitted!', 'success');

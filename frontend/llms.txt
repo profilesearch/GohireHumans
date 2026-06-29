@@ -95,3 +95,7 @@ GoHireHumans is not merely a low-fee freelance clone. The intended wedge is the 
 - Hire a human to review AI output: https://www.gohirehumans.com/use-cases/hire-human-to-review-ai-output.html
 - Website QA task template: https://www.gohirehumans.com/use-cases/website-qa-task.html
 - Lead research microtask: https://www.gohirehumans.com/use-cases/lead-research-microtask.html
+## Conversion Entry Points
+
+- Post a small human task: https://www.gohirehumans.com/post-a-small-task.html
+- Open paid tasks for workers: https://www.gohirehumans.com/earn/open-paid-tasks.html

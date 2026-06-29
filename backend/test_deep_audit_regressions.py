@@ -291,6 +291,46 @@ class BackendRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, text)
 
+    def test_growth_activation_pages_and_homepage_proof_are_discoverable(self):
+        required = {
+            "frontend/index.html": [
+                "lp-marketplace-proof",
+                "homepage_live_proof_click",
+                "homepage_first_task_page_click",
+                "job_apply_form_opened",
+                "job_application_started",
+                "job_application_submitted",
+            ],
+            "frontend/post-a-small-task.html": [
+                "Post a small human task from $25",
+                "first_task_template_click",
+                "Draft website QA task",
+                "Draft AI review task",
+                "Draft lead research task",
+            ],
+            "frontend/earn/open-paid-tasks.html": [
+                "Find open paid tasks you can apply to today",
+                "worker_open_tasks_click",
+                "What a strong application says",
+            ],
+            "frontend/sitemap.xml": [
+                "https://www.gohirehumans.com/post-a-small-task.html",
+                "https://www.gohirehumans.com/earn/open-paid-tasks.html",
+            ],
+            "frontend/llms.txt": [
+                "Conversion Entry Points",
+                "post-a-small-task.html",
+                "earn/open-paid-tasks.html",
+            ],
+        }
+        missing = {}
+        for rel, snippets in required.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            misses = [s for s in snippets if s not in text]
+            if misses:
+                missing[rel] = misses
+        self.assertEqual(missing, {})
+
     def test_owner_admin_bootstrap_promotes_enzo_account(self):
         db = self.module.get_db()
         try:
