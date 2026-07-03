@@ -3600,10 +3600,11 @@ async function renderNotifications() {
         ${notifs.some(n=>!n.is_read) ? `<button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button>` : ''}
       </div>
       ${notifs.length ? notifs.map(n => `
-        <div class="notif-item ${n.is_read?'':'unread'}" onclick="markNotifRead(${n.id})">
+        <div class="notif-item ${n.is_read?'':'unread'}" onclick="handleNotificationClick(${Number(n.id) || 0}, '${encodeURIComponent(n.link || '')}')">
           <div class="notif-item-title">${esc(n.title||'Notification')}</div>
           <div class="notif-item-body">${esc(n.message||n.body||'')}</div>
           <div class="notif-item-time">${relativeDate(n.created_at)}</div>
+          ${n.link ? `<div style="font-size:var(--text-xs);color:var(--color-primary);margin-top:var(--space-2);font-weight:600">Open →</div>` : ''}
         </div>`).join('') : `<div class="empty-state"><p>No notifications yet.</p></div>`}
     `, 'notifications');
   } catch(err) {
@@ -3611,12 +3612,27 @@ async function renderNotifications() {
   }
 }
 
+function normalizeNotificationLink(link) {
+  if (!link) return '';
+  if (link.startsWith('#/')) return link;
+  if (link.startsWith('/')) return '#' + link;
+  return '';
+}
+
+async function handleNotificationClick(id, encodedLink = '') {
+  await markNotifRead(id);
+  let link = '';
+  try { link = decodeURIComponent(encodedLink || ''); } catch (_) { link = ''; }
+  const target = normalizeNotificationLink(link);
+  if (target) navigate(target);
+}
+
 async function markNotifRead(id) {
   try {
     await api(`/notifications/${id}/read`, { method: 'PUT' });
     loadNotifCount();
     // Re-render to show updated state
-    const el = document.querySelector(`.notif-item[onclick*="markNotifRead(${id})"]`);
+    const el = document.querySelector(`.notif-item[onclick*="${id}"]`);
     if (el) el.classList.remove('unread');
   } catch(err) {}
 }
