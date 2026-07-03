@@ -660,12 +660,60 @@ function searchHeroServices() {
 }
 
 const taskDraftTemplates = {
+  ai_review: {
+    title: 'Have a human QA AI-generated output',
+    description: 'Please review the AI-generated output I provide for factual errors, unsupported claims, risky wording, missing context, and unclear recommendations.\n\nAcceptance criteria:\n1. Check every item I provide.\n2. Return an issue table with item, issue, severity, evidence/source when available, and suggested fix.\n3. Clearly flag uncertainty instead of guessing.\n\nDeliverable: concise QA report plus corrected lines or notes where useful.',
+    category: 'expert_review',
+    budget_type: 'fixed',
+    budget_amount: '49',
+    required_skills: 'AI output review, fact checking, editing, source checking'
+  },
+  automation_verification: {
+    title: 'Verify AI agent or automation runs',
+    description: 'Please spot-check the AI agent or automation outputs/runs I provide and report whether they match the expected behavior.\n\nAcceptance criteria:\n1. Review the sample runs, logs, screenshots, or outputs I provide.\n2. Mark each run pass/fail/uncertain with evidence.\n3. Identify recurring failure modes and the top fixes to check next.\n\nDeliverable: run checklist, anomaly report, and confidence notes.',
+    category: 'testing',
+    budget_type: 'fixed',
+    budget_amount: '75',
+    required_skills: 'automation QA, AI agent review, testing, concise reporting'
+  },
+  data_cleanup: {
+    title: 'Clean and verify a small data set',
+    description: 'Please clean, deduplicate, enrich, or verify the spreadsheet/data sample I provide.\n\nAcceptance criteria:\n1. Preserve the original data unless a change is clearly needed.\n2. Flag ambiguous rows instead of guessing.\n3. Return a before/after sample and change log.\n\nDeliverable: cleaned spreadsheet or table, change log, and unresolved questions.',
+    category: 'data_entry',
+    budget_type: 'fixed',
+    budget_amount: '75',
+    required_skills: 'spreadsheets, data cleanup, data verification, attention to detail'
+  },
+  research_judgment: {
+    title: 'Research options and explain the best fit',
+    description: 'Please research a short list of options for the decision I describe and explain which ones fit best.\n\nAcceptance criteria:\n1. Use public sources and include source URLs.\n2. Apply the must-have and nice-to-have criteria I provide.\n3. Explain tradeoffs and uncertainty, not just a ranked list.\n\nDeliverable: shortlist, source links, fit rationale, and recommendation.',
+    category: 'research',
+    budget_type: 'fixed',
+    budget_amount: '75',
+    required_skills: 'online research, judgment, source citation, concise recommendations'
+  },
+  phone_fact_check: {
+    title: 'Make phone calls or verify a fact',
+    description: 'Please make the short call or verify the fact I specify using the public details I provide.\n\nAcceptance criteria:\n1. Do not share private data or credentials.\n2. Record when and what you checked.\n3. Flag uncertainty, voicemail, no-answer, or conflicting information.\n\nDeliverable: call/fact-check log, outcome, and any source notes.',
+    category: 'phone_call',
+    budget_type: 'fixed',
+    budget_amount: '35',
+    required_skills: 'phone calls, fact verification, concise notes'
+  },
+  lead_qualification: {
+    title: 'Human-check and qualify a lead list',
+    description: 'Please review the lead list or sourcing criteria I provide and qualify likely-fit prospects.\n\nAcceptance criteria:\n1. Check each lead against up to three criteria.\n2. Include a public source URL or evidence note.\n3. Mark qualified, maybe, or not qualified with a short rationale.\n\nDeliverable: scored lead list with evidence and next-action notes.',
+    category: 'research',
+    budget_type: 'fixed',
+    budget_amount: '75',
+    required_skills: 'lead research, qualification, spreadsheets, public-source verification'
+  },
   website_test: {
     title: 'Test my website signup flow',
     description: 'Please test this website flow and share concise notes.\n\nWhat to do:\n1. Open the URL I provide.\n2. Complete the target flow.\n3. Report anything confusing, broken, slow, or unexpected.\n\nDeliverable: bullet-point feedback plus screenshots if something breaks.',
     category: 'testing',
     budget_type: 'fixed',
-    budget_amount: '20',
+    budget_amount: '35',
     required_skills: 'website testing, user feedback, screenshots'
   },
   lead_research: {
@@ -675,14 +723,6 @@ const taskDraftTemplates = {
     budget_type: 'fixed',
     budget_amount: '50',
     required_skills: 'online research, spreadsheets, lead research'
-  },
-  ai_review: {
-    title: 'Review and fact-check AI-generated output',
-    description: 'Please review AI-generated output for accuracy, clarity, and missing context.\n\nDeliverable: a short scorecard, any factual corrections with sources when available, and suggested edits.\n\nDo not claim certainty where the source material is unclear.',
-    category: 'writing',
-    budget_type: 'fixed',
-    budget_amount: '35',
-    required_skills: 'editing, fact checking, AI review'
   },
   local_verification: {
     title: 'Confirm a local detail or make a short phone check',
@@ -695,11 +735,20 @@ const taskDraftTemplates = {
 };
 function getTaskDraftTemplate(key) {
   const aliases = {
+    ai_output_qa: 'ai_review',
+    ai_qa: 'ai_review',
+    ai_fact_check: 'ai_review',
+    automation_qa: 'automation_verification',
+    agent_run_verification: 'automation_verification',
+    spreadsheet_cleanup: 'data_cleanup',
+    data_enrichment: 'data_cleanup',
+    human_research: 'research_judgment',
+    phone_check: 'phone_fact_check',
+    phone_call: 'phone_fact_check',
+    local_phone_check: 'phone_fact_check',
+    lead_research: 'lead_qualification',
     website_qa: 'website_test',
-    website_testing: 'website_test',
-    local_phone_check: 'local_verification',
-    phone_check: 'local_verification',
-    phone_call: 'local_verification'
+    website_testing: 'website_test'
   };
   return taskDraftTemplates[key] || taskDraftTemplates[aliases[key]] || null;
 }
