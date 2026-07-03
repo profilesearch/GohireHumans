@@ -59,6 +59,18 @@ if "*" in allowed_origins:
     allowed_origins = [o for o in allowed_origins if o != "*"]
 CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
+
+@app.after_request
+def add_security_headers(response):
+    """Apply baseline API security headers to every backend response."""
+    response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 # ─── Import the CGI API module ──────────────────────────────────────────────
 spec = importlib.util.spec_from_file_location(
     "api_module",

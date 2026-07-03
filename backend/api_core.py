@@ -752,6 +752,7 @@ def auto_seed_if_empty():
 # ─── Rate Limiter ──────────────────────────────────────────────────────────────
 
 _rate_limit_store = {}
+_login_failure_store = {}
 _rate_limit_lock = threading.Lock()
 
 
@@ -771,6 +772,37 @@ def check_rate_limit() -> bool:
             return False
         _rate_limit_store[ip].append(now)
         return True
+
+
+def login_attempt_allowed(email):
+    """Fail closed after repeated login failures for the same IP+email tuple."""
+    ip = getattr(_request_ctx, 'remote_addr', 'unknown')
+    key = f"{ip}:{(email or '').strip().lower()}"
+    now = time.time()
+    window = 15 * 60
+    limit = 6
+    with _rate_limit_lock:
+        failures = [t for t in _login_failure_store.get(key, []) if now - t < window]
+        _login_failure_store[key] = failures
+        return len(failures) < limit
+
+
+def record_login_failure(email):
+    ip = getattr(_request_ctx, 'remote_addr', 'unknown')
+    key = f"{ip}:{(email or '').strip().lower()}"
+    now = time.time()
+    window = 15 * 60
+    with _rate_limit_lock:
+        failures = [t for t in _login_failure_store.get(key, []) if now - t < window]
+        failures.append(now)
+        _login_failure_store[key] = failures
+
+
+def clear_login_failures(email):
+    ip = getattr(_request_ctx, 'remote_addr', 'unknown')
+    key = f"{ip}:{(email or '').strip().lower()}"
+    with _rate_limit_lock:
+        _login_failure_store.pop(key, None)
 
 
 # ─── Content Safety ────────────────────────────────────────────────────────────
@@ -986,6 +1018,21 @@ def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
         "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details) VALUES (?,?,?,?,?)",
         [user_id, action, entity_type, entity_id, json.dumps(details) if details else None]
     )
+
+
+def require_admin_step_up(db, admin_user, body, action):
+    """Require password re-auth before sensitive admin account operations."""
+    password = (body or {}).get("admin_password", "")
+    if not password:
+        audit(db, admin_user['id'], f"{action}_step_up_missing", "user", admin_user['id'])
+        db.commit()
+        return "Admin password confirmation required", 403
+    current = db.execute("SELECT password_hash FROM users WHERE id=?", [admin_user['id']]).fetchone()
+    if not current or not verify_password(password, current['password_hash']):
+        audit(db, admin_user['id'], f"{action}_step_up_failed", "user", admin_user['id'])
+        db.commit()
+        return "Admin password confirmation failed", 403
+    return None, None
 
 
 def send_email(to_email, subject, html_body):
@@ -1465,20 +1512,38 @@ def _handle_routes(db):
         }, 201)
 
     elif path == "/auth/login" and method == "POST":
-        body = get_body()
+        body = get_body() or {}
         email = body.get("email", "").strip().lower()
         password = body.get("password", "")
 
+        if not login_attempt_allowed(email):
+            audit(db, None, "login_rate_limited", "user", None, {"email": email, "ip": getattr(_request_ctx, 'remote_addr', 'unknown')})
+            db.commit()
+            return error_response("Too many failed login attempts. Try again later.", 429)
+
         user = db.execute("SELECT * FROM users WHERE email = ?", [email]).fetchone()
         if not user or not verify_password(password, user['password_hash']):
+            record_login_failure(email)
+            audit(db, user['id'] if user else None, "login_failed", "user", user['id'] if user else None, {"email": email, "ip": getattr(_request_ctx, 'remote_addr', 'unknown'), "admin": bool(user['is_admin']) if user else False})
+            db.commit()
             return error_response("Invalid credentials", 401)
         if is_seeded_sample_email(email):
+            record_login_failure(email)
+            audit(db, user['id'], "login_blocked_sample", "user", user['id'])
+            db.commit()
             return error_response("Sample account login disabled", 403)
         if user['is_banned']:
+            record_login_failure(email)
+            audit(db, user['id'], "login_blocked_banned", "user", user['id'])
+            db.commit()
             return error_response("Account banned", 403)
         if user['is_suspended']:
+            record_login_failure(email)
+            audit(db, user['id'], "login_blocked_suspended", "user", user['id'])
+            db.commit()
             return error_response("Account suspended", 403)
 
+        clear_login_failures(email)
         token = generate_session_token()
         expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
         db.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (?,?,?)", [user['id'], token, expires])
@@ -3877,7 +3942,10 @@ def _handle_routes(db):
             return error_response("Admin access required", 403)
 
         target_id = int(re.match(r"^/admin/users/(\d+)/password$", path).group(1))
-        body = get_body()
+        body = get_body() or {}
+        step_error, step_status = require_admin_step_up(db, user, body, "admin_rotate_user_password")
+        if step_error:
+            return error_response(step_error, step_status)
         new_password = body.get("password", "")
         if len(new_password) < 12:
             return error_response("Password must be at least 12 characters", 400)
@@ -3898,7 +3966,12 @@ def _handle_routes(db):
             return error_response("Admin access required", 403)
 
         target_id = int(re.match(r"^/admin/users/(\d+)$", path).group(1))
-        body = get_body()
+        body = get_body() or {}
+        sensitive_fields = {'is_admin', 'is_active', 'is_suspended', 'is_banned'}
+        if any(field in body for field in sensitive_fields):
+            step_error, step_status = require_admin_step_up(db, user, body, "admin_update_user")
+            if step_error:
+                return error_response(step_error, step_status)
 
         updates = []
         vals = []
@@ -3910,7 +3983,8 @@ def _handle_routes(db):
             vals.append(target_id)
             db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", vals)
 
-        audit(db, user['id'], "admin_update_user", "user", target_id, body)
+        audit_details = {k: v for k, v in body.items() if k != 'admin_password'}
+        audit(db, user['id'], "admin_update_user", "user", target_id, audit_details)
         db.commit()
         return json_response({"ok": True})
 

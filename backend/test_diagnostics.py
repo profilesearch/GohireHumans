@@ -7,12 +7,22 @@ import unittest
 
 
 MODULE_PATH = Path(__file__).with_name("api_core.py")
+SERVER_PATH = Path(__file__).with_name("server.py")
 
 
 def load_api_core() -> Any:
     spec = importlib.util.spec_from_file_location("api_core_under_test", MODULE_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError("Could not load api_core.py for diagnostics tests")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cast(ModuleType, module))
+    return module
+
+
+def load_server() -> Any:
+    spec = importlib.util.spec_from_file_location("server_under_test", SERVER_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load server.py for diagnostics tests")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cast(ModuleType, module))
     return module
@@ -85,6 +95,27 @@ class SeededSampleAccountTests(unittest.TestCase):
         self.assertEqual(condition.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
         self.assertEqual(subquery.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
         self.assertEqual(set(values), module.SEEDED_SAMPLE_EMAILS)
+
+
+class ApiSecurityHeaderTests(unittest.TestCase):
+    def test_server_adds_baseline_security_headers(self):
+        text = SERVER_PATH.read_text(encoding="utf-8", errors="ignore")
+        required = [
+            "@app.after_request",
+            "def add_security_headers(response):",
+            "Strict-Transport-Security",
+            "max-age=63072000; includeSubDomains; preload",
+            "X-Content-Type-Options",
+            "nosniff",
+            "X-Frame-Options",
+            "DENY",
+            "Referrer-Policy",
+            "strict-origin-when-cross-origin",
+            "Cache-Control",
+            "no-store",
+        ]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

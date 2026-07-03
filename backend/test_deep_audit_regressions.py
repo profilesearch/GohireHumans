@@ -243,7 +243,7 @@ class BackendRegressionTests(unittest.TestCase):
         self.module._request_ctx.path_info = "/admin/users/2/password"
         self.module._request_ctx.query_string = ""
         self.module._request_ctx.http_authorization = "Bearer admin-token"
-        self.module._request_ctx.stdin_data = json.dumps({"password": new_password})
+        self.module._request_ctx.stdin_data = json.dumps({"password": new_password, "admin_password": "AdminPassword123!"})
         self.module._request_ctx.content_type = "application/json"
         self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
         self.module._request_ctx.remote_addr = "127.0.0.1"
@@ -261,6 +261,108 @@ class BackendRegressionTests(unittest.TestCase):
             audit = db.execute("SELECT action, details FROM audit_log WHERE entity_type='user' AND entity_id=2").fetchone()
             self.assertEqual(audit['action'], 'admin_rotate_user_password')
             self.assertNotIn(new_password, audit['details'] or '')
+        finally:
+            db.close()
+
+    def test_admin_password_rotation_requires_step_up_reauth(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('AdminPassword123!')])
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (2,'target@example.com',?,'Target',0)", [self.module.hash_password('OldPassword123!')])
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'admin-token',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module._request_ctx.request_method = "PUT"
+        self.module._request_ctx.path_info = "/admin/users/2/password"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = "Bearer admin-token"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = json.dumps({"password": "NewTemporaryPassword123!"})
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 403, body)
+        self.assertIn("Admin password confirmation required", body["error"])
+        db = self.module.get_db()
+        try:
+            user = db.execute("SELECT password_hash FROM users WHERE id=2").fetchone()
+            self.assertTrue(self.module.verify_password('OldPassword123!', user['password_hash']))
+            audit = db.execute("SELECT action FROM audit_log WHERE action='admin_rotate_user_password_step_up_missing'").fetchone()
+            self.assertIsNotNone(audit)
+        finally:
+            db.close()
+
+    def test_admin_user_status_update_requires_step_up_and_redacts_admin_password_from_audit(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('AdminPassword123!')])
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin,is_suspended) VALUES (2,'target@example.com',?,'Target',0,0)", [self.module.hash_password('TargetPassword123!')])
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'admin-token',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module._request_ctx.request_method = "PUT"
+        self.module._request_ctx.path_info = "/admin/users/2"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = "Bearer admin-token"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = json.dumps({"is_suspended": True, "admin_password": "AdminPassword123!"})
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        db = self.module.get_db()
+        try:
+            user = db.execute("SELECT is_suspended FROM users WHERE id=2").fetchone()
+            self.assertEqual(user['is_suspended'], 1)
+            audit = db.execute("SELECT details FROM audit_log WHERE action='admin_update_user' AND entity_id=2").fetchone()
+            self.assertNotIn("AdminPassword123!", audit['details'] or '')
+            self.assertNotIn("admin_password", audit['details'] or '')
+        finally:
+            db.close()
+
+    def test_login_failures_are_throttled_and_audited(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('CorrectPassword123!')])
+            db.commit()
+        finally:
+            db.close()
+
+        statuses = []
+        for _ in range(7):
+            self.module._request_ctx.request_method = "POST"
+            self.module._request_ctx.path_info = "/auth/login"
+            self.module._request_ctx.query_string = ""
+            self.module._request_ctx.http_authorization = ""
+            self.module._request_ctx.http_x_api_key = ""
+            self.module._request_ctx.stdin_data = json.dumps({"email": "admin@example.com", "password": "wrong"})
+            self.module._request_ctx.content_type = "application/json"
+            self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+            self.module._request_ctx.remote_addr = "203.0.113.5"
+            if hasattr(self.module._request_ctx, 'body_cache'):
+                delattr(self.module._request_ctx, 'body_cache')
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.module.handle_request()
+            status, _ = parse_cgi_output(out.getvalue())
+            statuses.append(status)
+        self.assertEqual(statuses[:6], [401] * 6)
+        self.assertEqual(statuses[6], 429)
+        db = self.module.get_db()
+        try:
+            failed = db.execute("SELECT COUNT(*) FROM audit_log WHERE action='login_failed'").fetchone()[0]
+            limited = db.execute("SELECT COUNT(*) FROM audit_log WHERE action='login_rate_limited'").fetchone()[0]
+            self.assertEqual(failed, 6)
+            self.assertEqual(limited, 1)
         finally:
             db.close()
 
