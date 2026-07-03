@@ -3322,14 +3322,99 @@ async function renderPayments() {
   }
 }
 
+function loadStripeJs() {
+  return new Promise((resolve, reject) => {
+    if (window.Stripe) return resolve();
+    const existing = document.querySelector('script[src="https://js.stripe.com/v3/"]');
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://js.stripe.com/v3/';
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Could not load Stripe payment setup.'));
+    document.head.appendChild(script);
+  });
+}
+
+function closePaymentSetupModal() {
+  const modal = document.getElementById('paymentSetupModal');
+  if (modal) modal.remove();
+}
+
+async function showEmployerSetupIntentModal(result) {
+  if (!result.client_secret || !result.publishable_key) {
+    toast('Payment setup response is missing Stripe details.', 'error');
+    return;
+  }
+  await loadStripeJs();
+  const stripe = Stripe(result.publishable_key);
+  const elements = stripe.elements();
+  const overlay = document.createElement('div');
+  overlay.id = 'paymentSetupModal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:520px">
+      <div class="modal-header">
+        <h2>Add payment method</h2>
+        <button class="modal-close" onclick="closePaymentSetupModal()">&times;</button>
+      </div>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Save a card so this employer account can fund jobs and services through the normal workflow. No job is hired by this step alone.</p>
+      <div id="employer-card-element" style="padding:14px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:#fff;margin-bottom:var(--space-3)"></div>
+      <div id="employer-card-error" style="color:var(--color-error);font-size:var(--text-sm);min-height:20px;margin-bottom:var(--space-4)"></div>
+      <div style="display:flex;gap:var(--space-2);justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closePaymentSetupModal()">Cancel</button>
+        <button class="btn btn-primary" id="confirmEmployerPaymentBtn">Save payment method</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const card = elements.create('card');
+  card.mount('#employer-card-element');
+  card.on('change', event => {
+    const err = document.getElementById('employer-card-error');
+    if (err) err.textContent = event.error ? event.error.message : '';
+  });
+  document.getElementById('confirmEmployerPaymentBtn').onclick = async () => {
+    const btn = document.getElementById('confirmEmployerPaymentBtn');
+    const err = document.getElementById('employer-card-error');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    const confirmation = await stripe.confirmCardSetup(result.client_secret, { payment_method: { card } });
+    if (confirmation.error) {
+      if (err) err.textContent = confirmation.error.message || 'Payment setup failed.';
+      btn.disabled = false;
+      btn.textContent = 'Save payment method';
+      trackEvent('payment_setup_failed', { role: 'employer', reason: 'stripe_confirm_error' });
+      return;
+    }
+    await api('/payments/confirm-setup-employer', {
+      method: 'POST',
+      body: { payment_method_id: confirmation.setupIntent.payment_method }
+    });
+    trackEvent('payment_setup_completed', { role: 'employer' });
+    closePaymentSetupModal();
+    toast('Payment method saved.', 'success');
+    renderPayments();
+  };
+}
+
 async function setupEmployerPayment() {
   try {
     trackEvent('payment_setup_attempted', { role: 'employer' });
     const result = await api('/payments/setup-employer', { method: 'POST', body: {} });
     if (result.url || result.setup_url) {
       window.location.href = result.url || result.setup_url;
+    } else if (result.client_secret && result.publishable_key) {
+      await showEmployerSetupIntentModal(result);
+    } else if (result.payment_method_id || result.mode === 'simulated') {
+      trackEvent('payment_setup_completed', { role: 'employer', mode: result.mode || 'simulated' });
+      toast(result.message || 'Payment method set up successfully.', 'success');
+      renderPayments();
     } else {
-      toast('Payment method setup initiated. Check your email.', 'info');
+      toast('Payment method setup started, but no setup flow was returned.', 'info');
     }
   } catch(err) { toast(err.message, 'error'); }
 }

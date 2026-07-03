@@ -228,6 +228,20 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
         self.assertEqual(body["stuck_jobs"], [])
 
+    def test_employer_payment_setup_handles_stripe_setup_intent(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        required = [
+            "function loadStripeJs()",
+            "https://js.stripe.com/v3/",
+            "showEmployerSetupIntentModal",
+            "stripe.confirmCardSetup",
+            "/payments/confirm-setup-employer",
+            "payment_setup_completed",
+            "No job is hired by this step alone",
+        ]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
+
     def test_admin_application_pipeline_requires_admin(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/api/v1/admin/application-pipeline"
