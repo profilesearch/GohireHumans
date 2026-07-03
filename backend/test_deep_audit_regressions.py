@@ -351,6 +351,8 @@ class BackendRegressionTests(unittest.TestCase):
             self.module._request_ctx.remote_addr = "203.0.113.5"
             if hasattr(self.module._request_ctx, 'body_cache'):
                 delattr(self.module._request_ctx, 'body_cache')
+            if hasattr(self.module._request_ctx, 'raw_body'):
+                delattr(self.module._request_ctx, 'raw_body')
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 self.module.handle_request()
             status, _ = parse_cgi_output(out.getvalue())
@@ -365,6 +367,46 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(limited, 1)
         finally:
             db.close()
+
+    def test_valid_login_succeeds_after_failed_attempt_threshold_and_clears_failures(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('CorrectPassword123!')])
+            db.commit()
+        finally:
+            db.close()
+
+        for _ in range(6):
+            self.module._request_ctx.request_method = "POST"
+            self.module._request_ctx.path_info = "/auth/login"
+            self.module._request_ctx.query_string = ""
+            self.module._request_ctx.http_authorization = ""
+            self.module._request_ctx.http_x_api_key = ""
+            self.module._request_ctx.stdin_data = json.dumps({"email": "admin@example.com", "password": "wrong"})
+            self.module._request_ctx.content_type = "application/json"
+            self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+            self.module._request_ctx.remote_addr = "203.0.113.6"
+            if hasattr(self.module._request_ctx, 'body_cache'):
+                delattr(self.module._request_ctx, 'body_cache')
+            if hasattr(self.module._request_ctx, 'raw_body'):
+                delattr(self.module._request_ctx, 'raw_body')
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.module.handle_request()
+            status, _ = parse_cgi_output(out.getvalue())
+            self.assertEqual(status, 401)
+
+        self.module._request_ctx.stdin_data = json.dumps({"email": "admin@example.com", "password": "CorrectPassword123!"})
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        if hasattr(self.module._request_ctx, 'body_cache'):
+            delattr(self.module._request_ctx, 'body_cache')
+        if hasattr(self.module._request_ctx, 'raw_body'):
+            delattr(self.module._request_ctx, 'raw_body')
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertIn("token", body)
+        self.assertEqual(self.module._login_failure_store.get("203.0.113.6:admin@example.com"), None)
 
     def test_employer_payment_setup_handles_stripe_setup_intent(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")

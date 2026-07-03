@@ -1516,13 +1516,14 @@ def _handle_routes(db):
         email = body.get("email", "").strip().lower()
         password = body.get("password", "")
 
-        if not login_attempt_allowed(email):
-            audit(db, None, "login_rate_limited", "user", None, {"email": email, "ip": getattr(_request_ctx, 'remote_addr', 'unknown')})
-            db.commit()
-            return error_response("Too many failed login attempts. Try again later.", 429)
-
         user = db.execute("SELECT * FROM users WHERE email = ?", [email]).fetchone()
-        if not user or not verify_password(password, user['password_hash']):
+        valid_credentials = bool(user and verify_password(password, user['password_hash']))
+
+        if not valid_credentials:
+            if not login_attempt_allowed(email):
+                audit(db, user['id'] if user else None, "login_rate_limited", "user", user['id'] if user else None, {"email": email, "ip": getattr(_request_ctx, 'remote_addr', 'unknown'), "admin": bool(user['is_admin']) if user else False})
+                db.commit()
+                return error_response("Too many failed login attempts. Try again later.", 429)
             record_login_failure(email)
             audit(db, user['id'] if user else None, "login_failed", "user", user['id'] if user else None, {"email": email, "ip": getattr(_request_ctx, 'remote_addr', 'unknown'), "admin": bool(user['is_admin']) if user else False})
             db.commit()
