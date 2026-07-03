@@ -1082,11 +1082,11 @@ class BackendRegressionTests(unittest.TestCase):
                 "job_application_cover_focus",
             ],
             "frontend/starter-offers.html": [
-                "Start with a small task that can actually get done.",
+                "Human verification for AI work before you trust it.",
                 "starter_offer_draft_click",
-                "Website QA quick check",
-                "AI-output trust review",
-                "Lead research starter list",
+                "AI Output Verification",
+                "Automation QA Sprint",
+                "Real-World Check",
             ],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
@@ -1771,9 +1771,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "worker_route_select",
             "post_service_intent",
             "browse_relevant_jobs_intent",
-            "Need the first job scoped?",
-            "first_task_concierge_cta_click",
-            "homepage_first_task_experiment",
+            "Start with a founder-managed QA sprint.",
+            "homepage_starter_offers_click",
+            "founding_qa_sprint",
         ]
         for snippet in required_snippets:
             self.assertIn(snippet, text)
@@ -1883,7 +1883,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         self.assertNotRegex(text, r"(?i)\bpublic beta listings\b")
         for snippet in [
-            "Open tasks and services",
+            "Human verification layer for AI work",
             "review before publishing or spending",
             "where they have authorization to transact",
             "payment processing where configured",
