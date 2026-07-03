@@ -3355,9 +3355,9 @@ async function showEmployerSetupIntentModal(result) {
   const elements = stripe.elements();
   const overlay = document.createElement('div');
   overlay.id = 'paymentSetupModal';
-  overlay.className = 'modal-overlay';
+  overlay.className = 'modal-overlay active';
   overlay.innerHTML = `
-    <div class="modal-content" style="max-width:520px">
+    <div class="modal" style="max-width:520px">
       <div class="modal-header">
         <h2>Add payment method</h2>
         <button class="modal-close" onclick="closePaymentSetupModal()">&times;</button>
@@ -3402,7 +3402,13 @@ async function showEmployerSetupIntentModal(result) {
 }
 
 async function setupEmployerPayment() {
+  const trigger = (typeof event !== 'undefined' && event?.currentTarget) ? event.currentTarget : document.querySelector('button[onclick="setupEmployerPayment()"]');
+  const originalText = trigger ? trigger.textContent : '';
   try {
+    if (trigger) {
+      trigger.disabled = true;
+      trigger.textContent = 'Opening secure setup...';
+    }
     trackEvent('payment_setup_attempted', { role: 'employer' });
     const result = await api('/payments/setup-employer', { method: 'POST', body: {} });
     if (result.url || result.setup_url) {
@@ -3417,6 +3423,12 @@ async function setupEmployerPayment() {
       toast('Payment method setup started, but no setup flow was returned.', 'info');
     }
   } catch(err) { toast(err.message, 'error'); }
+  finally {
+    if (trigger && document.body.contains(trigger)) {
+      trigger.disabled = false;
+      trigger.textContent = originalText || 'Set Up Payment Method';
+    }
+  }
 }
 
 async function setupWorkerPayment() {
