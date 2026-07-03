@@ -103,7 +103,7 @@ class ApiSecurityHeaderTests(unittest.TestCase):
         required = [
             "@app.after_request",
             "def add_security_headers(response):",
-            "Strict-Transport-Security",
+            "response.headers[\"Strict-Transport-Security\"]",
             "max-age=63072000; includeSubDomains; preload",
             "X-Content-Type-Options",
             "nosniff",
@@ -111,7 +111,7 @@ class ApiSecurityHeaderTests(unittest.TestCase):
             "DENY",
             "Referrer-Policy",
             "strict-origin-when-cross-origin",
-            "Cache-Control",
+            "response.headers[\"Cache-Control\"]",
             "no-store",
         ]
         missing = [snippet for snippet in required if snippet not in text]
