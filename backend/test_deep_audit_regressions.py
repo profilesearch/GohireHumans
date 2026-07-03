@@ -7,7 +7,7 @@ import re
 import sqlite3
 import tempfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 import unittest
@@ -88,6 +88,55 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_live_worker_payout_readiness_requires_stripe_capabilities(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
+            db.commit()
+            self.module.PRODUCTION_MODE = True
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=False, details_submitted=True)
+            self.module.stripe = type("FakeStripe", (), {
+                "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
+                "error": type("Error", (), {"StripeError": Exception})
+            })
+            self.assertFalse(self.module.worker_has_payout_setup(db, 1))
+            fake_account.charges_enabled = True
+            self.assertTrue(self.module.worker_has_payout_setup(db, 1))
+        finally:
+            db.close()
+
+    def test_live_release_rechecks_connect_readiness_before_transfer(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            db.commit()
+            self.module.PRODUCTION_MODE = True
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            fake_transfer = mock.Mock()
+            fake_account = SimpleNamespace(payouts_enabled=False, charges_enabled=True, details_submitted=True, capabilities={'transfers': 'active'})
+            self.module.stripe = type("FakeStripe", (), {
+                "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
+                "Transfer": type("Transfer", (), {"create": fake_transfer}),
+                "error": type("Error", (), {"StripeError": Exception})
+            })
+            with self.assertRaisesRegex(ValueError, "not payout-ready"):
+                self.module.release_escrow_to_worker(db, 1, None, 100, 1)
+            fake_transfer.assert_not_called()
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "held")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM payout_transfers WHERE order_id=1").fetchone()[0], 0)
+        finally:
+            db.close()
+
     def test_live_release_updates_db_only_after_stripe_transfer_success(self):
         db = self.module.get_db()
         try:
@@ -102,8 +151,10 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
             self.module.STRIPE_SECRET_KEY = "sk_test_configured"
-            fake_transfer = mock.Mock(return_value=object())
+            fake_transfer = mock.Mock(return_value=type("TransferResult", (), {"id": "tr_test_123"})())
+            fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=True, details_submitted=True, capabilities={'transfers': 'active'})
             self.module.stripe = type("FakeStripe", (), {
+                "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
                 "Transfer": type("Transfer", (), {"create": fake_transfer}),
                 "error": type("Error", (), {"StripeError": Exception})
             })
@@ -114,6 +165,12 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(fake_transfer.call_args.kwargs.get("idempotency_key"), "escrow-release:1:full:10000")
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "released")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 1)
+            transfer_row = db.execute("SELECT stripe_transfer_id, idempotency_key, status, transfer_type FROM payout_transfers WHERE order_id=1").fetchone()
+            self.assertIsNotNone(transfer_row)
+            self.assertEqual(transfer_row["stripe_transfer_id"], "tr_test_123")
+            self.assertEqual(transfer_row["idempotency_key"], "escrow-release:1:full:10000")
+            self.assertEqual(transfer_row["status"], "recorded")
+            self.assertEqual(transfer_row["transfer_type"], "escrow_release")
         finally:
             db.close()
 
@@ -134,7 +191,9 @@ class BackendRegressionTests(unittest.TestCase):
             class StripeBoom(Exception):
                 pass
             fake_transfer = mock.Mock(side_effect=StripeBoom("boom"))
+            fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=True, details_submitted=True, capabilities={'transfers': 'active'})
             self.module.stripe = type("FakeStripe", (), {
+                "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
                 "Transfer": type("Transfer", (), {"create": fake_transfer}),
                 "error": type("Error", (), {"StripeError": StripeBoom})
             })
@@ -518,6 +577,9 @@ class BackendRegressionTests(unittest.TestCase):
             "first_task_template_selected",
             "first_task_wizard_review_draft_click",
             "first_task_draft_completed",
+            "function markFirstTaskWizardStarted(params = {})",
+            "first_task_blank_form_opened",
+            "const hasMeaningfulDraft = Boolean(task || deliverable)",
             "trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed'",
             "trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed'",
             "function getStoredAttribution()",
