@@ -31,3 +31,5 @@ jobs:
           python-version: '3.11'
       - name: Static regression tests
         run: python -m unittest backend/test_deep_audit_regressions.py -v
+      - name: Security static checks
+        run: python backend/security_static_checks.py

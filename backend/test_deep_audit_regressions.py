@@ -408,6 +408,41 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("token", body)
         self.assertEqual(self.module._login_failure_store.get("203.0.113.6:admin@example.com"), None)
 
+    def test_frontend_security_hardening_invariants(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("sessionStorage.setItem('ghh_token'", text)
+        self.assertNotIn("localStorage.setItem('ghh_token'", text)
+        self.assertIn("localStorage.removeItem('ghh_token'", text)
+        self.assertIn("function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;')", text)
+        self.assertIn("allowHtml = false", text)
+        self.assertIn("modalBody.textContent = message || ''", text)
+        self.assertIn("admin_password: adminPassword", text)
+        self.assertIn("/trust-safety.html", text)
+
+    def test_audit_redacts_sensitive_details_recursively(self):
+        db = self.module.get_db()
+        try:
+            self.module.audit(db, 1, "sensitive_test", "user", 1, {
+                "password": "SuperSecret123!",
+                "nested": {"admin_password": "AdminSecret123!", "safe": "visible"},
+                "items": [{"token": "tok_live_secret", "name": "ok"}],
+            })
+            row = db.execute("SELECT details FROM audit_log WHERE action='sensitive_test'").fetchone()
+            details = json.loads(row["details"])
+            self.assertEqual(details["password"], "[REDACTED]")
+            self.assertEqual(details["nested"]["admin_password"], "[REDACTED]")
+            self.assertEqual(details["nested"]["safe"], "visible")
+            self.assertEqual(details["items"][0]["token"], "[REDACTED]")
+            self.assertEqual(details["items"][0]["name"], "ok")
+        finally:
+            db.close()
+
+    def test_trust_safety_page_covers_payment_and_dispute_safety(self):
+        text = (REPO_ROOT / "frontend/trust-safety.html").read_text(encoding="utf-8", errors="ignore").lower()
+        required = ["stripe-powered processing", "payment review", "issue review", "off-platform", "dispute"]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
+
     def test_employer_payment_setup_handles_stripe_setup_intent(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         required = [

@@ -292,9 +292,33 @@ const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.r
 // ─── State ───────────────────────────────────────────────────
 let storedUser = null, storedToken = null;
 try {
-  storedToken = localStorage.getItem('ghh_token');
+  storedToken = sessionStorage.getItem('ghh_token') || localStorage.getItem('ghh_token');
+  if (localStorage.getItem('ghh_token')) {
+    sessionStorage.setItem('ghh_token', localStorage.getItem('ghh_token'));
+    localStorage.removeItem('ghh_token');
+  }
   storedUser = JSON.parse(localStorage.getItem('ghh_user') || 'null');
 } catch(e) {}
+
+function saveSession(token, user) {
+  state.user = user;
+  state.token = token;
+  try {
+    sessionStorage.setItem('ghh_token', token);
+    localStorage.setItem('ghh_user', JSON.stringify(user));
+    localStorage.removeItem('ghh_token');
+  } catch(e) {}
+}
+
+function clearSession() {
+  state.user = null;
+  state.token = null;
+  try {
+    sessionStorage.removeItem('ghh_token');
+    localStorage.removeItem('ghh_token');
+    localStorage.removeItem('ghh_user');
+  } catch(e) {}
+}
 
 let state = {
   user: storedUser,
@@ -348,12 +372,7 @@ function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
     .then(data => {
       const { token, ...user } = data;
-      state.user = user;
-      state.token = token;
-      try {
-        localStorage.setItem('ghh_token', token);
-        localStorage.setItem('ghh_user', JSON.stringify(user));
-      } catch(e) {}
+      saveSession(token, user);
       toast('Welcome to GoHireHumans!', 'success');
       trackRecommendedEvent('login', { method: 'google' });
       navigate('#/');
@@ -399,9 +418,7 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     // Auto-clear stale session on 401 and redirect to login
     if (res.status === 401 && state.token) {
-      state.user = null;
-      state.token = null;
-      try { localStorage.removeItem('ghh_token'); localStorage.removeItem('ghh_user'); } catch(e) {}
+      clearSession();
       toast('Session expired — please log in again.', 'error');
       navigate('#/login');
       throw new Error('Session expired');
@@ -421,18 +438,23 @@ function toast(msg, type = 'info') {
 }
 
 // ─── Modal System ────────────────────────────────────────────
-function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', isDanger = false) {
+function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', isDanger = false, allowHtml = false) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal-dialog">
-      <div class="modal-title">${title}</div>
-      <div class="modal-body">${message}</div>
+      <div class="modal-title"></div>
+      <div class="modal-body"></div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="modal-cancel-btn">${cancelText}</button>
-        <button class="btn ${isDanger ? 'btn-danger' : 'btn-primary'}" id="modal-confirm-btn">${confirmText}</button>
+        <button class="btn btn-secondary" id="modal-cancel-btn"></button>
+        <button class="btn ${isDanger ? 'btn-danger' : 'btn-primary'}" id="modal-confirm-btn"></button>
       </div>
     </div>`;
+  overlay.querySelector('.modal-title').textContent = title || '';
+  const modalBody = overlay.querySelector('.modal-body');
+  if (allowHtml) { modalBody.innerHTML = message || ''; } else { modalBody.textContent = message || ''; }
+  overlay.querySelector('#modal-cancel-btn').textContent = cancelText || 'Cancel';
+  overlay.querySelector('#modal-confirm-btn').textContent = confirmText || 'Confirm';
   document.body.appendChild(overlay);
   overlay.querySelector('#modal-cancel-btn').onclick = () => overlay.remove();
   overlay.querySelector('#modal-confirm-btn').onclick = () => { overlay.remove(); onConfirm(); };
@@ -466,7 +488,7 @@ function showForgotPassword() {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
-function esc(s) { return s ? String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/&/g,'&amp;') : ''; }
+function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function formatCategory(cat) { return (cat || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function safeParseJSON(str, fallback = []) {
   try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
@@ -868,6 +890,7 @@ function renderPublicNav(activePage = '') {
           <a class="lp-nav-link" href="/use-cases/">Use Cases</a>
           <a class="lp-nav-link" href="/about.html">About</a>
           <a class="lp-nav-link" href="/faq.html">FAQ</a>
+          <a class="lp-nav-link" href="/trust-safety.html">Trust & Safety</a>
         </div>
         <div class="lp-nav-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
@@ -883,6 +906,7 @@ function renderPublicNav(activePage = '') {
         <a class="lp-mobile-link" href="/use-cases/">Use Cases</a>
         <a class="lp-mobile-link" href="/about.html">About</a>
         <a class="lp-mobile-link" href="/faq.html">FAQ</a>
+        <a class="lp-mobile-link" href="/trust-safety.html">Trust & Safety</a>
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
           <button class="btn btn-primary btn-sm" onclick="navigate('#/register')">Get started</button>
@@ -927,6 +951,7 @@ function publicFooter() {
               <li><a href="/about.html">About</a></li>
               <li><a href="/faq.html">FAQ</a></li>
               <li><a href="/blog/">Blog</a></li>
+              <li><a href="/trust-safety.html">Trust & Safety</a></li>
             </ul>
           </div>
           <div class="lp-footer-col">
@@ -1835,7 +1860,7 @@ async function handleOrderService(id) {
         toast('Order placed! Payment follows the configured workflow.', 'success');
         navigate(`#/orders/${order.id || order.order_id}`);
       } catch(err) { toast(err.message, 'error'); }
-    }, 'Place Order');
+    }, 'Place Order', 'Cancel', false, true);
     return;
   } catch(err) {
     toast(err.message, 'error');
@@ -2268,12 +2293,7 @@ async function handleAuth(e, mode, encodedRedirect) {
     trackEvent(mode === 'login' ? 'login_submit' : 'signup_started', { source: 'auth_form' });
     const data = await api(endpoint, { method: 'POST', body });
     const { token, ...user } = data;
-    state.user = user;
-    state.token = token;
-    try {
-      localStorage.setItem('ghh_token', token);
-      localStorage.setItem('ghh_user', JSON.stringify(user));
-    } catch(e) {}
+    saveSession(token, user);
     trackEvent(mode === 'login' ? 'login_completed' : 'signup_completed', { source: 'auth_form' });
     if (mode === 'login') {
       trackRecommendedEvent('login', { method: 'email' });
@@ -2288,13 +2308,8 @@ async function handleAuth(e, mode, encodedRedirect) {
 
 function logout() {
   api('/auth/logout', { method: 'POST' }).catch(() => {});
-  state.user = null;
-  state.token = null;
+  clearSession();
   state.sidebarOpen = false;
-  try {
-    localStorage.removeItem('ghh_token');
-    localStorage.removeItem('ghh_user');
-  } catch(e) {}
   navigate('#/');
 }
 
@@ -3737,9 +3752,11 @@ async function renderAdminUsers() {
 
 async function adminToggleBan(id, currentlyBanned) {
   const action = currentlyBanned ? 'Unban' : 'Ban';
+  const adminPassword = window.prompt(`Confirm your admin password to ${action.toLowerCase()} this user:`);
+  if (!adminPassword) { toast('Admin password confirmation required', 'error'); return; }
   showModal(`${action} User`, `Are you sure you want to ${action.toLowerCase()} this user?`, async () => {
     try {
-      await api(`/admin/users/${id}`, { method: 'PUT', body: { is_banned: currentlyBanned ? 0 : 1 } });
+      await api(`/admin/users/${id}`, { method: 'PUT', body: { is_banned: currentlyBanned ? 0 : 1, admin_password: adminPassword } });
       toast(currentlyBanned ? 'User unbanned' : 'User banned', 'success');
       renderAdminUsers();
     } catch(err) { toast(err.message, 'error'); }
@@ -3829,13 +3846,13 @@ async function renderAdminDisputes() {
 
 async function adminResolveDispute(orderId, resolution) {
   const label = resolution === 'worker' ? 'Release funds to worker' : 'Refund employer';
-  showModal('Resolve Dispute', `<p>Are you sure you want to resolve this dispute?</p><p style="margin-top:var(--space-2);font-weight:600">${label}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This action cannot be undone.</p>`, async () => {
+  showModal('Resolve Dispute', `<p>Are you sure you want to resolve this dispute?</p><p style="margin-top:var(--space-2);font-weight:600">${esc(label)}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This action cannot be undone.</p>`, async () => {
     try {
       await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution } });
       toast('Dispute resolved', 'success');
       renderAdminDisputes();
     } catch(err) { toast(err.message, 'error'); }
-  }, 'Resolve', 'Cancel', true);
+  }, 'Resolve', 'Cancel', true, true);
 }
 
 async function renderAdminAudit() {
