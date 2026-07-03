@@ -228,6 +228,42 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
         self.assertEqual(body["stuck_jobs"], [])
 
+    def test_admin_can_rotate_user_password_without_exposing_secret(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('AdminPassword123!')])
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (2,'ops@example.com',?,'Ops',0)", [self.module.hash_password('OldPassword123!')])
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'admin-token',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        new_password = 'NewTemporaryPassword123!'
+        self.module._request_ctx.request_method = "PUT"
+        self.module._request_ctx.path_info = "/admin/users/2/password"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = "Bearer admin-token"
+        self.module._request_ctx.stdin_data = json.dumps({"password": new_password})
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertNotIn(new_password, json.dumps(body))
+
+        db = self.module.get_db()
+        try:
+            user = db.execute("SELECT password_hash FROM users WHERE id=2").fetchone()
+            self.assertTrue(self.module.verify_password(new_password, user['password_hash']))
+            audit = db.execute("SELECT action, details FROM audit_log WHERE entity_type='user' AND entity_id=2").fetchone()
+            self.assertEqual(audit['action'], 'admin_rotate_user_password')
+            self.assertNotIn(new_password, audit['details'] or '')
+        finally:
+            db.close()
+
     def test_employer_payment_setup_handles_stripe_setup_intent(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         required = [

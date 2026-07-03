@@ -3861,6 +3861,27 @@ def _handle_routes(db):
             "per_page": per_page
         })
 
+    elif re.match(r"^/admin/users/(\d+)/password$", path) and method == "PUT":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+
+        target_id = int(re.match(r"^/admin/users/(\d+)/password$", path).group(1))
+        body = get_body()
+        new_password = body.get("password", "")
+        if len(new_password) < 12:
+            return error_response("Password must be at least 12 characters", 400)
+        target = db.execute("SELECT id, email FROM users WHERE id=?", [target_id]).fetchone()
+        if not target:
+            return error_response("User not found", 404)
+        db.execute(
+            "UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=?",
+            [hash_password(new_password), target_id]
+        )
+        audit(db, user['id'], "admin_rotate_user_password", "user", target_id, {"target_email": target['email']})
+        db.commit()
+        return json_response({"ok": True, "user_id": target_id})
+
     elif re.match(r"^/admin/users/(\d+)$", path) and method == "PUT":
         user = authenticate(db)
         if not user or not user['is_admin']:
