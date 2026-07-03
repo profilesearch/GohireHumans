@@ -228,6 +228,57 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(job["matching_workers"][0]["worker_id"], 2)
         self.assertEqual(body["stuck_jobs"], [])
 
+    def test_admin_application_pipeline_requires_admin(self):
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/api/v1/admin/application-pipeline"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 403, body)
+
+    def test_admin_application_pipeline_surfaces_quality_triage(self):
+        db = self.module.get_db()
+        token = "tok-admin"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com','x','Admin',1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,3,'QA Job','Desc','testing','fixed',25,'open')")
+            cover = "I can deliver this today with screenshots, a short issue list, and prioritized notes based on testing the signup flow on desktop and mobile."
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,portfolio_url,status) VALUES (7,2,?,'https://example.com/proof','pending')", [cover])
+            db.commit()
+        finally:
+            db.close()
+
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/api/v1/admin/application-pipeline"
+        self.module._request_ctx.query_string = "limit=10"
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = ""
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["summary"]["total_recent_applications"], 1)
+        self.assertEqual(body["summary"]["strong_candidates"], 1)
+        app = body["applications"][0]
+        self.assertEqual(app["triage_status"], "strong_candidate")
+        self.assertIn("specific_cover_message", app["quality_flags"])
+        self.assertIn("portfolio_or_proof_url", app["quality_flags"])
+        self.assertIn("deliverable_or_timing_signal", app["quality_flags"])
+
     def test_admin_worker_activation_notifications_requires_admin(self):
         self.module._request_ctx.request_method = "POST"
         self.module._request_ctx.path_info = "/api/v1/admin/worker-activation-notifications"
@@ -327,6 +378,26 @@ class BackendRegressionTests(unittest.TestCase):
                 "request-any-task.html",
                 "ideas.html",
             ],
+        }
+        missing = {}
+        for rel, snippets in required.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            misses = [s for s in snippets if s not in text]
+            if misses:
+                missing[rel] = misses
+        self.assertEqual(missing, {})
+
+    def test_high_intent_seo_pages_feed_starter_offer_funnel(self):
+        required = {
+            "frontend/use-cases/ai-output-fact-checking.html": ["Hire a human to fact-check AI output", "seo_use_case_draft_click", "AI-output fact-checking review"],
+            "frontend/use-cases/human-review-for-chatbot-responses.html": ["Human review for chatbot", "seo_use_case_draft_click"],
+            "frontend/use-cases/hire-human-to-test-signup-flow.html": ["Hire a human to test your signup flow", "Website signup flow QA quick check"],
+            "frontend/use-cases/source-checking-for-ai-research.html": ["Source checking for AI-assisted research", "Source-check AI-assisted research"],
+            "frontend/use-cases/ai-agent-human-in-the-loop-tasks.html": ["Human fallback tasks for AI agents", "Human-in-the-loop verification task"],
+            "frontend/use-cases/index.html": ["High-intent starter use cases", "AI Output Fact Checking"],
+            "frontend/sitemap.xml": ["ai-output-fact-checking.html", "human-review-for-chatbot-responses.html", "hire-human-to-test-signup-flow.html"],
+            "frontend/llms.txt": ["High-Intent Use Case Pages", "ai-agent-human-in-the-loop-tasks.html"],
+            "frontend/blog/gig-economy-statistics-2026.html": ["ghh-starter-offers-internal-link", "blog_starter_offers_click"],
         }
         missing = {}
         for rel, snippets in required.items():

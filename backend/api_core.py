@@ -3683,6 +3683,57 @@ def _handle_routes(db):
             "limit": limit,
         })
 
+    elif path == "/admin/application-pipeline" and method == "GET":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+
+        limit = min(max(1, int(params.get("limit", 50))), 100)
+        rows = db.execute(
+            """SELECT a.id, a.job_id, a.worker_id, a.status, a.cover_message, a.portfolio_url,
+                      a.created_at,
+                      j.title as job_title, j.category as job_category, j.status as job_status,
+                      j.budget_amount, j.budget_type, j.employer_id,
+                      wu.name as worker_name, wu.email as worker_email,
+                      eu.name as employer_name
+               FROM applications a
+               JOIN jobs j ON j.id = a.job_id
+               JOIN users wu ON wu.id = a.worker_id
+               JOIN users eu ON eu.id = j.employer_id
+               ORDER BY a.created_at DESC
+               LIMIT ?""",
+            [limit]
+        ).fetchall()
+        applications = []
+        for row in rows:
+            item = row_to_dict(row)
+            cover = (item.get("cover_message") or "").strip()
+            item["cover_message_length"] = len(cover)
+            item["has_portfolio_url"] = bool((item.get("portfolio_url") or "").strip())
+            lower = cover.lower()
+            quality_flags = []
+            if len(cover) >= 120:
+                quality_flags.append("specific_cover_message")
+            if item["has_portfolio_url"]:
+                quality_flags.append("portfolio_or_proof_url")
+            if any(word in lower for word in ["deliver", "screenshot", "source", "spreadsheet", "scorecard", "tomorrow", "today", "hours", "day"]):
+                quality_flags.append("deliverable_or_timing_signal")
+            item["quality_flags"] = quality_flags
+            item["triage_status"] = (
+                "strong_candidate" if len(quality_flags) >= 2 else
+                "needs_manual_review" if quality_flags else
+                "weak_or_incomplete"
+            )
+            applications.append(item)
+        summary = {
+            "total_recent_applications": len(applications),
+            "strong_candidates": sum(1 for a in applications if a["triage_status"] == "strong_candidate"),
+            "needs_manual_review": sum(1 for a in applications if a["triage_status"] == "needs_manual_review"),
+            "weak_or_incomplete": sum(1 for a in applications if a["triage_status"] == "weak_or_incomplete"),
+            "pending_applications": sum(1 for a in applications if a.get("status") == "pending"),
+        }
+        return json_response({"summary": summary, "applications": applications, "limit": limit})
+
     elif path == "/admin/worker-activation-notifications" and method == "POST":
         user = authenticate(db)
         if not user or not user['is_admin']:
