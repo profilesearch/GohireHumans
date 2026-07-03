@@ -267,6 +267,9 @@ class BackendRegressionTests(unittest.TestCase):
     def test_employer_payment_setup_handles_stripe_setup_intent(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         required = [
+            "overlay.className = 'modal-overlay active'",
+            "<div class=\"modal\" style=\"max-width:520px\">",
+            "Opening secure setup...",
             "function loadStripeJs()",
             "https://js.stripe.com/v3/",
             "showEmployerSetupIntentModal",
