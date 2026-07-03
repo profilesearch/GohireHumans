@@ -1013,10 +1013,28 @@ def authenticate(db):
     return authenticate_session(db) or authenticate_api_key(db)
 
 
+SENSITIVE_AUDIT_KEYS = {'password', 'admin_password', 'new_password', 'token', 'secret', 'api_key', 'authorization'}
+
+
+def redact_audit_details(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if str(key).lower() in SENSITIVE_AUDIT_KEYS:
+                redacted[key] = '[REDACTED]'
+            else:
+                redacted[key] = redact_audit_details(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_audit_details(item) for item in value]
+    return value
+
+
 def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
+    safe_details = redact_audit_details(details) if details else None
     db.execute(
         "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details) VALUES (?,?,?,?,?)",
-        [user_id, action, entity_type, entity_id, json.dumps(details) if details else None]
+        [user_id, action, entity_type, entity_id, json.dumps(safe_details) if safe_details else None]
     )
 
 
