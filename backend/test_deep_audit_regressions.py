@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
+from unittest import mock
 import unittest
 
 MODULE_PATH = Path(__file__).with_name("api_core.py")
@@ -62,6 +63,85 @@ class BackendRegressionTests(unittest.TestCase):
             payout, fee = self.module.release_escrow_to_worker(db, 1, None, 100, 1)
             self.assertEqual(payout, 100)
             self.assertEqual(fee, 1)
+        finally:
+            db.close()
+
+    def test_production_rejects_simulated_worker_payout_readiness_and_release(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_sim_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            db.commit()
+            self.module.PRODUCTION_MODE = True
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            self.assertFalse(self.module.worker_has_payout_setup(db, 1))
+            with self.assertRaisesRegex(ValueError, "live worker Stripe Connect payout account"):
+                self.module.release_escrow_to_worker(db, 1, None, 100, 1)
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "held")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 0)
+        finally:
+            db.close()
+
+    def test_live_release_updates_db_only_after_stripe_transfer_success(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            db.commit()
+            self.module.PRODUCTION_MODE = True
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            fake_transfer = mock.Mock(return_value=object())
+            self.module.stripe = type("FakeStripe", (), {
+                "Transfer": type("Transfer", (), {"create": fake_transfer}),
+                "error": type("Error", (), {"StripeError": Exception})
+            })
+            payout, fee = self.module.release_escrow_to_worker(db, 1, None, 100, 1)
+            self.assertEqual(payout, 100)
+            self.assertEqual(fee, 1)
+            fake_transfer.assert_called_once()
+            self.assertEqual(fake_transfer.call_args.kwargs.get("idempotency_key"), "escrow-release:1:full:10000")
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "released")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 1)
+        finally:
+            db.close()
+
+    def test_live_release_transfer_failure_leaves_escrow_held(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            db.commit()
+            self.module.PRODUCTION_MODE = True
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            class StripeBoom(Exception):
+                pass
+            fake_transfer = mock.Mock(side_effect=StripeBoom("boom"))
+            self.module.stripe = type("FakeStripe", (), {
+                "Transfer": type("Transfer", (), {"create": fake_transfer}),
+                "error": type("Error", (), {"StripeError": StripeBoom})
+            })
+            with self.assertRaisesRegex(ValueError, "Stripe transfer failed"):
+                self.module.release_escrow_to_worker(db, 1, None, 100, 1)
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "held")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 0)
         finally:
             db.close()
 
@@ -417,7 +497,36 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("allowHtml = false", text)
         self.assertIn("modalBody.textContent = message || ''", text)
         self.assertIn("admin_password: adminPassword", text)
+        self.assertIn("manual_money_movement_confirmed: true", text)
+        self.assertIn("processor_reference: processorReference", text)
+        self.assertIn("Record Manual Dispute Settlement", text)
         self.assertIn("/trust-safety.html", text)
+
+    def test_first_task_wizard_and_measurement_invariants(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        required = [
+            "function getTaskDraftTemplate(key)",
+            "website_qa: 'website_test'",
+            "local_phone_check: 'local_verification'",
+            "local_verification: {",
+            "Confirm a local detail or make a short phone check",
+            "homepage_describe_task_primary_click",
+            "Describe your task",
+            "Guided first-task wizard",
+            "What happens after I post?",
+            "first_task_wizard_started",
+            "first_task_template_selected",
+            "first_task_wizard_review_draft_click",
+            "first_task_draft_completed",
+            "trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed'",
+            "trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed'",
+            "function getStoredAttribution()",
+            "sessionStorage.setItem('ghh_attribution'",
+            "utm_source",
+            "utm_campaign",
+        ]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
 
     def test_audit_redacts_sensitive_details_recursively(self):
         db = self.module.get_db()
@@ -452,6 +561,152 @@ class BackendRegressionTests(unittest.TestCase):
         required = ["stripe-powered processing", "payment review", "issue review", "off-platform", "dispute"]
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
+
+    def test_production_worker_payout_setup_refuses_simulated_records_without_stripe(self):
+        db = self.module.get_db()
+        token = "tok-worker-prod"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+        self.module.PRODUCTION_MODE = True
+        self.module.STRIPE_AVAILABLE = False
+        self.module.STRIPE_SECRET_KEY = ""
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/payments/setup-worker"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.stdin_data = json.dumps({"bank_name": "Demo Bank", "last4": "4242"})
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+        self.module._request_ctx.remote_addr = "198.51.100.7"
+        if hasattr(self.module._request_ctx, 'body_cache'):
+            delattr(self.module._request_ctx, 'body_cache')
+        if hasattr(self.module._request_ctx, 'raw_body'):
+            delattr(self.module._request_ctx, 'raw_body')
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 503, body)
+        self.assertIn("simulated worker payout setup is disabled", body["error"])
+        db = self.module.get_db()
+        try:
+            wp = db.execute("SELECT payout_account_id,payout_method FROM worker_profiles WHERE user_id=1").fetchone()
+            self.assertIsNone(wp["payout_account_id"])
+            self.assertEqual(wp["payout_method"], "pending_setup")
+        finally:
+            db.close()
+
+    def test_production_payment_status_does_not_mark_simulated_worker_payout_ready(self):
+        db = self.module.get_db()
+        token = "tok-worker-status"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_sim_existing','stripe_connect_active')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+        self.module.PRODUCTION_MODE = True
+        self.module.STRIPE_AVAILABLE = False
+        self.module.STRIPE_SECRET_KEY = ""
+        self.module._request_ctx.request_method = "GET"
+        self.module._request_ctx.path_info = "/payments/status"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.stdin_data = ""
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = "0"
+        self.module._request_ctx.remote_addr = "198.51.100.8"
+        if hasattr(self.module._request_ctx, 'body_cache'):
+            delattr(self.module._request_ctx, 'body_cache')
+        if hasattr(self.module._request_ctx, 'raw_body'):
+            delattr(self.module._request_ctx, 'raw_body')
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["worker_ready"])
+        self.assertEqual(body["worker_payout_status"]["mode"], "disabled")
+
+    def test_admin_dispute_resolution_requires_step_up_and_manual_settlement_reference(self):
+        db = self.module.get_db()
+        token = "tok-admin-dispute"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com',?,'Admin',1)", [self.module.hash_password('AdminPassword123!')])
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (3)")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (5,2,'Svc','Desc','writing','fixed',100)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (9,'service_order',5,2,3,'disputed',100)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (9,100,'held','pi_live_or_manual')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+
+        def call(payload):
+            self.module._request_ctx.request_method = "POST"
+            self.module._request_ctx.path_info = "/admin/resolve-dispute"
+            self.module._request_ctx.query_string = ""
+            self.module._request_ctx.http_authorization = f"Bearer {token}"
+            self.module._request_ctx.stdin_data = json.dumps(payload)
+            self.module._request_ctx.content_type = "application/json"
+            self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data))
+            self.module._request_ctx.remote_addr = "203.0.113.17"
+            if hasattr(self.module._request_ctx, 'body_cache'):
+                delattr(self.module._request_ctx, 'body_cache')
+            if hasattr(self.module._request_ctx, 'raw_body'):
+                delattr(self.module._request_ctx, 'raw_body')
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.module.handle_request()
+            return parse_cgi_output(out.getvalue())
+
+        status, body = call({"order_id": 9, "resolution": "release_to_worker"})
+        self.assertEqual(status, 403, body)
+        self.assertIn("Admin password", body["error"])
+        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!"})
+        self.assertEqual(status, 409, body)
+        self.assertIn("Manual money movement confirmation required", body["error"])
+        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": "false", "processor_reference": "stripe-string-false"})
+        self.assertEqual(status, 409, body)
+        self.assertIn("Manual money movement confirmation required", body["error"])
+        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True})
+        self.assertEqual(status, 400, body)
+        self.assertIn("processor_reference", body["error"])
+        status, body = call({"order_id": 9, "resolution": "split", "worker_percent": 101, "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-split-bad"})
+        self.assertEqual(status, 400, body)
+        self.assertIn("worker_percent", body["error"])
+        status, body = call({"order_id": 9, "resolution": "split", "worker_percent": "nan", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-split-nan"})
+        self.assertEqual(status, 400, body)
+        self.assertIn("finite", body["error"])
+        db = self.module.get_db()
+        try:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=9").fetchone()[0], "disputed")
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=9").fetchone()[0], "held")
+        finally:
+            db.close()
+        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-tr-123"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["mode"], "manual_settlement_recorded")
+        db = self.module.get_db()
+        try:
+            escrow_status = db.execute("SELECT status FROM escrow_holds WHERE order_id=9").fetchone()[0]
+            audit = db.execute("SELECT action, details FROM audit_log WHERE action='resolve_dispute_manual_settlement'").fetchone()
+            notifications = [row[0] for row in db.execute("SELECT message FROM notifications WHERE type='dispute_resolved'").fetchall()]
+            self.assertEqual(escrow_status, "released")
+            self.assertTrue(notifications)
+            self.assertTrue(all("stripe-tr-123" not in message for message in notifications))
+            self.assertTrue(all("manual settlement was verified" in message for message in notifications))
+            self.assertIsNotNone(audit)
+            self.assertIn("stripe-tr-123", audit["details"])
+            self.assertNotIn("AdminPassword123", audit["details"])
+        finally:
+            db.close()
 
     def test_employer_payment_setup_handles_stripe_setup_intent(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
@@ -808,6 +1063,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "Draft website QA task",
                 "Draft AI review task",
                 "Draft lead research task",
+                "Draft local/phone task",
+                "href=\"/#/post-job?template=local_phone_check\"",
             ],
             "frontend/earn/open-paid-tasks.html": [
                 "Find open paid tasks you can apply to today",
@@ -1400,7 +1657,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         required_snippets = [
             "function trackEvent(eventName, params = {})",
-            "gtag('event', eventName, params)",
+            "function getStoredAttribution()",
+            "const eventParams = { ...attribution, ...params }",
+            "gtag('event', eventName, eventParams)",
             "function trackRecommendedEvent(eventName, params = {})",
             "function trackConfiguredKeyEvent(eventName, params = {})",
             "function trackSpaPageView(path)",
@@ -1502,8 +1761,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
     def test_homepage_has_guided_agent_intake_and_earning_routes(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
-            "Guided agent intake",
-            "Convert a prompt into a clear marketplace listing.",
+            "Guided first-task wizard",
+            "Describe your task. Review the draft before anything posts.",
             "What needs to be done?",
             "What type of human or agent is needed?",
             "Suggested deliverable/result",
@@ -1527,11 +1786,11 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, text)
 
-        guided_block = text[text.index("Guided agent intake"):text.index("Earning surface")]
+        guided_block = text[text.index("Guided first-task wizard"):text.index("Earning surface")]
         self.assertNotIn("fetch(", guided_block)
         self.assertNotIn("api(", guided_block)
         self.assertNotIn("mailto:", guided_block)
-        self.assertIn("does not submit a job, contact workers, send email, or promise a match", guided_block)
+        self.assertIn("does not submit a job, contact workers, charge a card, or promise a match", guided_block)
 
     def test_homepage_has_credible_agent_marketplace_liquidity_messaging(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
@@ -1562,7 +1821,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "Employer pays Stripe processing + 1%",
         ]:
             self.assertIn(snippet, text)
-        task_draft_block = text[text.index("Agent-ready job posts"):text.index("Guided agent intake")]
+        task_draft_block = text[text.index("Agent-ready job posts"):text.index("Guided first-task wizard")]
         self.assertNotIn("mailto:", task_draft_block)
         self.assertNotIn("fetch(", task_draft_block)
         self.assertNotIn("api(", task_draft_block)
