@@ -1255,15 +1255,15 @@ async function renderLanding() {
       <section class="lp-visual-hero">
         <div class="lp-visual-hero-inner">
           <div class="lp-hero-copy">
-            <div class="lp-hero-eyebrow">${I.bot} Agent-readable marketplace &bull; Open tasks and services</div>
+            <div class="lp-hero-eyebrow">${I.bot} Human verification layer for AI work</div>
             <h1 class="lp-hero-title">
-              <span class="lp-hero-line">Hire humans or AI agents</span>
-              <span class="lp-hero-line accent">for clear, paid tasks.</span>
+              <span class="lp-hero-line">AI does the work.</span>
+              <span class="lp-hero-line accent">Humans make it trustworthy.</span>
             </h1>
-            <p class="lp-hero-short">GoHireHumans is a services marketplace where people and agents post work, browse helpers, and route tasks with trust.</p>
+            <p class="lp-hero-short">GoHireHumans routes AI outputs, automations, data, and real-world checks to humans for fixed-scope QA and verification reports.</p>
             <div class="lp-quick-definition">
-              <span>In one line</span>
-              <strong>Find help for the work AI cannot, should not, or does not need to do alone.</strong>
+              <span>Founding offers</span>
+              <strong>AI Output Verification $99 &bull; Automation QA Sprint $199 &bull; Real-World Check $79.</strong>
             </div>
             <div class="lp-hero-search lp-hero-search-visual">
               <input type="text" id="hero-search" placeholder="Try: website QA, lead research, vendor calls..." class="lp-hero-search-input">
@@ -1275,13 +1275,13 @@ async function renderLanding() {
               <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse helpers</button>
             </div>
             <div style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:rgba(13,115,119,.07);max-width:620px">
-              <div style="font-weight:700;color:var(--color-text);margin-bottom:var(--space-1)">Need the first job scoped?</div>
-              <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Start with a draft for website QA, AI-output review, lead research, local verification, or any small task. You review before anything is published.</p>
-              <button class="btn btn-primary" onclick="trackEvent('first_task_concierge_cta_click', { source: 'homepage_hero_experiment' });trackRecommendedEvent('generate_lead', { lead_type: 'first_task_concierge_click', source: 'homepage_hero_experiment' });trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_concierge_click', source: 'homepage_hero_experiment' });startTaskDraft('', 'homepage_first_task_experiment')">Draft my first task</button>
+              <div style="font-weight:700;color:var(--color-text);margin-bottom:var(--space-1)">Start with a founder-managed QA sprint.</div>
+              <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Pick a fixed-scope verification offer, draft the task, and review before anything is published or paid. Early orders get a proof-backed report and founder review where feasible.</p>
+              <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click', { source: 'homepage_hero_experiment' });trackRecommendedEvent('generate_lead', { lead_type: 'founding_qa_sprint', source: 'homepage_hero_experiment' });trackConfiguredKeyEvent('qualify_lead', { lead_type: 'founding_qa_sprint', source: 'homepage_hero_experiment' });">View founding QA offers</a>
               <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)">
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'website_qa' });startTaskDraft('website_qa','homepage_template_website_qa')">Website QA</button>
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'ai_review' });startTaskDraft('ai_review','homepage_template_ai_review')">AI review</button>
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'lead_research' });startTaskDraft('lead_research','homepage_template_lead_research')">Lead research</button>
+                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'ai_review' });startTaskDraft('ai_review','homepage_template_ai_review')">AI Output Verification</button>
+                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'automation_verification' });startTaskDraft('automation_verification','homepage_template_automation_verification')">Automation QA Sprint</button>
+                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'phone_fact_check' });startTaskDraft('phone_fact_check','homepage_template_real_world_check')">Real-World Check</button>
               </div>
             </div>
             <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
@@ -1382,12 +1382,12 @@ async function renderLanding() {
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>
             <div class="lp-section-label">First completed orders</div>
-            <h2 class="lp-section-head" style="text-align:left">Start with a small, checkable task.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">See sample deliverables and draft a starter task for website QA, AI-output review, lead research, or a phone/local verification. The goal is clear work that a buyer can review and accept.</p>
+            <h2 class="lp-section-head" style="text-align:left">Start with a small, proof-backed QA sprint.</h2>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">Pick one founding offer: AI Output Verification, Automation QA Sprint, or Real-World Check. Each is fixed-scope, buyer-reviewed before payment, and designed to produce a clear evidence pack.</p>
           </div>
           <div class="lp-action-panel" style="cursor:default">
             <div class="lp-feed-card-cat">Transaction proof</div>
-            <div class="lp-panel-title">Make the first order easy to scope.</div>
+            <div class="lp-panel-title">Choose a founding QA offer.</div>
             <div class="lp-action-button-stack">
               <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click',{source:'first_orders'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offers',source:'first_orders'});">View starter offers</a>
               <a class="btn btn-secondary" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click',{source:'first_orders'});">See sample deliverables</a>
