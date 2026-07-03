@@ -1376,6 +1376,28 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 failures.append({"file": rel, "missing": missing})
         self.assertEqual(failures, [])
 
+    def test_sitemapped_html_pages_have_extensionless_redirects_before_spa_rewrite(self):
+        sitemap = (REPO_ROOT / "frontend/sitemap.xml").read_text(encoding="utf-8", errors="ignore")
+        vercel = json.loads((REPO_ROOT / "frontend/vercel.json").read_text(encoding="utf-8"))
+        redirects = {(r.get("source"), r.get("destination"), r.get("permanent")) for r in vercel.get("redirects", [])}
+        missing = []
+        for loc in re.findall(r"<loc>https://www\.gohirehumans\.com([^<]*\.html)</loc>", sitemap):
+            source = loc[:-5]
+            if source.endswith("/index"):
+                continue
+            if (source, loc, True) not in redirects:
+                missing.append({"source": source, "destination": loc})
+        self.assertEqual(missing, [])
+        rewrite_sources = [r.get("source") for r in vercel.get("rewrites", [])]
+        self.assertTrue(any(src.startswith("/((?!api/)") and "?!.*" in src and src.endswith(".*)") for src in rewrite_sources))
+        redirects_index = next(i for i, r in enumerate(vercel.get("redirects", [])) if r.get("source") == "/about")
+        rewrites_index = 9999 if "rewrites" in vercel else -1
+        self.assertLess(redirects_index, rewrites_index)
+
+    def test_use_cases_index_has_self_canonical(self):
+        text = (REPO_ROOT / "frontend/use-cases/index.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn('<link rel="canonical" href="https://www.gohirehumans.com/use-cases/">', text)
+
     def test_homepage_public_nav_template_keeps_desktop_and_mobile_active_states(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         snippets = [
