@@ -1014,13 +1014,20 @@ def authenticate(db):
 
 
 SENSITIVE_AUDIT_KEYS = {'password', 'admin_password', 'new_password', 'token', 'secret', 'api_key', 'authorization'}
+SENSITIVE_AUDIT_KEY_FRAGMENTS = ('password', 'passwd', 'token', 'secret', 'api_key', 'apikey', 'authorization', 'bearer', 'credential', 'session')
+
+
+def is_sensitive_audit_key(key):
+    normalized = re.sub(r'[^a-z0-9]+', '_', str(key).strip().lower())
+    compact = normalized.replace('_', '')
+    return normalized in SENSITIVE_AUDIT_KEYS or any(fragment in normalized or fragment in compact for fragment in SENSITIVE_AUDIT_KEY_FRAGMENTS)
 
 
 def redact_audit_details(value):
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
-            if str(key).lower() in SENSITIVE_AUDIT_KEYS:
+            if is_sensitive_audit_key(key):
                 redacted[key] = '[REDACTED]'
             else:
                 redacted[key] = redact_audit_details(item)
