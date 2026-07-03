@@ -281,6 +281,73 @@ class BackendRegressionTests(unittest.TestCase):
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
 
+    def test_stripe_customer_without_payment_method_is_not_payment_ready(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_test_only',NULL)")
+            self.module.STRIPE_AVAILABLE = True
+            self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+            self.assertFalse(self.module.employer_has_payment_setup(db, 2))
+            db.execute("UPDATE employer_profiles SET payment_method_id='pm_test_confirmed' WHERE user_id=2")
+            self.assertTrue(self.module.employer_has_payment_setup(db, 2))
+        finally:
+            db.close()
+
+    def test_hire_requires_confirmed_payment_method_not_just_stripe_customer(self):
+        db = self.module.get_db()
+        token = "tok-employer"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_test_only',NULL)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,2,'QA Job','Desc','testing','fixed',25,'reviewing')")
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,status) VALUES (7,1,'I can help','pending')")
+            db.commit()
+        finally:
+            db.close()
+
+        self.module.STRIPE_AVAILABLE = True
+        self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+        payload = json.dumps({"applicant_id": 1})
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/jobs/7/hire"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = payload
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(payload))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 402, body)
+        self.assertIn("payment method", body["error"].lower())
+        db = self.module.get_db()
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT status FROM applications WHERE job_id=7 AND worker_id=1").fetchone()[0], "pending")
+            self.assertEqual(db.execute("SELECT status FROM jobs WHERE id=7").fetchone()[0], "reviewing")
+        finally:
+            db.close()
+
+    def test_simulated_escrow_is_disabled_in_production_when_stripe_missing(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_sim_only','pm_sim_only')")
+            self.module.STRIPE_AVAILABLE = False
+            self.module.STRIPE_SECRET_KEY = ""
+            self.module.PRODUCTION_MODE = True
+            with self.assertRaisesRegex(ValueError, "simulated escrow is disabled in production"):
+                self.module.fund_escrow_stripe(db, 2, 25, 99, None, "Test escrow")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds").fetchone()[0], 0)
+        finally:
+            db.close()
+
     def test_admin_application_pipeline_requires_admin(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/api/v1/admin/application-pipeline"

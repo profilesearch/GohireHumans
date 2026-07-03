@@ -1089,7 +1089,11 @@ def employer_has_payment_setup(db, user_id):
     ep = db.execute("SELECT payment_method_id, stripe_customer_id FROM employer_profiles WHERE user_id = ?", [user_id]).fetchone()
     if not ep:
         return False
-    return bool(ep['payment_method_id']) or bool(ep['stripe_customer_id'])
+    if stripe_configured():
+        return bool(ep['stripe_customer_id']) and bool(ep['payment_method_id'])
+    if PRODUCTION_MODE:
+        return False
+    return bool(ep['payment_method_id']) and bool(ep['stripe_customer_id'])
 
 
 def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
@@ -1140,7 +1144,9 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
     """
     ep = db.execute("SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id = ?", [employer_id]).fetchone()
 
-    if stripe_configured() and ep and ep['stripe_customer_id'] and ep['payment_method_id']:
+    if stripe_configured():
+        if not ep or not ep['stripe_customer_id'] or not ep['payment_method_id']:
+            raise ValueError("A confirmed employer payment method is required before escrow can be funded.")
         try:
             total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% platform fee + ~3% processing fee (4% all-in)
             pi = stripe.PaymentIntent.create(
@@ -1163,6 +1169,8 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
         except stripe.error.StripeError as e:
             raise ValueError(f"Payment failed: {str(e)}")
     else:
+        if PRODUCTION_MODE:
+            raise ValueError("Stripe is not configured; simulated escrow is disabled in production.")
         pi_id = fake_payment_intent_id()
         mode = "simulated"
 
