@@ -703,15 +703,27 @@ function getTaskDraftTemplate(key) {
   };
   return taskDraftTemplates[key] || taskDraftTemplates[aliases[key]] || null;
 }
+function markFirstTaskWizardStarted(params = {}) {
+  const source = params.source || 'unknown';
+  const key = `ghh_first_task_wizard_started:${source}`;
+  let shouldTrack = true;
+  try {
+    shouldTrack = sessionStorage.getItem(key) !== '1';
+    if (shouldTrack) sessionStorage.setItem(key, '1');
+  } catch (_) {}
+  if (shouldTrack) {
+    trackEvent('first_task_wizard_started', { ...params, source });
+  }
+}
 function startTaskDraft(templateKey, source = 'homepage_concierge') {
-  trackEvent('first_task_wizard_started', { source, template: templateKey || 'blank', wizard_entry: 'template_or_blank' });
+  markFirstTaskWizardStarted({ source, template: templateKey || 'blank', wizard_entry: 'template_or_blank' });
   trackEvent('concierge_task_draft_click', { source, template: templateKey || 'blank' });
   if (templateKey) trackEvent('first_task_template_selected', { source, template: templateKey });
   const suffix = templateKey ? '?template=' + encodeURIComponent(templateKey) : '';
   navigate('#/post-job' + suffix);
 }
 function markGuidedTaskIntakeStart(fieldName) {
-  trackEvent('first_task_wizard_started', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown', wizard_entry: 'inline_form' });
+  markFirstTaskWizardStarted({ source: 'homepage_guided_task_intake', field: fieldName || 'unknown', wizard_entry: 'inline_form' });
   trackEvent('guided_task_intake_start', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown' });
 }
 function createGuidedTaskDraft() {
@@ -740,15 +752,20 @@ function createGuidedTaskDraft() {
       budget_type: 'fixed'
     }));
   } catch (_) {}
-  trackEvent('first_task_draft_completed', {
-    source: 'homepage_guided_task_intake',
-    has_task: Boolean(task),
-    has_helper: Boolean(helper),
-    has_deliverable: Boolean(deliverable),
-    has_budget: Boolean(budget)
-  });
-  trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake', has_task: Boolean(task), has_budget: Boolean(budget) });
-  trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake' });
+  const hasMeaningfulDraft = Boolean(task || deliverable);
+  if (hasMeaningfulDraft) {
+    trackEvent('first_task_draft_completed', {
+      source: 'homepage_guided_task_intake',
+      has_task: Boolean(task),
+      has_helper: Boolean(helper),
+      has_deliverable: Boolean(deliverable),
+      has_budget: Boolean(budget)
+    });
+    trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake', has_task: Boolean(task), has_budget: Boolean(budget) });
+    trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake' });
+  } else {
+    trackEvent('first_task_blank_form_opened', { source: 'homepage_guided_task_intake' });
+  }
   trackEvent('guided_task_draft_created', {
     source: 'homepage_guided_task_intake',
     has_task: Boolean(task),

@@ -171,6 +171,47 @@ def stripe_configured():
     return STRIPE_AVAILABLE and bool(STRIPE_SECRET_KEY)
 
 
+def stripe_attr(obj, name, default=None):
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def is_live_connect_account_ready(account):
+    if not account:
+        return False
+    capabilities = stripe_attr(account, 'capabilities', {}) or {}
+    transfers_capability = stripe_attr(capabilities, 'transfers', None)
+    transfers_ready = transfers_capability in (None, 'active')
+    return bool(stripe_attr(account, 'payouts_enabled', False)) and bool(stripe_attr(account, 'charges_enabled', False)) and transfers_ready
+
+
+def retrieve_live_connect_account(account_id):
+    if not stripe_configured() or not account_id or account_id.startswith('acct_sim_'):
+        return None
+    return stripe.Account.retrieve(account_id)
+
+
+def record_payout_transfer(db, order_id, milestone_id, worker_id, amount, transfer_type, idempotency_key, destination_account_id, stripe_transfer=None, status='recorded', error_message=''):
+    transfer_id = ''
+    if stripe_transfer is not None:
+        transfer_id = stripe_attr(stripe_transfer, 'id', '') or ''
+    db.execute(
+        """INSERT INTO payout_transfers
+           (order_id, milestone_id, worker_id, amount, currency, transfer_type, stripe_transfer_id,
+            idempotency_key, destination_account_id, status, error_message, recorded_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+           ON CONFLICT(idempotency_key) DO UPDATE SET
+             stripe_transfer_id=excluded.stripe_transfer_id,
+             destination_account_id=excluded.destination_account_id,
+             status=excluded.status,
+             error_message=excluded.error_message,
+             recorded_at=datetime('now')""",
+        [order_id, milestone_id, worker_id, amount, 'usd', transfer_type, transfer_id,
+         idempotency_key, destination_account_id or '', status, error_message or '']
+    )
+
+
 if stripe_configured():
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -403,6 +444,23 @@ def init_db():
         created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS payout_transfers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER REFERENCES orders(id),
+        milestone_id INTEGER REFERENCES milestones(id),
+        worker_id INTEGER REFERENCES users(id),
+        amount REAL NOT NULL,
+        currency TEXT DEFAULT 'usd',
+        transfer_type TEXT NOT NULL,
+        stripe_transfer_id TEXT,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        destination_account_id TEXT,
+        status TEXT NOT NULL DEFAULT 'recorded' CHECK(status IN ('pending','recorded','failed','simulated')),
+        error_message TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        recorded_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_services_worker ON services(worker_id);
     CREATE INDEX IF NOT EXISTS idx_services_category ON services(category);
     CREATE INDEX IF NOT EXISTS idx_services_status ON services(status);
@@ -418,6 +476,9 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_reviews_order ON reviews(order_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_payout_transfers_order ON payout_transfers(order_id);
+    CREATE INDEX IF NOT EXISTS idx_payout_transfers_worker ON payout_transfers(worker_id);
+    CREATE INDEX IF NOT EXISTS idx_payout_transfers_idempotency ON payout_transfers(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     """)
     db.commit()
@@ -1158,7 +1219,13 @@ def worker_has_payout_setup(db, user_id):
     payout_account_id = wp['payout_account_id'] or ''
     if PRODUCTION_MODE and payout_account_id.startswith('acct_sim_'):
         return False
-    if (stripe_configured() or PRODUCTION_MODE) and not payout_account_id:
+    if stripe_configured():
+        try:
+            account = retrieve_live_connect_account(payout_account_id)
+            return bool(account) and is_live_connect_account_ready(account)
+        except Exception:
+            return False
+    if PRODUCTION_MODE:
         return False
     return bool(payout_account_id) and wp['payout_method'] not in ('pending_setup', None, '')
 
@@ -1188,17 +1255,25 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
             raise ValueError("A live worker Stripe Connect payout account is required before release.")
         if not stripe_configured():
             raise ValueError("Stripe is not configured; live payout release is disabled in production.")
+        idempotency_key = f"escrow-release:{order_id}:{milestone_id or 'full'}:{int(worker_payout * 100)}"
         try:
-            stripe.Transfer.create(
+            account = retrieve_live_connect_account(payout_account_id)
+            if not is_live_connect_account_ready(account):
+                raise ValueError("Worker Stripe Connect account is not payout-ready.")
+            transfer = stripe.Transfer.create(
                 amount=int(worker_payout * 100),
                 currency="usd",
                 destination=payout_account_id,
                 metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
                 description=f"GoHireHumans escrow release order #{order_id}",
-                idempotency_key=f"escrow-release:{order_id}:{milestone_id or 'full'}:{int(worker_payout * 100)}"
+                idempotency_key=idempotency_key
             )
         except stripe.error.StripeError as e:
             raise ValueError(f"Stripe transfer failed: {str(e)}")
+        record_payout_transfer(
+            db, order_id, milestone_id, worker_id, worker_payout, 'escrow_release',
+            idempotency_key, payout_account_id, transfer
+        )
 
     # Only mark escrow/revenue after live transfer succeeds or non-production simulation is allowed.
     db.execute(
@@ -3074,17 +3149,26 @@ def _handle_routes(db):
                 return error_response("A live worker Stripe Connect payout account is required before approving paid hours.", 409)
             if not stripe_configured():
                 return error_response("Stripe is not configured; live hourly payout release is disabled in production.", 503)
+            idempotency_key = f"hourly-release:{order_id}:{week_of}:{int(worker_pay * 100)}"
             try:
-                stripe.Transfer.create(
+                account = retrieve_live_connect_account(payout_account_id)
+                if not is_live_connect_account_ready(account):
+                    db.rollback()
+                    return error_response("Worker Stripe Connect account is not payout-ready.", 409)
+                transfer = stripe.Transfer.create(
                     amount=int(worker_pay * 100),
                     currency="usd",
                     destination=payout_account_id,
                     metadata={"order_id": str(order_id), "week_of": week_of},
-                    idempotency_key=f"hourly-release:{order_id}:{week_of}:{int(worker_pay * 100)}"
+                    idempotency_key=idempotency_key
                 )
             except stripe.error.StripeError as e:
                 db.rollback()
                 return error_response(f"Stripe transfer failed: {str(e)}", 502)
+            record_payout_transfer(
+                db, order_id, None, order['worker_id'], worker_pay, 'hourly_release',
+                idempotency_key, payout_account_id, transfer
+            )
 
         # Mark entries approved only after live transfer succeeds or non-production simulation is allowed.
         db.execute(
@@ -3461,11 +3545,13 @@ def _handle_routes(db):
             if wp['payout_account_id']:
                 if stripe_configured() and not wp['payout_account_id'].startswith('acct_sim_'):
                     try:
-                        acct = stripe.Account.retrieve(wp['payout_account_id'])
+                        acct = retrieve_live_connect_account(wp['payout_account_id'])
+                        connected = bool(acct) and is_live_connect_account_ready(acct)
                         worker_status = {
-                            "connected": acct.payouts_enabled,
-                            "payouts_enabled": acct.payouts_enabled,
-                            "details_submitted": acct.details_submitted,
+                            "connected": connected,
+                            "payouts_enabled": bool(stripe_attr(acct, 'payouts_enabled')),
+                            "charges_enabled": bool(stripe_attr(acct, 'charges_enabled')),
+                            "details_submitted": bool(stripe_attr(acct, 'details_submitted')),
                             "account_id": wp['payout_account_id'],
                             "mode": "live"
                         }
