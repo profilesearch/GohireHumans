@@ -424,12 +424,22 @@ class BackendRegressionTests(unittest.TestCase):
         try:
             self.module.audit(db, 1, "sensitive_test", "user", 1, {
                 "password": "SuperSecret123!",
+                "access_token": "access-secret",
+                "refreshToken": "refresh-secret",
+                "bearer_token": "bearer-secret",
+                "credentialPayload": "credential-secret",
+                "sessionId": "session-secret",
                 "nested": {"admin_password": "AdminSecret123!", "safe": "visible"},
                 "items": [{"token": "tok_live_secret", "name": "ok"}],
             })
             row = db.execute("SELECT details FROM audit_log WHERE action='sensitive_test'").fetchone()
             details = json.loads(row["details"])
             self.assertEqual(details["password"], "[REDACTED]")
+            self.assertEqual(details["access_token"], "[REDACTED]")
+            self.assertEqual(details["refreshToken"], "[REDACTED]")
+            self.assertEqual(details["bearer_token"], "[REDACTED]")
+            self.assertEqual(details["credentialPayload"], "[REDACTED]")
+            self.assertEqual(details["sessionId"], "[REDACTED]")
             self.assertEqual(details["nested"]["admin_password"], "[REDACTED]")
             self.assertEqual(details["nested"]["safe"], "visible")
             self.assertEqual(details["items"][0]["token"], "[REDACTED]")
