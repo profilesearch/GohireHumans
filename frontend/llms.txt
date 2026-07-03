@@ -111,3 +111,11 @@ GoHireHumans is not merely a low-fee freelance clone. The intended wedge is the 
 - Starter fixed-budget offers: https://www.gohirehumans.com/starter-offers.html
 - Sample deliverables: https://www.gohirehumans.com/examples/sample-deliverables.html
 - Use these to scope small, verifiable work before posting a job.
+
+## High-Intent Use Case Pages
+
+- AI Output Fact Checking: https://www.gohirehumans.com/use-cases/ai-output-fact-checking.html
+- Human Review for Chatbot Responses: https://www.gohirehumans.com/use-cases/human-review-for-chatbot-responses.html
+- Hire a Human to Test a Signup Flow: https://www.gohirehumans.com/use-cases/hire-human-to-test-signup-flow.html
+- Source Checking for AI Research: https://www.gohirehumans.com/use-cases/source-checking-for-ai-research.html
+- AI Agent Human-in-the-Loop Tasks: https://www.gohirehumans.com/use-cases/ai-agent-human-in-the-loop-tasks.html
