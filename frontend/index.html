@@ -532,12 +532,24 @@ function statusBadge(status) {
   return `<span class="badge badge-${cls}">${esc(status ? status.replace(/_/g,' ') : 'unknown')}</span>`;
 }
 function navigate(hash) { window.location.hash = hash; }
+function getStoredAttribution() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const tracked = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'ref'];
+    const current = {};
+    tracked.forEach(k => { const v = params.get(k); if (v) current[k] = v; });
+    if (Object.keys(current).length) sessionStorage.setItem('ghh_attribution', JSON.stringify(current));
+    return JSON.parse(sessionStorage.getItem('ghh_attribution') || '{}') || {};
+  } catch (_) { return {}; }
+}
 function trackEvent(eventName, params = {}) {
   try {
+    const attribution = getStoredAttribution();
+    const eventParams = { ...attribution, ...params };
     if (typeof window.gtag === 'function') {
-      window.gtag('event', eventName, params);
+      window.gtag('event', eventName, eventParams);
     } else if (Array.isArray(window.dataLayer)) {
-      window.dataLayer.push({ event: eventName, ...params });
+      window.dataLayer.push({ event: eventName, ...eventParams });
     }
   } catch (_) {
     // Analytics must never block marketplace navigation or checkout intent.
@@ -671,17 +683,35 @@ const taskDraftTemplates = {
     budget_type: 'fixed',
     budget_amount: '35',
     required_skills: 'editing, fact checking, AI review'
+  },
+  local_verification: {
+    title: 'Confirm a local detail or make a short phone check',
+    description: 'Please verify the local or phone-based detail I provide.\n\nWhat to do:\n1. Use the public information, phone number, or location details I provide.\n2. Confirm the requested fact without sharing private data.\n3. Report what you checked, when you checked it, and any source/contact notes.\n\nDeliverable: concise confirmation notes, screenshots/photos only if appropriate, and any uncertainty clearly flagged.',
+    category: 'phone_call',
+    budget_type: 'fixed',
+    budget_amount: '25',
+    required_skills: 'phone calls, local verification, concise notes'
   }
 };
 function getTaskDraftTemplate(key) {
-  return taskDraftTemplates[key] || null;
+  const aliases = {
+    website_qa: 'website_test',
+    website_testing: 'website_test',
+    local_phone_check: 'local_verification',
+    phone_check: 'local_verification',
+    phone_call: 'local_verification'
+  };
+  return taskDraftTemplates[key] || taskDraftTemplates[aliases[key]] || null;
 }
 function startTaskDraft(templateKey, source = 'homepage_concierge') {
+  trackEvent('first_task_wizard_started', { source, template: templateKey || 'blank', wizard_entry: 'template_or_blank' });
   trackEvent('concierge_task_draft_click', { source, template: templateKey || 'blank' });
+  if (templateKey) trackEvent('first_task_template_selected', { source, template: templateKey });
   const suffix = templateKey ? '?template=' + encodeURIComponent(templateKey) : '';
   navigate('#/post-job' + suffix);
 }
 function markGuidedTaskIntakeStart(fieldName) {
+  trackEvent('first_task_wizard_started', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown', wizard_entry: 'inline_form' });
   trackEvent('guided_task_intake_start', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown' });
 }
 function createGuidedTaskDraft() {
@@ -710,6 +740,15 @@ function createGuidedTaskDraft() {
       budget_type: 'fixed'
     }));
   } catch (_) {}
+  trackEvent('first_task_draft_completed', {
+    source: 'homepage_guided_task_intake',
+    has_task: Boolean(task),
+    has_helper: Boolean(helper),
+    has_deliverable: Boolean(deliverable),
+    has_budget: Boolean(budget)
+  });
+  trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake', has_task: Boolean(task), has_budget: Boolean(budget) });
+  trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed', source: 'homepage_guided_task_intake' });
   trackEvent('guided_task_draft_created', {
     source: 'homepage_guided_task_intake',
     has_task: Boolean(task),
@@ -1165,10 +1204,9 @@ async function renderLanding() {
               <button class="btn btn-primary lp-hero-search-btn" onclick="searchHeroServices()">Search</button>
             </div>
             <div class="lp-hero-ctas lp-hero-ctas-left">
-              <button class="btn btn-primary btn-lg" onclick="trackEvent('post_task_cta_click', { source: 'homepage_hero' });navigate('#/post-job')">Post a task</button>
-              <a class="btn btn-outline btn-lg" href="/post-a-small-task.html" onclick="trackEvent('post_small_task_page_click', { source: 'homepage_hero' });trackRecommendedEvent('generate_lead', { lead_type: 'post_small_task_page', source: 'homepage_hero' })">First-task templates</a>
-              <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero' });navigate('#/services')">Browse helpers</button>
-              <a class="btn btn-outline btn-lg" href="/ai-integration.html" onclick="trackEvent('agent_integration_cta_click', { source: 'homepage_hero' })">Agent guide</a>
+              <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });trackRecommendedEvent('generate_lead', { lead_type: 'describe_task_primary', source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
+              <a class="btn btn-outline btn-lg" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click', { source: 'homepage_hero_secondary' })">See examples</a>
+              <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse helpers</button>
             </div>
             <div style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:rgba(13,115,119,.07);max-width:620px">
               <div style="font-weight:700;color:var(--color-text);margin-bottom:var(--space-1)">Need the first job scoped?</div>
@@ -1346,9 +1384,9 @@ async function renderLanding() {
       <section class="lp-compact-section">
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>
-            <div class="lp-section-label">Guided agent intake</div>
-            <h2 class="lp-section-head" style="text-align:left">Convert a prompt into a clear marketplace listing.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Answer four prompts. GoHireHumans opens the post-job form with a draft. This creates a draft only — it does not submit a job, contact workers, send email, or promise a match.</p>
+            <div class="lp-section-label">Guided first-task wizard</div>
+            <h2 class="lp-section-head" style="text-align:left">Describe your task. Review the draft before anything posts.</h2>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">Answer four prompts. GoHireHumans opens the post-job form with a draft. This creates a draft only — it does not submit a job, contact workers, charge a card, or promise a match.</p>
           </div>
           <div class="lp-action-panel" style="cursor:default">
             <div class="form-group">
@@ -1367,7 +1405,27 @@ async function renderLanding() {
               <label class="label" for="guided-task-budget">Suggested budget range</label>
               <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed">
             </div>
-            <button class="btn btn-primary" style="width:100%" onclick="createGuidedTaskDraft()">Create draft in post-job form</button>
+            <button class="btn btn-primary" style="width:100%" onclick="trackEvent('first_task_wizard_review_draft_click',{source:'homepage_guided_task_intake'});createGuidedTaskDraft()">Create draft in post-job form</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="lp-compact-section lp-light-band lp-first-order-trust">
+        <div class="lp-section-inner">
+          <div class="lp-centered-head">
+            <div class="lp-section-label">What happens after I post?</div>
+            <h2 class="lp-section-head">A small task stays reviewable before money moves.</h2>
+            <p class="lp-section-sub lp-short-copy">Use GoHireHumans to scope the work, review applicants or helpers, and keep payment/review steps explicit.</p>
+          </div>
+          <div class="lp-icon-card-grid lp-four-up">
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">1</div><h3>Draft first</h3><p>The wizard opens a draft. Nothing is posted, emailed, or charged until you review and submit.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">2</div><h3>Review applicants</h3><p>Workers can apply. You choose who to hire and can start with small, checkable deliverables.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">3</div><h3>Payment when hiring</h3><p>Where checkout is configured, payment setup is required before hiring. Workers receive the listed payout.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">4</div><h3>Accept or raise an issue</h3><p>Review the result against the scope. Use platform status/support tools if something does not match.</p></div>
+          </div>
+          <div class="lp-center-actions">
+            <button class="btn btn-primary btn-lg" onclick="trackEvent('first_order_trust_describe_task_click',{source:'first_order_trust_module'});document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
+            <a class="btn btn-secondary btn-lg" href="/trust-safety.html" onclick="trackEvent('first_order_trust_safety_click',{source:'first_order_trust_module'})">Read Trust & Safety</a>
           </div>
         </div>
       </section>
@@ -3833,8 +3891,8 @@ async function renderAdminDisputes() {
                 <span>$${Number(o.total_amount||o.amount||0).toFixed(2)}</span>
               </div>
               <div style="margin-top:var(--space-3);display:flex;gap:var(--space-2)">
-                <button class="btn btn-sm btn-primary" onclick="adminResolveDispute(${o.id},'worker')">Release to Worker</button>
-                <button class="btn btn-sm btn-secondary" onclick="adminResolveDispute(${o.id},'employer')">Refund Employer</button>
+                <button class="btn btn-sm btn-primary" onclick="adminResolveDispute(${o.id},'release_to_worker')">Record Worker Settlement</button>
+                <button class="btn btn-sm btn-secondary" onclick="adminResolveDispute(${o.id},'refund_to_employer')">Record Employer Refund</button>
               </div>
             </div>`).join('')}
         </div>` : `<div class="empty-state"><p>No active disputes.</p></div>`}
@@ -3845,14 +3903,23 @@ async function renderAdminDisputes() {
 }
 
 async function adminResolveDispute(orderId, resolution) {
-  const label = resolution === 'worker' ? 'Release funds to worker' : 'Refund employer';
-  showModal('Resolve Dispute', `<p>Are you sure you want to resolve this dispute?</p><p style="margin-top:var(--space-2);font-weight:600">${esc(label)}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This action cannot be undone.</p>`, async () => {
+  const labels = {
+    release_to_worker: 'Record worker settlement',
+    refund_to_employer: 'Record employer refund',
+    split: 'Record split settlement'
+  };
+  const label = labels[resolution] || 'Record dispute settlement';
+  const adminPassword = window.prompt(`Confirm your admin password to ${label.toLowerCase()}:`);
+  if (!adminPassword) { toast('Admin password confirmation required', 'error'); return; }
+  const processorReference = window.prompt('Enter the Stripe/manual settlement reference after external money movement has been completed and verified:');
+  if (!processorReference) { toast('Settlement reference required before recording resolution', 'error'); return; }
+  showModal('Record Manual Dispute Settlement', `<p>This records a dispute outcome after money movement has been completed and verified outside this admin action.</p><p style="margin-top:var(--space-2);font-weight:600">${esc(label)}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This does not initiate a Stripe refund or transfer. Reference: ${esc(processorReference)}</p>`, async () => {
     try {
-      await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution } });
-      toast('Dispute resolved', 'success');
+      await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution, admin_password: adminPassword, manual_money_movement_confirmed: true, processor_reference: processorReference } });
+      toast('Manual dispute settlement recorded', 'success');
       renderAdminDisputes();
     } catch(err) { toast(err.message, 'error'); }
-  }, 'Resolve', 'Cancel', true, true);
+  }, 'Record Settlement', 'Cancel', true, true);
 }
 
 async function renderAdminAudit() {

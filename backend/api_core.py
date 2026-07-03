@@ -8,6 +8,7 @@ Routes via PATH_INFO. Called by server.py handle_request().
 import base64
 import gzip
 import json
+import math
 import os
 import sys
 import sqlite3
@@ -1103,7 +1104,7 @@ def send_welcome_email(email, name):
         <div style="text-align:center;margin-bottom:24px">
           <a href="https://www.gohirehumans.com" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">Get Started →</a>
         </div>
-        <p style="font-size:13px;color:#6b6963;margin-bottom:8px">Every transaction is protected by escrow. Funds only release when you approve the work.</p>
+        <p style="font-size:13px;color:#6b6963;margin-bottom:8px">Where payment processing is configured, paid work uses platform payment records and review steps before funds are released or refunded.</p>
         <p style="font-size:13px;color:#6b6963">Questions? Reply to this email or check our <a href="https://www.gohirehumans.com/faq.html" style="color:#0d7377">FAQ</a>.</p>
         <hr style="border:none;border-top:1px solid #dddbd6;margin:24px 0 16px">
         <p style="font-size:11px;color:#a8a6a0;text-align:center">&copy; 2026 GoHireHumans · <a href="https://www.gohirehumans.com" style="color:#a8a6a0">gohirehumans.com</a></p>
@@ -1154,7 +1155,12 @@ def worker_has_payout_setup(db, user_id):
     wp = db.execute("SELECT payout_account_id, payout_method FROM worker_profiles WHERE user_id = ?", [user_id]).fetchone()
     if not wp:
         return False
-    return bool(wp['payout_account_id']) and wp['payout_method'] not in ('pending_setup', None, '')
+    payout_account_id = wp['payout_account_id'] or ''
+    if PRODUCTION_MODE and payout_account_id.startswith('acct_sim_'):
+        return False
+    if (stripe_configured() or PRODUCTION_MODE) and not payout_account_id:
+        return False
+    return bool(payout_account_id) and wp['payout_method'] not in ('pending_setup', None, '')
 
 
 def employer_has_payment_setup(db, user_id):
@@ -1170,40 +1176,39 @@ def employer_has_payment_setup(db, user_id):
 
 def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
     """Release escrow hold, transfer to worker via Stripe or simulation."""
-    # Mark escrow released
-    db.execute(
-        "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL) AND status='held'",
-        [order_id, milestone_id]
-    )
     # Employer pays the 1% platform margin on top of the listed amount.
     # Workers receive the listed amount unless Enzo explicitly changes the model.
     fee = round(amount * SERVICE_FEE_RATE, 2)
     worker_payout = round(amount, 2)
 
+    if stripe_configured() or PRODUCTION_MODE:
+        wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [worker_id]).fetchone()
+        payout_account_id = (wp['payout_account_id'] if wp else '') or ''
+        if not payout_account_id or payout_account_id.startswith('acct_sim_'):
+            raise ValueError("A live worker Stripe Connect payout account is required before release.")
+        if not stripe_configured():
+            raise ValueError("Stripe is not configured; live payout release is disabled in production.")
+        try:
+            stripe.Transfer.create(
+                amount=int(worker_payout * 100),
+                currency="usd",
+                destination=payout_account_id,
+                metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
+                description=f"GoHireHumans escrow release order #{order_id}",
+                idempotency_key=f"escrow-release:{order_id}:{milestone_id or 'full'}:{int(worker_payout * 100)}"
+            )
+        except stripe.error.StripeError as e:
+            raise ValueError(f"Stripe transfer failed: {str(e)}")
+
+    # Only mark escrow/revenue after live transfer succeeds or non-production simulation is allowed.
+    db.execute(
+        "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL) AND status='held'",
+        [order_id, milestone_id]
+    )
     db.execute(
         "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
         [order_id, fee, 'service_fee']
     )
-
-    # Attempt Stripe transfer if configured
-    if stripe_configured():
-        wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [worker_id]).fetchone()
-        if wp and wp['payout_account_id'] and not wp['payout_account_id'].startswith('acct_sim_'):
-            try:
-                stripe.Transfer.create(
-                    amount=int(worker_payout * 100),
-                    currency="usd",
-                    destination=wp['payout_account_id'],
-                    metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
-                    description=f"GoHireHumans escrow release order #{order_id}"
-                )
-            except stripe.error.StripeError as e:
-                db.execute(
-                    "UPDATE escrow_holds SET status='held' WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL)",
-                    [order_id, milestone_id]
-                )
-                raise ValueError(f"Stripe transfer failed: {str(e)}")
-
     return worker_payout, fee
 
 
@@ -2744,7 +2749,11 @@ def _handle_routes(db):
         ms_amount = float(current_ms['amount'])
 
         # Release escrow for this milestone
-        worker_payout, fee = release_escrow_to_worker(db, order_id, ms_id, ms_amount, order['worker_id'])
+        try:
+            worker_payout, fee = release_escrow_to_worker(db, order_id, ms_id, ms_amount, order['worker_id'])
+        except ValueError as e:
+            db.rollback()
+            return error_response(str(e), 502)
 
         db.execute(
             "UPDATE milestones SET status='approved', released_at=datetime('now') WHERE id=?",
@@ -3056,15 +3065,34 @@ def _handle_routes(db):
         total_hours = sum(float(e['hours']) for e in entries)
         total_pay = round(total_hours * float(hc['hourly_rate']), 2)
         fee = round(total_pay * SERVICE_FEE_RATE, 2)
-        worker_pay = round(total_pay - fee, 2)
+        worker_pay = round(total_pay, 2)
 
-        # Mark entries approved
+        if stripe_configured() or PRODUCTION_MODE:
+            wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id=?", [order['worker_id']]).fetchone()
+            payout_account_id = (wp['payout_account_id'] if wp else '') or ''
+            if not payout_account_id or payout_account_id.startswith('acct_sim_'):
+                return error_response("A live worker Stripe Connect payout account is required before approving paid hours.", 409)
+            if not stripe_configured():
+                return error_response("Stripe is not configured; live hourly payout release is disabled in production.", 503)
+            try:
+                stripe.Transfer.create(
+                    amount=int(worker_pay * 100),
+                    currency="usd",
+                    destination=payout_account_id,
+                    metadata={"order_id": str(order_id), "week_of": week_of},
+                    idempotency_key=f"hourly-release:{order_id}:{week_of}:{int(worker_pay * 100)}"
+                )
+            except stripe.error.StripeError as e:
+                db.rollback()
+                return error_response(f"Stripe transfer failed: {str(e)}", 502)
+
+        # Mark entries approved only after live transfer succeeds or non-production simulation is allowed.
         db.execute(
             "UPDATE time_entries SET status='approved' WHERE contract_id=? AND week_of=? AND status='pending'",
             [hc['id'], week_of]
         )
 
-        # Release escrow for these hours
+        # Release escrow for these hours after transfer/fail-closed checks above.
         db.execute(
             "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE order_id=? AND status='held'",
             [order_id]
@@ -3073,20 +3101,6 @@ def _handle_routes(db):
             "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,'hourly_service_fee')",
             [order_id, fee]
         )
-
-        # Transfer to worker if Stripe configured
-        if stripe_configured():
-            wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id=?", [order['worker_id']]).fetchone()
-            if wp and wp['payout_account_id'] and not wp['payout_account_id'].startswith('acct_sim_'):
-                try:
-                    stripe.Transfer.create(
-                        amount=int(worker_pay * 100),
-                        currency="usd",
-                        destination=wp['payout_account_id'],
-                        metadata={"order_id": str(order_id), "week_of": week_of}
-                    )
-                except stripe.error.StripeError:
-                    pass
 
         # Refund unused escrow and fund next week
         escrow_held = float(hc['current_week_escrow_amount'] or 0)
@@ -3416,6 +3430,8 @@ def _handle_routes(db):
             except stripe.error.StripeError as e:
                 return error_response(f"Stripe error: {str(e)}", 502)
         else:
+            if PRODUCTION_MODE:
+                return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
             # Simulation
             body = get_body()
             payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
@@ -3456,7 +3472,10 @@ def _handle_routes(db):
                     except stripe.error.StripeError:
                         worker_status = {"connected": False, "account_id": wp['payout_account_id'], "mode": "live"}
                 else:
-                    worker_status = {"connected": True, "account_id": wp['payout_account_id'], "mode": "simulated"}
+                    if PRODUCTION_MODE:
+                        worker_status = {"connected": False, "account_id": None, "mode": "disabled", "message": "Simulated worker payout is disabled in production."}
+                    else:
+                        worker_status = {"connected": True, "account_id": wp['payout_account_id'], "mode": "simulated"}
             else:
                 worker_status = {"connected": False, "account_id": None}
 
@@ -4107,85 +4126,79 @@ def _handle_routes(db):
             return error_response("Order must be disputed to resolve", 409)
 
         admin_notes = body.get("notes", "")
+        step_error, step_status = require_admin_step_up(db, user, body, "admin_resolve_dispute")
+        if step_error:
+            return error_response(step_error, step_status)
 
-        if resolution == 'release_to_worker':
-            # Release all held escrow to worker
-            holds = db.execute(
-                "SELECT * FROM escrow_holds WHERE order_id=? AND status='held'",
-                [int(order_id)]
-            ).fetchall()
-            total_released = 0
-            for hold in holds:
-                db.execute(
-                    "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE id=?",
-                    [hold['id']]
-                )
-                total_released += float(hold['amount'])
+        if body.get("manual_money_movement_confirmed") is not True:
+            return error_response(
+                "Manual money movement confirmation required. Complete and verify any Stripe refund/transfer outside this admin action before recording the dispute resolution.",
+                409
+            )
+        processor_reference = str(body.get("processor_reference") or "").strip()
+        if not processor_reference:
+            return error_response("processor_reference required for manual dispute settlement audit trail", 400)
 
-            fee = round(total_released * SERVICE_FEE_RATE, 2)
-            worker_pay = round(total_released - fee, 2)
+        holds = db.execute(
+            "SELECT * FROM escrow_holds WHERE order_id=? AND status='held'",
+            [int(order_id)]
+        ).fetchall()
+        if not holds:
+            return error_response("No held payment record available to resolve", 409)
+
+        total_held = round(sum(float(hold['amount']) for hold in holds), 2)
+        worker_percent = 100.0 if resolution == 'release_to_worker' else 0.0
+        if resolution == 'split':
+            try:
+                worker_percent = float(body.get("worker_percent", 50))
+            except (TypeError, ValueError):
+                return error_response("worker_percent must be a number between 0 and 100", 400)
+            if not math.isfinite(worker_percent) or worker_percent < 0 or worker_percent > 100:
+                return error_response("worker_percent must be a finite number between 0 and 100", 400)
+        worker_portion = round(total_held * (worker_percent / 100.0), 2)
+        employer_portion = round(total_held - worker_portion, 2)
+
+        escrow_status = 'released' if resolution == 'release_to_worker' else 'refunded' if resolution == 'refund_to_employer' else 'partial'
+        db.execute(
+            "UPDATE escrow_holds SET status=?, released_at=datetime('now') WHERE order_id=? AND status='held'",
+            [escrow_status, int(order_id)]
+        )
+        if worker_portion > 0:
             db.execute(
-                "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,'dispute_resolution')",
-                [order_id, fee]
+                "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
+                [order_id, round(worker_portion * SERVICE_FEE_RATE, 2), 'manual_dispute_resolution']
             )
 
-            push_notification(db, order['worker_id'], "dispute_resolved",
-                "Dispute resolved in your favor",
-                f"${worker_pay:.2f} has been released to you.",
-                f"/orders/{order_id}")
-            push_notification(db, order['employer_id'], "dispute_resolved",
-                "Dispute resolved",
-                f"The dispute for order #{order_id} was resolved in the worker's favor.",
-                f"/orders/{order_id}")
-
-        elif resolution == 'refund_to_employer':
-            db.execute(
-                "UPDATE escrow_holds SET status='refunded', released_at=datetime('now') WHERE order_id=? AND status='held'",
-                [int(order_id)]
-            )
-            push_notification(db, order['employer_id'], "dispute_resolved",
-                "Dispute resolved — refund issued",
-                f"Your payment for order #{order_id} has been refunded.",
-                f"/orders/{order_id}")
-            push_notification(db, order['worker_id'], "dispute_resolved",
-                "Dispute resolved",
-                f"The dispute for order #{order_id} was resolved in the employer's favor.",
-                f"/orders/{order_id}")
-
-        elif resolution == 'split':
-            split_pct = float(body.get("worker_percent", 50)) / 100
-            holds = db.execute(
-                "SELECT * FROM escrow_holds WHERE order_id=? AND status='held'",
-                [int(order_id)]
-            ).fetchall()
-            for hold in holds:
-                amount = float(hold['amount'])
-                worker_portion = round(amount * split_pct, 2)
-                employer_portion = round(amount - worker_portion, 2)
-                db.execute(
-                    "UPDATE escrow_holds SET status='partial', released_at=datetime('now') WHERE id=?",
-                    [hold['id']]
-                )
-                db.execute(
-                    "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,'dispute_split')",
-                    [order_id, round(worker_portion * SERVICE_FEE_RATE, 2)]
-                )
-            push_notification(db, order['worker_id'], "dispute_resolved",
-                "Dispute resolved — split decision",
-                f"The dispute for order #{order_id} was resolved with a split decision.",
-                f"/orders/{order_id}")
-            push_notification(db, order['employer_id'], "dispute_resolved",
-                "Dispute resolved — split decision",
-                f"The dispute for order #{order_id} was resolved with a split decision.",
-                f"/orders/{order_id}")
+        push_notification(db, order['worker_id'], "dispute_resolved",
+            "Dispute resolution recorded",
+            f"The dispute for order #{order_id} was resolved after manual settlement was verified by an admin.",
+            f"/orders/{order_id}")
+        push_notification(db, order['employer_id'], "dispute_resolved",
+            "Dispute resolution recorded",
+            f"The dispute for order #{order_id} was resolved after manual settlement was verified by an admin.",
+            f"/orders/{order_id}")
 
         db.execute(
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
             [int(order_id)]
         )
-        audit(db, user['id'], "resolve_dispute", "order", int(order_id), {"resolution": resolution, "notes": admin_notes})
+        audit(db, user['id'], "resolve_dispute_manual_settlement", "order", int(order_id), {
+            "resolution": resolution,
+            "notes": admin_notes,
+            "manual_money_movement_confirmed": True,
+            "processor_reference": processor_reference,
+            "worker_portion": worker_portion,
+            "employer_portion": employer_portion,
+        })
         db.commit()
-        return json_response({"ok": True, "resolution": resolution})
+        return json_response({
+            "ok": True,
+            "resolution": resolution,
+            "mode": "manual_settlement_recorded",
+            "processor_reference": processor_reference,
+            "worker_portion": worker_portion,
+            "employer_portion": employer_portion,
+        })
 
     elif path == "/admin/audit-log" and method == "GET":
         user = authenticate(db)
