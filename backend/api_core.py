@@ -3232,6 +3232,8 @@ def _handle_routes(db):
             except stripe.error.StripeError as e:
                 return error_response(f"Stripe error: {str(e)}", 502)
         else:
+            if PRODUCTION_MODE:
+                return error_response("Stripe is not configured; simulated employer payment setup is disabled in production.", 503)
             # Simulation mode
             sim_customer_id = f"cus_sim_{secrets.token_hex(10)}"
             sim_payment_method = f"pm_sim_{secrets.token_hex(10)}"

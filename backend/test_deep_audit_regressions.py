@@ -348,6 +348,42 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_production_payment_setup_refuses_simulated_employer_records_without_stripe(self):
+        db = self.module.get_db()
+        token = "tok-employer"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+
+        self.module.STRIPE_AVAILABLE = False
+        self.module.STRIPE_SECRET_KEY=""
+        self.module.PRODUCTION_MODE = True
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/payments/setup-employer"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = "{}"
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = "2"
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 503, body)
+        self.assertIn("simulated employer payment setup is disabled", body["error"])
+        db = self.module.get_db()
+        try:
+            ep = db.execute("SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id=2").fetchone()
+            if ep is not None:
+                self.assertIsNone(ep["stripe_customer_id"])
+                self.assertIsNone(ep["payment_method_id"])
+        finally:
+            db.close()
+
     def test_admin_application_pipeline_requires_admin(self):
         self.module._request_ctx.request_method = "GET"
         self.module._request_ctx.path_info = "/api/v1/admin/application-pipeline"
