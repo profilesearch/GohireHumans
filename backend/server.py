@@ -63,12 +63,12 @@ CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=
 @app.after_request
 def add_security_headers(response):
     """Apply baseline API security headers to every backend response."""
-    response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
-    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 # ─── Import the CGI API module ──────────────────────────────────────────────
