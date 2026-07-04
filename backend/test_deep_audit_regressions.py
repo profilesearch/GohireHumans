@@ -655,6 +655,28 @@ class BackendRegressionTests(unittest.TestCase):
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
 
+    def test_phase2_ui_flow_polish_invariants(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        required = [
+            "requireAuth(`jobs/${id}?apply=1`)",
+            "const shouldAutoApply = getQuery().get('apply') === '1'",
+            "setTimeout(() => handleJobApply(id), 0)",
+            "sessionStorage.setItem('ghh_auth_intent'",
+            "sessionStorage.removeItem('ghh_auth_intent')",
+            "Sign in to Apply",
+            "We will bring you back to this job after sign-in.",
+            "id=\"apply-cover-message\"",
+            "id=\"apply-portfolio-url\"",
+            "New listing",
+            "services-result-count",
+            "Filter services",
+            "Keep payments on-platform",
+            "You can apply to jobs before connecting payouts.",
+            "grid-template-columns:repeat(auto-fit,minmax(240px,1fr))",
+        ]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
+
     def test_audit_redacts_sensitive_details_recursively(self):
         db = self.module.get_db()
         try:
