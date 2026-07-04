@@ -1297,6 +1297,7 @@ async function renderLanding() {
             <div class="lp-hero-ctas lp-hero-ctas-left">
               <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });trackRecommendedEvent('generate_lead', { lead_type: 'describe_task_primary', source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
               <a class="btn btn-outline btn-lg" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click', { source: 'homepage_hero_secondary' })">See examples</a>
+              <a class="btn btn-outline btn-lg" href="/proof-packs.html" onclick="trackEvent('homepage_proof_packs_click', { source: 'homepage_hero_secondary' })">Proof-pack format</a>
               <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse helpers</button>
             </div>
             <div style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:rgba(13,115,119,.07);max-width:620px">
@@ -4373,7 +4374,7 @@ render();
   </script>
 
   <!-- SEO: Crawlable internal links for Google (hidden from visual UI, visible to crawlers) -->
-  <nav aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;">
+  <nav aria-hidden="true" inert tabindex="-1" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;">
     <h2>Platform</h2>
     <a href="/about.html">About GoHireHumans</a>
     <a href="/how-it-works.html">How It Works</a>

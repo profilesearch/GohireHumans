@@ -1,0 +1,6 @@
+{
+  "homepage_max_bytes": 300000,
+  "style_css_max_bytes": 90000,
+  "static_html_max_bytes": 180000,
+  "proof_packs_required": true
+}

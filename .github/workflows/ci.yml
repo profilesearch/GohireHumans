@@ -33,3 +33,26 @@ jobs:
         run: python -m unittest backend/test_deep_audit_regressions.py -v
       - name: Security static checks
         run: python backend/security_static_checks.py
+      - name: Public shell guardrails
+        run: python scripts/check_public_shell.py
+      - name: Performance budgets
+        run: python scripts/performance_budget.py
+
+  browser-regression-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend QA dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser regression suite
+        working-directory: frontend
+        run: npm run test:browser

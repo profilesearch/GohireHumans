@@ -1514,6 +1514,78 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/use-cases/index.html").read_text(encoding="utf-8", errors="ignore")
         self.assertIn('<link rel="canonical" href="https://www.gohirehumans.com/use-cases/">', text)
 
+    def test_phase4_browser_regression_suite_is_configured(self):
+        required_files = [
+            "frontend/package.json",
+            "frontend/playwright.config.js",
+            "frontend/tests/browser-regression.spec.js",
+        ]
+        missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
+        self.assertEqual(missing, [])
+        pkg = json.loads((REPO_ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+        self.assertIn("test:browser", pkg.get("scripts", {}))
+        self.assertIn("@playwright/test", pkg.get("devDependencies", {}))
+        self.assertIn("@axe-core/playwright", pkg.get("devDependencies", {}))
+        spec = (REPO_ROOT / "frontend/tests/browser-regression.spec.js").read_text(encoding="utf-8")
+        for snippet in ["AxeBuilder", "no-such-route-ui-audit", "services-result-count", "Open Jobs for Workers"]:
+            self.assertIn(snippet, spec)
+
+    def test_phase5_proof_pack_conversion_layer_exists(self):
+        proof = (REPO_ROOT / "frontend/proof-packs.html").read_text(encoding="utf-8", errors="ignore")
+        required = [
+            "Proof packs for human verification work",
+            "AI Output Verification",
+            "Automation QA Sprint",
+            "Clay/GTM QA Sprint",
+            "Real-World Check",
+            "Scope card",
+            "Evidence log",
+            "Issue table",
+            "Final recommendation",
+        ]
+        missing = [snippet for snippet in required if snippet not in proof]
+        self.assertEqual(missing, [])
+        for rel in ["frontend/index.html", "frontend/starter-offers.html", "frontend/pricing.html", "frontend/sitemap.xml"]:
+            self.assertIn("proof-packs.html", (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore"), rel)
+        vercel = json.loads((REPO_ROOT / "frontend/vercel.json").read_text(encoding="utf-8"))
+        redirects = {(r.get("source"), r.get("destination")) for r in vercel.get("redirects", [])}
+        self.assertIn(("/proof-packs", "/proof-packs.html"), redirects)
+
+    def test_phase6_first_10_orders_operating_system_exists(self):
+        required = {
+            "docs/ops/first-10-orders-playbook.md": ["concierge agency wearing a marketplace shell", "Intake checklist", "Order stages", "Kill/review criteria"],
+            "docs/ops/proof-pack-template.md": ["Scope card", "Checklist run", "Issue table", "Uncertainty log", "Final recommendation"],
+            "docs/ops/buyer-delivery-template.md": ["Your {{sku_name}} proof pack is ready", "Accepted", "Revision requested", "anonymized case study"],
+        }
+        missing = {}
+        for rel, snippets in required.items():
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            absent = [snippet for snippet in snippets if snippet not in text]
+            if absent:
+                missing[rel] = absent
+        self.assertEqual(missing, {})
+
+    def test_phase7_design_system_public_shell_guardrails_exist(self):
+        required_files = [
+            "frontend/partials/public-nav.html",
+            "frontend/partials/public-footer.html",
+            "docs/design-system/public-shell.md",
+            "scripts/check_public_shell.py",
+        ]
+        missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
+        self.assertEqual(missing, [])
+        nav = (REPO_ROOT / "frontend/partials/public-nav.html").read_text(encoding="utf-8", errors="ignore")
+        for token in ["Starter QA Offers", "Open Jobs for Workers", "Request QA", "lp-nav"]:
+            self.assertIn(token, nav)
+
+    def test_phase8_performance_budget_guardrails_exist(self):
+        required_files = ["frontend/performance-budgets.json", "scripts/performance_budget.py"]
+        missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
+        self.assertEqual(missing, [])
+        budgets = json.loads((REPO_ROOT / "frontend/performance-budgets.json").read_text(encoding="utf-8"))
+        self.assertLessEqual((REPO_ROOT / "frontend/index.html").stat().st_size, budgets["homepage_max_bytes"])
+        self.assertLessEqual((REPO_ROOT / "frontend/style.css").stat().st_size, budgets["style_css_max_bytes"])
+
     def test_homepage_public_nav_template_keeps_desktop_and_mobile_active_states(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         snippets = [
