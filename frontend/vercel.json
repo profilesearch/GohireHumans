@@ -777,6 +777,11 @@
       "source": "/api",
       "destination": "/api-docs.html",
       "permanent": true
+    },
+    {
+      "source": "/proof-packs",
+      "destination": "/proof-packs.html",
+      "permanent": true
     }
   ],
   "headers": [
