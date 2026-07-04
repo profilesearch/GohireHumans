@@ -257,6 +257,68 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_service_creation_rejects_off_platform_payment_instructions(self):
+        db = self.module.get_db()
+        token = "tok-worker"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+
+        payload = {
+            "title": "Website QA pass",
+            "description": "I can test your website. Direct payment via PayPal is available.",
+            "category": "testing",
+            "pricing_type": "fixed",
+            "price": 25,
+            "includes": "Send payment to a crypto wallet before work starts",
+        }
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/services"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 422, response)
+        self.assertIn("Payment instructions must stay on-platform", response.get("error", ""))
+
+    def test_service_update_rejects_off_platform_payment_instructions_in_tags(self):
+        db = self.module.get_db()
+        token = "tok-worker"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price,status) VALUES (1,1,'Testing Svc','Clean QA scope','testing','fixed',25,'active')")
+            db.commit()
+        finally:
+            db.close()
+
+        payload = {"tags": ["qa", "solana wallet accepted"]}
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "PUT"
+        self.module._request_ctx.path_info = "/api/v1/services/1"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 422, response)
+        self.assertIn("Payment instructions must stay on-platform", response.get("error", ""))
+
     def test_job_creation_notifies_matching_service_workers(self):
         db = self.module.get_db()
         token = "tok-employer"
@@ -1347,13 +1409,13 @@ class FrontendStaticRegressionTests(unittest.TestCase):
     def test_sitemapped_html_pages_use_single_canonical_public_nav(self):
         expected_labels = [
             "GoHireHumans",
+            "Starter QA Offers",
             "Marketplace",
-            "Open Jobs",
+            "Open Jobs for Workers",
             "For Agents",
             "Agent Guide",
             "Use Cases",
             "About",
-            "FAQ",
         ]
         failures = []
         for rel in self._sitemapped_html_pages():
@@ -1448,10 +1510,11 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
+            '<a class="lp-nav-link" href="/starter-offers.html">Starter QA Offers</a>',
             '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
-            '<a class="lp-nav-link" href="/#/jobs">Open Jobs</a>',
+            '<a class="lp-nav-link" href="/#/jobs">Open Jobs for Workers</a>',
             '<a class="lp-nav-link" href="/#/ai-employers">For Agents</a>',
-            '<a class="btn btn-primary btn-sm" href="/#/register">Get started</a>',
+            '<a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>',
             'function toggleMobileMenu()',
         ]
         failures = []

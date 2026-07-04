@@ -207,8 +207,9 @@
     @media (max-width: 640px) {
       .nav-links { display: none; }
       .fee-hero { padding: 28px 24px; }
-      .comparison-table { font-size: 12px; }
+      .comparison-table { display:block; overflow-x:auto; white-space:nowrap; font-size: 12px; }
       .comparison-table th, .comparison-table td { padding: 10px 12px; }
+      .comparison-table::after { content:'Swipe to compare all platforms'; display:block; padding:8px 0; color:#6b6963; font-size:12px; }
     }
   </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
@@ -218,11 +219,11 @@
   <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
-      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
-      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA Offers</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs for Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
       <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/register">Get started</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA Offers</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs for Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
 
   <script>
@@ -238,6 +239,18 @@
         <h1>Simple, Transparent Pricing</h1>
         <p class="lead">Free to join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. No monthly subscriptions, no listing fees, no hidden charges.</p>
       </header>
+
+      <section class="section" aria-labelledby="starter-packages-heading">
+        <h2 id="starter-packages-heading">Starter QA Packages</h2>
+        <p>For first orders, start with a fixed-scope human QA sprint before moving into custom marketplace work.</p>
+        <div class="feature-grid">
+          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claim/source checks, error log, confidence notes.</p></div>
+          <div class="feature-item"><h3>Automation QA Sprint</h3><p><strong>$199</strong> — workflow/app test pass, screenshots, repro steps, severity notes.</p></div>
+          <div class="feature-item"><h3>Clay/GTM QA Sprint</h3><p><strong>$199</strong> — lead/account row checks, source accuracy, personalization-risk flags.</p></div>
+          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — phone/local/manual verification notes with timestamp and caveats.</p></div>
+        </div>
+        <p><a href="/starter-offers.html" class="btn btn-primary">View starter offers</a></p>
+      </section>
 
       <!-- Fee Hero -->
       <section class="section" aria-labelledby="fee-heading">
