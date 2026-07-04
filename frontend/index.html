@@ -492,6 +492,14 @@ function showForgotPassword() {
 
 // ─── Helpers ─────────────────────────────────────────────────
 function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function safeExternalHref(value) {
+  try {
+    const url = new URL(String(value || '').trim(), window.location.origin);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
 function formatCategory(cat) { return (cat || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function safeParseJSON(str, fallback = []) {
   try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
@@ -2993,7 +3001,7 @@ async function renderJobApplicants(id) {
                 ${statusBadge(a.status||'pending')}
               </div>
               <p style="font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.6;margin-bottom:var(--space-3)">${esc(a.cover_message||'')}</p>
-              ${a.portfolio_url ? `<a href="${esc(a.portfolio_url)}" target="_blank" rel="noopener" style="font-size:var(--text-xs);color:var(--color-primary)">View Portfolio →</a>` : ''}
+              ${safeExternalHref(a.portfolio_url) ? `<a href="${esc(safeExternalHref(a.portfolio_url))}" target="_blank" rel="noopener" style="font-size:var(--text-xs);color:var(--color-primary)">View Portfolio →</a>` : ''}
             </div>
             <div style="flex-shrink:0">
               ${a.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="handleHire(${id},${a.id},${a.worker_id})">Hire</button>` : ''}

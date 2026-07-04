@@ -319,6 +319,92 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(status, 422, response)
         self.assertIn("Payment instructions must stay on-platform", response.get("error", ""))
 
+    def test_job_creation_rejects_off_platform_payment_instructions(self):
+        db = self.module.get_db()
+        token = "tok-employer"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
+            db.commit()
+        finally:
+            db.close()
+
+        payload = {
+            "title": "Pay me via PayPal",
+            "description": "Review the website and use direct payment through paypal.me/example.",
+            "category": "testing",
+            "budget_type": "fixed",
+            "budget_amount": 25,
+            "required_skills": ["qa", "zelle accepted"],
+        }
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/jobs"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 422, response)
+        self.assertIn("Payment instructions must stay on-platform", response.get("error", ""))
+
+    def test_application_rejects_payment_circumvention_and_unsafe_portfolio_url(self):
+        db = self.module.get_db()
+        token = "tok-worker"
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,?,datetime('now','+1 day'))", [token])
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,1,'QA Job','Clean scope','testing','fixed',25,'open')")
+            db.commit()
+        finally:
+            db.close()
+
+        payload = {"cover_message": "I can help. Pay me via PayPal or Zelle.", "portfolio_url": "javascript:alert(document.domain)"}
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/jobs/7/apply"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 422, response)
+        self.assertIn("Payment instructions must stay on-platform", response.get("error", ""))
+
+        payload = {"cover_message": "I can help with this QA task.", "portfolio_url": "javascript:alert(document.domain)"}
+        for attr in ("body_cache", "raw_body"):
+            if hasattr(self.module._request_ctx, attr):
+                delattr(self.module._request_ctx, attr)
+        body = json.dumps(payload)
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/api/v1/jobs/7/apply"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(body))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, response = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 422, response)
+        self.assertIn("portfolio_url must be a valid http(s) URL", response.get("error", ""))
+
     def test_job_creation_notifies_matching_service_workers(self):
         db = self.module.get_db()
         token = "tok-employer"
@@ -673,6 +759,8 @@ class BackendRegressionTests(unittest.TestCase):
             "Keep payments on-platform",
             "You can apply to jobs before connecting payouts.",
             "grid-template-columns:repeat(auto-fit,minmax(240px,1fr))",
+            "function safeExternalHref(value)",
+            "safeExternalHref(a.portfolio_url)",
         ]
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
@@ -1547,6 +1635,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         self.assertEqual(missing, [])
         for rel in ["frontend/index.html", "frontend/starter-offers.html", "frontend/pricing.html", "frontend/sitemap.xml"]:
             self.assertIn("proof-packs.html", (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore"), rel)
+        starter = (REPO_ROOT / "frontend/starter-offers.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in ["Clay/GTM QA Sprint", "Draft Clay/GTM QA sprint", "clay_gtm_qa_sprint"]:
+            self.assertIn(snippet, starter)
         vercel = json.loads((REPO_ROOT / "frontend/vercel.json").read_text(encoding="utf-8"))
         redirects = {(r.get("source"), r.get("destination")) for r in vercel.get("redirects", [])}
         self.assertIn(("/proof-packs", "/proof-packs.html"), redirects)
