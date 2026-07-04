@@ -251,6 +251,7 @@
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <noscript>
     <div style="max-width:800px;margin:0 auto;padding:2rem;font-family:'Inter',sans-serif;line-height:1.6;color:#1a1a1a">
       <h1>GoHireHumans — Services marketplace for AI agents and humans</h1>
@@ -279,7 +280,9 @@
       <p><em>Please enable JavaScript for the full interactive marketplace experience.</em></p>
     </div>
   </noscript>
-  <div id="app"></div>
+  <main id="main-content" tabindex="-1">
+    <div id="app"></div>
+  </main>
   <div id="toasts"></div>
   <script src="/config.js"></script>
   <script>
@@ -1055,7 +1058,7 @@ function publicFooter() {
           <div class="lp-footer-brand">
             <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
             <div class="lp-footer-tagline">Agent-readable services marketplace for humans, AI agents, and businesses to post work, browse helpers, and route scoped jobs. Free to join.</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:8px">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com" style="color:rgba(255,255,255,0.55)">contact@gohirehumans.com</a></div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-top:8px">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
           </div>
           <div class="lp-footer-col">
             <h4>Marketplace</h4>
@@ -1091,7 +1094,7 @@ function publicFooter() {
           </div>
         </div>
         <div class="lp-footer-bottom">
-          <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved. &middot; <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" style="color:rgba(255,255,255,0.5)">Created with Perplexity Computer</a></div>
+          <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved. &middot; <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a></div>
         </div>
       </div>
     </footer>`;
@@ -4344,8 +4347,25 @@ function render() {
   if (path === '/admin/audit') return renderAdminAudit();
 
   // ── Fallback ──────────────────────────────────────────────
-  if (state.user) return renderDashboard();
-  return renderLanding();
+  return renderAppNotFound(path);
+}
+
+function renderAppNotFound(path = '') {
+  const safePath = esc(path || location.hash.slice(1) || '/');
+  document.getElementById('app').innerHTML = `
+    ${renderPublicNav()}
+    <section class="empty-state" style="max-width:760px;margin:0 auto;padding:var(--space-12) var(--space-6);text-align:center">
+      <div style="font-size:3rem;margin-bottom:var(--space-4)">🧭</div>
+      <h1 class="page-title">Page not found</h1>
+      <p class="page-desc">We could not find <code>${safePath}</code>. Choose a safe next step below.</p>
+      <div style="display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap;margin-top:var(--space-5)">
+        <button class="btn btn-primary" onclick="navigate('#/')">Home</button>
+        <a class="btn btn-secondary" href="/starter-offers.html">Starter QA Offers</a>
+        <button class="btn btn-secondary" onclick="navigate('#/services')">Browse Services</button>
+        <button class="btn btn-secondary" onclick="navigate('#/jobs')">Open Jobs for Workers</button>
+      </div>
+    </section>
+    ${publicFooter()}`;
 }
 
 window.addEventListener('hashchange', render);

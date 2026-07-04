@@ -520,6 +520,23 @@
 /* ─── REDESIGNED Landing Page ────────────────────────────────────── */
 .landing { min-height: 100dvh; background: var(--color-bg); }
 
+/* Accessibility */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -48px;
+  z-index: 1000;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+.skip-link:focus { top: var(--space-4); }
+#main-content:focus { outline: none; }
+
 /* Nav */
 .lp-nav-wrap {
   position: sticky; top: 0; z-index: 50;
@@ -792,7 +809,7 @@
   margin-bottom: var(--space-3);
 }
 .lp-footer-tagline {
-  font-size: var(--text-xs); color: var(--color-text-faint);
+  font-size: var(--text-xs); color: var(--color-text-muted);
   line-height: 1.6;
 }
 .lp-footer-col h4 {
@@ -805,7 +822,7 @@
   list-style: none; padding: 0; margin: 0;
 }
 .lp-footer-links a {
-  font-size: var(--text-sm); color: var(--color-text-faint);
+  font-size: var(--text-sm); color: var(--color-text-muted);
   text-decoration: none; cursor: pointer;
   transition: color var(--transition-fast);
 }
@@ -817,7 +834,7 @@
   gap: var(--space-4); flex-wrap: wrap;
 }
 .lp-footer-copy {
-  font-size: var(--text-xs); color: var(--color-text-faint);
+  font-size: var(--text-xs); color: var(--color-text-muted);
   line-height: 1.6;
 }
 .lp-footer-legal {

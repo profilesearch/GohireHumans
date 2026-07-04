@@ -1476,10 +1476,39 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 missing.append({"source": source, "destination": loc})
         self.assertEqual(missing, [])
         rewrite_sources = [r.get("source") for r in vercel.get("rewrites", [])]
-        self.assertTrue(any(src.startswith("/((?!api/)") and "?!.*" in src and src.endswith(".*)") for src in rewrite_sources))
+        self.assertEqual(rewrite_sources, [])
+        self.assertNotIn("/((?!api/)(?!.*\\.).*)", json.dumps(vercel))
         redirects_index = next(i for i, r in enumerate(vercel.get("redirects", [])) if r.get("source") == "/about")
-        rewrites_index = 9999 if "rewrites" in vercel else -1
-        self.assertLess(redirects_index, rewrites_index)
+        self.assertGreaterEqual(redirects_index, 0)
+
+    def test_phase3_404_landmark_and_footer_polish_invariants(self):
+        index = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
+        vercel = json.loads((REPO_ROOT / "frontend/vercel.json").read_text(encoding="utf-8"))
+        required_index = [
+            '<a class="skip-link" href="#main-content">Skip to content</a>',
+            '<main id="main-content" tabindex="-1">',
+            'function renderAppNotFound(path = \'\')',
+            'return renderAppNotFound(path);',
+            'We could not find <code>${safePath}</code>',
+            'href="/starter-offers.html">Starter QA Offers</a>',
+            'Open Jobs for Workers</button>',
+            'color:var(--color-text-muted);margin-top:8px',
+        ]
+        required_css = [
+            '.skip-link {',
+            '.skip-link:focus { top: var(--space-4); }',
+            '#main-content:focus { outline: none; }',
+            '.lp-footer-tagline {\n  font-size: var(--text-xs); color: var(--color-text-muted);',
+            '.lp-footer-links a {\n  font-size: var(--text-sm); color: var(--color-text-muted);',
+            '.lp-footer-copy {\n  font-size: var(--text-xs); color: var(--color-text-muted);',
+        ]
+        missing = [snippet for snippet in required_index if snippet not in index]
+        missing += [snippet for snippet in required_css if snippet not in css]
+        self.assertEqual(missing, [])
+        self.assertNotIn("rewrites", vercel)
+        self.assertNotIn("rgba(255,255,255,0.45)", index)
+        self.assertNotIn("rgba(255,255,255,0.5)", index)
 
     def test_use_cases_index_has_self_canonical(self):
         text = (REPO_ROOT / "frontend/use-cases/index.html").read_text(encoding="utf-8", errors="ignore")
