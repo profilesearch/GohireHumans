@@ -676,6 +676,14 @@ const taskDraftTemplates = {
     budget_amount: '75',
     required_skills: 'automation QA, AI agent review, testing, concise reporting'
   },
+  clay_gtm_qa: {
+    title: 'Human QA a Clay or GTM lead list',
+    description: 'Please spot-check the Clay/GTM table or outbound list I provide before it goes live.\n\nAcceptance criteria:\n1. Review a sample of account/contact rows for ICP fit, broken source links, unsupported personalization claims, duplicates, and risky AI-generated statements.\n2. Mark each row pass/fail/uncertain with evidence notes.\n3. Recommend what to fix before sending.\n\nDeliverable: row-level QA table, source notes, risk flags, and campaign-readiness summary.',
+    category: 'research',
+    budget_type: 'fixed',
+    budget_amount: '199',
+    required_skills: 'Clay, GTM data QA, lead research, source verification, outbound personalization review'
+  },
   data_cleanup: {
     title: 'Clean and verify a small data set',
     description: 'Please clean, deduplicate, enrich, or verify the spreadsheet/data sample I provide.\n\nAcceptance criteria:\n1. Preserve the original data unless a change is clearly needed.\n2. Flag ambiguous rows instead of guessing.\n3. Return a before/after sample and change log.\n\nDeliverable: cleaned spreadsheet or table, change log, and unresolved questions.',
@@ -979,8 +987,9 @@ function initScrollAnimations() {
 
 function renderPublicNav(activePage = '') {
   const navLinks = [
+    { label: 'Starter QA Offers', href: '/starter-offers.html', key: 'starter-offers', external: true },
     { label: 'Marketplace', href: '#/services', key: 'services' },
-    { label: 'Open Jobs', href: '#/jobs', key: 'jobs' },
+    { label: 'Open Jobs for Workers', href: '#/jobs', key: 'jobs' },
     { label: 'For Agents', href: '#/ai-employers', key: 'ai-employers' },
   ];
   return `
@@ -990,7 +999,7 @@ function renderPublicNav(activePage = '') {
           ${LOGO} GoHireHumans
         </a>
         <div class="lp-nav-links">
-          ${navLinks.map(l => `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`).join('')}
+          ${navLinks.map(l => l.external ? `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`).join('')}
           <a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a>
           <a class="lp-nav-link" href="/use-cases/">Use Cases</a>
           <a class="lp-nav-link" href="/about.html">About</a>
@@ -999,14 +1008,14 @@ function renderPublicNav(activePage = '') {
         </div>
         <div class="lp-nav-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
-          <button class="btn btn-primary btn-sm" onclick="navigate('#/register')">Get started</button>
+          <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
         </div>
         <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu">
           ${I.menu}
         </button>
       </nav>
       <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
-        ${navLinks.map(l => `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`).join('')}
+        ${navLinks.map(l => l.external ? `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`).join('')}
         <a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a>
         <a class="lp-mobile-link" href="/use-cases/">Use Cases</a>
         <a class="lp-mobile-link" href="/about.html">About</a>
@@ -1014,7 +1023,7 @@ function renderPublicNav(activePage = '') {
         <a class="lp-mobile-link" href="/trust-safety.html">Trust & Safety</a>
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
-          <button class="btn btn-primary btn-sm" onclick="navigate('#/register')">Get started</button>
+          <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
         </div>
       </div>
     </div>`;
@@ -1263,10 +1272,10 @@ async function renderLanding() {
             <p class="lp-hero-short">GoHireHumans routes AI outputs, automations, data, and real-world checks to humans for fixed-scope QA and verification reports.</p>
             <div class="lp-quick-definition">
               <span>Founding offers</span>
-              <strong>AI Output Verification $99 &bull; Automation QA Sprint $199 &bull; Real-World Check $79.</strong>
+              <strong>AI Output Verification $99 &bull; Automation QA Sprint $199 &bull; Clay/GTM QA Sprint $199 &bull; Real-World Check $79.</strong>
             </div>
             <div class="lp-hero-search lp-hero-search-visual">
-              <input type="text" id="hero-search" placeholder="Try: website QA, lead research, vendor calls..." class="lp-hero-search-input">
+              <input type="text" id="hero-search" aria-label="Search services" placeholder="Try: website QA, lead research, vendor calls..." class="lp-hero-search-input">
               <button class="btn btn-primary lp-hero-search-btn" onclick="searchHeroServices()">Search</button>
             </div>
             <div class="lp-hero-ctas lp-hero-ctas-left">
@@ -1281,6 +1290,7 @@ async function renderLanding() {
               <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)">
                 <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'ai_review' });startTaskDraft('ai_review','homepage_template_ai_review')">AI Output Verification</button>
                 <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'automation_verification' });startTaskDraft('automation_verification','homepage_template_automation_verification')">Automation QA Sprint</button>
+                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'clay_gtm_qa' });startTaskDraft('clay_gtm_qa','homepage_template_clay_gtm_qa')">Clay/GTM QA Sprint</button>
                 <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'phone_fact_check' });startTaskDraft('phone_fact_check','homepage_template_real_world_check')">Real-World Check</button>
               </div>
             </div>
@@ -1383,7 +1393,7 @@ async function renderLanding() {
           <div>
             <div class="lp-section-label">First completed orders</div>
             <h2 class="lp-section-head" style="text-align:left">Start with a small, proof-backed QA sprint.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Pick one founding offer: AI Output Verification, Automation QA Sprint, or Real-World Check. Each is fixed-scope, buyer-reviewed before payment, and designed to produce a clear evidence pack.</p>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">Pick one founding offer: AI Output Verification, Automation QA Sprint, Clay/GTM QA Sprint, or Real-World Check. Each is fixed-scope, buyer-reviewed before payment, and designed to produce a clear evidence pack.</p>
           </div>
           <div class="lp-action-panel" style="cursor:default">
             <div class="lp-feed-card-cat">Transaction proof</div>
@@ -1649,27 +1659,27 @@ async function renderServices() {
       <div class="browse-layout">
         <aside class="browse-sidebar">
           <div class="filter-group">
-            <label class="label">Search</label>
+            <label class="label" for="srv-search">Search</label>
             <div style="position:relative">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--color-text-faint)">${I.search}</span>
               <input class="input" id="srv-search" placeholder="Search services..." value="${esc(search)}" style="padding-left:2rem" oninput="debounceFilter()">
             </div>
           </div>
           <div class="filter-group">
-            <label class="label">Category</label>
+            <label class="label" for="srv-cat">Category</label>
             <select class="select" id="srv-cat" onchange="applyServiceFilters()">
               <option value="">All categories</option>
             </select>
           </div>
           <div class="filter-group">
-            <label class="label">Price Range</label>
+            <label class="label" id="srv-price-label">Price Range</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)">
-              <input class="input" type="number" id="srv-min" placeholder="Min $" value="${esc(minPrice)}" onchange="applyServiceFilters()">
-              <input class="input" type="number" id="srv-max" placeholder="Max $" value="${esc(maxPrice)}" onchange="applyServiceFilters()">
+              <input class="input" type="number" id="srv-min" aria-labelledby="srv-price-label" aria-label="Minimum service price" placeholder="Min $" value="${esc(minPrice)}" onchange="applyServiceFilters()">
+              <input class="input" type="number" id="srv-max" aria-labelledby="srv-price-label" aria-label="Maximum service price" placeholder="Max $" value="${esc(maxPrice)}" onchange="applyServiceFilters()">
             </div>
           </div>
           <div class="filter-group">
-            <label class="label">Provider</label>
+            <label class="label" for="srv-provider">Provider</label>
             <select class="select" id="srv-provider" onchange="applyServiceFilters()">
               <option value="">All (Human & AI)</option>
               <option value="human">Human only</option>
@@ -1677,7 +1687,7 @@ async function renderServices() {
             </select>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/services')" style="width:100%">Clear filters</button>
-          ${state.user ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/my-services')">Post a Service</button></div>` : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Offer your skills to thousands of clients</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Start offering services</button></div>`}
+          ${state.user ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/my-services')">Post a Service</button></div>` : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Offer your skills on GoHireHumans</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Start offering services</button></div>`}
         </aside>
         <div class="browse-content">
           <div id="services-grid" class="browse-grid">
@@ -2012,20 +2022,20 @@ async function renderJobs() {
       <div class="browse-layout">
         <aside class="browse-sidebar">
           <div class="filter-group">
-            <label class="label">Search</label>
+            <label class="label" for="job-search">Search</label>
             <div style="position:relative">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--color-text-faint)">${I.search}</span>
               <input class="input" id="job-search" placeholder="Search jobs..." value="${esc(search)}" style="padding-left:2rem" oninput="debounceJobFilter()">
             </div>
           </div>
           <div class="filter-group">
-            <label class="label">Category</label>
+            <label class="label" for="job-cat">Category</label>
             <select class="select" id="job-cat" onchange="applyJobFilters()">
               <option value="">All categories</option>
             </select>
           </div>
           <div class="filter-group">
-            <label class="label">Payment Type</label>
+            <label class="label" for="job-budget-type">Payment Type</label>
             <select class="select" id="job-budget-type" onchange="applyJobFilters()">
               <option value="">Any</option>
               <option value="fixed" ${budgetType==='fixed'?'selected':''}>Fixed Price</option>
@@ -2033,7 +2043,7 @@ async function renderJobs() {
             </select>
           </div>
           <div class="filter-group">
-            <label class="label">Location Type</label>
+            <label class="label" for="job-location">Location Type</label>
             <select class="select" id="job-location" onchange="applyJobFilters()">
               <option value="">Any</option>
               <option value="remote" ${locationType==='remote'?'selected':''}>Remote</option>
@@ -2336,8 +2346,8 @@ function renderAuth(mode) {
       <div class="auth2-wrap">
         <a class="auth2-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
         <div class="auth2-card">
-          <div class="auth2-title">${isLogin ? 'Welcome back' : 'Join GoHireHumans'}</div>
-          <div class="auth2-sub">${isLogin ? 'Sign in to your account' : 'Browse services and jobs — free to join'}</div>
+          <h1 class="auth2-title">${isLogin ? 'Welcome back' : 'Join GoHireHumans'}</h1>
+          <div class="auth2-sub">${isLogin ? 'Sign in to your account' : (redirect ? 'Create an account to continue your selected task or application.' : 'Request QA, browse services, or offer your skills — free to join.')}</div>
           ${GOOGLE_CLIENT_ID ? `
           <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:var(--space-4)"></div>
           <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4)">
@@ -2348,16 +2358,16 @@ function renderAuth(mode) {
           <form id="authForm" onsubmit="handleAuth(event,'${mode}','${encodeURIComponent(redirect)}')">
             ${!isLogin ? `
             <div class="form-group">
-              <label class="label">Full name</label>
-              <input class="input" name="name" placeholder="Jane Smith" required autocomplete="name">
+              <label class="label" for="auth-name">Full name</label>
+              <input class="input" id="auth-name" name="name" placeholder="Jane Smith" required autocomplete="name">
             </div>` : ''}
             <div class="form-group">
-              <label class="label">Email address</label>
-              <input class="input" type="email" name="email" placeholder="you@example.com" required autocomplete="email">
+              <label class="label" for="auth-email">Email address</label>
+              <input class="input" id="auth-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email">
             </div>
             <div class="form-group">
-              <label class="label">Password</label>
-              <input class="input" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required minlength="8" autocomplete="${isLogin ? 'current-password' : 'new-password'}">
+              <label class="label" for="auth-password">Password</label>
+              <input class="input" id="auth-password" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required minlength="8" autocomplete="${isLogin ? 'current-password' : 'new-password'}">
               ${isLogin ? '<div style="text-align:right;margin-top:var(--space-1)"><a style="font-size:var(--text-xs);color:var(--color-primary);cursor:pointer" onclick="showForgotPassword()">Forgot password?</a></div>' : ''}
             </div>
             ${!isLogin ? `
@@ -2605,7 +2615,7 @@ function renderPostService(editId = null) {
     appShell(`
       <div style="max-width:640px">
         <h1 class="page-title">${editId ? 'Edit Service' : 'Post a Service'}</h1>
-        <p class="page-desc">${editId ? 'Update your service listing.' : 'Offer your skills to thousands of clients.'}</p>
+        <p class="page-desc">${editId ? 'Update your service listing.' : 'Offer your skills on GoHireHumans.'}</p>
         <form onsubmit="handlePostService(event,${editId||'null'})">
           <div class="form-group">
             <label class="label">Service Title *</label>
@@ -4307,7 +4317,7 @@ render();
   </script>
 
   <!-- SEO: Crawlable internal links for Google (hidden from visual UI, visible to crawlers) -->
-  <nav aria-label="Site navigation" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;">
+  <nav aria-hidden="true" tabindex="-1" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;">
     <h2>Platform</h2>
     <a href="/about.html">About GoHireHumans</a>
     <a href="/how-it-works.html">How It Works</a>

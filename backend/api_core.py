@@ -903,6 +903,32 @@ BLOCKED_PHRASES = [
     'untraceable', 'anonymous task',
 ]
 
+PAYMENT_CIRCUMVENTION_PATTERNS = [
+    r"\bpaypal\.me/\S+",
+    r"\bpaypal\b",
+    r"\bvenmo\b",
+    r"\bcash\s*app\b",
+    r"\bcashapp\b",
+    r"\bzelle\b",
+    r"\bcrypto\b",
+    r"\bbitcoin\b",
+    r"\bethereum\b",
+    r"\bsolana\b",
+    r"\bevm\b",
+    r"\bwallet\b",
+    r"\bdirect\s+payment\b",
+    r"\boff[-\s]?platform\s+payment\b",
+    r"\bpay\s+me\s+direct\b",
+    r"\bsend\s+payment\s+to\b",
+]
+
+
+def check_payment_circumvention(text):
+    for pattern in PAYMENT_CIRCUMVENTION_PATTERNS:
+        if re.search(pattern, text or "", re.IGNORECASE):
+            return False, "Payment instructions must stay on-platform. Do not include direct payment links, wallet addresses, or off-platform payment instructions."
+    return True, None
+
 VALID_CATEGORIES = [
     'web_development', 'mobile_development', 'software_development',
     'graphic_design', 'ui_ux_design', 'video_editing', 'photography',
@@ -2028,6 +2054,15 @@ def _handle_routes(db):
         safe, msg = check_content_safety(body['title'] + " " + body['description'])
         if not safe:
             return error_response(f"Service rejected: {msg}", 422)
+        service_text = " ".join([
+            str(body.get('title') or ''),
+            str(body.get('description') or ''),
+            str(body.get('includes') or ''),
+            " ".join(body.get('tags') or []) if isinstance(body.get('tags'), list) else str(body.get('tags') or ''),
+        ])
+        safe, msg = check_payment_circumvention(service_text)
+        if not safe:
+            return error_response(f"Service rejected: {msg}", 422)
 
         # Ensure worker profile exists (payout can be set up later)
         ensure_worker_profile(db, user['id'])
@@ -2099,6 +2134,15 @@ def _handle_routes(db):
             safe, msg = check_content_safety(txt)
             if not safe:
                 return error_response(f"Service update rejected: {msg}", 422)
+        merged_service_text = " ".join([
+            str(body.get('title') if 'title' in body else svc['title'] or ''),
+            str(body.get('description') if 'description' in body else svc['description'] or ''),
+            str(body.get('includes') if 'includes' in body else svc['includes'] or ''),
+            " ".join(body.get('tags') or []) if isinstance(body.get('tags'), list) else str(body.get('tags') if 'tags' in body else svc['tags'] or ''),
+        ])
+        safe, msg = check_payment_circumvention(merged_service_text)
+        if not safe:
+            return error_response(f"Service update rejected: {msg}", 422)
 
         updates = []
         vals = []
