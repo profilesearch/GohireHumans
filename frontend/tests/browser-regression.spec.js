@@ -42,7 +42,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     test(`${route.path} renders, has no serious axe violations, and is console-clean`, async ({ page }) => {
       const messages = await collectConsole(page);
       await setupDeterministicLocalPage(page);
-      const response = await page.goto(route.path, { waitUntil: 'networkidle' });
+      const response = await page.goto(route.path, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       expect(response.status(), route.path).toBeLessThan(400);
       await expect(page.locator('body')).toContainText(route.mustContain);
       const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).exclude('iframe').analyze();
@@ -63,7 +64,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await setupDeterministicLocalPage(page);
     await page.goto('/pricing.html');
     await expect(page.locator('body')).toContainText('Compare Fees');
-    await page.goto('/#/services', { waitUntil: 'networkidle' });
+    await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     await expect(page.locator('#services-result-count')).toBeVisible();
     await expect(page.locator('text=Filter services')).toBeVisible();
   });

@@ -929,6 +929,17 @@ def check_payment_circumvention(text):
             return False, "Payment instructions must stay on-platform. Do not include direct payment links, wallet addresses, or off-platform payment instructions."
     return True, None
 
+
+def is_safe_external_url(value):
+    if not value:
+        return True
+    try:
+        parsed = urllib.parse.urlparse(str(value).strip())
+    except Exception:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
 VALID_CATEGORIES = [
     'web_development', 'mobile_development', 'software_development',
     'graphic_design', 'ui_ux_design', 'video_editing', 'photography',
@@ -2295,7 +2306,21 @@ def _handle_routes(db):
         if budget <= 0 or budget > 1000000:
             return error_response("budget_amount must be positive and <= 1,000,000")
 
-        safe, msg = check_content_safety(body['title'] + " " + body['description'])
+        job_text_parts = [
+            body.get('title', ''),
+            body.get('description', ''),
+            body.get('location_detail', ''),
+        ]
+        raw_required_skills = body.get('required_skills', [])
+        if isinstance(raw_required_skills, list):
+            job_text_parts.extend(str(skill) for skill in raw_required_skills)
+        else:
+            job_text_parts.append(str(raw_required_skills or ''))
+        job_safety_text = " ".join(str(part or '') for part in job_text_parts)
+        safe, msg = check_content_safety(job_safety_text)
+        if not safe:
+            return error_response(f"Job rejected: {msg}", 422)
+        safe, msg = check_payment_circumvention(job_safety_text)
         if not safe:
             return error_response(f"Job rejected: {msg}", 422)
 
@@ -2359,11 +2384,23 @@ def _handle_routes(db):
             return error_response("Can only edit open or reviewing jobs", 409)
 
         body = get_body()
-        if body.get('title') or body.get('description'):
-            txt = (body.get('title') or job['title']) + " " + (body.get('description') or job['description'])
-            safe, msg = check_content_safety(txt)
-            if not safe:
-                return error_response(f"Job update rejected: {msg}", 422)
+        update_text_parts = [
+            body.get('title', job['title']),
+            body.get('description', job['description']),
+            body.get('location_detail', job['location_detail'] or ''),
+        ]
+        update_skills = body.get('required_skills', job['required_skills'] or '')
+        if isinstance(update_skills, list):
+            update_text_parts.extend(str(skill) for skill in update_skills)
+        else:
+            update_text_parts.append(str(update_skills or ''))
+        update_safety_text = " ".join(str(part or '') for part in update_text_parts)
+        safe, msg = check_content_safety(update_safety_text)
+        if not safe:
+            return error_response(f"Job update rejected: {msg}", 422)
+        safe, msg = check_payment_circumvention(update_safety_text)
+        if not safe:
+            return error_response(f"Job update rejected: {msg}", 422)
 
         updates = []
         vals = []
@@ -2450,6 +2487,17 @@ def _handle_routes(db):
         ensure_worker_profile(db, user['id'])
 
         body = get_body()
+        cover_message = body.get("cover_message", "")
+        portfolio_url = body.get("portfolio_url", "")
+        application_safety_text = " ".join([str(cover_message or ""), str(portfolio_url or "")])
+        safe, msg = check_content_safety(application_safety_text)
+        if not safe:
+            return error_response(f"Application rejected: {msg}", 422)
+        safe, msg = check_payment_circumvention(application_safety_text)
+        if not safe:
+            return error_response(f"Application rejected: {msg}", 422)
+        if not is_safe_external_url(portfolio_url):
+            return error_response("Application rejected: portfolio_url must be a valid http(s) URL", 422)
         existing = db.execute(
             "SELECT id FROM applications WHERE job_id = ? AND worker_id = ?",
             [job_id, user['id']]
@@ -2459,7 +2507,7 @@ def _handle_routes(db):
 
         cursor = db.execute(
             "INSERT INTO applications (job_id, worker_id, cover_message, portfolio_url) VALUES (?,?,?,?)",
-            [job_id, user['id'], body.get("cover_message", ""), body.get("portfolio_url", "")]
+            [job_id, user['id'], cover_message, portfolio_url]
         )
         app_id = cursor.lastrowid
 
