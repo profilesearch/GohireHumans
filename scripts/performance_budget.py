@@ -11,7 +11,8 @@ for rel, limit in checks:
     if size > limit:
         failures.append(f'{rel} is {size} bytes > budget {limit}')
 for path in FRONTEND.rglob('*.html'):
-    if 'blog' in path.parts:
+    rel_parts = path.relative_to(FRONTEND).parts
+    if any(part in rel_parts for part in ['blog', 'test-results', 'node_modules', 'playwright-report']):
         continue
     size = path.stat().st_size
     if size > budgets['static_html_max_bytes'] and path.name != 'index.html':
