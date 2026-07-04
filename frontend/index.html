@@ -494,9 +494,12 @@ function safeParseJSON(str, fallback = []) {
   try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
 }
 function stars(rating, total) {
+  const hasExplicitCount = total !== undefined && total !== null;
+  const count = Number(total || 0);
+  if (hasExplicitCount && !count) return '<span class="badge badge-submitted">New listing</span>';
   const r = Math.round(rating || 0);
   const starsHtml = [1,2,3,4,5].map(i => `<span class="star${i <= r ? ' filled' : ''}">${i <= r ? '★' : '☆'}</span>`).join('');
-  return `<span class="stars-row">${starsHtml}${total !== undefined ? `<span class="stars-count">(${total})</span>` : ''}</span>`;
+  return `<span class="stars-row">${starsHtml}${hasExplicitCount ? `<span class="stars-count">(${count})</span>` : ''}</span>`;
 }
 function formatPrice(service) {
   if (service.pricing_type === 'fixed') return `$${Number(service.price || 0).toFixed(0)}`;
@@ -532,6 +535,15 @@ function statusBadge(status) {
   return `<span class="badge badge-${cls}">${esc(status ? status.replace(/_/g,' ') : 'unknown')}</span>`;
 }
 function navigate(hash) { window.location.hash = hash; }
+function currentHashWithoutQuery() { return (location.hash.slice(1) || '/').split('?')[0]; }
+function clearHashQueryParam(param) {
+  const hash = location.hash.slice(1) || '/';
+  const [path, qs=''] = hash.split('?');
+  const params = new URLSearchParams(qs);
+  params.delete(param);
+  const next = path + (params.toString() ? '?' + params.toString() : '');
+  history.replaceState(null, '', '#' + next);
+}
 function getStoredAttribution() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -880,6 +892,7 @@ function getQuery() {
 }
 function requireAuth(redirect) {
   if (!state.user || !state.token) {
+    try { sessionStorage.setItem('ghh_auth_intent', redirect || ''); } catch (_) {}
     navigate(`#/login?redirect=${encodeURIComponent(redirect)}`);
     return false;
   }
@@ -1124,9 +1137,9 @@ function appShell(content, activeNav = '') {
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">As Worker</div>
-        <button class="sidebar-item" onclick="navigate('#/services')">${I.search} Browse Services</button>
+        <button class="sidebar-item ${activeNav==='jobs'?'active':''}" onclick="navigate('#/jobs')">${I.jobs} Find Jobs</button>
         <button class="sidebar-item ${activeNav==='my-services'?'active':''}" onclick="navigate('#/my-services')">${I.services} My Services</button>
-        <button class="sidebar-item" onclick="navigate('#/jobs')">${I.jobs} Find Jobs</button>
+        <button class="sidebar-item" onclick="navigate('#/services')">${I.search} Browse Services</button>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">As Employer</div>
@@ -1690,6 +1703,13 @@ async function renderServices() {
           ${state.user ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/my-services')">Post a Service</button></div>` : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Offer your skills on GoHireHumans</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Start offering services</button></div>`}
         </aside>
         <div class="browse-content">
+          <div class="card" style="margin-bottom:var(--space-4);display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+            <div>
+              <strong id="services-result-count">Loading services...</strong>
+              <div style="font-size:var(--text-xs);color:var(--color-text-faint)">Use filters only if you need to narrow the list.</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="document.querySelector('.browse-sidebar')?.scrollIntoView({behavior:'smooth',block:'start'})">Filter services</button>
+          </div>
           <div id="services-grid" class="browse-grid">
             ${skeletonCards(6)}
           </div>
@@ -1761,6 +1781,8 @@ async function loadServicesGrid(page, filters) {
     const data = await api(url);
     const services = Array.isArray(data) ? data : (data.services || []);
     const total = data.total || services.length;
+    const countEl = document.getElementById('services-result-count');
+    if (countEl) countEl.textContent = `${total} service${total === 1 ? '' : 's'} available`;
     const totalPages = Math.ceil(total / 12);
 
     if (services.length === 0) {
@@ -1822,7 +1844,7 @@ function serviceCard(s) {
       <div class="svc-card-worker">
         <div class="avatar-sm">${(s.worker_name||'?').slice(0,2).toUpperCase()}</div>
         <span class="svc-card-name">${esc(s.worker_name || 'Worker')}</span>
-        <div class="svc-card-rating">${stars(rating)} <span class="stars-count">(${reviews})</span></div>
+        <div class="svc-card-rating">${stars(rating, reviews)}</div>
       </div>
       <div class="svc-card-footer">
         <div class="svc-card-meta">${I.clock} ${s.delivery_time_days || '?'} day${(s.delivery_time_days||0)!==1?'s':''}</div>
@@ -2200,6 +2222,7 @@ async function renderJobDetail(id) {
     const job = await api(`/jobs/${id}`);
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = state.user && String(state.user.id) === String(job.employer_id);
+    const shouldAutoApply = getQuery().get('apply') === '1' && state.user && job.status === 'open' && !isOwner;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2248,8 +2271,8 @@ async function renderJobDetail(id) {
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
               ${job.status === 'open' && !isOwner
-                ? `<button class="btn btn-primary btn-lg" style="width:100%" onclick="handleJobApply(${id})">Apply to This Job</button>
-                   <p class="svc-order-note">Free to apply. No payment needed until you're hired.</p>`
+                ? `<button class="btn btn-primary btn-lg" style="width:100%" onclick="handleJobApply(${id})">${state.user ? 'Apply to This Job' : 'Sign in to Apply'}</button>
+                   <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${state.user ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
                 : job.status !== 'open'
                   ? `<p style="font-size:var(--text-sm);color:var(--color-text-faint);text-align:center">This job is no longer accepting applications.</p>`
                   : ''}
@@ -2269,6 +2292,10 @@ async function renderJobDetail(id) {
         </div>
       </div>
       ${publicFooter()}`;
+    if (shouldAutoApply) {
+      clearHashQueryParam('apply');
+      setTimeout(() => handleJobApply(id), 0);
+    }
   } catch(err) {
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2281,7 +2308,7 @@ async function renderJobDetail(id) {
 
 async function handleJobApply(id) {
   trackEvent('job_apply_intent', { job_id: String(id), source: 'job_detail' });
-  if (!requireAuth(`jobs/${id}`)) return;
+  if (!requireAuth(`jobs/${id}?apply=1`)) return;
   trackEvent('job_apply_form_opened', { job_id: String(id), source: 'job_detail' });
   // Show application modal
   const overlay = document.createElement('div');
@@ -2300,12 +2327,12 @@ async function handleJobApply(id) {
       </div>
       <form id="applyForm">
         <div class="form-group">
-          <label class="label">Cover Message *</label>
-          <textarea class="textarea" name="cover_message" rows="7" placeholder="Example: I can complete this by tomorrow. I will test the flow on mobile and desktop, report confusing steps, and include screenshots for anything broken. I need the URL and any test account instructions." required onfocus="trackEvent('job_application_cover_focus', { job_id: String(id), source: 'job_apply_modal' })"></textarea>
+          <label class="label" for="apply-cover-message">Cover Message *</label>
+          <textarea class="textarea" id="apply-cover-message" name="cover_message" rows="7" placeholder="Example: I can complete this by tomorrow. I will test the flow on mobile and desktop, report confusing steps, and include screenshots for anything broken. I need the URL and any test account instructions." required onfocus="trackEvent('job_application_cover_focus', { job_id: String(id), source: 'job_apply_modal' })"></textarea>
         </div>
         <div class="form-group">
-          <label class="label">Portfolio or proof URL <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
-          <input class="input" name="portfolio_url" type="url" placeholder="Relevant profile, portfolio, or previous work sample">
+          <label class="label" for="apply-portfolio-url">Portfolio or proof URL <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
+          <input class="input" id="apply-portfolio-url" name="portfolio_url" type="url" placeholder="Relevant profile, portfolio, or previous work sample">
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
@@ -2436,7 +2463,9 @@ async function handleAuth(e, mode, encodedRedirect) {
     }
     toast(mode === 'login' ? 'Welcome back!' : 'Account created! Welcome to GoHireHumans.', 'success');
     const redirect = encodedRedirect ? decodeURIComponent(encodedRedirect) : '';
-    navigate(redirect ? `#/${redirect}` : '#/');
+    let storedIntent = '';
+    try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
+    navigate((redirect || storedIntent) ? `#/${redirect || storedIntent}` : '#/');
   } catch(err) { trackEvent(mode === 'login' ? 'login_failed' : 'signup_failed', { source: 'auth_form', error_message: String(err.message || '').slice(0, 120) }); toast(err.message, 'error'); }
 }
 
@@ -3410,7 +3439,14 @@ async function renderPayments() {
 
     appShell(`
       <h1 class="page-title">Payments</h1>
-      <p class="page-desc">Manage your payment methods and view transaction history</p>
+      <p class="page-desc">Manage payment methods and worker payout setup. Workers receive the listed payout after accepted work is completed, reviewed, and released through GoHireHumans.</p>
+      <div class="safety-notice" style="margin-bottom:var(--space-6)">
+        <div class="safety-notice-icon">${I.shield}</div>
+        <div class="safety-notice-body">
+          <div class="safety-notice-title">Keep payments on-platform</div>
+          <div class="safety-notice-text">Do not share wallet addresses, PayPal links, or direct-payment instructions in listings or applications. Buyer payment and worker payout happen through the supported GoHireHumans flow where configured.</div>
+        </div>
+      </div>
 
       <div class="stats-grid" style="margin-bottom:var(--space-6)">
         <div class="stat-card">
@@ -3427,7 +3463,7 @@ async function renderPayments() {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-bottom:var(--space-6)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-4);margin-bottom:var(--space-6)">
         <div class="card">
           <div class="card-header"><div class="card-title">${I.users} Pay for Services &amp; Jobs</div></div>
           <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Set up a payment method to hire workers and order services.</p>
@@ -3440,7 +3476,7 @@ async function renderPayments() {
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">${I.dollar} Receive Payments</div></div>
-          <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Connect your bank account to receive payments for your work.</p>
+          <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. You can apply to jobs before connecting payouts.</p>
           ${statusData.worker_ready
             ? `<div class="badge badge-completed" style="margin-bottom:var(--space-3)">${I.check} Bank account connected</div><br>`
             : ''}
