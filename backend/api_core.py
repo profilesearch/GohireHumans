@@ -3769,8 +3769,16 @@ def _handle_routes(db):
         except STRIPE_SIGNATURE_ERROR:
             return error_response("Invalid signature", 400)
 
-        event_type = event['type']
-        data = event['data']['object']
+        event_type = event.get('type')
+        event_data = event.get('data') if isinstance(event, dict) else None
+        data = event_data.get('object') if isinstance(event_data, dict) else None
+
+        # Stripe can deliver thin/v2 events such as v2.core.event_destination.ping
+        # that have related_object instead of the classic data.object payload.
+        # Signature verification above is the security boundary; unknown/thin
+        # events should be acknowledged, not crash and trigger endless retries.
+        if not isinstance(data, dict):
+            return json_response({"received": True})
 
         if event_type == 'payment_intent.succeeded':
             pi_id = data['id']

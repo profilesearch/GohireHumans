@@ -50,6 +50,39 @@ class BackendRegressionTests(unittest.TestCase):
         os.environ.pop("DATABASE_PATH", None)
         os.environ.pop("DISABLE_AUTO_SEED", None)
 
+    def test_stripe_webhook_acknowledges_thin_events_without_data_object(self):
+        class FakeWebhook:
+            @staticmethod
+            def construct_event(body_raw, sig_header, secret):
+                return {
+                    "id": "evt_test_thin",
+                    "type": "v2.core.event_destination.ping",
+                    "related_object": {"id": "acct_test"},
+                }
+
+        self.module.PRODUCTION_MODE = True
+        self.module.STRIPE_AVAILABLE = True
+        self.module.STRIPE_SECRET_KEY = "sk_test_configured"
+        self.module.STRIPE_WEBHOOK_SECRET = "whsec_test_configured"
+        self.module.STRIPE_SIGNATURE_ERROR = Exception
+        self.module.stripe = type("FakeStripe", (), {"Webhook": FakeWebhook})
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/webhooks/stripe"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_stripe_signature = "t=1,v1=test"
+        self.module._request_ctx.stdin_data = '{"id":"evt_test_thin"}'
+        self.module._request_ctx.stdin_data_raw = b'{"id":"evt_test_thin"}'
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data_raw))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body, {"received": True})
+
     def test_release_escrow_pays_worker_listed_amount_and_records_one_percent_margin(self):
         db = self.module.get_db()
         try:
