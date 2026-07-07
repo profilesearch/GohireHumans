@@ -13,6 +13,7 @@ import os
 import sys
 import sqlite3
 import hashlib
+import html
 import hmac
 import secrets
 import tempfile
@@ -41,6 +42,7 @@ SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 PROCESSING_FEE_RATE = 0.03  # ~3% payment processing fee passed to buyer (covers Stripe costs)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "GoHireHumans <hello@gohirehumans.com>")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://www.gohirehumans.com").rstrip("/")
 
 # Railway volume mount: store DB in /data (the volume mount point).
 # The Dockerfile creates /data, and Railway mounts a persistent volume there.
@@ -1212,11 +1214,144 @@ def send_welcome_email(email, name):
     return send_email(email, "Welcome to GoHireHumans — Let's get started", html)
 
 
-def push_notification(db, user_id, notif_type, title, message=None, link=None):
+TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES = {
+    "job_match",
+    "new_application",
+    "job_hired",
+    "new_order",
+    "order_submitted",
+    "revision_requested",
+    "order_completed",
+    "review_request",
+}
+
+
+def notification_platform_url(link):
+    link = (link or "").strip()
+    if not link:
+        return APP_BASE_URL
+    if link.startswith("#"):
+        return f"{APP_BASE_URL}/{link}"
+    if link.startswith("/"):
+        return f"{APP_BASE_URL}/#{link}"
+    return APP_BASE_URL
+
+
+def transactional_email_already_sent(db, user_id, notif_type, link, dedupe_context=None):
+    dedupe_parts = [str(user_id), str(notif_type), str(link or ""), str(dedupe_context or "")]
+    dedupe_key = hashlib.sha256("|".join(dedupe_parts).encode("utf-8")).hexdigest()
+    row = db.execute(
+        """SELECT id FROM audit_log
+           WHERE action='transactional_email_sent'
+             AND entity_type='notification_email'
+             AND entity_id=?
+             AND details LIKE ?
+           LIMIT 1""",
+        [user_id, f'%"dedupe_key": "{dedupe_key}"%']
+    ).fetchone()
+    return row is not None, dedupe_key
+
+
+def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None):
+    if notif_type not in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
+        return False
+    user = db.execute("SELECT email, name FROM users WHERE id=? AND is_active=1 AND is_banned=0", [user_id]).fetchone()
+    if not user or not user['email']:
+        return False
+    already_sent, dedupe_key = transactional_email_already_sent(db, user_id, notif_type, link, dedupe_context)
+    if already_sent:
+        return False
+
+    first_name = html.escape((user['name'] or 'there').split()[0])
+    safe_title = html.escape(title or "GoHireHumans activity update")
+    safe_message = html.escape(message or "There is an update related to your GoHireHumans account.")
+    platform_url = notification_platform_url(link)
+    safe_url = html.escape(platform_url, quote=True)
+    subject = title or "GoHireHumans activity update"
+    html_body = f"""
+    <div style="font-family:'Inter',system-ui,sans-serif;max-width:560px;margin:0 auto;color:#1a1816">
+      <div style="background:#0d7377;padding:24px 32px;border-radius:8px 8px 0 0">
+        <h1 style="color:white;font-size:20px;margin:0;font-weight:700">{safe_title}</h1>
+      </div>
+      <div style="background:#faf9f6;padding:32px;border:1px solid #dddbd6;border-top:none;border-radius:0 0 8px 8px">
+        <p style="font-size:16px;line-height:1.6;margin-bottom:16px">Hi {first_name},</p>
+        <p style="font-size:15px;line-height:1.6;margin-bottom:24px">{safe_message}</p>
+        <div style="text-align:center;margin-bottom:24px">
+          <a href="{safe_url}" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">View on GoHireHumans →</a>
+        </div>
+        <p style="font-size:12px;color:#6b6963;line-height:1.5;margin-bottom:8px">You received this because this relates to your GoHireHumans marketplace activity.</p>
+        <p style="font-size:12px;color:#6b6963;line-height:1.5">GoHireHumans keeps marketplace communication, work review, and configured payment records on-platform.</p>
+        <hr style="border:none;border-top:1px solid #dddbd6;margin:24px 0 16px">
+        <p style="font-size:11px;color:#a8a6a0;text-align:center">&copy; 2026 GoHireHumans · <a href="https://www.gohirehumans.com" style="color:#a8a6a0">gohirehumans.com</a></p>
+      </div>
+    </div>
+    """
+    try:
+        sent = send_email(user['email'], subject, html_body)
+    except Exception:
+        sent = False
+    if sent:
+        audit(db, user_id, "transactional_email_sent", "notification_email", user_id, {
+            "type": notif_type,
+            "link": link or "",
+            "dedupe_key": dedupe_key,
+        })
+    return bool(sent)
+
+
+def queue_transactional_notification_email(user_id, notif_type, title, message=None, link=None, dedupe_context=None):
+    pending = getattr(_request_ctx, 'pending_transactional_emails', None)
+    if pending is None:
+        pending = []
+        _request_ctx.pending_transactional_emails = pending
+    pending.append({
+        "user_id": user_id,
+        "notif_type": notif_type,
+        "title": title,
+        "message": message or "",
+        "link": link or "",
+        "dedupe_context": dedupe_context or "",
+    })
+
+
+def flush_transactional_notification_emails(db):
+    pending = getattr(_request_ctx, 'pending_transactional_emails', []) or []
+    _request_ctx.pending_transactional_emails = []
+    audit_written = False
+    for item in pending:
+        try:
+            audit_written = send_transactional_notification_email(
+                db,
+                item["user_id"],
+                item["notif_type"],
+                item["title"],
+                item.get("message", ""),
+                item.get("link", ""),
+                item.get("dedupe_context", ""),
+            ) or audit_written
+        except Exception:
+            pass
+    if audit_written:
+        try:
+            db.commit()
+        except Exception:
+            pass
+
+
+def push_notification(db, user_id, notif_type, title, message=None, link=None, email=False, email_message=None, email_dedupe=None):
     db.execute(
         "INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
         [user_id, notif_type, title, message or "", link or ""]
     )
+    if email:
+        queue_transactional_notification_email(
+            user_id,
+            notif_type,
+            title,
+            email_message if email_message is not None else message,
+            link,
+            email_dedupe if email_dedupe is not None else f"{title or ''}|{message or ''}",
+        )
 
 
 def fake_payment_intent_id():
@@ -2361,12 +2496,15 @@ def _handle_routes(db):
                     db, w['worker_id'], 'job_match',
                     f"New job matches your skills: {body['title'][:60]}",
                     f"A new {body['category'].replace('_',' ')} job was just posted. Budget: ${budget:,.0f}",
-                    f"#/jobs/{job_id}"
+                    f"#/jobs/{job_id}",
+                    email=True,
+                    email_dedupe=f"job_match:{job_id}"
                 )
         except Exception:
             pass  # Don't fail job creation if notifications error
 
         db.commit()
+        flush_transactional_notification_emails(db)
         job = db.execute("SELECT * FROM jobs WHERE id = ?", [job_id]).fetchone()
         return json_response(row_to_dict(job), 201)
 
@@ -2521,10 +2659,13 @@ def _handle_routes(db):
         push_notification(db, job['employer_id'], "new_application",
             f"New application: {job['title']}",
             f"{user['name']} applied to your job.",
-            f"/jobs/{job_id}/applications")
+            f"/jobs/{job_id}/applications",
+            email=True,
+            email_dedupe=f"application:{app_id}")
 
         audit(db, user['id'], "apply_job", "application", app_id)
         db.commit()
+        flush_transactional_notification_emails(db)
         app = db.execute("SELECT * FROM applications WHERE id = ?", [app_id]).fetchone()
         return json_response(row_to_dict(app), 201)
 
@@ -2659,10 +2800,13 @@ def _handle_routes(db):
         push_notification(db, worker_id, "job_hired",
             f"You've been hired!",
             f"You've been hired for: {job['title']}",
-            f"/orders/{order_id}")
+            f"/orders/{order_id}",
+            email=True,
+            email_dedupe=f"job_hired:{job_id}:{worker_id}:{order_id}")
 
         audit(db, user['id'], "hire_worker", "order", order_id, {"job_id": job_id, "worker_id": worker_id})
         db.commit()
+        flush_transactional_notification_emails(db)
 
         order = db.execute("SELECT * FROM orders WHERE id = ?", [order_id]).fetchone()
         result = row_to_dict(order)
@@ -2744,10 +2888,13 @@ def _handle_routes(db):
         push_notification(db, svc['worker_id'], "new_order",
             f"New service order!",
             f"Someone ordered your service: {svc['title']}",
-            f"/orders/{order_id}")
+            f"/orders/{order_id}",
+            email=True,
+            email_dedupe=f"service_order:{order_id}")
 
         audit(db, user['id'], "order_service", "order", order_id)
         db.commit()
+        flush_transactional_notification_emails(db)
 
         order = db.execute("SELECT * FROM orders WHERE id = ?", [order_id]).fetchone()
         result = row_to_dict(order)
@@ -2883,10 +3030,13 @@ def _handle_routes(db):
         push_notification(db, order['employer_id'], "order_submitted",
             "Deliverables submitted",
             f"Work has been submitted for review on order #{order_id}.",
-            f"/orders/{order_id}")
+            f"/orders/{order_id}",
+            email=True,
+            email_dedupe=f"order_submitted:{order_id}:{time.time_ns()}")
 
         audit(db, user['id'], "submit_order", "order", order_id)
         db.commit()
+        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "status": "submitted"})
 
     elif re.match(r"^/orders/(\d+)/approve$", path) and method == "POST":
@@ -2980,7 +3130,9 @@ def _handle_routes(db):
             push_notification(db, order['worker_id'], "order_completed",
                 "Order completed — payment released!",
                 f"Order #{order_id} is complete. ${worker_payout:.2f} earned. Platform margin is paid by the employer.",
-                f"/orders/{order_id}")
+                f"/orders/{order_id}",
+                email=True,
+                email_dedupe=f"order_completed:{order_id}:approve")
             push_notification(db, order['employer_id'], "order_completed",
                 "Order completed",
                 f"Order #{order_id} has been completed successfully.",
@@ -3018,6 +3170,7 @@ def _handle_routes(db):
 
         audit(db, user['id'], "approve_order", "order", order_id)
         db.commit()
+        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "worker_payout": worker_payout, "platform_fee": fee})
 
     elif re.match(r"^/orders/(\d+)/request-revision$", path) and method == "POST":
@@ -3050,10 +3203,14 @@ def _handle_routes(db):
         push_notification(db, order['worker_id'], "revision_requested",
             "Revision requested",
             f"The employer has requested a revision on order #{order_id}. Notes: {notes}",
-            f"/orders/{order_id}")
+            f"/orders/{order_id}",
+            email=True,
+            email_message=f"A revision has been requested on order #{order_id}. Open GoHireHumans to review the details.",
+            email_dedupe=f"revision_requested:{order_id}:{time.time_ns()}")
 
         audit(db, user['id'], "request_revision", "order", order_id)
         db.commit()
+        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "status": "revision_requested"})
 
     elif re.match(r"^/orders/(\d+)/dispute$", path) and method == "POST":
@@ -3133,10 +3290,13 @@ def _handle_routes(db):
         push_notification(db, order['worker_id'], "order_completed",
             "Order marked complete",
             f"Order #{order_id} has been marked complete.",
-            f"/orders/{order_id}")
+            f"/orders/{order_id}",
+            email=True,
+            email_dedupe=f"order_completed:{order_id}:complete")
 
         audit(db, user['id'], "complete_order", "order", order_id)
         db.commit()
+        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "status": "completed"})
 
     # ═══════════════════════════════════════════════════════════════════════════

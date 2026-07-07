@@ -452,6 +452,10 @@ class BackendRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
+        sent = []
+        self.module.RESEND_API_KEY = "configured-for-test"
+        self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
         payload = {
             "title": "Website QA pass",
             "description": "Review a public website flow and provide screenshots and prioritized notes.",
@@ -482,8 +486,233 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertIsNotNone(notif)
             self.assertEqual(notif["user_id"], 1)
             self.assertEqual(notif["link"], f"#/jobs/{response['id']}")
+            self.assertEqual(len(sent), 1)
+            to, subject, html = sent[0]
+            self.assertEqual(to, "worker@example.com")
+            self.assertIn("New job matches your skills", subject)
+            self.assertIn(f"https://www.gohirehumans.com/#/jobs/{response['id']}", html)
         finally:
             db.close()
+
+    def test_push_notification_can_mirror_marketplace_critical_email_once(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
+            sent = []
+            self.module.RESEND_API_KEY = "configured-for-test"
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
+            self.module.push_notification(
+                db,
+                1,
+                "job_match",
+                "New job matches your skills: Website QA pass",
+                "A new testing job was just posted. Budget: $25",
+                "#/jobs/7",
+                email=True,
+            )
+            self.module.push_notification(
+                db,
+                1,
+                "job_match",
+                "New job matches your skills: Website QA pass",
+                "A new testing job was just posted. Budget: $25",
+                "#/jobs/7",
+                email=True,
+            )
+
+            self.assertEqual(sent, [])
+            db.commit()
+            self.module.flush_transactional_notification_emails(db)
+            self.assertEqual(len(sent), 1)
+            to, subject, html = sent[0]
+            self.assertEqual(to, "worker@example.com")
+            self.assertIn("New job matches your skills", subject)
+            self.assertIn("https://www.gohirehumans.com/#/jobs/7", html)
+            self.assertIn("You received this because this relates to your GoHireHumans marketplace activity.", html)
+            self.assertNotIn("employer@example.com", html)
+            email_audit_count = db.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action='transactional_email_sent'"
+            ).fetchone()[0]
+            self.assertEqual(email_audit_count, 1)
+        finally:
+            db.close()
+
+    def test_transactional_email_dedupe_audit_persists_after_reopen(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
+            sent = []
+            self.module.RESEND_API_KEY = "configured-for-test"
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
+            self.module.push_notification(
+                db,
+                1,
+                "job_match",
+                "New job matches your skills: Website QA pass",
+                "A new testing job was just posted. Budget: $25",
+                "#/jobs/7",
+                email=True,
+                email_dedupe="job_match:7",
+            )
+            db.commit()
+            self.module.flush_transactional_notification_emails(db)
+            self.assertEqual(len(sent), 1)
+        finally:
+            db.close()
+
+        reopened = self.module.get_db()
+        try:
+            persisted_count = reopened.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action='transactional_email_sent'"
+            ).fetchone()[0]
+            self.assertEqual(persisted_count, 1)
+            self.module.push_notification(
+                reopened,
+                1,
+                "job_match",
+                "New job matches your skills: Website QA pass",
+                "A new testing job was just posted. Budget: $25",
+                "#/jobs/7",
+                email=True,
+                email_dedupe="job_match:7",
+            )
+            reopened.commit()
+            self.module.flush_transactional_notification_emails(reopened)
+            self.assertEqual(len(sent), 1)
+        finally:
+            reopened.close()
+
+    def test_push_notification_does_not_email_generic_notifications(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
+            sent = []
+            self.module.RESEND_API_KEY = "configured-for-test"
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
+            self.module.push_notification(
+                db,
+                1,
+                "worker_activation",
+                "Paid GoHireHumans jobs are live",
+                "Browse open jobs when you have time.",
+                "#/jobs",
+                email=True,
+            )
+            db.commit()
+            self.module.flush_transactional_notification_emails(db)
+
+            self.assertEqual(sent, [])
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM notifications WHERE type='worker_activation'").fetchone()[0],
+                1,
+            )
+        finally:
+            db.close()
+
+    def test_transactional_email_cta_ignores_external_links(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
+            sent = []
+            self.module.RESEND_API_KEY = "configured-for-test"
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
+            self.module.push_notification(
+                db,
+                1,
+                "new_application",
+                "New application: Website QA",
+                "Someone applied to your job.",
+                "https://evil.example/phish",
+                email=True,
+            )
+            db.commit()
+            self.module.flush_transactional_notification_emails(db)
+
+            self.assertEqual(len(sent), 1)
+            self.assertIn('href="https://www.gohirehumans.com"', sent[0][2])
+            self.assertNotIn("evil.example", sent[0][2])
+        finally:
+            db.close()
+
+    def test_multiple_applications_to_same_job_each_send_email(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker1@example.com','x','Worker One')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-worker-1',datetime('now','+1 day'))")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker2@example.com','x','Worker Two')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-worker-2',datetime('now','+1 day'))")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (3)")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,3,'QA Job','Desc','testing','fixed',25,'open')")
+            db.commit()
+        finally:
+            db.close()
+
+        sent = []
+        self.module.RESEND_API_KEY = "configured-for-test"
+        self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+
+        for token, cover in [("tok-worker-1", "First applicant"), ("tok-worker-2", "Second applicant")]:
+            payload = json.dumps({"cover_message": cover})
+            self.module._request_ctx.request_method = "POST"
+            self.module._request_ctx.path_info = "/jobs/7/apply"
+            self.module._request_ctx.query_string = ""
+            self.module._request_ctx.http_authorization = f"Bearer {token}"
+            self.module._request_ctx.http_x_api_key = ""
+            self.module._request_ctx.stdin_data = payload
+            self.module._request_ctx.content_type = "application/json"
+            self.module._request_ctx.content_length = str(len(payload))
+            self.module._request_ctx.remote_addr = "127.0.0.1"
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.module.handle_request()
+            status, body = parse_cgi_output(out.getvalue())
+            self.assertEqual(status, 201, body)
+
+        self.assertEqual(len(sent), 2)
+        self.assertEqual([item[0] for item in sent], ["employer@example.com", "employer@example.com"])
+
+    def test_revision_request_email_omits_sensitive_notes(self):
+        db = self.module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-employer',datetime('now','+1 day'))")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (9,'service_order',1,2,'submitted',25)")
+            db.execute("INSERT INTO milestones (order_id,title,description,amount,sequence,status) VALUES (9,'Delivery','',25,1,'submitted')")
+            db.commit()
+        finally:
+            db.close()
+
+        sent = []
+        self.module.RESEND_API_KEY = "configured-for-test"
+        self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+        secret_notes = "Please revise. Password abc123 and private client details should not leave platform."
+        payload = json.dumps({"notes": secret_notes})
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/orders/9/request-revision"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = "Bearer tok-employer"
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = payload
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(payload))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(len(sent), 1)
+        self.assertIn("A revision has been requested on order #9", sent[0][2])
+        self.assertNotIn("abc123", sent[0][2])
+        self.assertNotIn("private client details", sent[0][2])
 
     def test_admin_marketplace_ops_requires_admin(self):
         self.module._request_ctx.request_method = "GET"
