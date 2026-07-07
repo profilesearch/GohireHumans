@@ -1413,6 +1413,24 @@ async function renderLanding() {
 
 
 
+
+
+      <section class="lp-compact-section lp-light-band" aria-labelledby="high-intent-routing-heading">
+        <div class="lp-section-inner">
+          <div class="lp-centered-head">
+            <div class="lp-section-label">High-intent visitors</div>
+            <h2 id="high-intent-routing-heading" class="lp-section-head">Pick the fastest path to a proof-backed human check.</h2>
+            <p class="lp-section-sub">GA4 shows visitors reaching pricing, starter offers, organic-search use cases, and AI-assistant pages. This section routes them to the clearest next step instead of making them browse the whole marketplace.</p>
+          </div>
+          <div class="lp-task-tile-grid">
+            <a class="lp-task-tile" href="/starter-offers.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'starter_offers',source:'high_intent_router'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offer_router',source:'high_intent_router'});trackConfiguredKeyEvent('qualify_lead',{lead_type:'starter_offer_router',source:'high_intent_router'});"><span>✅</span><strong>Start a QA sprint</strong><small>Fixed-scope proof pack</small></a>
+            <a class="lp-task-tile" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'sample_deliverables',source:'high_intent_router'});"><span>📄</span><strong>See sample deliverables</strong><small>Reports, screenshots, source logs</small></a>
+            <a class="lp-task-tile" href="/ai-assistant-human-checks.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_assistant_checks',source:'high_intent_router'});"><span>🤖</span><strong>For AI assistants</strong><small>When agents should ask a human</small></a>
+            <a class="lp-task-tile" href="/use-cases/hire-human-to-review-ai-output.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_output_review',source:'high_intent_router'});"><span>🔎</span><strong>AI output review</strong><small>Claims, sources, uncertainty</small></a>
+          </div>
+        </div>
+      </section>
+
       <section class="lp-compact-section lp-first-orders-proof">
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>

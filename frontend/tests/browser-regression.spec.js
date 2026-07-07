@@ -5,6 +5,7 @@ const routes = [
   { path: '/starter-offers.html', mustContain: 'Human verification for AI work before you trust it.' },
   { path: '/pricing.html', mustContain: 'Starter QA Packages' },
   { path: '/proof-packs.html', mustContain: 'Proof packs for human verification work' },
+  { path: '/ai-assistant-human-checks.html', mustContain: 'When an AI assistant should ask a human to check the work.' },
   { path: '/#/login', mustContain: 'Welcome back' },
   { path: '/#/register', mustContain: 'Join GoHireHumans' },
   { path: '/#/services', mustContain: 'Browse Services' },
@@ -52,6 +53,17 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       expect(messages, messages.join('\n')).toEqual([]);
     });
   }
+
+  test('homepage and pricing route high-intent visitors to proof-backed QA paths', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Pick the fastest path to a proof-backed human check.');
+    await expect(page.locator('a[href="/ai-assistant-human-checks.html"]').first()).toBeVisible();
+    await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Not ready to post? Start with a sample-backed QA path.');
+    await expect(page.locator('a[href="/use-cases/hire-human-to-review-ai-output.html"]').first()).toBeVisible();
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);

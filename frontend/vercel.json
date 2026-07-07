@@ -54,6 +54,11 @@
       "permanent": true
     },
     {
+      "source": "/ai-assistant-human-checks",
+      "destination": "/ai-assistant-human-checks.html",
+      "permanent": true
+    },
+    {
       "source": "/blog/hire-human-for-ai-tasks",
       "destination": "/blog/hire-human-for-ai-tasks.html",
       "permanent": true
