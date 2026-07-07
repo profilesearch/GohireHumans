@@ -249,7 +249,17 @@
           <div class="feature-item"><h3>Clay/GTM QA Sprint</h3><p><strong>$199</strong> — lead/account row checks, source accuracy, personalization-risk flags.</p></div>
           <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — phone/local/manual verification notes with timestamp and caveats.</p></div>
         </div>
-        <p><a href="/starter-offers.html" class="btn btn-primary">View starter offers</a> <a href="/proof-packs.html" class="btn btn-secondary">View proof-pack format</a></p>
+        <p><a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_starter_offers_click',{source:'pricing_starter_packages'});gtag('event','generate_lead',{lead_type:'pricing_starter_package',source:'pricing_starter_packages'});}catch(e){}">View starter offers</a> <a href="/proof-packs.html" class="btn btn-secondary" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_starter_packages'});}catch(e){}">View proof-pack format</a></p>
+      </section>
+
+      <section class="section" aria-labelledby="pricing-high-intent-heading">
+        <h2 id="pricing-high-intent-heading">Not ready to post? Start with a sample-backed QA path.</h2>
+        <p>Pricing visitors are often comparing risk, not just fees. These paths show exactly what a small human verification task returns before you commit to a broader marketplace workflow.</p>
+        <div class="feature-grid">
+          <div class="feature-item"><h3>AI-output review</h3><p>Check sources, unsupported claims, and trust risks before using AI text or research.</p><p><a href="/use-cases/hire-human-to-review-ai-output.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_output_review'});}catch(e){}">View AI review path →</a></p></div>
+          <div class="feature-item"><h3>Website QA task</h3><p>Run a signup or onboarding flow and get screenshots, repro steps, and top fixes.</p><p><a href="/use-cases/website-qa-task.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'website_qa'});}catch(e){}">View website QA path →</a></p></div>
+          <div class="feature-item"><h3>AI assistant handoff</h3><p>Give agents a clear rule for when to route uncertain work to a human checker.</p><p><a href="/ai-assistant-human-checks.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_assistant_checks'});}catch(e){}">View AI assistant path →</a></p></div>
+        </div>
       </section>
 
       <!-- Fee Hero -->

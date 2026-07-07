@@ -33,6 +33,7 @@ The long-term product direction is a tasteful, agent-readable version of Faceboo
 - Listings should be clear, bounded, legal, and safe to fulfill.
 
 ## Agent-Readable Entry Points
+- AI assistant human-check guide: https://www.gohirehumans.com/ai-assistant-human-checks.html
 
 - Homepage: https://www.gohirehumans.com/
 - First task draft: https://www.gohirehumans.com/#/post-job
