@@ -426,7 +426,7 @@ async function api(path, opts = {}) {
       navigate('#/login');
       throw new Error('Session expired');
     }
-    throw new Error(data?.error || `Request failed (${res.status})`);
+    throw new Error(data?.error || data?.detail || data?.message || `Request failed (${res.status})`);
   }
   return data;
 }
@@ -1042,11 +1042,11 @@ function renderPublicNav(activePage = '') {
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
           <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
         </div>
-        <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu">
+        <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false">
           ${I.menu}
         </button>
       </nav>
-      <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
+      <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden>
         ${navLinks.map(l => {
           const activeAttrs = activePage === l.key ? ' lp-nav-link-active" aria-current="page' : '';
           return l.external
@@ -1062,10 +1062,25 @@ function renderPublicNav(activePage = '') {
     </div>`;
 }
 
-function toggleMobileMenu() {
-  const m = document.getElementById('mobileMenu');
-  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
-}
+function toggleMobileMenu(forceOpen) {
+      const m = document.getElementById('mobileMenu');
+      const button = document.querySelector('.lp-hamburger[aria-controls="mobileMenu"]') || document.querySelector('.lp-hamburger');
+      if (!m) return;
+      const isHidden = m.hidden || m.style.display === 'none' || getComputedStyle(m).display === 'none';
+      const open = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
+      m.hidden = !open;
+      m.style.display = open ? 'block' : 'none';
+      if (button) button.setAttribute('aria-expanded', String(open));
+    }
+    if (!window.__ghhMobileMenuPolishBound) {
+      window.__ghhMobileMenuPolishBound = true;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleMobileMenu(false);
+      });
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
+      });
+    }
 
 function publicFooter() {
   return `
@@ -1074,8 +1089,8 @@ function publicFooter() {
         <div class="lp-footer-top">
           <div class="lp-footer-brand">
             <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
-            <div class="lp-footer-tagline">Agent-readable services marketplace for humans, AI agents, and businesses to post work, browse helpers, and route scoped jobs. Free to join.</div>
-            <div style="font-size:12px;color:var(--color-text-muted);margin-top:8px">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
+            <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+            <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
           </div>
           <div class="lp-footer-col">
             <h4>Marketplace</h4>
@@ -1111,7 +1126,8 @@ function publicFooter() {
           </div>
         </div>
         <div class="lp-footer-bottom">
-          <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved. &middot; <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a></div>
+          <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+          <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
         </div>
       </div>
     </footer>`;
@@ -2278,12 +2294,15 @@ function renderAuth(mode) {
           <h1 class="auth2-title">${isLogin ? 'Welcome back' : 'Join GoHireHumans'}</h1>
           <div class="auth2-sub">${isLogin ? 'Sign in to your account' : (redirect ? 'Create an account to continue your selected task or application.' : 'Request QA, browse services, or offer your skills — free to join.')}</div>
           ${GOOGLE_CLIENT_ID ? `
-          <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:var(--space-4)"></div>
-          <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4)">
-            <div style="flex:1;height:1px;background:var(--color-border)"></div>
-            <span style="font-size:var(--text-xs);color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em">or</span>
-            <div style="flex:1;height:1px;background:var(--color-border)"></div>
+          <div class="auth2-google-wrap" id="google-signin-wrap" hidden>
+            <div id="google-signin-btn" style="display:flex;justify-content:center"></div>
+          </div>
+          <div class="auth2-divider" id="google-signin-divider" hidden>
+            <div></div>
+            <span>or</span>
+            <div></div>
           </div>` : ''}
+          <div id="auth-error" class="auth2-error" role="alert" aria-live="polite" hidden></div>
           <form id="authForm" onsubmit="handleAuth(event,'${mode}','${encodeURIComponent(redirect)}')">
             ${!isLogin ? `
             <div class="form-group">
@@ -2326,8 +2345,10 @@ function renderAuth(mode) {
       const el = document.getElementById('google-signin-btn');
       if (el && window.google?.accounts?.id) {
         google.accounts.id.renderButton(el, {
-          theme: 'outline', size: 'large', width: 320, text: isLogin ? 'signin_with' : 'signup_with'
+          theme: 'outline', size: 'large', width: Math.min(320, Math.max(240, Math.round(el.getBoundingClientRect().width || 320))), text: isLogin ? 'signin_with' : 'signup_with'
         });
+        document.getElementById('google-signin-wrap')?.removeAttribute('hidden');
+        document.getElementById('google-signin-divider')?.removeAttribute('hidden');
         return true;
       }
       return false;
@@ -2351,6 +2372,10 @@ async function handleAuth(e, mode, encodedRedirect) {
     const ref = getRefCode();
     if (ref) body.ref_code = ref;
   }
+  const errorEl = document.getElementById('auth-error');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.dataset.originalText = submitBtn.textContent.trim(); submitBtn.textContent = mode === 'login' ? 'Signing in…' : 'Creating account…'; }
   try {
     const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
     trackEvent(mode === 'login' ? 'login_submit' : 'signup_started', { source: 'auth_form' });
@@ -2368,7 +2393,14 @@ async function handleAuth(e, mode, encodedRedirect) {
     let storedIntent = '';
     try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
     navigate((redirect || storedIntent) ? `#/${redirect || storedIntent}` : '#/');
-  } catch(err) { trackEvent(mode === 'login' ? 'login_failed' : 'signup_failed', { source: 'auth_form', error_message: String(err.message || '').slice(0, 120) }); toast(err.message, 'error'); }
+  } catch(err) {
+    const message = err.message || (mode === 'login' ? 'Invalid email or password.' : 'Could not create account. Please try again.');
+    trackEvent(mode === 'login' ? 'login_failed' : 'signup_failed', { source: 'auth_form', error_message: String(message).slice(0, 120) });
+    if (errorEl) { errorEl.textContent = message; errorEl.hidden = false; }
+    toast(message, 'error');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitBtn.dataset.originalText || (mode === 'login' ? 'Sign in' : 'Create free account'); }
+  }
 }
 
 function logout() {

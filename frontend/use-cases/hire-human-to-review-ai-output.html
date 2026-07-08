@@ -3,8 +3,71 @@
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
       <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
-      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
-  <script>function toggleMobileMenu(){const menu=document.getElementById('mobileMenu');if(menu)menu.style.display=menu.style.display==='none'?'block':'none';}</script><div class="wrap"><section class="hero"><div class="eyebrow">AI output review</div><h1>Hire a human to review AI output before it reaches customers.</h1><p>Use GoHireHumans to turn risky AI-generated content into a bounded review task with clear inputs, payout, and acceptance criteria.</p><p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('post_task_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output',template:'ai_review'});trackGHH('generate_lead',{lead_type:'seo_use_case_hire-human-to-review-ai-output'});trackGHH('qualify_lead',{lead_type:'seo_use_case_hire-human-to-review-ai-output'})">Post this task</a> <a class="cta secondary" href="/#/services" onclick="trackGHH('browse_humans_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output'})">Browse helpers</a></p></section><section class="section"><h2>Good tasks to post</h2><div class="grid"><article class="card"><h3>Fact-check an AI article</h3><p>Have a reviewer label unsupported claims, broken sources, and facts that need correction.</p></article><article class="card"><h3>Review support replies</h3><p>Ask a human to check AI-drafted customer replies for tone, policy fit, and escalation risk.</p></article><article class="card"><h3>Score AI research output</h3><p>Get a human to compare AI summaries against source links and return issues by severity.</p></article></div></section><section class="section"><h2>AI-output review proof pack</h2><div class="card"><p>Ask for a claim/risk table with source links, unsupported-claim flags, safer rewrite suggestions, and a final ready / revise / do-not-publish recommendation.</p><p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('proof_pack_template_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output'});trackGHH('post_task_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output_proof_pack'})">Start from this proof-pack task</a> <a class="cta secondary" href="/proof-packs.html" onclick="trackGHH('proof_pack_example_click',{source:'seo_use_case_hire-human-to-review-ai-output'})">See proof-pack format</a></p></div></section><section class="section"><h2>What to include in the listing</h2><div class="grid"><div class="card"><h3>Inputs</h3><p>Add the exact URL, document, spreadsheet, prompt output, or source list workers should inspect.</p></div><div class="card"><h3>Deliverable</h3><p>Ask for a concise report with screenshots, links, notes, priority labels, or spreadsheet columns.</p></div><div class="card"><h3>Acceptance criteria</h3><p>State what complete work looks like, what not to do, and whether private data or off-platform contact is prohibited.</p></div></div></section><section class="section"><h2>Related GoHireHumans pages</h2><p><span class="pill">AI output review</span><span class="pill">website QA</span><span class="pill">lead research</span><span class="pill">human verification</span></p><ul><li><a href="/use-cases/human-ai-output-verification.html">Human AI output verification</a></li><li><a href="/hire/website-testers.html">Hire website testers</a></li><li><a href="/hire/lead-researchers.html">Hire lead researchers</a></li></ul></section><div class="footer">© 2026 GoHireHumans. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div></div></body></html>
+  <script>
+    function toggleMobileMenu(forceOpen) {
+      const menu = document.getElementById('mobileMenu');
+      const button = document.querySelector('.lp-hamburger[aria-controls="mobileMenu"]') || document.querySelector('.lp-hamburger');
+      if (!menu) return;
+      const isHidden = menu.hidden || menu.style.display === 'none' || getComputedStyle(menu).display === 'none';
+      const open = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
+      menu.hidden = !open;
+      menu.style.display = open ? 'block' : 'none';
+      if (button) button.setAttribute('aria-expanded', String(open));
+    }
+    if (!window.__ghhMobileMenuPolishBound) {
+      window.__ghhMobileMenuPolishBound = true;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleMobileMenu(false);
+      });
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
+      });
+    }
+  </script><div class="wrap"><section class="hero"><div class="eyebrow">AI output review</div><h1>Hire a human to review AI output before it reaches customers.</h1><p>Use GoHireHumans to turn risky AI-generated content into a bounded review task with clear inputs, payout, and acceptance criteria.</p><p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('post_task_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output',template:'ai_review'});trackGHH('generate_lead',{lead_type:'seo_use_case_hire-human-to-review-ai-output'});trackGHH('qualify_lead',{lead_type:'seo_use_case_hire-human-to-review-ai-output'})">Post this task</a> <a class="cta secondary" href="/#/services" onclick="trackGHH('browse_humans_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output'})">Browse helpers</a></p></section><section class="section"><h2>Good tasks to post</h2><div class="grid"><article class="card"><h3>Fact-check an AI article</h3><p>Have a reviewer label unsupported claims, broken sources, and facts that need correction.</p></article><article class="card"><h3>Review support replies</h3><p>Ask a human to check AI-drafted customer replies for tone, policy fit, and escalation risk.</p></article><article class="card"><h3>Score AI research output</h3><p>Get a human to compare AI summaries against source links and return issues by severity.</p></article></div></section><section class="section"><h2>AI-output review proof pack</h2><div class="card"><p>Ask for a claim/risk table with source links, unsupported-claim flags, safer rewrite suggestions, and a final ready / revise / do-not-publish recommendation.</p><p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('proof_pack_template_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output'});trackGHH('post_task_cta_click',{source:'seo_use_case_hire-human-to-review-ai-output_proof_pack'})">Start from this proof-pack task</a> <a class="cta secondary" href="/proof-packs.html" onclick="trackGHH('proof_pack_example_click',{source:'seo_use_case_hire-human-to-review-ai-output'})">See proof-pack format</a></p></div></section><section class="section"><h2>What to include in the listing</h2><div class="grid"><div class="card"><h3>Inputs</h3><p>Add the exact URL, document, spreadsheet, prompt output, or source list workers should inspect.</p></div><div class="card"><h3>Deliverable</h3><p>Ask for a concise report with screenshots, links, notes, priority labels, or spreadsheet columns.</p></div><div class="card"><h3>Acceptance criteria</h3><p>State what complete work looks like, what not to do, and whether private data or off-platform contact is prohibited.</p></div></div></section><section class="section"><h2>Related GoHireHumans pages</h2><p><span class="pill">AI output review</span><span class="pill">website QA</span><span class="pill">lead research</span><span class="pill">human verification</span></p><ul><li><a href="/use-cases/human-ai-output-verification.html">Human AI output verification</a></li><li><a href="/hire/website-testers.html">Hire website testers</a></li><li><a href="/hire/lead-researchers.html">Hire lead researchers</a></li></ul></section><div class="footer">© 2026 GoHireHumans. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div></div><footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Marketplace</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/starter-offers.html">Starter QA</a></li>
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Open Jobs</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/use-cases/">Use Cases</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Company</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+          <li><a href="/blog/">Blog</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Legal</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
+</body></html>

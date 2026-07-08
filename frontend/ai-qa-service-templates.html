@@ -4,15 +4,30 @@
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
       <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
-      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
 
   <script>
-    function toggleMobileMenu() {
+    function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
-      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      const button = document.querySelector('.lp-hamburger[aria-controls="mobileMenu"]') || document.querySelector('.lp-hamburger');
+      if (!menu) return;
+      const isHidden = menu.hidden || menu.style.display === 'none' || getComputedStyle(menu).display === 'none';
+      const open = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
+      menu.hidden = !open;
+      menu.style.display = open ? 'block' : 'none';
+      if (button) button.setAttribute('aria-expanded', String(open));
+    }
+    if (!window.__ghhMobileMenuPolishBound) {
+      window.__ghhMobileMenuPolishBound = true;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleMobileMenu(false);
+      });
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
+      });
     }
   </script>
 <div class="wrap"><section class="hero"><div class="eyebrow">AI human QA</div><h1>Starter marketplace service templates.</h1><p>Starter service templates for real workers offering AI QA, source checking, agent review, data cleanup, and website testing.</p></section><main class="grid"><div class="card"><h2>AI output fact-checking</h2><p class="muted">I will review AI-generated answers for incorrect, unsupported, risky, or unclear claims and return a concise correction list.</p><p><a class="cta" href="/#/register">Post this service</a></p></div><div class="card"><h2>AI hallucination and source checking</h2><p class="muted">I will compare AI claims against source links/citations and flag what is unsupported or misleading.</p><p><a class="cta" href="/#/register">Post this service</a></p></div><div class="card"><h2>AI agent work review</h2><p class="muted">I will audit AI agent output before it is used in CRM, research, outreach, or operations.</p><p><a class="cta" href="/#/register">Post this service</a></p></div><div class="card"><h2>AI-built website QA testing</h2><p class="muted">I will test signup, checkout, mobile layout, links, and copy on AI-built websites.</p><p><a class="cta" href="/#/register">Post this service</a></p></div><div class="card"><h2>AI data cleanup review</h2><p class="muted">I will review spreadsheet rows, categories, duplicates, labels, and ambiguous records after AI cleanup.</p><p><a class="cta" href="/#/register">Post this service</a></p></div></main><div class="footer"><a href="/ai-human-qa/">AI QA hub</a> · <a href="/ai-agents-need-human-auditors.html">Manifesto</a> · <a href="/request-managed-ai-qa.html">Managed pilot</a> · <a href="/#/register">Become a reviewer</a></div></div></body></html>
