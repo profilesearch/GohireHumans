@@ -121,6 +121,75 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     }
   });
 
+  test('public logo remains visually and accessibly consistent across static and SPA pages', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'desktop logo/header consistency is covered at desktop nav width');
+    await setupDeterministicLocalPage(page);
+    const cases = [
+      '/',
+      '/pricing.html',
+      '/starter-offers.html',
+      '/trust-safety.html',
+      '/proof-packs.html',
+      '/stats.html',
+      '/ai-integration.html',
+      '/use-cases/hire-human-to-review-ai-output.html',
+      '/ai-qa-task-generator.html',
+      '/ai-human-qa/index.html',
+      '/#/services',
+      '/#/jobs'
+    ];
+    for (const path of cases) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      const logo = page.locator('.lp-nav-logo').first();
+      await expect(logo, `${path} logo visible`).toBeVisible();
+      await expect(logo, `${path} logo accessible name`).toHaveAccessibleName('GoHireHumans');
+      await expect(logo, `${path} logo href`).toHaveAttribute('href', '/');
+      const normal = await logo.evaluate(el => {
+        const s = getComputedStyle(el);
+        const svg = el.querySelector('svg');
+        const ss = svg ? getComputedStyle(svg) : null;
+        const sr = svg ? svg.getBoundingClientRect() : null;
+        const r = el.getBoundingClientRect();
+        return {
+          color: s.color,
+          textDecoration: s.textDecorationLine,
+          fontSize: s.fontSize,
+          fontWeight: s.fontWeight,
+          lineHeight: s.lineHeight,
+          gap: s.gap,
+          whiteSpace: s.whiteSpace,
+          width: r.width,
+          svgWidth: sr ? sr.width : 0,
+          svgHeight: sr ? sr.height : 0,
+          svgDisplay: ss ? ss.display : '',
+          svgFlexShrink: ss ? ss.flexShrink : ''
+        };
+      });
+      expect(normal.color, `${path} logo text color`).toBe('rgb(26, 24, 22)');
+      expect(normal.textDecoration, `${path} logo text decoration`).toBe('none');
+      expect(normal.fontSize, `${path} logo font size`).toBe('15px');
+      expect(normal.fontWeight, `${path} logo weight`).toBe('700');
+      expect(normal.lineHeight, `${path} logo line height`).toBe('28px');
+      expect(normal.gap, `${path} logo gap`).toBe('8px');
+      expect(normal.whiteSpace, `${path} logo nowrap`).toBe('nowrap');
+      expect(normal.svgWidth, `${path} logo svg width`).toBe(28);
+      expect(normal.svgHeight, `${path} logo svg height`).toBe(28);
+      expect(normal.svgDisplay, `${path} logo svg display`).toBe('block');
+      expect(normal.svgFlexShrink, `${path} logo svg flex shrink`).toBe('0');
+      expect(normal.width, `${path} logo width tolerance`).toBeGreaterThan(130);
+      expect(normal.width, `${path} logo width tolerance`).toBeLessThan(170);
+      await logo.hover();
+      await page.waitForTimeout(180);
+      const hover = await logo.evaluate(el => {
+        const s = getComputedStyle(el);
+        return { color: s.color, background: s.backgroundColor, textDecoration: s.textDecorationLine };
+      });
+      expect(hover.color, `${path} logo hover color`).toBe('rgb(26, 24, 22)');
+      expect(hover.textDecoration, `${path} logo hover text decoration`).toBe('none');
+    }
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);

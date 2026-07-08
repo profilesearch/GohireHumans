@@ -555,10 +555,15 @@
   gap: var(--space-6);
 }
 .lp-nav-logo {
-  display: flex; align-items: center; gap: var(--space-2);
-  font-weight: 700; font-size: var(--text-base);
-  color: var(--color-text); text-decoration: none;
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-weight: 700 !important; font-size: 15px; line-height: 28px;
+  color: #1a1816 !important; text-decoration: none !important;
+  white-space: nowrap; flex-shrink: 0; background: transparent;
+}
+.lp-nav-logo svg {
+  width: 28px; height: 28px; flex: 0 0 28px;
+  max-width: none; display: block;
 }
 .lp-nav-links {
   display: flex; align-items: center; gap: var(--space-1);
@@ -583,7 +588,11 @@
   text-decoration: none !important;
 }
 .lp-nav-logo:hover,
-.lp-nav-logo:focus-visible,
+.lp-nav-logo:focus-visible {
+  color: #1a1816 !important;
+  background: transparent;
+  text-decoration: none !important;
+}
 .lp-nav-actions .btn:hover,
 .lp-nav-actions .btn:focus-visible {
   text-decoration: none;

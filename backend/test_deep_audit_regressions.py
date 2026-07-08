@@ -1803,6 +1803,28 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         missing = [snippet for snippet in required_snippets if snippet not in css]
         self.assertEqual(missing, [])
 
+    def test_public_logo_shell_is_owned_and_accessible_once(self):
+        css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
+        required_css = [
+            ".lp-nav-logo {",
+            "font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);",
+            "font-weight: 700 !important; font-size: 15px; line-height: 28px;",
+            "color: #1a1816 !important; text-decoration: none !important;",
+            ".lp-nav-logo svg {",
+            "width: 28px; height: 28px; flex: 0 0 28px;",
+            "max-width: none; display: block;",
+            ".lp-nav-logo:hover,",
+            ".lp-nav-logo:focus-visible {",
+        ]
+        missing = [snippet for snippet in required_css if snippet not in css]
+        self.assertEqual(missing, [])
+        offenders = []
+        for path in (REPO_ROOT / "frontend").rglob("*.html"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "lp-nav-logo" in text and 'aria-label="GoHireHumans"' in text:
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+        self.assertEqual(offenders, [])
+
     def test_sitemapped_html_pages_use_single_canonical_public_nav(self):
         expected_labels = [
             "GoHireHumans",
