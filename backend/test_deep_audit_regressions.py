@@ -1518,10 +1518,20 @@ class BackendRegressionTests(unittest.TestCase):
             "frontend/starter-offers.html": [
                 "Human verification for AI work before you trust it.",
                 "starter_offer_draft_click",
+                "Choose by the risk you need checked",
+                "starter_problem_route_click",
                 "AI Output Verification",
                 "Automation QA Sprint",
                 "Real-World Check",
             ],
+            "frontend/pricing.html": [
+                "If the question is “is this worth paying for?”, start with proof.",
+                "pricing_proof_first_cta_click",
+                "lead_research",
+            ],
+            "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "qualify_lead"],
+            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "qualify_lead"],
+            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_qualification", "qualify_lead"],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
                 "Sample AI-output review scorecard",
