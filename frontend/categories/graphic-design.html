@@ -90,15 +90,30 @@
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
       <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
-      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
 
   <script>
-    function toggleMobileMenu() {
+    function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
-      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      const button = document.querySelector('.lp-hamburger[aria-controls="mobileMenu"]') || document.querySelector('.lp-hamburger');
+      if (!menu) return;
+      const isHidden = menu.hidden || menu.style.display === 'none' || getComputedStyle(menu).display === 'none';
+      const open = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
+      menu.hidden = !open;
+      menu.style.display = open ? 'block' : 'none';
+      if (button) button.setAttribute('aria-expanded', String(open));
+    }
+    if (!window.__ghhMobileMenuPolishBound) {
+      window.__ghhMobileMenuPolishBound = true;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleMobileMenu(false);
+      });
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
+      });
     }
   </script>
 <nav class="breadcrumbs"><a href="/">Home</a> &rarr; <a href="/categories/">Categories</a> &rarr; <span>Hire graphic designers</span></nav>

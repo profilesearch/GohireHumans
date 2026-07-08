@@ -56,7 +56,14 @@
     @media(min-width:880px){.charts{grid-template-columns:1fr 1fr}}
     .chart-card{background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius-lg);padding:1.5rem}
     .chart-card h2{font-size:.875rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:1rem}
-    .chart-canvas{height:280px}
+    .chart-canvas{min-height:280px}
+    .chart-fallback{display:flex;flex-direction:column;gap:.75rem}
+    .chart-row{display:grid;grid-template-columns:minmax(100px,1fr) minmax(120px,2fr) auto;gap:.75rem;align-items:center;font-size:.8125rem}
+    .chart-label{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chart-track{height:.75rem;border-radius:999px;background:var(--primary-subtle);overflow:hidden}
+    .chart-fill{height:100%;border-radius:999px;background:var(--primary)}
+    .chart-value{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+    .chart-empty{min-height:220px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:.875rem;border:1px dashed var(--divider);border-radius:var(--radius);background:var(--surface);padding:1rem}
     .recent-list{display:flex;flex-direction:column;gap:.5rem}
     .recent-item{padding:.875rem 1rem;background:var(--surface);border:1px solid var(--divider);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;gap:1rem;font-size:.875rem;text-decoration:none;color:var(--text);transition:border-color .15s}
     .recent-item:hover{border-color:var(--primary)}
@@ -81,15 +88,30 @@
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
       <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
-      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
 
   <script>
-    function toggleMobileMenu() {
+    function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
-      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      const button = document.querySelector('.lp-hamburger[aria-controls="mobileMenu"]') || document.querySelector('.lp-hamburger');
+      if (!menu) return;
+      const isHidden = menu.hidden || menu.style.display === 'none' || getComputedStyle(menu).display === 'none';
+      const open = typeof forceOpen === 'boolean' ? forceOpen : isHidden;
+      menu.hidden = !open;
+      menu.style.display = open ? 'block' : 'none';
+      if (button) button.setAttribute('aria-expanded', String(open));
+    }
+    if (!window.__ghhMobileMenuPolishBound) {
+      window.__ghhMobileMenuPolishBound = true;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') toggleMobileMenu(false);
+      });
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
+      });
     }
   </script>
 <main>
@@ -136,7 +158,6 @@
     <p class="footnote">Stats refresh on every page load. Source: <a href="https://gohirehumans-production.up.railway.app/platform/stats" target="_blank" rel="noopener noreferrer">/platform/stats</a> public API.</p>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
   <script>
   (function(){
     const API = 'https://gohirehumans-production.up.railway.app';
@@ -161,18 +182,20 @@
       }
 
       const drawChart = (canvasId, labels, data, color) => {
-        if (!window.Chart) return setTimeout(()=>drawChart(canvasId,labels,data,color), 200);
-        const ctx = document.getElementById(canvasId);
-        if (!ctx) return;
-        new Chart(ctx, {
-          type: 'bar',
-          data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 6 }] },
-          options: {
-            responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-            plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1a1816', padding: 8 } },
-            scales: { x: { grid: { display: false }, ticks: { color: '#6b6963', font: { size: 11 } } }, y: { grid: { display: false }, ticks: { color: '#1a1816', font: { size: 12, weight: 500 } } } }
-          }
-        });
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const holder = canvas.closest('.chart-canvas');
+        if (!holder) return;
+        if (!labels.length || !data.some(Number)) {
+          holder.innerHTML = '<div class="chart-empty">No category data yet. This chart will populate as public services and jobs are listed.</div>';
+          return;
+        }
+        const max = Math.max(...data.map(Number), 1);
+        holder.innerHTML = `<div class="chart-fallback" role="img" aria-label="${canvasId === 'cat-chart' ? 'Services' : 'Open jobs'} by category">${labels.map((label, index) => {
+          const value = Number(data[index] || 0);
+          const width = Math.max(6, Math.round((value / max) * 100));
+          return `<div class="chart-row"><div class="chart-label">${escHtml(label)}</div><div class="chart-track"><div class="chart-fill" style="width:${width}%;background:${color}"></div></div><div class="chart-value">${fmt(value)}</div></div>`;
+        }).join('')}</div>`;
       };
 
       if (services && services.services) {
@@ -219,5 +242,48 @@
     });
   })();
   </script>
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Marketplace</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/starter-offers.html">Starter QA</a></li>
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Open Jobs</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/use-cases/">Use Cases</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Company</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+          <li><a href="/blog/">Blog</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Legal</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
 </body>
 </html>

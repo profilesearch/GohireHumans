@@ -190,6 +190,56 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     }
   });
 
+  test('public footer and mobile menu polish stay consistent on representative pages', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'mobile menu semantics are covered at mobile width');
+    await setupDeterministicLocalPage(page);
+    const cases = ['/', '/pricing.html', '/starter-offers.html', '/trust-safety.html', '/proof-packs.html', '/stats.html', '/#/services', '/#/jobs'];
+    for (const path of cases) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      await expect(page.locator('.lp-footer').first(), `${path} canonical footer`).toBeVisible();
+      await expect(page.locator('.lp-footer').first(), `${path} footer contact`).toContainText('contact@gohirehumans.com');
+      await expect(page.locator('.lp-footer').first(), `${path} no old builder credit`).not.toContainText('Created with Perplexity Computer');
+      const button = page.locator('.lp-hamburger').first();
+      await expect(button, `${path} hamburger controls menu`).toHaveAttribute('aria-controls', 'mobileMenu');
+      await expect(button, `${path} hamburger starts closed`).toHaveAttribute('aria-expanded', 'false');
+      const menu = page.locator('#mobileMenu').first();
+      await expect(menu, `${path} menu initially hidden`).toBeHidden();
+      await button.click();
+      await expect(button, `${path} hamburger opens`).toHaveAttribute('aria-expanded', 'true');
+      await expect(menu, `${path} menu visible after click`).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(button, `${path} hamburger closes on escape`).toHaveAttribute('aria-expanded', 'false');
+      await expect(menu, `${path} menu hidden after escape`).toBeHidden();
+    }
+  });
+
+  test('stats page renders deliberate category chart fallback without blocked CDN dependency', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/stats.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await expect(page.locator('.chart-fallback').first()).toBeVisible();
+    await expect(page.locator('.chart-row').first()).toBeVisible();
+    await expect(page.locator('canvas#cat-chart')).toHaveCount(0);
+    const cdnRequests = await page.evaluate(() => performance.getEntriesByType('resource').map(e => e.name).filter(name => name.includes('cdn.jsdelivr.net/npm/chart.js')));
+    expect(cdnRequests).toEqual([]);
+  });
+
+  test('auth page only shows OR divider with rendered Google button and exposes inline login errors', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'mobile auth polish regression');
+    await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
+    await page.route('https://gohirehumans-production.up.railway.app/auth/login', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Invalid email or password.' }) }));
+    await page.goto('/#/login', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.auth2-title')).toContainText('Welcome back');
+    await expect(page.locator('#google-signin-divider')).toBeHidden();
+    await expect(page.locator('#google-signin-wrap')).toBeHidden();
+    await page.locator('#auth-email').fill('nobody@example.com');
+    await page.locator('#auth-password').fill('nottherightpassword');
+    await page.locator('#authForm button[type="submit"]').click();
+    await expect(page.locator('#auth-error')).toBeVisible();
+    await expect(page.locator('#auth-error')).toContainText('Invalid email or password.');
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);

@@ -1848,8 +1848,12 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 missing.append("cache-busted shared stylesheet")
             if text.count('<div class="lp-nav-wrap">') != 1:
                 missing.append("exactly one shared nav wrapper")
-            if text.count('function toggleMobileMenu()') != 1:
+            if text.count('function toggleMobileMenu(forceOpen)') != 1:
                 missing.append("exactly one mobile menu toggle")
+            if 'aria-controls="mobileMenu" aria-expanded="false"' not in text:
+                missing.append("hamburger exposes menu expanded state")
+            if 'id="mobileMenu" style="display:none" hidden' not in text:
+                missing.append("mobile menu starts hidden semantically")
             if '<nav class="lp-nav" aria-label="Main navigation">' not in nav:
                 missing.append("first nav uses canonical lp-nav + aria label")
             if labels[:8] != expected_labels:
@@ -1890,7 +1894,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             'We could not find <code>${safePath}</code>',
             'href="/starter-offers.html">Starter QA</a>',
             'For Workers</button>',
-            'color:var(--color-text-muted);margin-top:8px',
+            'class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a>',
         ]
         required_css = [
             '.skip-link {',
@@ -1978,6 +1982,47 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for token in ["Starter QA", "For Workers", "Pricing", "Trust", "Request QA", "lp-nav"]:
             self.assertIn(token, nav)
 
+    def test_public_micro_polish_batch_a_guardrails_exist(self):
+        footer = (REPO_ROOT / "frontend/partials/public-footer.html").read_text(encoding="utf-8", errors="ignore")
+        index = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        stats = (REPO_ROOT / "frontend/stats.html").read_text(encoding="utf-8", errors="ignore")
+        browser_spec = (REPO_ROOT / "frontend/tests/browser-regression.spec.js").read_text(encoding="utf-8", errors="ignore")
+        css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
+        required_footer = [
+            'class="lp-footer"',
+            'contact@gohirehumans.com',
+            'Workers receive the listed payout',
+            'Direct-payment instructions are not allowed',
+        ]
+        for snippet in required_footer:
+            self.assertIn(snippet, footer)
+            self.assertIn(snippet, index)
+        self.assertNotIn("Created with Perplexity Computer", footer)
+        self.assertNotIn("Created with Perplexity Computer", index)
+        for snippet in [
+            'auth2-google-wrap',
+            'google-signin-divider',
+            'id="auth-error" class="auth2-error" role="alert" aria-live="polite" hidden',
+            'Signing in…',
+            'data?.error || data?.detail || data?.message',
+        ]:
+            self.assertIn(snippet, index)
+        for snippet in [".auth2-error", ".auth2-divider", ".lp-footer-meta"]:
+            self.assertIn(snippet, css)
+        for snippet in [
+            "chart-fallback",
+            "chart-empty",
+            "No category data yet",
+        ]:
+            self.assertIn(snippet, stats)
+        self.assertNotIn("cdn.jsdelivr.net/npm/chart.js", stats)
+        for snippet in [
+            "public footer and mobile menu polish stay consistent",
+            "stats page renders deliberate category chart fallback",
+            "auth page only shows OR divider",
+        ]:
+            self.assertIn(snippet, browser_spec)
+
     def test_phase8_performance_budget_guardrails_exist(self):
         required_files = ["frontend/performance-budgets.json", "scripts/performance_budget.py"]
         missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
@@ -2035,7 +2080,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
             '<a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>',
-            'function toggleMobileMenu()',
+            'function toggleMobileMenu(forceOpen)',
+            'aria-controls="mobileMenu" aria-expanded="false"',
+            'id="mobileMenu" style="display:none" hidden',
         ]
         shared_links = [
             ("/starter-offers.html", "Starter QA"),
@@ -2061,7 +2108,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 missing.append('old 404 header removed')
             if text.count('<div class="lp-nav-wrap">') != 1:
                 missing.append('exactly one shared nav wrapper')
-            if text.count('function toggleMobileMenu()') != 1:
+            if text.count('function toggleMobileMenu(forceOpen)') != 1:
                 missing.append('exactly one mobile menu toggle')
             if missing:
                 failures.append({"file": rel, "missing": missing})
