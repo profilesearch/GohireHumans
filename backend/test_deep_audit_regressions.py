@@ -1979,8 +1979,55 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
         self.assertEqual(missing, [])
         nav = (REPO_ROOT / "frontend/partials/public-nav.html").read_text(encoding="utf-8", errors="ignore")
+        footer = (REPO_ROOT / "frontend/partials/public-footer.html").read_text(encoding="utf-8", errors="ignore")
+        contract = (REPO_ROOT / "docs/design-system/public-shell.md").read_text(encoding="utf-8", errors="ignore")
+        checker = (REPO_ROOT / "scripts/check_public_shell.py").read_text(encoding="utf-8", errors="ignore")
         for token in ["Starter QA", "For Workers", "Pricing", "Trust", "Request QA", "lp-nav"]:
             self.assertIn(token, nav)
+        for token in ["Open Jobs for Workers", "contact@gohirehumans.com", "Direct-payment instructions are not allowed"]:
+            self.assertIn(token, footer)
+            self.assertIn(token, checker)
+        for token in ["High-visibility conversion/trust pages", "Open Jobs for Workers", "Use-case pages are intentionally grouped"]:
+            self.assertIn(token, contract)
+
+    def test_public_micro_polish_batch_b_backlog_guardrails_exist(self):
+        critical_pages = [
+            "frontend/index.html",
+            "frontend/starter-offers.html",
+            "frontend/pricing.html",
+            "frontend/trust-safety.html",
+            "frontend/proof-packs.html",
+            "frontend/stats.html",
+            "frontend/use-cases/index.html",
+        ]
+        problems = {}
+        for rel in critical_pages:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            issues = []
+            for snippet in ['<div class="lp-nav-wrap">', '<footer class="lp-footer"', 'Open Jobs for Workers']:
+                if snippet not in text:
+                    issues.append(f"missing {snippet}")
+            if "Created with Perplexity Computer" in text or "Perplexity Computer" in text:
+                issues.append("builder attribution leaked")
+            if '<div class="footer">' in text or '<footer class="footer"' in text:
+                issues.append("legacy local footer present")
+            if '<li><a href="/#/jobs">Open Jobs</a></li>' in text:
+                issues.append("ambiguous jobs label")
+            problems[rel] = issues
+        self.assertEqual({rel: issues for rel, issues in problems.items() if issues}, {})
+        stats = (REPO_ROOT / "frontend/stats.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("Create a free account", stats)
+        self.assertNotIn("Get started", stats)
+        trust = (REPO_ROOT / "frontend/trust-safety.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("trust-next-step-heading", trust)
+        self.assertIn("Start with a scoped review", trust)
+        self.assertIn("Request QA", trust)
+        use_cases = (REPO_ROOT / "frontend/use-cases/index.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("Browse high-intent task categories", use_cases)
+        self.assertIn('<footer class="lp-footer"', use_cases)
+        browser_spec = (REPO_ROOT / "frontend/tests/browser-regression.spec.js").read_text(encoding="utf-8", errors="ignore")
+        for snippet in ["Batch B public shell backlog polish", "/use-cases/", "Open Jobs for Workers", "Create a free account"]:
+            self.assertIn(snippet, browser_spec)
 
     def test_public_micro_polish_batch_a_guardrails_exist(self):
         footer = (REPO_ROOT / "frontend/partials/public-footer.html").read_text(encoding="utf-8", errors="ignore")

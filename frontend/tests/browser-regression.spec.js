@@ -214,6 +214,24 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     }
   });
 
+  test('Batch B public shell backlog polish remains visible on high-intent pages', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    const shellPages = ['/', '/starter-offers.html', '/pricing.html', '/trust-safety.html', '/proof-packs.html', '/stats.html', '/use-cases/'];
+    for (const path of shellPages) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('.lp-footer').first(), `${path} canonical footer`).toBeVisible();
+      await expect(page.locator('.lp-footer').first(), `${path} worker jobs label`).toContainText('Open Jobs for Workers');
+      await expect(page.locator('body'), `${path} no legacy builder attribution`).not.toContainText('Created with Perplexity Computer');
+    }
+    await page.goto('/stats.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('a.btn-primary[href="/#/register"]')).toContainText('Create a free account');
+    await page.goto('/trust-safety.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#trust-next-step-heading')).toContainText('Start with a scoped review');
+    await expect(page.locator('.trust-next-step a[href="/starter-offers.html"]')).toContainText('Request QA');
+    await page.goto('/use-cases/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('main')).toContainText('Human AI Output Verification');
+  });
+
   test('stats page renders deliberate category chart fallback without blocked CDN dependency', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/stats.html', { waitUntil: 'domcontentloaded' });
