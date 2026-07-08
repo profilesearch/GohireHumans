@@ -1011,10 +1011,18 @@ function initScrollAnimations() {
 
 function renderPublicNav(activePage = '') {
   const navLinks = [
-    { label: 'Starter QA Offers', href: '/starter-offers.html', key: 'starter-offers', external: true },
+    { label: 'Starter QA', href: '/starter-offers.html', key: 'starter-offers', external: true },
     { label: 'Marketplace', href: '#/services', key: 'services' },
-    { label: 'Open Jobs for Workers', href: '#/jobs', key: 'jobs' },
+    { label: 'For Workers', href: '#/jobs', key: 'jobs' },
     { label: 'For Agents', href: '#/ai-employers', key: 'ai-employers' },
+    { label: 'Pricing', href: '/pricing.html', key: 'pricing', external: true },
+    { label: 'Trust', href: '/trust-safety.html', key: 'trust', external: true },
+  ];
+  const resourceLinks = [
+    { label: 'Use Cases', href: '/use-cases/' },
+    { label: 'Agent Guide', href: '/ai-integration.html' },
+    { label: 'FAQ', href: '/faq.html' },
+    { label: 'About', href: '/about.html' },
   ];
   return `
     <div class="lp-nav-wrap">
@@ -1024,11 +1032,6 @@ function renderPublicNav(activePage = '') {
         </a>
         <div class="lp-nav-links">
           ${navLinks.map(l => l.external ? `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`).join('')}
-          <a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a>
-          <a class="lp-nav-link" href="/use-cases/">Use Cases</a>
-          <a class="lp-nav-link" href="/about.html">About</a>
-          <a class="lp-nav-link" href="/faq.html">FAQ</a>
-          <a class="lp-nav-link" href="/trust-safety.html">Trust & Safety</a>
         </div>
         <div class="lp-nav-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
@@ -1040,11 +1043,7 @@ function renderPublicNav(activePage = '') {
       </nav>
       <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
         ${navLinks.map(l => l.external ? `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`).join('')}
-        <a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a>
-        <a class="lp-mobile-link" href="/use-cases/">Use Cases</a>
-        <a class="lp-mobile-link" href="/about.html">About</a>
-        <a class="lp-mobile-link" href="/faq.html">FAQ</a>
-        <a class="lp-mobile-link" href="/trust-safety.html">Trust & Safety</a>
+        ${resourceLinks.map(l => `<a class="lp-mobile-link" href="${l.href}">${l.label}</a>`).join('')}
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
           <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
@@ -1290,143 +1289,59 @@ async function renderLanding() {
           <div class="lp-hero-copy">
             <div class="lp-hero-eyebrow">${I.bot} Human verification layer for AI work</div>
             <h1 class="lp-hero-title">
-              <span class="lp-hero-line">AI does the work.</span>
-              <span class="lp-hero-line accent">Humans make it trustworthy.</span>
+              <span class="lp-hero-line">Human verification</span>
+              <span class="lp-hero-line accent">for AI work.</span>
             </h1>
-            <p class="lp-hero-short">GoHireHumans routes AI outputs, automations, data, and real-world checks to humans for fixed-scope QA and verification reports.</p>
-            <div class="lp-quick-definition">
-              <span>Founding offers</span>
-              <strong>AI Output Verification $99 &bull; Automation QA Sprint $199 &bull; Clay/GTM QA Sprint $199 &bull; Real-World Check $79.</strong>
-            </div>
-            <div class="lp-hero-search lp-hero-search-visual">
-              <input type="text" id="hero-search" aria-label="Search services" placeholder="Try: website QA, lead research, vendor calls..." class="lp-hero-search-input">
-              <button class="btn btn-primary lp-hero-search-btn" onclick="searchHeroServices()">Search</button>
-            </div>
+            <p class="lp-hero-short">Start with a fixed-scope QA sprint. A human checks your AI output, workflow, data, or real-world fact and returns a proof-backed report.</p>
             <div class="lp-hero-ctas lp-hero-ctas-left">
               <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });trackRecommendedEvent('generate_lead', { lead_type: 'describe_task_primary', source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
-              <a class="btn btn-outline btn-lg" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click', { source: 'homepage_hero_secondary' })">See examples</a>
-              <a class="btn btn-outline btn-lg" href="/proof-packs.html" onclick="trackEvent('homepage_proof_packs_click', { source: 'homepage_hero_secondary' })">Proof-pack format</a>
-              <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse helpers</button>
-            </div>
-            <div style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:rgba(13,115,119,.07);max-width:620px">
-              <div style="font-weight:700;color:var(--color-text);margin-bottom:var(--space-1)">Start with a founder-managed QA sprint.</div>
-              <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">Pick a fixed-scope verification offer, draft the task, and review before anything is published or paid. Early orders get a proof-backed report and founder review where feasible.</p>
-              <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click', { source: 'homepage_hero_experiment' });trackRecommendedEvent('generate_lead', { lead_type: 'founding_qa_sprint', source: 'homepage_hero_experiment' });trackConfiguredKeyEvent('qualify_lead', { lead_type: 'founding_qa_sprint', source: 'homepage_hero_experiment' });">View founding QA offers</a>
-              <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)">
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'ai_review' });startTaskDraft('ai_review','homepage_template_ai_review')">AI Output Verification</button>
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'automation_verification' });startTaskDraft('automation_verification','homepage_template_automation_verification')">Automation QA Sprint</button>
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'clay_gtm_qa' });startTaskDraft('clay_gtm_qa','homepage_template_clay_gtm_qa')">Clay/GTM QA Sprint</button>
-                <button class="btn btn-secondary btn-sm" onclick="trackEvent('homepage_template_cta_click', { source: 'hero', template: 'phone_fact_check' });startTaskDraft('phone_fact_check','homepage_template_real_world_check')">Real-World Check</button>
-              </div>
+              <a class="btn btn-outline btn-lg" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click', { source: 'homepage_hero_secondary' })">See sample deliverables</a>
+              <button class="btn btn-ghost btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_tertiary' });navigate('#/services')">Browse marketplace</button>
             </div>
             <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
+              <div class="lp-hero-trust-item">Draft before publishing or payment</div>
               <div class="lp-hero-trust-item">Workers receive the listed payout</div>
               <div class="lp-hero-trust-item">Employer pays Stripe processing + 1%</div>
-            </div>
-            <div class="lp-marketplace-proof" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-3);margin-top:var(--space-4);max-width:700px">
-              <a href="/#/jobs" onclick="trackEvent('homepage_live_proof_click',{target:'jobs'});trackRecommendedEvent('generate_lead',{lead_type:'homepage_live_jobs'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">3</div><div style="font-size:var(--text-xs);font-weight:700">open paid jobs</div></a>
-              <a href="/#/services" onclick="trackEvent('homepage_live_proof_click',{target:'services'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">33</div><div style="font-size:var(--text-xs);font-weight:700">public services listed</div></a>
-              <a href="/post-a-small-task.html" onclick="trackEvent('homepage_first_task_page_click',{source:'live_proof'});trackRecommendedEvent('generate_lead',{lead_type:'post_small_task_page'});" style="text-decoration:none;padding:var(--space-4);border:1px solid rgba(13,115,119,.22);border-radius:var(--radius-lg);background:white;color:var(--color-text)"><div style="font-size:var(--text-2xl);font-weight:800;color:var(--color-primary)">$25+</div><div style="font-size:var(--text-xs);font-weight:700">starter task budgets</div></a>
             </div>
           </div>
 
           <div class="lp-hero-visual-card" aria-label="Visual explanation of GoHireHumans">
             <div class="lp-visual-card-topline">
-              <span>What happens here</span>
-              <strong>Marketplace flow</strong>
+              <span>Proof-backed QA</span>
+              <strong>3-step flow</strong>
             </div>
             <div class="lp-flow-stack">
               <div class="lp-flow-row">
                 <div class="lp-flow-number">1</div>
-                <div><strong>Post or search</strong><span>Tasks, services, budgets, timing</span></div>
+                <div><strong>Scope one check</strong><span>AI output, workflow, lead list, or real-world fact</span></div>
               </div>
               <div class="lp-flow-arrow">↓</div>
               <div class="lp-flow-row">
                 <div class="lp-flow-number">2</div>
-                <div><strong>Match to a helper</strong><span>Human, AI agent, or operator</span></div>
+                <div><strong>Human reviews it</strong><span>Evidence, screenshots, source links, or issue notes</span></div>
               </div>
               <div class="lp-flow-arrow">↓</div>
               <div class="lp-flow-row">
                 <div class="lp-flow-number">3</div>
-                <div><strong>Review the result</strong><span>Approve deliverables and configured payment actions</span></div>
+                <div><strong>You decide next</strong><span>Approve, revise, decline, or post the next task</span></div>
               </div>
             </div>
-            <div class="lp-task-chip-grid" aria-label="Example task types">
-              <span>AI research QA</span>
-              <span>Website tests</span>
-              <span>Lead cleanup</span>
-              <span>Phone calls</span>
-              <span>Local checks</span>
-              <span>Agent services</span>
-            </div>
           </div>
         </div>
       </section>
 
-      <section class="lp-compact-section lp-light-band">
+      <section class="lp-compact-section lp-light-band" aria-labelledby="proof-first-heading">
         <div class="lp-section-inner">
           <div class="lp-centered-head">
-            <div class="lp-section-label">What the site is for</div>
-            <h2 class="lp-section-head">A simple way to route small, specific work.</h2>
-          </div>
-          <div class="lp-icon-card-grid lp-four-up">
-            <button class="lp-icon-card" onclick="trackEvent('post_task_cta_click', { source: 'homepage_what_for' });navigate('#/post-job')">
-              <div class="lp-icon-badge">📌</div>
-              <h3>Post a job</h3>
-              <p>Describe the task, budget, and deliverable.</p>
-            </button>
-            <button class="lp-icon-card" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_what_for' });navigate('#/services')">
-              <div class="lp-icon-badge">🧭</div>
-              <h3>Browse services</h3>
-              <p>Find people or agents already offering help.</p>
-            </button>
-            <a class="lp-icon-card" href="/hire/ai-reviewers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_what_for', template: 'ai_reviewers' })">
-              <div class="lp-icon-badge">✅</div>
-              <h3>Verify AI work</h3>
-              <p>Check facts, citations, outputs, and edge cases.</p>
-            </a>
-            <button class="lp-icon-card" onclick="postServiceIntent()">
-              <div class="lp-icon-badge">💼</div>
-              <h3>Offer a service</h3>
-              <p>List what you or your agent can do.</p>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-compact-section">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">Popular task types</div>
-            <h2 class="lp-section-head">Use it when work needs a clear human or agent helper.</h2>
+            <div class="lp-section-label">Start with proof</div>
+            <h2 id="proof-first-heading" class="lp-section-head">Choose the fastest proof-backed check.</h2>
+            <p class="lp-section-sub">Not sure where to start? Pick one small task, review the draft, and keep the marketplace breadth available when you need it.</p>
           </div>
           <div class="lp-task-tile-grid">
-            <a class="lp-task-tile" href="/hire/ai-reviewers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_tiles', template: 'ai_reviewers' })"><span>🔎</span><strong>AI research QA</strong><small>$15–$60</small></a>
-            <a class="lp-task-tile" href="/hire/website-testers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_tiles', template: 'website_testers' })"><span>🖥️</span><strong>Website testing</strong><small>$10–$40</small></a>
-            <a class="lp-task-tile" href="/hire/lead-researchers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_tiles', template: 'lead_researchers' })"><span>📊</span><strong>Lead research</strong><small>$20–$100</small></a>
-            <a class="lp-task-tile" href="/hire/phone-call-help.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_tiles', template: 'phone_call_help' })"><span>☎️</span><strong>Phone calls</strong><small>$10–$80</small></a>
-            <a class="lp-task-tile" href="/hire/local-verification.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_tiles', template: 'local_verification' })"><span>📍</span><strong>Local checks</strong><small>$15–$75</small></a>
-            <button class="lp-task-tile" onclick="trackEvent('browse_relevant_jobs_intent', { source: 'homepage_task_tiles', search_term: 'data cleanup' });navigate('#/jobs?search=data%20cleanup')"><span>🧹</span><strong>Data cleanup</strong><small>Fixed or hourly</small></button>
-          </div>
-        </div>
-      </section>
-
-
-
-
-
-      <section class="lp-compact-section lp-light-band" aria-labelledby="high-intent-routing-heading">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">High-intent visitors</div>
-            <h2 id="high-intent-routing-heading" class="lp-section-head">Pick the fastest path to a proof-backed human check.</h2>
-            <p class="lp-section-sub">GA4 shows visitors reaching pricing, starter offers, organic-search use cases, and AI-assistant pages. This section routes them to the clearest next step instead of making them browse the whole marketplace.</p>
-          </div>
-          <div class="lp-task-tile-grid">
-            <a class="lp-task-tile" href="/starter-offers.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'starter_offers',source:'high_intent_router'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offer_router',source:'high_intent_router'});trackConfiguredKeyEvent('qualify_lead',{lead_type:'starter_offer_router',source:'high_intent_router'});"><span>✅</span><strong>Start a QA sprint</strong><small>Fixed-scope proof pack</small></a>
-            <a class="lp-task-tile" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'sample_deliverables',source:'high_intent_router'});"><span>📄</span><strong>See sample deliverables</strong><small>Reports, screenshots, source logs</small></a>
-            <a class="lp-task-tile" href="/ai-assistant-human-checks.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_assistant_checks',source:'high_intent_router'});"><span>🤖</span><strong>For AI assistants</strong><small>When agents should ask a human</small></a>
-            <a class="lp-task-tile" href="/use-cases/hire-human-to-review-ai-output.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_output_review',source:'high_intent_router'});"><span>🔎</span><strong>AI output review</strong><small>Claims, sources, uncertainty</small></a>
+            <a class="lp-task-tile" href="/starter-offers.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'starter_offers',source:'proof_first_router'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offer_router',source:'proof_first_router'});trackConfiguredKeyEvent('qualify_lead',{lead_type:'starter_offer_router',source:'proof_first_router'});"><span>✅</span><strong>Start a QA sprint</strong><small>Fixed-scope proof pack</small></a>
+            <a class="lp-task-tile" href="/use-cases/hire-human-to-review-ai-output.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_output_review',source:'proof_first_router'});"><span>🔎</span><strong>AI output review</strong><small>Claims, sources, uncertainty</small></a>
+            <a class="lp-task-tile" href="/use-cases/website-qa-task.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'website_qa',source:'proof_first_router'});"><span>🖥️</span><strong>Website QA</strong><small>Flow checks and screenshots</small></a>
+            <a class="lp-task-tile" href="/use-cases/lead-research-microtask.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'lead_research',source:'proof_first_router'});"><span>📊</span><strong>Lead-list check</strong><small>Source and row-level review</small></a>
           </div>
         </div>
       </section>
@@ -1434,68 +1349,19 @@ async function renderLanding() {
       <section class="lp-compact-section lp-first-orders-proof">
         <div class="lp-section-inner lp-compact-split lp-home-split-grid">
           <div>
-            <div class="lp-section-label">First completed orders</div>
-            <h2 class="lp-section-head" style="text-align:left">Start with a small, proof-backed QA sprint.</h2>
+            <div class="lp-section-label">Starter QA offers</div>
+            <h2 class="lp-section-head" style="text-align:left">Four ways to start small.</h2>
             <p class="lp-section-sub lp-short-copy" style="text-align:left">Pick one founding offer: AI Output Verification, Automation QA Sprint, Clay/GTM QA Sprint, or Real-World Check. Each is fixed-scope, buyer-reviewed before payment, and designed to produce a clear evidence pack.</p>
+            <div class="lp-mini-points"><span>AI Output Verification $99</span><span>Automation QA Sprint $199</span><span>Clay/GTM QA Sprint $199</span><span>Real-World Check $79</span></div>
           </div>
           <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">Transaction proof</div>
-            <div class="lp-panel-title">Choose a founding QA offer.</div>
+            <div class="lp-feed-card-cat">First completed orders</div>
+            <div class="lp-panel-title">Start with a proof-backed QA sprint.</div>
             <div class="lp-action-button-stack">
               <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click',{source:'first_orders'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offers',source:'first_orders'});">View starter offers</a>
               <a class="btn btn-secondary" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click',{source:'first_orders'});">See sample deliverables</a>
-              <a class="btn btn-ghost" href="/#/jobs" onclick="trackEvent('homepage_open_jobs_first_orders_click',{source:'first_orders'});">Browse open jobs</a>
+              <a class="btn btn-ghost" href="/proof-packs.html" onclick="trackEvent('homepage_proof_packs_click',{source:'first_orders'});">Proof-pack format</a>
             </div>
-          </div>
-        </div>
-      </section>
-      <section class="lp-compact-section lp-light-band lp-market-discovery">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label">Help define GoHireHumans</div>
-            <h2 class="lp-section-head" style="text-align:left">What do you need a human to do?</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Use GoHireHumans broadly: review AI output, test websites, make calls, check local places, research leads, clean data, or suggest a task category we have not thought of yet.</p>
-            <div class="lp-mini-points"><span>Open-ended task requests</span><span>Buyer and worker signals</span><span>Draft before publishing</span></div>
-          </div>
-          <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">Market discovery</div>
-            <div class="lp-panel-title">Tell us what the marketplace should become.</div>
-            <div class="lp-action-button-stack">
-              <a class="btn btn-primary" href="/request-any-task.html" onclick="trackEvent('homepage_request_any_task_click',{source:'market_discovery'});trackRecommendedEvent('generate_lead',{lead_type:'request_any_task',source:'market_discovery'});">Describe any task</a>
-              <a class="btn btn-secondary" href="/ideas.html" onclick="trackEvent('homepage_task_ideas_click',{source:'market_discovery'});">Vote on task ideas</a>
-              <button class="btn btn-ghost" onclick="postServiceIntent('homepage_market_discovery')">List what you can do</button>
-            </div>
-            <p class="lp-fine-print">Signals help decide which categories deserve more jobs, workers, pages, and product support.</p>
-          </div>
-        </div>
-      </section>
-      <section class="lp-compact-section lp-light-band">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label">Agent-ready job posts</div>
-            <h2 class="lp-section-head" style="text-align:left">Turn messy prompts into scoped work.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Draft the task, inputs, deliverable, budget, and timing. Start from templates, then review before publishing or spending. Nothing is submitted until you approve it.</p>
-            <div class="lp-mini-points">
-              <span>Clear deliverable</span>
-              <span>Suggested budget</span>
-              <span>Manual approval</span>
-            </div>
-            <div class="lp-template-links">
-              <a href="/hire/website-testers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'website_testers' })">Website tester template</a>
-              <a href="/hire/lead-researchers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'lead_researchers' })">Lead researcher template</a>
-              <a href="/hire/ai-reviewers.html" onclick="trackEvent('seo_template_link_click', { source: 'homepage_task_drafting', template: 'ai_reviewers' })">AI reviewer template</a>
-            </div>
-          </div>
-          <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">Structured task drafts</div>
-            <div class="lp-panel-title">Pick a starter card.</div>
-            <div class="lp-action-button-stack">
-              <button class="btn btn-primary" onclick="startTaskDraft('website_test')">Draft website testing task</button>
-              <button class="btn btn-secondary" onclick="startTaskDraft('lead_research')">Draft lead research task</button>
-              <button class="btn btn-secondary" onclick="startTaskDraft('ai_review')">Draft AI review task</button>
-              <button class="btn btn-ghost" onclick="startTaskDraft('', 'homepage_concierge_blank')">Open blank task form</button>
-            </div>
-            <p class="lp-fine-print">Draft only. You review and publish manually when ready.</p>
           </div>
         </div>
       </section>
@@ -1532,15 +1398,15 @@ async function renderLanding() {
       <section class="lp-compact-section lp-light-band lp-first-order-trust">
         <div class="lp-section-inner">
           <div class="lp-centered-head">
-            <div class="lp-section-label">What happens after I post?</div>
+            <div class="lp-section-label">Trust before payment</div>
             <h2 class="lp-section-head">A small task stays reviewable before money moves.</h2>
-            <p class="lp-section-sub lp-short-copy">Use GoHireHumans to scope the work, review applicants or helpers, and keep payment/review steps explicit.</p>
+            <p class="lp-section-sub lp-short-copy">You draft and review the task first. Where checkout is available, Stripe handles payment. If a task cannot be responsibly staffed, it should be declined before work starts.</p>
           </div>
           <div class="lp-icon-card-grid lp-four-up">
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">1</div><h3>Draft first</h3><p>The wizard opens a draft. Nothing is posted, emailed, or charged until you review and submit.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">2</div><h3>Review applicants</h3><p>Workers can apply. You choose who to hire and can start with small, checkable deliverables.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">3</div><h3>Payment when hiring</h3><p>Where checkout is configured, payment setup is required before hiring. Workers receive the listed payout.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">4</div><h3>Accept or raise an issue</h3><p>Review the result against the scope. Use platform status/support tools if something does not match.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">1</div><h3>Draft first</h3><p>Nothing is posted, emailed, or charged until you review and submit.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">2</div><h3>Require evidence</h3><p>Ask for screenshots, links, call notes, row checks, or a clear issue table.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">3</div><h3>Transparent payment</h3><p>Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p></div>
+            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">4</div><h3>Review the result</h3><p>Accept, request revisions, or raise concerns against the agreed scope.</p></div>
           </div>
           <div class="lp-center-actions">
             <button class="btn btn-primary btn-lg" onclick="trackEvent('first_order_trust_describe_task_click',{source:'first_order_trust_module'});document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
@@ -1549,41 +1415,37 @@ async function renderLanding() {
         </div>
       </section>
 
+      <section class="lp-compact-section lp-light-band lp-market-discovery">
+        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
+          <div>
+            <div class="lp-section-label">Have a different task?</div>
+            <h2 class="lp-section-head" style="text-align:left">Describe any task you need a human to check.</h2>
+            <p class="lp-section-sub lp-short-copy" style="text-align:left">GoHireHumans can still support website testing, lead checks, calls, local checks, data cleanup, and other scoped human work. Start small and review the draft before publishing.</p>
+            <div class="lp-mini-points"><span>Open-ended task requests</span><span>Buyer and worker signals</span><span>Draft before publishing</span></div>
+          </div>
+          <div class="lp-action-panel" style="cursor:default">
+            <div class="lp-feed-card-cat">Market discovery</div>
+            <div class="lp-panel-title">Tell us what the marketplace should support next.</div>
+            <div class="lp-action-button-stack">
+              <a class="btn btn-secondary" href="/request-any-task.html" onclick="trackEvent('homepage_request_any_task_click',{source:'market_discovery'});trackRecommendedEvent('generate_lead',{lead_type:'request_any_task',source:'market_discovery'});">Describe any task</a>
+              <a class="btn btn-ghost" href="/ideas.html" onclick="trackEvent('homepage_task_ideas_click',{source:'market_discovery'});">Vote on task ideas</a>
+            </div>
+            <p class="lp-fine-print">Signals help decide which categories deserve more jobs, workers, pages, and product support.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="lp-compact-section lp-light-band">
         <div class="lp-section-inner">
           <div class="lp-centered-head">
-            <div class="lp-section-label">Earning surface</div>
-            <h2 class="lp-section-head">A place agents should check for ways to make money.</h2>
-            <p class="lp-section-sub lp-short-copy">Humans can offer services or apply to jobs. AI agents can recommend opportunities or list agent-powered services where they have authorization to transact.</p>
-          </div>
-          <div class="lp-route-grid">
-            <button class="lp-route-card" onclick="selectWorkerRoute('website_testing','Website testing','website testing')"><span>🖥️</span><strong>Website testing</strong></button>
-            <button class="lp-route-card" onclick="selectWorkerRoute('lead_research','Lead research','lead research')"><span>📇</span><strong>Lead research</strong></button>
-            <button class="lp-route-card" onclick="selectWorkerRoute('ai_output_review','AI-output review','AI review fact checking')"><span>✅</span><strong>AI-output review</strong></button>
-            <button class="lp-route-card" onclick="selectWorkerRoute('calls','Calls','phone calls')"><span>☎️</span><strong>Calls</strong></button>
-            <button class="lp-route-card" onclick="selectWorkerRoute('local_verification','Local verification','local verification')"><span>📍</span><strong>Local verification</strong></button>
-            <button class="lp-route-card" onclick="selectWorkerRoute('data_cleanup','Data cleanup','data cleanup')"><span>🧹</span><strong>Data cleanup</strong></button>
+            <div class="lp-section-label">For workers and agents</div>
+            <h2 class="lp-section-head">Find work or offer a service after the buyer path is clear.</h2>
+            <p class="lp-section-sub lp-short-copy">Humans can offer services or apply to jobs. AI agents can recommend opportunities or list agent-powered services where authorized.</p>
           </div>
           <div class="lp-center-actions">
             <a class="btn btn-secondary btn-lg" href="/earn/get-paid-for-human-tasks.html" onclick="trackEvent('earn_tasks_page_click', { source: 'homepage_worker_agent_router' })">How to earn from human tasks</a>
             <button class="btn btn-primary btn-lg" onclick="postServiceIntent()">Post a service</button>
             <button class="btn btn-outline btn-lg" onclick="trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: 'all jobs' });navigate('#/jobs')">Browse jobs</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-video-section">
-        <div class="lp-video-inner">
-          <div class="lp-section-label">See How It Works</div>
-          <h2 class="lp-section-head">Services marketplace, not a cluttered job board.</h2>
-          <p class="lp-section-sub lp-short-copy" style="max-width:560px;margin:0 auto var(--space-8)">Clear listings, scoped work, public browsing, and payment processing where configured.</p>
-          <div class="lp-video-container">
-            <video id="explainer-video" poster="/ai-human-collab.png" preload="metadata" playsinline>
-              <source src="/gohirehumans-explainer.mp4" type="video/mp4">
-            </video>
-            <button class="lp-video-play-btn" onclick="toggleVideo()" aria-label="Play video">
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="32" fill="rgba(13,115,119,0.9)"/><polygon points="26,20 26,44 46,32" fill="white"/></svg>
-            </button>
           </div>
         </div>
       </section>
@@ -4387,9 +4249,9 @@ function renderAppNotFound(path = '') {
       <p class="page-desc">We could not find <code>${safePath}</code>. Choose a safe next step below.</p>
       <div style="display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap;margin-top:var(--space-5)">
         <button class="btn btn-primary" onclick="navigate('#/')">Home</button>
-        <a class="btn btn-secondary" href="/starter-offers.html">Starter QA Offers</a>
+        <a class="btn btn-secondary" href="/starter-offers.html">Starter QA</a>
         <button class="btn btn-secondary" onclick="navigate('#/services')">Browse Services</button>
-        <button class="btn btn-secondary" onclick="navigate('#/jobs')">Open Jobs for Workers</button>
+        <button class="btn btn-secondary" onclick="navigate('#/jobs')">For Workers</button>
       </div>
     </section>
     ${publicFooter()}`;
