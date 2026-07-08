@@ -68,6 +68,59 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('body')).toContainText('Choose by the risk you need checked');
   });
 
+  test('public nav hover and active states are consistent across static and SPA pages', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'desktop nav hover states are hidden behind the mobile menu');
+    await setupDeterministicLocalPage(page);
+    const cases = [
+      { path: '/', active: null },
+      { path: '/starter-offers.html', active: 'Starter QA' },
+      { path: '/pricing.html', active: 'Pricing' },
+      { path: '/trust-safety.html', active: 'Trust' },
+      { path: '/ai-integration.html', active: 'For Agents' },
+      { path: '/earn/get-paid-for-human-tasks.html', active: 'For Workers' },
+      { path: '/use-cases/hire-human-to-review-ai-output.html', active: 'Marketplace' },
+      { path: '/#/services', active: 'Marketplace' },
+      { path: '/#/jobs', active: 'For Workers' },
+      { path: '/#/ai-employers', active: 'For Agents' }
+    ];
+    let canonicalHover = null;
+    for (const item of cases) {
+      await page.goto(item.path, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      const navLinks = page.locator('.lp-nav-link');
+      await expect(navLinks.first(), item.path).toBeVisible();
+
+      const inactive = item.active
+        ? page.locator('.lp-nav-link').filter({ hasNotText: item.active }).first()
+        : page.locator('.lp-nav-link').first();
+      await inactive.hover();
+      await page.waitForTimeout(180);
+      const hover = await inactive.evaluate(el => {
+        const s = getComputedStyle(el);
+        return { color: s.color, background: s.backgroundColor, textDecoration: s.textDecorationLine };
+      });
+      if (!canonicalHover) canonicalHover = hover;
+      expect(hover.textDecoration, `${item.path} inactive hover should not underline`).toBe('none');
+      expect(hover.color, `${item.path} inactive hover color`).toBe(canonicalHover.color);
+      expect(hover.background, `${item.path} inactive hover background`).toBe(canonicalHover.background);
+
+      const activeLinks = page.locator('.lp-nav-link[aria-current="page"]');
+      if (item.active) {
+        await expect(activeLinks, `${item.path} should expose one active nav item`).toHaveCount(1);
+        await expect(activeLinks.first()).toHaveText(item.active);
+        const active = await activeLinks.first().evaluate(el => {
+          const s = getComputedStyle(el);
+          return { color: s.color, background: s.backgroundColor, textDecoration: s.textDecorationLine };
+        });
+        expect(active.textDecoration, `${item.path} active nav should not underline`).toBe('none');
+        expect(active.color, `${item.path} active nav color`).toBe('rgb(13, 115, 119)');
+        expect(active.background, `${item.path} active nav background`).toBe('rgb(230, 243, 243)');
+      } else {
+        await expect(activeLinks, `${item.path} should not mark a section active`).toHaveCount(0);
+      }
+    }
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);
