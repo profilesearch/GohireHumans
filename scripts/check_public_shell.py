@@ -6,7 +6,7 @@ missing=[p for p in required if not (ROOT/p).exists()]
 if missing:
     print('Missing public shell assets:', missing); raise SystemExit(1)
 nav=(ROOT/'frontend/partials/public-nav.html').read_text()
-for token in ['Starter QA Offers','Open Jobs for Workers','Request QA','lp-nav']:
+for token in ['Starter QA','Marketplace','For Workers','For Agents','Pricing','Trust','Request QA','lp-nav']:
     if token not in nav:
         print('Missing nav token', token); raise SystemExit(1)
 print('Public shell assets OK')
