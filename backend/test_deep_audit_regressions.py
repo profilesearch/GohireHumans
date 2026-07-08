@@ -985,7 +985,7 @@ class BackendRegressionTests(unittest.TestCase):
             "homepage_describe_task_primary_click",
             "Describe your task",
             "Guided first-task wizard",
-            "What happens after I post?",
+            "Trust before payment",
             "first_task_wizard_started",
             "first_task_template_selected",
             "first_task_wizard_review_draft_click",
@@ -1448,13 +1448,28 @@ class BackendRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, text)
 
+
+    def test_public_homepage_visual_cleanup_invariants(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        for snippet in [
+            "Human verification</span>",
+            "Choose the fastest proof-backed check.",
+            "Trust before payment",
+            "For workers and agents",
+            "homepage_describe_task_primary_click",
+            "homepage_high_intent_route_click",
+        ]:
+            self.assertIn(snippet, text)
+        self.assertNotIn("GA4 shows visitors", text)
+        self.assertNotIn("High-intent visitors", text)
+
     def test_market_discovery_pages_capture_open_ended_demand(self):
         required = {
             "frontend/index.html": [
                 "lp-market-discovery",
                 "homepage_request_any_task_click",
                 "homepage_task_ideas_click",
-                "What do you need a human to do?",
+                "Describe any task you need a human to check.",
             ],
             "frontend/ideas.html": [
                 "What should people hire humans for?",
@@ -1525,7 +1540,7 @@ class BackendRegressionTests(unittest.TestCase):
                 "Real-World Check",
             ],
             "frontend/pricing.html": [
-                "If the question is “is this worth paying for?”, start with proof.",
+                "Start with proof, then scale.",
                 "pricing_proof_first_cta_click",
                 "lead_research",
             ],
@@ -1559,12 +1574,12 @@ class BackendRegressionTests(unittest.TestCase):
     def test_growth_activation_pages_and_homepage_proof_are_discoverable(self):
         required = {
             "frontend/index.html": [
-                "lp-marketplace-proof",
-                "homepage_live_proof_click",
-                "homepage_first_task_page_click",
-                "job_apply_form_opened",
-                "job_application_started",
-                "job_application_submitted",
+                "lp-first-orders-proof",
+                "homepage_starter_offers_click",
+                "homepage_sample_deliverables_click",
+                "homepage_high_intent_route_click",
+                "Trust before payment",
+                "For workers and agents",
             ],
             "frontend/post-a-small-task.html": [
                 "Humans who verify what your AI produces",
@@ -1745,10 +1760,10 @@ class FrontendStaticRegressionTests(unittest.TestCase):
 
     def test_static_top_tabs_use_landing_nav_chrome(self):
         static_tabs = {
-            "frontend/ai-integration.html": '<a class="lp-nav-link lp-nav-link-active" href="/ai-integration.html">Agent Guide</a>',
-            "frontend/use-cases/index.html": '<a class="lp-nav-link lp-nav-link-active" href="/use-cases/">Use Cases</a>',
-            "frontend/about.html": '<a class="lp-nav-link lp-nav-link-active" href="/about.html">About</a>',
-            "frontend/faq.html": '<a class="lp-nav-link lp-nav-link-active" href="/faq.html">FAQ</a>',
+            "frontend/ai-integration.html": None,
+            "frontend/use-cases/index.html": None,
+            "frontend/about.html": None,
+            "frontend/faq.html": None,
         }
         failures = self._assert_shared_landing_nav(static_tabs)
         self.assertEqual(failures, [])
@@ -1767,7 +1782,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
 
     def test_use_case_detail_pages_keep_use_cases_nav_active(self):
         use_case_pages = {
-            str(path.relative_to(REPO_ROOT)): '<a class="lp-nav-link lp-nav-link-active" href="/use-cases/">Use Cases</a>'
+            str(path.relative_to(REPO_ROOT)): None
             for path in (REPO_ROOT / "frontend/use-cases").glob("*.html")
             if path.name != "index.html"
         }
@@ -1791,13 +1806,13 @@ class FrontendStaticRegressionTests(unittest.TestCase):
     def test_sitemapped_html_pages_use_single_canonical_public_nav(self):
         expected_labels = [
             "GoHireHumans",
-            "Starter QA Offers",
+            "Starter QA",
             "Marketplace",
-            "Open Jobs for Workers",
+            "For Workers",
             "For Agents",
-            "Agent Guide",
-            "Use Cases",
-            "About",
+            "Pricing",
+            "Trust",
+            "Sign in",
         ]
         failures = []
         for rel in self._sitemapped_html_pages():
@@ -1851,8 +1866,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             'function renderAppNotFound(path = \'\')',
             'return renderAppNotFound(path);',
             'We could not find <code>${safePath}</code>',
-            'href="/starter-offers.html">Starter QA Offers</a>',
-            'Open Jobs for Workers</button>',
+            'href="/starter-offers.html">Starter QA</a>',
+            'For Workers</button>',
             'color:var(--color-text-muted);margin-top:8px',
         ]
         required_css = [
@@ -1887,7 +1902,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         self.assertIn("@playwright/test", pkg.get("devDependencies", {}))
         self.assertIn("@axe-core/playwright", pkg.get("devDependencies", {}))
         spec = (REPO_ROOT / "frontend/tests/browser-regression.spec.js").read_text(encoding="utf-8")
-        for snippet in ["AxeBuilder", "no-such-route-ui-audit", "services-result-count", "Open Jobs for Workers"]:
+        for snippet in ["AxeBuilder", "no-such-route-ui-audit", "services-result-count", "Browse Jobs"]:
             self.assertIn(snippet, spec)
 
     def test_phase5_proof_pack_conversion_layer_exists(self):
@@ -1938,7 +1953,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         missing = [rel for rel in required_files if not (REPO_ROOT / rel).exists()]
         self.assertEqual(missing, [])
         nav = (REPO_ROOT / "frontend/partials/public-nav.html").read_text(encoding="utf-8", errors="ignore")
-        for token in ["Starter QA Offers", "Open Jobs for Workers", "Request QA", "lp-nav"]:
+        for token in ["Starter QA", "For Workers", "Pricing", "Trust", "Request QA", "lp-nav"]:
             self.assertIn(token, nav)
 
     def test_phase8_performance_budget_guardrails_exist(self):
@@ -1996,10 +2011,12 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
-            '<a class="lp-nav-link" href="/starter-offers.html">Starter QA Offers</a>',
+            '<a class="lp-nav-link" href="/starter-offers.html">Starter QA</a>',
             '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
-            '<a class="lp-nav-link" href="/#/jobs">Open Jobs for Workers</a>',
+            '<a class="lp-nav-link" href="/#/jobs">For Workers</a>',
             '<a class="lp-nav-link" href="/#/ai-employers">For Agents</a>',
+            '<a class="lp-nav-link" href="/pricing.html">Pricing</a>',
+            '<a class="lp-nav-link" href="/trust-safety.html">Trust</a>',
             '<a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>',
             'function toggleMobileMenu()',
         ]
@@ -2306,23 +2323,21 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "generate_lead",
             "function searchHeroServices()",
             "hero_search_submit",
-            "post_task_cta_click",
             "browse_humans_cta_click",
-            "agent_integration_cta_click",
             "earn_tasks_page_click",
-            "seo_template_link_click",
-            "service_order_intent",
-            "job_apply_intent",
-            "explainer_video_play",
+            "homepage_high_intent_route_click",
+            "homepage_starter_offers_click",
+            "homepage_sample_deliverables_click",
+            "homepage_proof_packs_click",
+            "first_order_trust_describe_task_click",
+            "first_order_trust_safety_click",
             "concierge_task_draft_click",
             "guided_task_intake_start",
             "guided_task_draft_created",
-            "worker_route_select",
             "post_service_intent",
             "browse_relevant_jobs_intent",
-            "Start with a founder-managed QA sprint.",
-            "homepage_starter_offers_click",
-            "founding_qa_sprint",
+            "Start with a proof-backed QA sprint.",
+            "proof_first_router",
         ]
         for snippet in required_snippets:
             self.assertIn(snippet, text)
@@ -2409,20 +2424,17 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "query.get('draft_description')",
             "sessionStorage.setItem('ghh_guided_task_draft'",
             "consumeStoredGuidedTaskDraft()",
-            "Earning surface",
-            "A place agents should check for ways to make money.",
-            "Website testing",
-            "Lead research",
-            "AI-output review",
-            "Calls",
-            "Local verification",
-            "Data cleanup",
-            "selectWorkerRoute('website_testing'",
+            "For workers and agents",
+            "Find work or offer a service after the buyer path is clear.",
+            "How to earn from human tasks",
+            "Post a service",
+            "Browse jobs",
             "postServiceIntent()",
+            "browse_relevant_jobs_intent",
         ]:
             self.assertIn(snippet, text)
 
-        guided_block = text[text.index("Guided first-task wizard"):text.index("Earning surface")]
+        guided_block = text[text.index("Guided first-task wizard"):text.index("For workers and agents")]
         self.assertNotIn("fetch(", guided_block)
         self.assertNotIn("api(", guided_block)
         self.assertNotIn("mailto:", guided_block)
@@ -2433,9 +2445,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         self.assertNotRegex(text, r"(?i)\bpublic beta listings\b")
         for snippet in [
             "Human verification layer for AI work",
-            "review before publishing or spending",
-            "where they have authorization to transact",
-            "payment processing where configured",
+            "Start with a fixed-scope QA sprint",
+            "A marketplace agents can inspect and recommend.",
+            "Stripe processing where configured",
             "Stripe payment processing is available where checkout is configured.",
         ]:
             self.assertIn(snippet, text)
@@ -2443,21 +2455,18 @@ class FrontendStaticRegressionTests(unittest.TestCase):
     def test_homepage_has_agent_native_task_drafts_without_automatic_outreach(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
-            "Agent-ready job posts",
-            "Turn messy prompts into scoped work.",
-            "Structured task drafts",
-            "startTaskDraft('website_test')",
-            "startTaskDraft('lead_research')",
-            "startTaskDraft('ai_review')",
+            "Guided first-task wizard",
+            "Describe your task. Review the draft before anything posts.",
+            "startTaskDraft(templateKey, source = 'homepage_concierge')",
             "concierge_task_draft_click",
             "const templateDraft = getTaskDraftTemplate(query.get('template')) || {};",
-            "Nothing is submitted until you approve it.",
-            "Draft only. You review and publish manually when ready.",
+            "does not submit a job, contact workers, charge a card, or promise a match",
+            "Draft before publishing or payment",
             "Workers receive the listed payout",
             "Employer pays Stripe processing + 1%",
         ]:
             self.assertIn(snippet, text)
-        task_draft_block = text[text.index("Agent-ready job posts"):text.index("Guided first-task wizard")]
+        task_draft_block = text[text.index("Guided first-task wizard"):text.index("Trust before payment")]
         self.assertNotIn("mailto:", task_draft_block)
         self.assertNotIn("fetch(", task_draft_block)
         self.assertNotIn("api(", task_draft_block)
@@ -2595,7 +2604,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         ]:
             self.assertIn(href, home)
         self.assertIn("Human Task Templates on GoHireHumans", home)
-        self.assertIn("seo_template_link_click", home)
+        self.assertIn("homepage_high_intent_route_click", home)
 
     def test_hire_index_uses_safe_connector_copy(self):
         hire_index = (REPO_ROOT / "frontend/hire/index.html").read_text(encoding="utf-8")

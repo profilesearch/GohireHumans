@@ -1,15 +1,15 @@
 const { test, expect } = require('@playwright/test');
 const { AxeBuilder } = require('@axe-core/playwright');
 const routes = [
-  { path: '/', mustContain: 'AI does the work. Humans make it trustworthy.' },
+  { path: '/', mustContain: 'Human verification for AI work.' },
   { path: '/starter-offers.html', mustContain: 'Human verification for AI work before you trust it.' },
-  { path: '/pricing.html', mustContain: 'Starter QA Packages' },
+  { path: '/pricing.html', mustContain: 'Start with proof, then scale.' },
   { path: '/proof-packs.html', mustContain: 'Proof packs for human verification work' },
   { path: '/ai-assistant-human-checks.html', mustContain: 'When an AI assistant should ask a human to check the work.' },
   { path: '/#/login', mustContain: 'Welcome back' },
   { path: '/#/register', mustContain: 'Join GoHireHumans' },
   { path: '/#/services', mustContain: 'Browse Services' },
-  { path: '/#/jobs', mustContain: 'Open Jobs for Workers' }
+  { path: '/#/jobs', mustContain: 'Browse Jobs' }
 ];
 async function setupDeterministicLocalPage(page) {
   await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
@@ -57,13 +57,13 @@ test.describe('GoHireHumans public/browser regression suite', () => {
   test('homepage and pricing route high-intent visitors to proof-backed QA paths', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('Pick the fastest path to a proof-backed human check.');
-    await expect(page.locator('a[href="/ai-assistant-human-checks.html"]').first()).toBeVisible();
+    await expect(page.locator('body')).toContainText('Choose the fastest proof-backed check.');
+    await expect(page.locator('body')).toContainText('Start a QA sprint');
     await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('Not ready to post? Start with a sample-backed QA path.');
+    await expect(page.locator('body')).toContainText('Start with proof, then scale.');
     await expect(page.locator('a[href="/use-cases/hire-human-to-review-ai-output.html"]').first()).toBeVisible();
     await expect(page.locator('a[href="/use-cases/lead-research-microtask.html"]').first()).toBeVisible();
-    await expect(page.locator('body')).toContainText('If the question is “is this worth paying for?”, start with proof.');
+    await expect(page.locator('body')).toContainText('Choose a proof-first starter task');
     await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('Choose by the risk you need checked');
   });

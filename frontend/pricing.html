@@ -219,11 +219,11 @@
   <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="GoHireHumans"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
-      <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA Offers</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Open Jobs for Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/ai-integration.html">Agent Guide</a><a class="lp-nav-link" href="/use-cases/">Use Cases</a><a class="lp-nav-link" href="/about.html">About</a><a class="lp-nav-link" href="/faq.html">FAQ</a></div>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
       <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
       <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA Offers</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Open Jobs for Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/about.html">About</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none"><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
   </div>
 
   <script>
@@ -241,37 +241,15 @@
       </header>
 
       <section class="section" aria-labelledby="starter-packages-heading">
-        <h2 id="starter-packages-heading">Starter QA Packages</h2>
-        <p>For first orders, start with a fixed-scope human QA sprint before moving into custom marketplace work.</p>
+        <h2 id="starter-packages-heading">Start with proof, then scale.</h2>
+        <p>For first orders, use one fixed-scope human QA sprint before moving into custom marketplace work. Workers receive the listed payout; employers pay Stripe processing plus the 1% GoHireHumans fee where checkout is configured.</p>
         <div class="feature-grid">
-          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claim/source checks, error log, confidence notes.</p></div>
-          <div class="feature-item"><h3>Automation QA Sprint</h3><p><strong>$199</strong> — workflow/app test pass, screenshots, repro steps, severity notes.</p></div>
-          <div class="feature-item"><h3>Clay/GTM QA Sprint</h3><p><strong>$199</strong> — lead/account row checks, source accuracy, personalization-risk flags.</p></div>
-          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — phone/local/manual verification notes with timestamp and caveats.</p></div>
+          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claim/source checks, error log, confidence notes.</p><p><a href="/use-cases/hire-human-to-review-ai-output.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_output_review'});gtag('event','post_task_cta_click',{source:'pricing_ai_output_review_route'});}catch(e){}">View AI review path →</a></p></div>
+          <div class="feature-item"><h3>Website QA Sprint</h3><p><strong>$199</strong> — flow test pass, screenshots, repro steps, severity notes.</p><p><a href="/use-cases/website-qa-task.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'website_qa'});gtag('event','post_task_cta_click',{source:'pricing_website_qa_route'});}catch(e){}">View website QA path →</a></p></div>
+          <div class="feature-item"><h3>Lead List Verification</h3><p><strong>$199</strong> — row checks, source accuracy, duplicate and risk flags.</p><p><a href="/use-cases/lead-research-microtask.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'lead_research'});gtag('event','post_task_cta_click',{source:'pricing_lead_research_route'});}catch(e){}">View lead research path →</a></p></div>
+          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — phone/local/manual verification notes with timestamp and caveats.</p><p><a href="/starter-offers.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'real_world_check'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_packages'});}catch(e){}">View starter offers →</a></p></div>
         </div>
-        <p><a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_starter_offers_click',{source:'pricing_starter_packages'});gtag('event','generate_lead',{lead_type:'pricing_starter_package',source:'pricing_starter_packages'});}catch(e){}">View starter offers</a> <a href="/proof-packs.html" class="btn btn-secondary" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_starter_packages'});}catch(e){}">View proof-pack format</a></p>
-      </section>
-
-      <section class="section" aria-labelledby="pricing-high-intent-heading">
-        <h2 id="pricing-high-intent-heading">Not ready to post? Start with a sample-backed QA path.</h2>
-        <p>Pricing visitors are often comparing risk, not just fees. These paths show exactly what a small human verification task returns before you commit to a broader marketplace workflow.</p>
-        <div class="feature-grid">
-          <div class="feature-item"><h3>AI-output review</h3><p>Check sources, unsupported claims, and trust risks before using AI text or research.</p><p><a href="/use-cases/hire-human-to-review-ai-output.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_output_review'});gtag('event','post_task_cta_click',{source:'pricing_ai_output_review_route'});}catch(e){}">View AI review path →</a></p></div>
-          <div class="feature-item"><h3>Website QA task</h3><p>Run a signup or onboarding flow and get screenshots, repro steps, and top fixes.</p><p><a href="/use-cases/website-qa-task.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'website_qa'});gtag('event','post_task_cta_click',{source:'pricing_website_qa_route'});}catch(e){}">View website QA path →</a></p></div>
-          <div class="feature-item"><h3>Lead list verification</h3><p>Human-check a buyer list, Clay/GTM row set, CRM import, or sourced research batch before outreach.</p><p><a href="/use-cases/lead-research-microtask.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'lead_research'});gtag('event','post_task_cta_click',{source:'pricing_lead_research_route'});}catch(e){}">View lead research path →</a></p></div>
-          <div class="feature-item"><h3>AI assistant handoff</h3><p>Give agents a clear rule for when to route uncertain work to a human checker.</p><p><a href="/ai-assistant-human-checks.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_assistant_checks'});}catch(e){}">View AI assistant path →</a></p></div>
-        </div>
-      </section>
-
-      <section class="section" aria-labelledby="pricing-risk-heading">
-        <h2 id="pricing-risk-heading">If the question is “is this worth paying for?”, start with proof.</h2>
-        <p>A small first task should answer a concrete business question: did the AI hallucinate, did the flow break, is the list safe to use, or is the manual fact actually true?</p>
-        <div class="feature-grid">
-          <div class="feature-item"><h3>1. Pick a bounded check</h3><p>Use one short output, one flow, one spreadsheet sample, or one lead-list sample.</p></div>
-          <div class="feature-item"><h3>2. Require evidence</h3><p>Ask for screenshots, source links, row-level notes, or a severity table — not just “looks good.”</p></div>
-          <div class="feature-item"><h3>3. Scale only after signal</h3><p>If the proof pack is useful, repost the task or hire from the same worker pool.</p></div>
-        </div>
-        <p><a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_risk_section'});gtag('event','generate_lead',{lead_type:'pricing_proof_first',source:'pricing_risk_section'});gtag('event','qualify_lead',{lead_type:'pricing_proof_first',source:'pricing_risk_section'});}catch(e){}">Choose a proof-first starter task</a></p>
+        <p><a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_proof_module'});gtag('event','pricing_starter_offers_click',{source:'pricing_proof_module'});gtag('event','generate_lead',{lead_type:'pricing_proof_first',source:'pricing_proof_module'});gtag('event','qualify_lead',{lead_type:'pricing_proof_first',source:'pricing_proof_module'});}catch(e){}">Choose a proof-first starter task</a> <a href="/proof-packs.html" class="btn btn-secondary" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_proof_module'});}catch(e){}">View proof-pack format</a></p>
       </section>
 
       <!-- Fee Hero -->
@@ -420,8 +398,8 @@
 
       <!-- CTA -->
       <div style="text-align:center; padding: 40px 0 16px;">
-        <p style="color:#6b6963; margin-bottom:16px; font-size:16px;">Ready to start with the low, transparent fee?</p>
-        <a href="https://www.gohirehumans.com/#/register" onclick="try{gtag('event','pricing_register_cta_click',{source:'pricing_bottom'});gtag('event','generate_lead',{lead_type:'pricing_register',source:'pricing_bottom'});}catch(e){}" style="display:inline-block; background:#0d7377; color:#fff; font-size:15px; font-weight:600; padding:12px 28px; border-radius:8px;">Create Your Free Account</a>
+        <p style="color:#6b6963; margin-bottom:16px; font-size:16px;">Ready to start with a proof-first task?</p>
+        <a href="/starter-offers.html" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_bottom'});gtag('event','generate_lead',{lead_type:'pricing_starter_offer',source:'pricing_bottom'});}catch(e){}" style="display:inline-block; background:#0d7377; color:#fff; font-size:15px; font-weight:600; padding:12px 28px; border-radius:8px;">Choose a Starter QA Offer</a>
       </div>
 
     </div>
