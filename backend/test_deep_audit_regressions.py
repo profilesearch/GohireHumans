@@ -1968,8 +1968,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         snippets = [
             '<nav class="lp-nav" aria-label="Main navigation">',
-            "lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}",
-            "lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}",
+            "const activeAttrs = activePage === l.key ? ' lp-nav-link-active\" aria-current=\"page' : '';",
+            "<a class=\"lp-nav-link${activeAttrs}\"",
+            "<a class=\"lp-mobile-link${activeAttrs}\"",
             '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
             '<link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">',
         ]
@@ -2011,19 +2012,25 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
             '<div class="lp-nav-wrap">',
             '<nav class="lp-nav" aria-label="Main navigation">',
-            '<a class="lp-nav-link" href="/starter-offers.html">Starter QA</a>',
-            '<a class="lp-nav-link" href="/#/services">Marketplace</a>',
-            '<a class="lp-nav-link" href="/#/jobs">For Workers</a>',
-            '<a class="lp-nav-link" href="/#/ai-employers">For Agents</a>',
-            '<a class="lp-nav-link" href="/pricing.html">Pricing</a>',
-            '<a class="lp-nav-link" href="/trust-safety.html">Trust</a>',
             '<a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>',
             'function toggleMobileMenu()',
+        ]
+        shared_links = [
+            ("/starter-offers.html", "Starter QA"),
+            ("/#/services", "Marketplace"),
+            ("/#/jobs", "For Workers"),
+            ("/#/ai-employers", "For Agents"),
+            ("/pricing.html", "Pricing"),
+            ("/trust-safety.html", "Trust"),
         ]
         failures = []
         for rel, active_snippet in pages.items():
             text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
             missing = [snippet for snippet in shared_snippets if snippet not in text]
+            for href, label in shared_links:
+                pattern = rf'<a class="lp-nav-link(?: lp-nav-link-active)?"(?: aria-current="page")? href="{re.escape(href)}">{re.escape(label)}</a>'
+                if not re.search(pattern, text):
+                    missing.append(f'public nav link {label} -> {href}')
             if active_snippet and active_snippet not in text:
                 missing.append(active_snippet)
             if '<nav class="nav"' in text:

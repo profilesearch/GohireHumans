@@ -1031,7 +1031,12 @@ function renderPublicNav(activePage = '') {
           ${LOGO} GoHireHumans
         </a>
         <div class="lp-nav-links">
-          ${navLinks.map(l => l.external ? `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-nav-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`).join('')}
+          ${navLinks.map(l => {
+            const activeAttrs = activePage === l.key ? ' lp-nav-link-active" aria-current="page' : '';
+            return l.external
+              ? `<a class="lp-nav-link${activeAttrs}" href="${l.href}">${l.label}</a>`
+              : `<a class="lp-nav-link${activeAttrs}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}')">${l.label}</a>`;
+          }).join('')}
         </div>
         <div class="lp-nav-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
@@ -1042,7 +1047,12 @@ function renderPublicNav(activePage = '') {
         </button>
       </nav>
       <div class="lp-mobile-menu" id="mobileMenu" style="display:none">
-        ${navLinks.map(l => l.external ? `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}">${l.label}</a>` : `<a class="lp-mobile-link${activePage === l.key ? ' lp-nav-link-active' : ''}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`).join('')}
+        ${navLinks.map(l => {
+          const activeAttrs = activePage === l.key ? ' lp-nav-link-active" aria-current="page' : '';
+          return l.external
+            ? `<a class="lp-mobile-link${activeAttrs}" href="${l.href}">${l.label}</a>`
+            : `<a class="lp-mobile-link${activeAttrs}" href="${l.href}" onclick="event.preventDefault();navigate('${l.href}');toggleMobileMenu()">${l.label}</a>`;
+        }).join('')}
         ${resourceLinks.map(l => `<a class="lp-mobile-link" href="${l.href}">${l.label}</a>`).join('')}
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
