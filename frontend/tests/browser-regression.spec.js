@@ -62,6 +62,10 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('Not ready to post? Start with a sample-backed QA path.');
     await expect(page.locator('a[href="/use-cases/hire-human-to-review-ai-output.html"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/use-cases/lead-research-microtask.html"]').first()).toBeVisible();
+    await expect(page.locator('body')).toContainText('If the question is “is this worth paying for?”, start with proof.');
+    await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Choose by the risk you need checked');
   });
 
   test('unknown public path returns true 404 page', async ({ page }) => {
