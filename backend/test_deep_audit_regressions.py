@@ -1807,7 +1807,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
         required_css = [
             ".lp-nav-logo {",
-            "font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);",
+            "font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;",
             "font-weight: 700 !important; font-size: 15px; line-height: 28px;",
             "color: #1a1816 !important; text-decoration: none !important;",
             ".lp-nav-logo svg {",
