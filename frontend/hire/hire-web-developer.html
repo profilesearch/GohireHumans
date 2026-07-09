@@ -2,12 +2,8 @@
 <html lang="en">
 <head>
   <!-- Google Analytics (GA4) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-KM69M3NES8');
+  <script src="/analytics-bootstrap.js"></script>
+<script>gtag('config', 'G-KM69M3NES8');
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -546,8 +542,8 @@
       <h2>Ready to Scope a Web Development Task?</h2>
       <p>Browse service providers, or use the AI QA funnel if an AI tool already drafted code, copy, or a landing page that needs human review.</p>
       <div style="display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;margin-bottom:1rem;">
-        <a href="/ai-human-qa/?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression&utm_content=hire_web_developer" class="cta-btn">Turn AI output into a human QA task &rarr;</a>
-        <a href="/request-managed-ai-qa.html?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression&utm_content=hire_web_developer" class="cta-btn" style="background:#1a1816;">Request managed AI QA &rarr;</a>
+        <a href="/ai-human-qa/" class="cta-btn" onclick="gtag('event','internal_cta_click',{placement:'seo_high_impression',destination:'ai_human_qa',content_id:'hire_web_developer'})">Turn AI output into a human QA task &rarr;</a>
+        <a href="/request-managed-ai-qa.html" class="cta-btn" style="background:#1a1816;" onclick="gtag('event','internal_cta_click',{placement:'seo_high_impression',destination:'managed_ai_qa',content_id:'hire_web_developer'})">Request managed AI QA &rarr;</a>
       </div>
       <p style="font-size:0.8125rem;color:var(--color-text-faint);margin-bottom:1.5rem;">No checkout or job is created automatically from this page. You review the scope before any paid work starts.</p>
       <div class="internal-links">

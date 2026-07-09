@@ -8,14 +8,8 @@
   <meta name="saashub-verification" content="cru7123rmg9z" />
 
   
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    // SPA routes are hash-based, so disable the automatic initial page_view
-    // and send explicit virtual page_view events from the router instead.
-    gtag('config', 'G-KM69M3NES8', { send_page_view: false });
+  <script src="/analytics-bootstrap.js"></script>
+<script>gtag('config', 'G-KM69M3NES8', { send_page_view: false });
   </script>
 
 
@@ -224,7 +218,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="dns-prefetch" href="https://accounts.google.com">
-  <link rel="dns-prefetch" href="https://www.googletagmanager.com">
   <link rel="preload" href="/base.css?v=20260525-css-cachefix" as="style">
   <link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
@@ -1370,7 +1363,7 @@ async function renderLanding() {
             <div class="lp-mini-points"><span>AI Output Verification $99</span><span>Automation QA Sprint $199</span><span>Clay/GTM QA Sprint $199</span><span>Real-World Check $79</span></div>
           </div>
           <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">First completed orders</div>
+            <div class="lp-feed-card-cat">How starter orders work</div>
             <div class="lp-panel-title">Start with a proof-backed QA sprint.</div>
             <div class="lp-action-button-stack">
               <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click',{source:'first_orders'});trackRecommendedEvent('generate_lead',{lead_type:'starter_offers',source:'first_orders'});">View starter offers</a>

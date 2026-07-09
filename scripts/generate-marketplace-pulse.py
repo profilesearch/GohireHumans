@@ -136,8 +136,8 @@ canonical = f"{SITE}/blog/{SLUG}.html"
 html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
-  <script>window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag('js',new Date());gtag('config','G-KM69M3NES8');</script>
+  <script src="/analytics-bootstrap.js"></script>
+<script>gtag('config', 'G-KM69M3NES8');</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{title} | GoHireHumans</title>
