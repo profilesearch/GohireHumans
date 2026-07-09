@@ -489,8 +489,9 @@ function safeExternalHref(value) {
   }
 }
 function formatCategory(cat) { return (cat || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
-function safeParseJSON(str, fallback = []) {
-  try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
+function safeParseJSON(value, fallback = []) {
+  if (Array.isArray(value)) return value;
+  try { return JSON.parse(value || JSON.stringify(fallback)); } catch { return fallback; }
 }
 function stars(rating, total) {
   const hasExplicitCount = total !== undefined && total !== null;
@@ -2914,7 +2915,7 @@ async function renderJobApplicants(id) {
               ${safeExternalHref(a.portfolio_url) ? `<a href="${esc(safeExternalHref(a.portfolio_url))}" target="_blank" rel="noopener" style="font-size:var(--text-xs);color:var(--color-primary)">View Portfolio →</a>` : ''}
             </div>
             <div style="flex-shrink:0">
-              ${a.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="handleHire(${id},${a.id},${a.worker_id})">Hire</button>` : ''}
+              ${a.status === 'pending' ? `<button class="btn btn-secondary btn-sm" disabled title="Payment safeguards are being finalized">Hiring temporarily paused</button>` : ''}
             </div>
           </div>
         </div>`).join('') : `
@@ -2929,7 +2930,7 @@ async function renderJobApplicants(id) {
   }
 }
 
-async function handleHire(jobId, applicationId, workerId) {
+async function handleHire(jobId, applicationId, budgetType, budgetAmount) {
   // Check payment status first
   try {
     const status = await api('/payments/status');
@@ -2939,6 +2940,11 @@ async function handleHire(jobId, applicationId, workerId) {
     }
   } catch(err) {
     toast('Could not check payment status: ' + err.message, 'error');
+    return;
+  }
+
+  if (budgetType === 'hourly') {
+    showHourlyHireModal(jobId, applicationId, budgetAmount);
     return;
   }
 
@@ -2957,7 +2963,7 @@ async function handleHire(jobId, applicationId, workerId) {
       </div>
       <div class="form-group">
         <label class="label">Milestone Amount ($)</label>
-        <input class="input" type="number" id="milestone-amount" placeholder="500.00" min="1" step="0.01" oninput="updateHireFeeBreakdown()">
+        <input class="input" type="number" id="milestone-amount" value="${Number(budgetAmount||0).toFixed(2)}" readonly>
       </div>
       <div id="hire-fee-breakdown" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-3);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border);display:none">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Service amount</span><span id="hire-base">$0.00</span></div>
@@ -2975,6 +2981,60 @@ async function handleHire(jobId, applicationId, workerId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  updateHireFeeBreakdown();
+}
+
+function hireFeeBreakdown(amount) {
+  const baseCents = Math.round(Number(amount || 0) * 100);
+  const platformFeeCents = Math.max(1, Math.round(baseCents * 0.01));
+  const processingFeeCents = Math.max(1, Math.round(baseCents * 0.03));
+  return {
+    base: baseCents / 100,
+    platformFee: platformFeeCents / 100,
+    processingFee: processingFeeCents / 100,
+    total: (baseCents + platformFeeCents + processingFeeCents) / 100,
+  };
+}
+
+function showHourlyHireModal(jobId, applicationId, hourlyRate) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Confirm Hourly Hire</div>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-5)">
+        The posted rate is <strong>$${Number(hourlyRate||0).toFixed(2)}/hour</strong>. Choose the maximum hours for the first funded week before confirming.
+      </p>
+      <div class="form-group">
+        <label class="label">Weekly Hour Cap</label>
+        <input class="input" type="number" id="weekly-hour-cap" min="1" max="168" step="1" value="40" oninput="updateHourlyHireFeeBreakdown(${Number(hourlyRate||0)})">
+      </div>
+      <div id="hire-fee-breakdown" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-3);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>First-week maximum</span><span id="hire-base">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>GoHireHumans fee (1%)</span><span id="hire-platform-fee">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Processing fee (~3%)</span><span id="hire-processing-fee">$0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--color-border);padding-top:4px;margin-top:4px;color:var(--color-text)"><span>Total charged now</span><span id="hire-total">$0.00</span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmHourlyHire(${jobId},${applicationId})">Confirm &amp; Fund First Week</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  updateHourlyHireFeeBreakdown(Number(hourlyRate || 0));
+}
+
+function renderHireFeeBreakdown(amount) {
+  const values = hireFeeBreakdown(amount);
+  document.getElementById('hire-base').textContent = `$${values.base.toFixed(2)}`;
+  document.getElementById('hire-platform-fee').textContent = `$${values.platformFee.toFixed(2)}`;
+  document.getElementById('hire-processing-fee').textContent = `$${values.processingFee.toFixed(2)}`;
+  document.getElementById('hire-total').textContent = `$${values.total.toFixed(2)}`;
+}
+
+function updateHourlyHireFeeBreakdown(hourlyRate) {
+  const weeklyCap = Number(document.getElementById('weekly-hour-cap')?.value || 0);
+  renderHireFeeBreakdown(Number(hourlyRate || 0) * weeklyCap);
 }
 
 function updateHireFeeBreakdown() {
@@ -2983,15 +3043,31 @@ function updateHireFeeBreakdown() {
   if (!box) return;
   if (amount > 0) {
     box.style.display = 'block';
-    const platformFee = Math.round(amount * 0.01 * 100) / 100;
-    const processingFee = Math.round(amount * 0.03 * 100) / 100;
-    const total = Math.round((amount + platformFee + processingFee) * 100) / 100;
-    document.getElementById('hire-base').textContent = `$${amount.toFixed(2)}`;
-    document.getElementById('hire-platform-fee').textContent = `$${platformFee.toFixed(2)}`;
-    document.getElementById('hire-processing-fee').textContent = `$${processingFee.toFixed(2)}`;
-    document.getElementById('hire-total').textContent = `$${total.toFixed(2)}`;
+    renderHireFeeBreakdown(amount);
   } else {
     box.style.display = 'none';
+  }
+}
+
+async function confirmHourlyHire(jobId, applicationId) {
+  const weeklyCap = Number(document.getElementById('weekly-hour-cap')?.value || 0);
+  if (!Number.isFinite(weeklyCap) || weeklyCap <= 0 || weeklyCap > 168) {
+    toast('Weekly hour cap must be between 1 and 168 hours.', 'error');
+    return;
+  }
+  const overlay = document.querySelector('.modal-overlay');
+  try {
+    trackEvent('hire_attempted', { job_id: String(jobId), application_id: String(applicationId), contract_type: 'hourly' });
+    await api(`/jobs/${jobId}/hire`, {
+      method: 'POST',
+      body: { application_id: applicationId, weekly_hour_cap: weeklyCap }
+    });
+    overlay?.remove();
+    trackEvent('hire_completed', { job_id: String(jobId), application_id: String(applicationId), contract_type: 'hourly' });
+    toast('Worker hired! First week funded.', 'success');
+    navigate('#/orders');
+  } catch(err) {
+    toast(err.message, 'error');
   }
 }
 
@@ -3000,13 +3076,13 @@ async function confirmHire(jobId, applicationId) {
   const amount = parseFloat(document.getElementById('milestone-amount')?.value || '0');
   const overlay = document.querySelector('.modal-overlay');
   try {
-    trackEvent('hire_attempted', { job_id: String(jobId), applicant_id: String(applicantId) });
+    trackEvent('hire_attempted', { job_id: String(jobId), application_id: String(applicationId) });
     await api(`/jobs/${jobId}/hire`, {
       method: 'POST',
       body: { application_id: applicationId, milestones: [{ description: desc, amount }] }
     });
     overlay?.remove();
-    trackEvent('hire_completed', { job_id: String(jobId), applicant_id: String(applicationId) });
+    trackEvent('hire_completed', { job_id: String(jobId), application_id: String(applicationId) });
     toast('Worker hired! Payment funded.', 'success');
     navigate(`#/orders`);
   } catch(err) {
@@ -3063,13 +3139,16 @@ async function renderOrderDetail(id) {
     const milestones = safeParseJSON(order.milestones, []);
     const isWorker = String(order.worker_id) === String(state.user?.id);
     const isEmployer = String(order.employer_id) === String(state.user?.id);
-    const isHourly = order.contract_type === 'hourly' || order.budget_type === 'hourly';
+    const isHourly = Boolean(order.hourly_contract) || order.contract_type === 'hourly' || order.budget_type === 'hourly';
+    const displayAmount = isHourly
+      ? Number(order.hourly_contract?.current_week_escrow_amount || 0)
+      : Number(order.total_amount || order.amount || 0);
 
     let actions = '';
-    if (isWorker && order.status === 'in_progress') {
+    if (isWorker && !isHourly && ['in_progress','revision_requested'].includes(order.status)) {
       actions += `<button class="btn btn-primary" onclick="submitOrder(${id})">Submit Deliverables</button>`;
     }
-    if (isEmployer && order.status === 'submitted') {
+    if (isEmployer && !isHourly && order.status === 'submitted') {
       actions += `<button class="btn btn-primary" onclick="approveOrder(${id})">Approve Payment</button>
                   <button class="btn btn-secondary btn-sm" onclick="requestRevision(${id})">Request Revision</button>
                   <button class="btn btn-danger btn-sm" onclick="disputeOrder(${id})">Dispute</button>`;
@@ -3080,11 +3159,7 @@ async function renderOrderDetail(id) {
     if (order.status === 'completed' && !order.my_review) {
       actions += `<button class="btn btn-secondary btn-sm" onclick="leaveReview(${id})">Leave Review</button>`;
     }
-    if (isWorker && isHourly && order.status === 'in_progress') {
-      actions += `<button class="btn btn-secondary btn-sm" onclick="logHours(${id})">Log Hours</button>`;
-    }
-
-    const hourLogs = safeParseJSON(order.hour_logs, []);
+    const hourLogs = safeParseJSON(order.time_entries || order.hour_logs, []);
 
     appShell(`
       <button class="detail-back" onclick="navigate('#/orders')">${I.back} Orders</button>
@@ -3093,7 +3168,7 @@ async function renderOrderDetail(id) {
           <h1 class="detail-title">${esc(order.title || order.service_title || order.job_title || `Order #${id}`)}</h1>
           <div class="detail-meta">
             ${statusBadge(order.status)}
-            <span>${I.dollar} $${Number(order.total_amount||order.amount||0).toFixed(2)}</span>
+            <span>${I.dollar} $${displayAmount.toFixed(2)}</span>
             <span>Order #${id}</span>
           </div>
         </div>
@@ -3118,10 +3193,16 @@ async function renderOrderDetail(id) {
               </div>
             </div>` : ''}
 
-          ${order.deliverable_text || order.submission_note ? `
+          ${order.worker_notes ? `
             <div class="card" style="margin-bottom:var(--space-4)">
               <div class="card-header"><div class="card-title">Worker's Submission</div></div>
-              <div style="font-size:var(--text-sm);white-space:pre-wrap;line-height:1.75">${esc(order.deliverable_text||order.submission_note||'')}</div>
+              <div style="font-size:var(--text-sm);white-space:pre-wrap;line-height:1.75">${esc(order.worker_notes||'')}</div>
+            </div>` : ''}
+
+          ${order.employer_notes ? `
+            <div class="card" style="margin-bottom:var(--space-4)">
+              <div class="card-header"><div class="card-title">Revision Request</div></div>
+              <div style="font-size:var(--text-sm);white-space:pre-wrap;line-height:1.75">${esc(order.employer_notes||'')}</div>
             </div>` : ''}
 
           ${isHourly && hourLogs.length ? `
@@ -3134,6 +3215,12 @@ async function renderOrderDetail(id) {
                 </tbody>
               </table>
             </div>` : ''}
+
+          ${isHourly ? `
+            <div class="card" style="margin-bottom:var(--space-4);border-color:var(--color-warning,#c58a1b)">
+              <div class="card-title">Hourly contract actions paused</div>
+              <p style="font-size:var(--text-sm);color:var(--color-text-muted);line-height:1.6;margin-top:var(--space-2)">Automated time approval, weekly renewal, and settlement actions are temporarily unavailable while payment and refund safeguards are finalized. Contact support for a reviewed resolution.</p>
+            </div>` : ''}
         </div>
 
         <div class="detail-sidebar">
@@ -3142,8 +3229,8 @@ async function renderOrderDetail(id) {
             <div style="font-size:var(--text-xs);display:flex;flex-direction:column;gap:var(--space-2)">
               <div><span style="color:var(--color-text-faint)">Order ID:</span> #${id}</div>
               <div><span style="color:var(--color-text-faint)">Type:</span> ${isHourly ? 'Hourly' : 'Fixed Price'}</div>
-              <div><span style="color:var(--color-text-faint)">Total:</span> $${Number(order.total_amount||order.amount||0).toFixed(2)}</div>
-              ${isEmployer ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
+              <div><span style="color:var(--color-text-faint)">${isHourly ? 'Current week funded' : 'Total'}:</span> $${displayAmount.toFixed(2)}</div>
+              ${isEmployer && !isHourly ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
                 <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">GoHireHumans fee (1%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.01).toFixed(2)}</span></div>
                 <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Processing (~3%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.03).toFixed(2)}</span></div>
                 <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px"><span>You paid</span><span>$${(Number(order.total_amount||order.amount||0)*1.04).toFixed(2)}</span></div>
@@ -3184,7 +3271,7 @@ async function submitOrder(id) {
     const fd = new FormData(e.target);
     try {
       trackEvent('order_submit_attempted', { order_id: String(id) });
-      await api(`/orders/${id}/submit`, { method: 'POST', body: { note: fd.get('note') } });
+      await api(`/orders/${id}/submit`, { method: 'POST', body: { notes: fd.get('note') } });
       trackEvent('order_submit_completed', { order_id: String(id) });
       overlay.remove();
       toast('Deliverables submitted!', 'success');
@@ -3227,7 +3314,7 @@ async function requestRevision(id) {
     e.preventDefault();
     const message = new FormData(e.target).get('message');
     try {
-      await api(`/orders/${id}/request-revision`, { method: 'POST', body: { message } });
+      await api(`/orders/${id}/request-revision`, { method: 'POST', body: { notes: message } });
       overlay.remove();
       toast('Revision requested.', 'info');
       renderOrderDetail(id);

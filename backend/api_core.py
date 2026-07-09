@@ -23,6 +23,7 @@ import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal, InvalidOperation
 
 # Thread-local storage for per-request context (avoids os.environ race conditions)
 _request_ctx = threading.local()
@@ -40,6 +41,7 @@ except ImportError:
 
 SERVICE_FEE_RATE = 0.01  # 1% platform fee charged to employer on top of amount
 PROCESSING_FEE_RATE = 0.03  # ~3% payment processing fee passed to buyer (covers Stripe costs)
+MAX_ORDER_NOTES_LENGTH = 5000
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "GoHireHumans <hello@gohirehumans.com>")
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://www.gohirehumans.com").rstrip("/")
@@ -96,6 +98,9 @@ DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
 BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
 ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+# Keep new job hires paused until funding idempotency and post-charge
+# reconciliation ship in the dedicated payment-hardening change.
+JOB_HIRING_ENABLED = os.environ.get("JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 
 
 
@@ -473,6 +478,8 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_applications_worker ON applications(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_worker ON orders(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_employer ON orders(employer_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_job_hire
+        ON orders(job_id) WHERE type='job_hire' AND job_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_milestones_order ON milestones(order_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_contract ON time_entries(contract_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_order ON reviews(order_id);
@@ -1052,6 +1059,31 @@ def row_to_dict(row):
     if row is None:
         return None
     return dict(row)
+
+
+def money_to_cents(value, field_name="amount"):
+    """Convert a JSON/SQLite money value to exact cents or reject it."""
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid amount in whole cents")
+    if not decimal_value.is_finite():
+        raise ValueError(f"{field_name} must be a valid amount in whole cents")
+    cents = decimal_value * 100
+    if cents != cents.to_integral_value():
+        raise ValueError(f"{field_name} must be specified in whole cents")
+    return int(cents)
+
+
+def validated_order_notes(value, field_name="notes"):
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    notes = value.strip()
+    if not notes:
+        raise ValueError(f"{field_name} must not be empty")
+    if len(notes) > MAX_ORDER_NOTES_LENGTH:
+        raise ValueError(f"{field_name} must be {MAX_ORDER_NOTES_LENGTH} characters or less")
+    return notes
 
 
 def authenticate_session(db):
@@ -2437,9 +2469,13 @@ def _handle_routes(db):
         if body['budget_type'] not in ('fixed', 'hourly'):
             return error_response("budget_type must be fixed or hourly")
 
-        budget = float(body['budget_amount'])
-        if budget <= 0 or budget > 1000000:
+        try:
+            budget_cents = money_to_cents(body['budget_amount'], "budget_amount")
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if budget_cents <= 0 or budget_cents > 100000000:
             return error_response("budget_amount must be positive and <= 1,000,000")
+        budget = budget_cents / 100
 
         job_text_parts = [
             body.get('title', ''),
@@ -2548,8 +2584,14 @@ def _handle_routes(db):
                 updates.append(f"{field} = ?")
                 vals.append(body[field])
         if 'budget_amount' in body:
+            try:
+                budget_cents = money_to_cents(body['budget_amount'], "budget_amount")
+            except ValueError as e:
+                return error_response(str(e), 400)
+            if budget_cents <= 0 or budget_cents > 100000000:
+                return error_response("budget_amount must be positive and <= 1,000,000")
             updates.append("budget_amount = ?")
-            vals.append(float(body['budget_amount']))
+            vals.append(budget_cents / 100)
         if 'required_skills' in body:
             updates.append("required_skills = ?")
             vals.append(json.dumps(body['required_skills']) if isinstance(body['required_skills'], list) else body['required_skills'])
@@ -2685,34 +2727,50 @@ def _handle_routes(db):
             return error_response("Forbidden", 403)
         if job['status'] not in ('open', 'reviewing'):
             return error_response("Job must be open or reviewing to hire", 409)
+        if not JOB_HIRING_ENABLED:
+            return error_response("New job hiring is temporarily paused while payment safeguards are finalized", 503)
 
         body = get_body()
-        applicant_id = body.get("applicant_id") or body.get("worker_id")
-        if not applicant_id:
-            return error_response("applicant_id required")
+        application_id = body.get("application_id")
+        if application_id is None:
+            return error_response("application_id required")
+        try:
+            application_id = int(application_id)
+        except (TypeError, ValueError):
+            return error_response("application_id must be an integer")
 
         # Verify application exists
         app = db.execute(
-            "SELECT * FROM applications WHERE job_id = ? AND worker_id = ?",
-            [job_id, int(applicant_id)]
+            "SELECT id, worker_id, status FROM applications WHERE id = ? AND job_id = ? AND status IN ('pending','shortlisted')",
+            [application_id, job_id]
         ).fetchone()
         if not app:
-            return error_response("Application not found for this worker", 404)
+            return error_response("Eligible application not found for this job", 404)
 
         # Check employer has payment setup
         ensure_employer_profile(db, user['id'])
         if not employer_has_payment_setup(db, user['id']):
             return error_response("You must set up a payment method before hiring. Use /payments/setup-employer.", 402)
 
-        worker_id = int(applicant_id)
-        total_amount = float(job['budget_amount'])
+        worker_id = int(app['worker_id'])
+        try:
+            total_cents = money_to_cents(job['budget_amount'], "job budget")
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if total_cents <= 0:
+            return error_response("job budget must be greater than zero", 400)
+        total_amount = total_cents / 100
 
         # Create order
-        cursor = db.execute(
-            """INSERT INTO orders (type, job_id, worker_id, employer_id, status, total_amount)
-               VALUES ('job_hire', ?, ?, ?, 'in_progress', ?)""",
-            [job_id, worker_id, user['id'], total_amount]
-        )
+        try:
+            cursor = db.execute(
+                """INSERT INTO orders (type, job_id, worker_id, employer_id, status, total_amount)
+                   VALUES ('job_hire', ?, ?, ?, 'in_progress', ?)""",
+                [job_id, worker_id, user['id'], total_amount]
+            )
+        except sqlite3.IntegrityError:
+            db.rollback()
+            return error_response("This job already has a hire order", 409)
         order_id = cursor.lastrowid
 
         if job['budget_type'] == 'fixed':
@@ -2723,22 +2781,33 @@ def _handle_routes(db):
                 milestones_input = [{"title": "Project completion", "description": "Full project deliverable", "amount": total_amount}]
 
             # Validate milestone amounts sum to total
-            ms_total = sum(float(m.get("amount", 0)) for m in milestones_input)
-            if abs(ms_total - total_amount) > 0.01:
+            try:
+                milestone_cents = [
+                    money_to_cents(m.get("amount"), f"milestone {index} amount")
+                    for index, m in enumerate(milestones_input, 1)
+                ]
+            except (AttributeError, ValueError) as e:
                 db.rollback()
-                return error_response(f"Milestone amounts ({ms_total}) must sum to job budget ({total_amount})", 400)
+                return error_response(str(e), 400)
+            if any(amount <= 0 for amount in milestone_cents):
+                db.rollback()
+                return error_response("Milestone amounts must be greater than zero", 400)
+            ms_total_cents = sum(milestone_cents)
+            if ms_total_cents != total_cents:
+                db.rollback()
+                return error_response("Milestone amounts must exactly equal the job budget in whole cents", 400)
 
             milestone_ids = []
             for seq, m in enumerate(milestones_input, 1):
                 mc = db.execute(
                     "INSERT INTO milestones (order_id, title, description, amount, sequence, status) VALUES (?,?,?,?,?,'pending')",
-                    [order_id, m.get("title", f"Milestone {seq}"), m.get("description", ""), float(m['amount']), seq]
+                    [order_id, m.get("title", f"Milestone {seq}"), m.get("description", ""), milestone_cents[seq - 1] / 100, seq]
                 )
                 milestone_ids.append(mc.lastrowid)
 
             # Fund first milestone escrow immediately
             first_ms_id = milestone_ids[0]
-            first_ms_amount = float(milestones_input[0]['amount'])
+            first_ms_amount = milestone_cents[0] / 100
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, user['id'], first_ms_amount, order_id, first_ms_id,
@@ -2755,9 +2824,20 @@ def _handle_routes(db):
             )
 
         elif job['budget_type'] == 'hourly':
-            # Hourly: create hourly contract, fund 1 week's max escrow
-            hourly_rate = float(body.get("hourly_rate") or job['budget_amount'])
-            weekly_cap = float(body.get("weekly_hour_cap", 40))
+            # Hourly: use the posted rate and fund the employer-selected first-week cap.
+            # The client must not be able to rewrite the worker's posted rate at hire time.
+            hourly_rate = float(job['budget_amount'] or 0)
+            try:
+                weekly_cap = float(body.get("weekly_hour_cap", 40))
+            except (TypeError, ValueError):
+                db.rollback()
+                return error_response("Weekly hour cap must be a number between 1 and 168", 400)
+            if not math.isfinite(hourly_rate) or hourly_rate <= 0:
+                db.rollback()
+                return error_response("Hourly job rate must be greater than zero", 400)
+            if not math.isfinite(weekly_cap) or weekly_cap < 1 or weekly_cap > 168:
+                db.rollback()
+                return error_response("Weekly hour cap must be between 1 and 168", 400)
             week_escrow = round(hourly_rate * weekly_cap, 2)
 
             week_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -2788,8 +2868,8 @@ def _handle_routes(db):
         db.execute("UPDATE jobs SET status='hired', updated_at=datetime('now') WHERE id = ?", [job_id])
         # Accept this application, reject others
         db.execute(
-            "UPDATE applications SET status='accepted' WHERE job_id=? AND worker_id=?",
-            [job_id, worker_id]
+            "UPDATE applications SET status='accepted' WHERE id=?",
+            [application_id]
         )
         db.execute(
             "UPDATE applications SET status='rejected' WHERE job_id=? AND worker_id!=?",
@@ -3013,7 +3093,10 @@ def _handle_routes(db):
             return error_response("Order must be in_progress or revision_requested to submit", 409)
 
         body = get_body()
-        notes = body.get("notes", "")
+        try:
+            notes = validated_order_notes(body.get("notes"))
+        except ValueError as e:
+            return error_response(str(e), 400)
 
         db.execute(
             "UPDATE orders SET status='submitted', worker_notes=?, updated_at=datetime('now') WHERE id=?",
@@ -3112,6 +3195,11 @@ def _handle_routes(db):
                 "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
                 [order_id]
             )
+            if order['job_id']:
+                db.execute(
+                    "UPDATE jobs SET status='completed', updated_at=datetime('now') WHERE id=?",
+                    [order['job_id']]
+                )
             # Update worker stats
             db.execute(
                 "UPDATE worker_profiles SET total_orders_completed = total_orders_completed + 1 WHERE user_id=?",
@@ -3187,7 +3275,10 @@ def _handle_routes(db):
             return error_response("Order must be submitted to request revision", 409)
 
         body = get_body()
-        notes = body.get("notes", "")
+        try:
+            notes = validated_order_notes(body.get("notes"))
+        except ValueError as e:
+            return error_response(str(e), 400)
 
         db.execute(
             "UPDATE orders SET status='revision_requested', employer_notes=?, updated_at=datetime('now') WHERE id=?",
@@ -3257,6 +3348,8 @@ def _handle_routes(db):
             return error_response("Order not found", 404)
         if order['employer_id'] != user['id'] and not user['is_admin']:
             return error_response("Only the employer or admin can complete an order", 403)
+        if order['type'] == 'job_hire':
+            return error_response("Job hires must be completed through submitted milestone approval", 409)
         if order['status'] not in ('submitted', 'in_progress'):
             return error_response("Order must be submitted or in_progress to complete", 409)
 
