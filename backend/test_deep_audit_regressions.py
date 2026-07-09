@@ -1253,8 +1253,9 @@ class BackendRegressionTests(unittest.TestCase):
             db.close()
 
         self.module.STRIPE_AVAILABLE = True
-        self.module.STRIPE_SECRET_KEY = "sk_test_configured"
-        payload = json.dumps({"applicant_id": 1})
+        self.module.STRIPE_SECRET_KEY = "configured-test-key"
+        self.module.JOB_HIRING_ENABLED = True
+        payload = json.dumps({"application_id": 1})
         self.module._request_ctx.request_method = "POST"
         self.module._request_ctx.path_info = "/jobs/7/hire"
         self.module._request_ctx.query_string = ""
@@ -2885,6 +2886,145 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "/payments/checkout",
         ]:
             self.assertNotIn(forbidden, generator)
+
+    def test_frontend_transaction_lifecycle_matches_backend_contract(self):
+        frontend = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+        for required in [
+            "Hiring temporarily paused",
+            "async function handleHire(jobId, applicationId, budgetType, budgetAmount)",
+            "confirmHire(${jobId},${applicationId})",
+            "async function confirmHire(jobId, applicationId)",
+            "confirmHourlyHire(${jobId},${applicationId})",
+            "async function confirmHourlyHire(jobId, applicationId)",
+            "body: { application_id: applicationId, weekly_hour_cap: weeklyCap }",
+            "body: { application_id: applicationId, milestones:",
+            "body: { notes: fd.get('note') }",
+            "body: { notes: message }",
+            "['in_progress','revision_requested'].includes(order.status)",
+            "order.worker_notes",
+            "order.employer_notes",
+            "if (Array.isArray(value)) return value;",
+        ]:
+            self.assertIn(required, frontend)
+        for stale in [
+            "body: { applicant_id: workerId, milestones:",
+            "body: { note: fd.get('note') }",
+            "body: { message }",
+        ]:
+            self.assertNotIn(stale, frontend)
+
+    def test_authenticated_submission_and_revision_notes_persist_in_order_detail(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.environ["DATABASE_PATH"] = str(Path(tmp.name) / "test.db")
+        os.environ["DISABLE_AUTO_SEED"] = "1"
+        self.addCleanup(os.environ.pop, "DATABASE_PATH", None)
+        self.addCleanup(os.environ.pop, "DISABLE_AUTO_SEED", None)
+        module = load_api_core()
+        module._db_path_resolved = None
+        module._seeded = False
+        module.init_db()
+        module.PRODUCTION_MODE = True
+        module.JOB_HIRING_ENABLED = True
+        module.STRIPE_AVAILABLE = True
+        module.STRIPE_SECRET_KEY = "configured-test-key"
+
+        class FakePaymentIntent:
+            @staticmethod
+            def create(**_kwargs):
+                return type("PaymentIntentResult", (), {"id": "pi_mock_hire"})()
+
+        module.stripe = type(
+            "FakeStripe",
+            (),
+            {
+                "PaymentIntent": FakePaymentIntent,
+                "error": type("FakeStripeErrors", (), {"StripeError": Exception}),
+            },
+        )()
+
+        db = module.get_db()
+        try:
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute(
+                "INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_mock','pm_mock')"
+            )
+            db.execute(
+                "INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) "
+                "VALUES (1,2,'QA navigation','Test mobile navigation','testing','fixed',25,'open')"
+            )
+            db.execute(
+                "INSERT INTO applications (id,job_id,worker_id,cover_message,status) "
+                "VALUES (14,1,1,'I can test this','pending')"
+            )
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-worker',datetime('now','+1 day'))")
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-employer',datetime('now','+1 day'))")
+            db.commit()
+        finally:
+            db.close()
+
+        def request(method, path, token, payload=None):
+            body = json.dumps(payload or {})
+            for cached in ("body_cache", "raw_body"):
+                if hasattr(module._request_ctx, cached):
+                    delattr(module._request_ctx, cached)
+            module._request_ctx.request_method = method
+            module._request_ctx.path_info = path
+            module._request_ctx.query_string = ""
+            module._request_ctx.http_authorization = f"Bearer {token}"
+            module._request_ctx.http_x_api_key = ""
+            module._request_ctx.stdin_data = body
+            module._request_ctx.content_type = "application/json"
+            module._request_ctx.content_length = str(len(body))
+            module._request_ctx.remote_addr = "127.0.0.1"
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                module.handle_request()
+            return parse_cgi_output(out.getvalue())
+
+        with mock.patch.object(module, "flush_transactional_notification_emails"):
+            status, response = request(
+                "POST",
+                "/jobs/1/hire",
+                "tok-employer",
+                {
+                    "application_id": 14,
+                    "milestones": [
+                        {
+                            "description": "Test mobile navigation and attach evidence",
+                            "amount": 25,
+                        }
+                    ],
+                },
+            )
+            self.assertEqual(status, 201, response)
+            order_id = response["id"]
+            self.assertEqual(response["worker_id"], 1)
+            self.assertEqual(response["milestones"][0]["escrow_payment_id"], "pi_mock_hire")
+
+            status, response = request(
+                "POST",
+                f"/orders/{order_id}/submit",
+                "tok-worker",
+                {"notes": "Delivered test evidence"},
+            )
+            self.assertEqual(status, 200, response)
+            status, response = request("GET", f"/orders/{order_id}", "tok-employer")
+            self.assertEqual(status, 200, response)
+            self.assertEqual(response["worker_notes"], "Delivered test evidence")
+
+            status, response = request(
+                "POST",
+                f"/orders/{order_id}/request-revision",
+                "tok-employer",
+                {"notes": "Please retest mobile navigation"},
+            )
+            self.assertEqual(status, 200, response)
+            status, response = request("GET", f"/orders/{order_id}", "tok-worker")
+            self.assertEqual(status, 200, response)
+            self.assertEqual(response["worker_notes"], "Delivered test evidence")
+            self.assertEqual(response["employer_notes"], "Please retest mobile navigation")
 
 
 if __name__ == "__main__":

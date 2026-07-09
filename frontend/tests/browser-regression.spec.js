@@ -258,6 +258,118 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('#auth-error')).toContainText('Invalid email or password.');
   });
 
+  test('authenticated revision loop renders both parties notes and submits the canonical payload', async ({ page }) => {
+    let submissionBody = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'tok-worker');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 1, name: 'Worker', role: 'worker' }));
+    });
+    await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path === '/orders/7/submit' && request.method() === 'POST') {
+        submissionBody = request.postDataJSON();
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'submitted' }) });
+      }
+      if (path === '/orders/7') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 7,
+            worker_id: 1,
+            employer_id: 2,
+            status: 'revision_requested',
+            total_amount: 25,
+            worker_notes: 'Initial mobile QA evidence',
+            employer_notes: 'Please retest the navigation drawer',
+            milestones: [{ id: 1, description: 'Retest navigation', amount: 25, status: 'in_progress' }]
+          })
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/7', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Initial mobile QA evidence');
+    await expect(page.locator('body')).toContainText('Please retest the navigation drawer');
+    await expect(page.locator('body')).toContainText('Retest navigation');
+    await page.getByRole('button', { name: 'Submit Deliverables' }).click();
+    await page.locator('textarea[name="note"]').fill('Retested mobile navigation with screenshots');
+    await page.locator('form').filter({ has: page.locator('textarea[name="note"]') }).getByRole('button', { name: 'Submit for Review' }).click();
+    await expect.poll(() => submissionBody).toEqual({ notes: 'Retested mobile navigation with screenshots' });
+  });
+
+  test('hourly order detail uses the backend contract and blocks unsafe settlement actions', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'worker-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 1, name: 'Worker', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders/88') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 88,
+          worker_id: 1,
+          employer_id: 2,
+          status: 'in_progress',
+          total_amount: 25,
+          hourly_contract: { hourly_rate: 25, weekly_hour_cap: 40, current_week_escrow_amount: 1000 },
+          time_entries: [{ id: 3, date: '2026-07-09', hours: 2, description: 'Mobile QA pass' }]
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/88', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Hourly');
+    await expect(page.locator('body')).toContainText('Current week funded');
+    await expect(page.locator('body')).toContainText('$1000.00');
+    await expect(page.locator('body')).toContainText('Mobile QA pass');
+    await expect(page.locator('body')).toContainText('Hourly contract actions paused');
+    await expect(page.getByRole('button', { name: 'Submit Deliverables' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Approve Payment' })).toHaveCount(0);
+  });
+
+  test('new job hiring stays visibly paused until payment safeguards ship', async ({ page }) => {
+    let hireBody = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/jobs/12' && route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 12, employer_id: 2, title: 'Hourly mobile QA', budget_type: 'hourly', budget_amount: 25, status: 'open'
+        }) });
+      }
+      if (url.pathname === '/jobs/12/applications') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          applications: [{ id: 44, worker_id: 1, worker_name: 'QA Worker', cover_message: 'Ready', status: 'pending' }]
+        }) });
+      }
+      if (url.pathname === '/payments/status') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employer_ready: true }) });
+      }
+      if (url.pathname === '/jobs/12/hire') {
+        hireBody = route.request().postDataJSON();
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 91 }) });
+      }
+      if (url.pathname === '/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orders: [] }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/jobs/12/applicants', { waitUntil: 'domcontentloaded' });
+    const paused = page.getByRole('button', { name: 'Hiring temporarily paused' });
+    await expect(paused).toBeVisible();
+    await expect(paused).toBeDisabled();
+    expect(hireBody).toBeNull();
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);
