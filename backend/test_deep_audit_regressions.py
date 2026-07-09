@@ -1504,11 +1504,11 @@ class BackendRegressionTests(unittest.TestCase):
 
     def test_high_intent_seo_pages_feed_starter_offer_funnel(self):
         required = {
-            "frontend/use-cases/ai-output-fact-checking.html": ["Hire a human to fact-check AI output", "seo_use_case_draft_click", "AI-output fact-checking review"],
-            "frontend/use-cases/human-review-for-chatbot-responses.html": ["Human review for chatbot", "seo_use_case_draft_click"],
-            "frontend/use-cases/hire-human-to-test-signup-flow.html": ["Hire a human to test your signup flow", "Website signup flow QA quick check"],
-            "frontend/use-cases/source-checking-for-ai-research.html": ["Source checking for AI-assisted research", "Source-check AI-assisted research"],
-            "frontend/use-cases/ai-agent-human-in-the-loop-tasks.html": ["Human fallback tasks for AI agents", "Human-in-the-loop verification task"],
+            "frontend/use-cases/ai-output-fact-checking.html": ["Hire a human to fact-check AI output", "seo_use_case_draft_click", "AI-output fact-checking review", "location.href='/#/post-job?'+p.toString();"],
+            "frontend/use-cases/human-review-for-chatbot-responses.html": ["Human review for chatbot", "seo_use_case_draft_click", "location.href='/#/post-job?'+p.toString();"],
+            "frontend/use-cases/hire-human-to-test-signup-flow.html": ["Hire a human to test your signup flow", "Website signup flow QA quick check", "location.href='/#/post-job?'+p.toString();"],
+            "frontend/use-cases/source-checking-for-ai-research.html": ["Source checking for AI-assisted research", "Source-check AI-assisted research", "location.href='/#/post-job?'+p.toString();"],
+            "frontend/use-cases/ai-agent-human-in-the-loop-tasks.html": ["Human fallback tasks for AI agents", "Human-in-the-loop verification task", "location.href='/#/post-job?'+p.toString();"],
             "frontend/use-cases/index.html": ["High-intent starter use cases", "AI Output Fact Checking"],
             "frontend/sitemap.xml": ["ai-output-fact-checking.html", "human-review-for-chatbot-responses.html", "hire-human-to-test-signup-flow.html"],
             "frontend/llms.txt": ["High-Intent Use Case Pages", "ai-agent-human-in-the-loop-tasks.html"],
@@ -2430,6 +2430,50 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                     failures.append(f"{rel}: stale GoHireHumans 4% pricing context: {match.group(0)}")
         self.assertEqual(failures, [])
 
+    def test_public_analytics_loads_only_through_the_local_fail_closed_bootstrap(self):
+        html_files = sorted((REPO_ROOT / "frontend").rglob("*.html"))
+        failures = []
+        bootstrap_count = 0
+        for path in html_files:
+            rel = str(path.relative_to(REPO_ROOT))
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "googletagmanager.com" in text or "google-analytics.com" in text:
+                failures.append(f"{rel}: direct Google analytics reference")
+            if 'src="/analytics-bootstrap.js"' in text:
+                bootstrap_count += 1
+            if "%24%7B" in text:
+                failures.append(f"{rel}: encoded JavaScript template interpolation")
+            for match in re.finditer(r'(?:href|src|action)=["\']([^"\']+)["\']', text, re.IGNORECASE):
+                url = match.group(1)
+                internal = url.startswith(("/", "#")) or "gohirehumans.com" in url
+                if internal and re.search(r'(?:\?|&)utm_(?:source|medium|campaign|content|term)=', url, re.IGNORECASE):
+                    failures.append(f"{rel}: internal UTM link {url}")
+        self.assertEqual(failures, [])
+        self.assertEqual(bootstrap_count, 109)
+
+        bootstrap = (REPO_ROOT / "frontend/analytics-bootstrap.js").read_text(encoding="utf-8")
+        for snippet in [
+            "window.dataLayer = window.dataLayer || []",
+            "window.gtag = window.gtag || function",
+            "window.location.origin",
+            "https://www.gohirehumans.com",
+            "https://gohirehumans.com",
+            "www.googletagmanager.com/gtag/js",
+        ]:
+            self.assertIn(snippet, bootstrap)
+        self.assertNotIn("window.location.hostname", bootstrap)
+        self.assertLess(
+            bootstrap.index("if (!allowedOrigins.has(window.location.origin))"),
+            bootstrap.index("window.dataLayer = window.dataLayer || []"),
+        )
+        generator = (REPO_ROOT / "scripts/generate-marketplace-pulse.py").read_text(encoding="utf-8")
+        self.assertIn('<script src="/analytics-bootstrap.js"></script>', generator)
+        self.assertNotIn("googletagmanager.com/gtag/js", generator)
+        overpaying = (REPO_ROOT / "frontend/tools/are-you-overpaying.html").read_text(encoding="utf-8")
+        self.assertIn('id="share-x" href="#"', overpaying)
+        self.assertIn('id="share-li" href="#"', overpaying)
+        self.assertNotIn("First completed orders", (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8"))
+
     def test_homepage_has_low_risk_funnel_analytics_events(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         required_snippets = [
@@ -2483,7 +2527,6 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/blog/gig-economy-statistics-2026.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
             "Turn the data into one clear task",
-            "blog_demand_capture",
             "Draft your first task",
             "first_task_blog_cta_click",
             "trackBlogCTA('qualify_lead'",
@@ -2504,25 +2547,29 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         expected_pages = {
             "frontend/hire/hire-web-developer.html": [
                 "Hire Web Developers for Website Fixes, QA & Landing Pages",
-                "utm_content=hire_web_developer",
+                "content_id:'hire_web_developer'",
             ],
             "frontend/blog/verified-freelancer-marketplace.html": [
                 "Verified Freelancer Marketplace: Trust Signals to Check Before Hiring",
-                "utm_content=verified_freelancer_marketplace",
+                "content_id:'verified_freelancer_marketplace'",
             ],
             "frontend/blog/on-demand-workforce-platform.html": [
                 "On-Demand Workforce Platforms for AI + Human Workflows",
-                "utm_content=on_demand_workforce_platform",
+                "content_id:'on_demand_workforce_platform'",
             ],
             "frontend/tools/fee-calculator.html": [
                 "Freelancer Fee Calculator: Workers Keep the Listed Payout",
-                "utm_content=fee_calculator",
+                "content_id:'fee_calculator'",
             ],
         }
         required_shared_snippets = [
             "Turn AI output into a human QA task",
-            "/ai-human-qa/?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression",
-            "/request-managed-ai-qa.html?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression",
+            "/ai-human-qa/",
+            "/request-managed-ai-qa.html",
+            "internal_cta_click",
+            "placement:'seo_high_impression'",
+            "destination:'ai_human_qa'",
+            "destination:'managed_ai_qa'",
             "No checkout or job is created automatically from this page",
         ]
         failures = []
@@ -2531,6 +2578,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             for snippet in required_shared_snippets + page_snippets:
                 if snippet not in text:
                     failures.append(f"{rel}: missing {snippet}")
+            if text.count("gtag('event','internal_cta_click'") != 2:
+                failures.append(f"{rel}: expected exactly two tracked high-impression CTAs")
         self.assertEqual(failures, [])
 
     def test_homepage_has_guided_agent_intake_and_earning_routes(self):

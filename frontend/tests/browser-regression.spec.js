@@ -1,5 +1,10 @@
 const { test, expect } = require('@playwright/test');
 const { AxeBuilder } = require('@axe-core/playwright');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { pathToFileURL } = require('url');
+const analyticsBootstrap = fs.readFileSync(path.join(__dirname, '..', 'analytics-bootstrap.js'), 'utf8');
 const routes = [
   { path: '/', mustContain: 'Human verification for AI work.' },
   { path: '/starter-offers.html', mustContain: 'Human verification for AI work before you trust it.' },
@@ -39,6 +44,137 @@ async function collectConsole(page) {
   return messages;
 }
 test.describe('GoHireHumans public/browser regression suite', () => {
+  test('localhost never requests Google Analytics or Tag Manager', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    await page.goto('/');
+    expect(analyticsRequests).toEqual([]);
+    expect(await page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'dataLayer'))).toBe(false);
+    expect(await page.evaluate(() => typeof window.gtag)).toBe('function');
+    await expect(page.locator('script[src*="googletagmanager.com"], script[src*="google-analytics.com"]')).toHaveCount(0);
+  });
+
+  test('HTTPS preview hosts fail closed without requesting Google Analytics', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    await page.route('https://preview.example.com/**', route => {
+      if (new URL(route.request().url()).pathname === '/analytics-bootstrap.js') {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: analyticsBootstrap });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');</script>'
+      });
+    });
+    await page.goto('https://preview.example.com/');
+    expect(analyticsRequests).toEqual([]);
+    expect(await page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'dataLayer'))).toBe(false);
+    expect(await page.evaluate(() => typeof window.gtag)).toBe('function');
+  });
+
+  test('HTTP production and deceptive HTTPS origins fail closed', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    await page.route('https://www.googletagmanager.com/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    const blockedOrigins = [
+      'http://www.gohirehumans.com',
+      'https://www.gohirehumans.com.attacker.example',
+      'https://gohirehumans.example'
+    ];
+    for (const origin of blockedOrigins) {
+      await page.route(`${origin}/**`, route => {
+        if (new URL(route.request().url()).pathname === '/analytics-bootstrap.js') {
+          return route.fulfill({ status: 200, contentType: 'application/javascript', body: analyticsBootstrap });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');</script>'
+        });
+      });
+      await page.goto(`${origin}/`);
+      expect(await page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'dataLayer')), origin).toBe(false);
+      expect(await page.evaluate(() => typeof window.gtag), origin).toBe('function');
+    }
+    expect(analyticsRequests).toEqual([]);
+  });
+
+  test('file URLs fail closed without creating an analytics queue', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghh-analytics-file-origin-'));
+    const file = path.join(dir, 'index.html');
+    fs.writeFileSync(file, `<script>${analyticsBootstrap}</script><script>gtag('config', 'G-KM69M3NES8');</script>`);
+    try {
+      await page.goto(pathToFileURL(file).href);
+      expect(analyticsRequests).toEqual([]);
+      expect(await page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'dataLayer'))).toBe(false);
+      expect(await page.evaluate(() => typeof window.gtag)).toBe('function');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('canonical production hostname on a nonstandard port fails closed', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    await page.route('https://www.googletagmanager.com/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await page.route('https://www.gohirehumans.com:4443/**', route => {
+      if (new URL(route.request().url()).pathname === '/analytics-bootstrap.js') {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: analyticsBootstrap });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');</script>'
+      });
+    });
+    await page.goto('https://www.gohirehumans.com:4443/');
+    expect(analyticsRequests).toEqual([]);
+    expect(await page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'dataLayer'))).toBe(false);
+    expect(await page.evaluate(() => typeof window.gtag)).toBe('function');
+  });
+
+  test('canonical HTTPS production host requests the configured Google tag once', async ({ page }) => {
+    const analyticsRequests = [];
+    page.on('request', request => {
+      if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
+    });
+    await page.route('https://www.googletagmanager.com/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await page.route('https://www.gohirehumans.com/**', route => {
+      if (new URL(route.request().url()).pathname === '/analytics-bootstrap.js') {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: analyticsBootstrap });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');</script>'
+      });
+    });
+    await page.goto('https://www.gohirehumans.com/');
+    await expect.poll(() => analyticsRequests.length).toBe(1);
+    expect(analyticsRequests).toEqual(['https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8']);
+    const commands = await page.evaluate(() => window.dataLayer.map(args => {
+      const values = Array.from(args);
+      return [values[0], values[1] instanceof Date ? 'DATE' : values[1]];
+    }));
+    expect(commands.slice(0, 2)).toEqual([
+      ['js', 'DATE'],
+      ['config', 'G-KM69M3NES8']
+    ]);
+  });
+
   for (const route of routes) {
     test(`${route.path} renders, has no serious axe violations, and is console-clean`, async ({ page }) => {
       const messages = await collectConsole(page);

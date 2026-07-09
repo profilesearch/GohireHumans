@@ -2,12 +2,8 @@
 <html lang="en">
 <head>
   <!-- Google Analytics (GA4) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-KM69M3NES8');
+  <script src="/analytics-bootstrap.js"></script>
+<script>gtag('config', 'G-KM69M3NES8');
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -548,11 +544,11 @@
         <div class="cta-box">
           <h3>Turn AI output into a human QA task</h3>
           <p>Use GoHireHumans to scope a small review task for AI-generated content, research, code, or claims. Workers review the specific brief and you approve the scope before paid work starts. No checkout or job is created automatically from this page.</p>
-          <a href="/ai-human-qa/?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression&utm_content=verified_freelancer_marketplace" class="cta-btn">
+          <a href="/ai-human-qa/" class="cta-btn" onclick="gtag('event','internal_cta_click',{placement:'seo_high_impression',destination:'ai_human_qa',content_id:'verified_freelancer_marketplace'})">
             See human AI QA services
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </a>
-          <a href="/request-managed-ai-qa.html?utm_source=gohirehumans&utm_medium=internal_cta&utm_campaign=seo_high_impression&utm_content=verified_freelancer_marketplace" class="cta-btn" style="margin-left:0.75rem;background:#1a1816;">
+          <a href="/request-managed-ai-qa.html" class="cta-btn" style="margin-left:0.75rem;background:#1a1816;" onclick="gtag('event','internal_cta_click',{placement:'seo_high_impression',destination:'managed_ai_qa',content_id:'verified_freelancer_marketplace'})">
             Request managed AI QA
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </a>
