@@ -468,6 +468,200 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByRole('button', { name: 'Approve Payment' })).toHaveCount(0);
   });
 
+  test('fee rounding and order summaries distinguish awkward-cent totals from hourly rates', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'worker-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 1, name: 'Worker', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          orders: [
+            { id: 88, worker_id: 1, employer_id: 2, status: 'in_progress', total_amount: 25.55, contract_type: 'hourly', job_title: 'Hourly QA', created_at: '2026-07-09T00:00:00Z' },
+            { id: 89, worker_id: 1, employer_id: 2, status: 'in_progress', total_amount: 40, contract_type: 'fixed', job_title: 'Fixed QA', created_at: '2026-07-09T00:00:00Z' }
+          ]
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('$25.55/hr');
+    await expect(page.locator('body')).toContainText('$40.00 total');
+    await expect(page.locator('body')).not.toContainText('$25.55 total');
+
+    const awkward = await page.evaluate(() => hireFeeBreakdown('25.55'));
+    expect(awkward).toEqual({ base: 25.55, platformFee: 0.26, processingFee: 0.77, total: 26.58 });
+    const tiny = await page.evaluate(() => hireFeeBreakdown('0.01'));
+    expect(tiny).toEqual({ base: 0.01, platformFee: 0.01, processingFee: 0.01, total: 0.03 });
+  });
+
+  test('fixed order detail separates contract total from authoritative funded charge', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders/90') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 90, worker_id: 1, employer_id: 2, status: 'in_progress', total_amount: 25.55,
+          contract_type: 'fixed', job_title: 'Two-stage QA', created_at: '2026-07-09T00:00:00Z',
+          milestones: [
+            { id: 1, description: 'First', amount: 10, status: 'in_progress' },
+            { id: 2, description: 'Second', amount: 15.55, status: 'pending' }
+          ],
+          escrow_holds: [{ id: 1, milestone_id: 1, amount: 10, status: 'held' }],
+          funding_summary: { base_cents: 1000, platform_fee_cents: 10, processing_fee_cents: 30, charged_total_cents: 1040, funded_amount_available: true, charge_amount_available: true, record_count: 1 }
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/90', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Total $25.55');
+    await expect(page.locator('body')).toContainText('Funded to date');
+    await expect(page.locator('body')).toContainText('$10.00');
+    await expect(page.locator('body')).toContainText('Charged to date');
+    await expect(page.locator('body')).toContainText('$10.40');
+    await expect(page.locator('body')).not.toContainText('You paid');
+    await expect(page.locator('body')).not.toContainText('$26.58');
+  });
+
+  test('legacy funding detail never invents a historical charged total', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders/92') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 92, worker_id: 1, employer_id: 2, status: 'in_progress', total_amount: 25.55,
+          contract_type: 'fixed', job_title: 'Legacy QA', created_at: '2026-07-01T00:00:00Z',
+          milestones: [{ id: 1, description: 'Delivery', amount: 25.55, status: 'in_progress' }],
+          escrow_holds: [{ id: 1, milestone_id: 1, amount: 25.55, status: 'held' }],
+          funding_summary: { base_cents: 2555, platform_fee_cents: null, processing_fee_cents: null, charged_total_cents: null, funded_amount_available: true, charge_amount_available: false, record_count: 1 }
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/92', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Funded to date');
+    await expect(page.locator('body')).toContainText('$25.55');
+    await expect(page.locator('body')).toContainText('Historical charge total unavailable');
+    await expect(page.locator('body')).not.toContainText('Charged to date');
+  });
+
+  test('hourly hire modal rejects fractional caps without posting', async ({ page }) => {
+    let hireBody = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/jobs/12/hire') {
+        hireBody = route.request().postDataJSON();
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '{"id":91}' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => showHourlyHireModal(12, 44, 25.55));
+    await page.locator('#weekly-hour-cap').fill('6.0000000000000001');
+    await page.getByRole('button', { name: 'Confirm & Fund First Week' }).click();
+    await expect(page.locator('body')).toContainText('whole number');
+    expect(hireBody).toBeNull();
+  });
+
+  test('service checkout reuses one client operation identity after an ambiguous retry', async ({ page }) => {
+    const orderBodies = [];
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/payments/status') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"employer_ready":true}' });
+      }
+      if (url.pathname === '/services/1/order') {
+        orderBodies.push(route.request().postDataJSON());
+        if (orderBodies.length === 1) {
+          return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"ambiguous response loss"}' });
+        }
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '{"id":93}' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => handleOrderService(1));
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect.poll(() => orderBodies.length).toBe(1);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => handleOrderService(1));
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect.poll(() => orderBodies.length).toBe(2);
+    expect(orderBodies[0].idempotency_key).toMatch(/^[A-Za-z0-9._:-]{16,128}$/);
+    expect(orderBodies[1].idempotency_key).toBe(orderBodies[0].idempotency_key);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ghh_pending_service_order_1'))).toBeNull();
+  });
+
+  test('clearing a session removes pending service checkout operation identities', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    );
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    const cleared = await page.evaluate(() => {
+      const value = 'service-order-12345678-1234-1234-1234-123456789012';
+      sessionStorage.setItem('ghh_pending_service_order_1', value);
+      pendingServiceOrderOperations.set('1', value);
+      clearSession();
+      return {
+        stored: sessionStorage.getItem('ghh_pending_service_order_1'),
+        cached: pendingServiceOrderOperations.has('1'),
+      };
+    });
+
+    expect(cleared).toEqual({ stored: null, cached: false });
+  });
+
+  test('admin disputes use the admin-scoped filtered order endpoint', async ({ page }) => {
+    const requestedPaths = [];
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'admin-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 9, name: 'Admin', is_admin: true }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      requestedPaths.push(url.pathname + url.search);
+      if (url.pathname === '/admin/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          orders: [{ id: 88, status: 'disputed', total_amount: 25, contract_type: 'fixed', worker_name: 'Worker', employer_name: 'Employer', job_title: 'Disputed QA', created_at: '2026-07-09T00:00:00Z' }]
+        }) });
+      }
+      if (url.pathname === '/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"orders":[]}' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/admin/disputes', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Order #88');
+    expect(requestedPaths).toContain('/admin/orders?status=disputed');
+    expect(requestedPaths).not.toContain('/orders?status=disputed');
+  });
+
   test('new job hiring stays visibly paused until payment safeguards ship', async ({ page }) => {
     let hireBody = null;
     await page.addInitScript(() => {

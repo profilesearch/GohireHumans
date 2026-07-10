@@ -294,11 +294,18 @@ function saveSession(token, user) {
   } catch(e) {}
 }
 
+const pendingServiceOrderOperations = new Map();
+
 function clearSession() {
   state.user = null;
   state.token = null;
+  pendingServiceOrderOperations.clear();
   try {
     sessionStorage.removeItem('ghh_token');
+    for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('ghh_pending_service_order_')) sessionStorage.removeItem(key);
+    }
     localStorage.removeItem('ghh_token');
     localStorage.removeItem('ghh_user');
   } catch(e) {}
@@ -502,6 +509,13 @@ function formatPrice(service) {
 function formatBudget(job) {
   if (job.budget_type === 'fixed') return `$${Number(job.budget_amount || 0).toFixed(0)} fixed`;
   return `$${Number(job.budget_amount || 0).toFixed(0)}/hr`;
+}
+function formatOrderAmount(order) {
+  const isHourly = order.contract_type === 'hourly' || order.budget_type === 'hourly' || Boolean(order.hourly_contract);
+  const amount = isHourly
+    ? Number(order.hourly_rate ?? order.hourly_contract?.hourly_rate ?? order.total_amount ?? order.amount ?? 0)
+    : Number(order.total_amount ?? order.amount ?? 0);
+  return isHourly ? `$${amount.toFixed(2)}/hr` : `$${amount.toFixed(2)} total`;
 }
 function providerBadge(service) {
   if (service.provider_type === 'ai') return '<span class="badge badge-ai">AI-Powered</span>';
@@ -1893,6 +1907,25 @@ async function renderServiceDetail(id) {
   }
 }
 
+function pendingServiceOrderOperationKey(id) {
+  const serviceId = String(id);
+  const storageKey = `ghh_pending_service_order_${serviceId}`;
+  let operationKey = pendingServiceOrderOperations.get(serviceId) || '';
+  try { operationKey = sessionStorage.getItem(storageKey) || operationKey; } catch (_) {}
+  if (!/^service-order-[A-Za-z0-9-]{16,114}$/.test(operationKey)) {
+    operationKey = `service-order-${crypto.randomUUID()}`;
+  }
+  pendingServiceOrderOperations.set(serviceId, operationKey);
+  try { sessionStorage.setItem(storageKey, operationKey); } catch (_) {}
+  return operationKey;
+}
+
+function clearPendingServiceOrderOperation(id) {
+  const serviceId = String(id);
+  pendingServiceOrderOperations.delete(serviceId);
+  try { sessionStorage.removeItem(`ghh_pending_service_order_${serviceId}`); } catch (_) {}
+}
+
 async function handleOrderService(id) {
   trackEvent('service_order_intent', { service_id: String(id), source: 'service_detail' });
   if (!requireAuth(`services/${id}`)) return;
@@ -1903,13 +1936,16 @@ async function handleOrderService(id) {
       showModal('Payment Required', 'You need to set up a payment method before ordering. Would you like to set up your payment method now?', () => navigate('#/payments'), 'Set Up Payment');
       return;
     }
-    // Proceed to order with modal confirmation
+    // Persist the operation identity until the API confirms success. Ambiguous
+    // failures and page reloads must retry with the same processor identity.
+    const orderOperationKey = pendingServiceOrderOperationKey(id);
     showModal('Confirm Order', `<p>Your payment will be processed through the configured checkout flow after you confirm the order.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p><div style="display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span style="font-size:11px;color:var(--color-text-muted)">Payment processing by <strong style="color:#635bff">Stripe</strong> where configured</span></div>`, async () => {
       try {
         trackEvent('service_order_submit', { service_id: String(id) });
         trackRecommendedEvent('generate_lead', { lead_type: 'service_order_submit', service_id: String(id) });
         trackConfiguredKeyEvent('qualify_lead', { lead_type: 'service_order_submit', service_id: String(id) });
-        const order = await api(`/services/${id}/order`, { method: 'POST', body: {} });
+        const order = await api(`/services/${id}/order`, { method: 'POST', body: { idempotency_key: orderOperationKey } });
+        clearPendingServiceOrderOperation(id);
         trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id || '') });
         trackRecommendedEvent('generate_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
         trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
@@ -2417,7 +2453,7 @@ async function renderDashboard() {
               ${statusBadge(o.status)}
             </div>
             <div class="task-card-meta">
-              <span>${I.dollar} $${Number(o.total_amount||o.amount||0).toFixed(2)}</span>
+              <span>${I.dollar} ${formatOrderAmount(o)}</span>
               <span>${I.clock} ${relativeDate(o.created_at)}</span>
             </div>
           </div>`).join('')
@@ -2977,10 +3013,15 @@ async function handleHire(jobId, applicationId, budgetType, budgetAmount) {
   updateHireFeeBreakdown();
 }
 
+function feeComponentCents(baseCents, basisPoints) {
+  if (!Number.isInteger(baseCents) || baseCents <= 0) return 0;
+  return Math.max(1, Math.floor((baseCents * basisPoints + 5000) / 10000));
+}
+
 function hireFeeBreakdown(amount) {
   const baseCents = Math.round(Number(amount || 0) * 100);
-  const platformFeeCents = Math.max(1, Math.round(baseCents * 0.01));
-  const processingFeeCents = Math.max(1, Math.round(baseCents * 0.03));
+  const platformFeeCents = feeComponentCents(baseCents, 100);
+  const processingFeeCents = feeComponentCents(baseCents, 300);
   return {
     base: baseCents / 100,
     platformFee: platformFeeCents / 100,
@@ -3025,9 +3066,23 @@ function renderHireFeeBreakdown(amount) {
   document.getElementById('hire-total').textContent = `$${values.total.toFixed(2)}`;
 }
 
+function parsedWeeklyHourCap() {
+  const raw = document.getElementById('weekly-hour-cap')?.value || '';
+  if (!/^[0-9]+$/.test(raw)) return null;
+  const weeklyCap = Number(raw);
+  return Number.isSafeInteger(weeklyCap) && weeklyCap >= 1 && weeklyCap <= 168 ? weeklyCap : null;
+}
+
 function updateHourlyHireFeeBreakdown(hourlyRate) {
-  const weeklyCap = Number(document.getElementById('weekly-hour-cap')?.value || 0);
-  renderHireFeeBreakdown(Number(hourlyRate || 0) * weeklyCap);
+  const weeklyCap = parsedWeeklyHourCap();
+  if (weeklyCap !== null) {
+    renderHireFeeBreakdown(Number(hourlyRate || 0) * weeklyCap);
+    return;
+  }
+  ['hire-base', 'hire-platform-fee', 'hire-processing-fee', 'hire-total'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
 }
 
 function updateHireFeeBreakdown() {
@@ -3043,9 +3098,9 @@ function updateHireFeeBreakdown() {
 }
 
 async function confirmHourlyHire(jobId, applicationId) {
-  const weeklyCap = Number(document.getElementById('weekly-hour-cap')?.value || 0);
-  if (!Number.isFinite(weeklyCap) || weeklyCap <= 0 || weeklyCap > 168) {
-    toast('Weekly hour cap must be between 1 and 168 hours.', 'error');
+  const weeklyCap = parsedWeeklyHourCap();
+  if (weeklyCap === null) {
+    toast('Weekly hour cap must be a whole number between 1 and 168 hours.', 'error');
     return;
   }
   const overlay = document.querySelector('.modal-overlay');
@@ -3104,7 +3159,7 @@ async function renderOrders() {
                 ${statusBadge(o.status)}
               </div>
               <div class="task-card-meta">
-                <span>${I.dollar} $${Number(o.total_amount||o.amount||0).toFixed(2)}</span>
+                <span>${I.dollar} ${formatOrderAmount(o)}</span>
                 <span style="text-transform:capitalize">${o.type === 'service' ? 'Service Order' : 'Job Contract'}</span>
                 <span>${I.clock} ${relativeDate(o.created_at)}</span>
               </div>
@@ -3136,6 +3191,10 @@ async function renderOrderDetail(id) {
     const displayAmount = isHourly
       ? Number(order.hourly_contract?.current_week_escrow_amount || 0)
       : Number(order.total_amount || order.amount || 0);
+    const fundingSummary = !isHourly && order.funding_summary ? order.funding_summary : null;
+    const hasFundingSummary = Boolean(fundingSummary && Number(fundingSummary.record_count || 0) > 0);
+    const fundedAmountAvailable = Boolean(hasFundingSummary && fundingSummary.funded_amount_available !== false && Number.isInteger(fundingSummary.base_cents));
+    const chargeAmountAvailable = Boolean(hasFundingSummary && fundingSummary.charge_amount_available !== false && Number.isInteger(fundingSummary.charged_total_cents));
 
     let actions = '';
     if (isWorker && !isHourly && ['in_progress','revision_requested'].includes(order.status)) {
@@ -3161,7 +3220,7 @@ async function renderOrderDetail(id) {
           <h1 class="detail-title">${esc(order.title || order.service_title || order.job_title || `Order #${id}`)}</h1>
           <div class="detail-meta">
             ${statusBadge(order.status)}
-            <span>${I.dollar} $${displayAmount.toFixed(2)}</span>
+            <span>${I.dollar} ${isHourly ? `Current week funded $${displayAmount.toFixed(2)}` : `Total $${displayAmount.toFixed(2)}`}</span>
             <span>Order #${id}</span>
           </div>
         </div>
@@ -3223,10 +3282,13 @@ async function renderOrderDetail(id) {
               <div><span style="color:var(--color-text-faint)">Order ID:</span> #${id}</div>
               <div><span style="color:var(--color-text-faint)">Type:</span> ${isHourly ? 'Hourly' : 'Fixed Price'}</div>
               <div><span style="color:var(--color-text-faint)">${isHourly ? 'Current week funded' : 'Total'}:</span> $${displayAmount.toFixed(2)}</div>
-              ${isEmployer && !isHourly ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
-                <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">GoHireHumans fee (1%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.01).toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Processing (~3%)</span><span>$${(Number(order.total_amount||order.amount||0)*0.03).toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px"><span>You paid</span><span>$${(Number(order.total_amount||order.amount||0)*1.04).toFixed(2)}</span></div>
+              ${isEmployer && !isHourly && hasFundingSummary ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
+                ${fundedAmountAvailable ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Funded to date</span><span>$${(fundingSummary.base_cents/100).toFixed(2)}</span></div>` : `<div style="color:var(--color-warning,#9a6700)">Exact historical funded amount unavailable; processor reconciliation required.</div>`}
+                ${chargeAmountAvailable ? `
+                  <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">GoHireHumans fee (1%)</span><span>$${(fundingSummary.platform_fee_cents/100).toFixed(2)}</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Processing (~3%)</span><span>$${(fundingSummary.processing_fee_cents/100).toFixed(2)}</span></div>
+                  <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px"><span>Charged to date</span><span>$${(fundingSummary.charged_total_cents/100).toFixed(2)}</span></div>
+                ` : `<div style="color:var(--color-warning,#9a6700);margin-top:var(--space-1)">Historical charge total unavailable; processor reconciliation required.</div>`}
               </div>` : ''}
               ${order.worker_name ? `<div><span style="color:var(--color-text-faint)">Worker:</span> ${esc(order.worker_name)}</div>` : ''}
               ${order.employer_name ? `<div><span style="color:var(--color-text-faint)">Client:</span> ${esc(order.employer_name)}</div>` : ''}
@@ -3895,7 +3957,7 @@ async function renderAdminDashboard() {
           ${orders.map(o => `<tr>
             <td>#${o.id}</td>
             <td>${esc(o.title||o.service_title||o.job_title||'')}</td>
-            <td>$${Number(o.total_amount||o.amount||0).toFixed(2)}</td>
+            <td>${formatOrderAmount(o)}</td>
             <td>${statusBadge(o.status)}</td>
             <td>${new Date(o.created_at).toLocaleDateString()}</td>
           </tr>`).join('')}
@@ -3966,7 +4028,7 @@ async function renderAdminOrders() {
             <td>${esc(o.title||o.service_title||o.job_title||'')}</td>
             <td style="font-size:var(--text-xs)">${esc(o.worker_name||'')}</td>
             <td style="font-size:var(--text-xs)">${esc(o.employer_name||o.client_name||'')}</td>
-            <td>$${Number(o.total_amount||o.amount||0).toFixed(2)}</td>
+            <td>${formatOrderAmount(o)}</td>
             <td>${statusBadge(o.status)}</td>
             <td style="font-size:var(--text-xs)">${new Date(o.created_at).toLocaleDateString()}</td>
           </tr>`).join('')}
@@ -4001,7 +4063,7 @@ async function renderAdminRevenue() {
 async function renderAdminDisputes() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'admin-disputes');
   try {
-    const data = await api('/orders?status=disputed').catch(() => ({ orders: [] }));
+    const data = await api('/admin/orders?status=disputed').catch(() => ({ orders: [] }));
     const orders = Array.isArray(data) ? data : (data.orders||[]);
     const disputed = orders.filter(o => o.status === 'disputed');
     appShell(`
@@ -4018,7 +4080,7 @@ async function renderAdminDisputes() {
               <div class="task-card-meta">
                 <span>Worker: ${esc(o.worker_name||'')}</span>
                 <span>Employer: ${esc(o.employer_name||o.client_name||'')}</span>
-                <span>$${Number(o.total_amount||o.amount||0).toFixed(2)}</span>
+                <span>${formatOrderAmount(o)}</span>
               </div>
               <div style="margin-top:var(--space-3);display:flex;gap:var(--space-2)">
                 <button class="btn btn-sm btn-primary" onclick="adminResolveDispute(${o.id},'release_to_worker')">Record Worker Settlement</button>
@@ -4190,9 +4252,9 @@ function renderAIEmployers() {
               <span class="lp-api-code-label">POST /services/{id}/order</span>
             </div>
             <pre class="lp-api-code-body"><code>{
-  "requirements": "Analyze Q1 sales data...",
-  "budget": 49.00,
-  "callback_url": "https://my-agent.ai/webhook"
+  "idempotency_key": "service-order-550e8400-e29b-41d4-a716-446655440000",
+  "amount": "49.00",
+  "notes": "Analyze Q1 sales data..."
 }</code></pre>
           </div>
           <div style="text-align:center;margin-top:var(--space-8)">

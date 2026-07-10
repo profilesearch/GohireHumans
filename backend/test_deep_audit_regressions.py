@@ -177,9 +177,9 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
             db.execute("INSERT INTO employer_profiles (user_id) VALUES (2)")
-            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
-            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
-            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',0.29)")
+            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',0.29)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,0.29,'held','pi_live_like')")
             db.commit()
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
@@ -191,17 +191,18 @@ class BackendRegressionTests(unittest.TestCase):
                 "Transfer": type("Transfer", (), {"create": fake_transfer}),
                 "error": type("Error", (), {"StripeError": Exception})
             })
-            payout, fee = self.module.release_escrow_to_worker(db, 1, None, 100, 1)
-            self.assertEqual(payout, 100)
-            self.assertEqual(fee, 1)
+            payout, fee = self.module.release_escrow_to_worker(db, 1, None, 0.29, 1)
+            self.assertEqual(payout, 0.29)
+            self.assertEqual(fee, 0.01)
             fake_transfer.assert_called_once()
-            self.assertEqual(fake_transfer.call_args.kwargs.get("idempotency_key"), "escrow-release:1:full:10000")
+            self.assertEqual(fake_transfer.call_args.kwargs.get("amount"), 29)
+            self.assertEqual(fake_transfer.call_args.kwargs.get("idempotency_key"), "escrow-release:1:full")
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "released")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 1)
             transfer_row = db.execute("SELECT stripe_transfer_id, idempotency_key, status, transfer_type FROM payout_transfers WHERE order_id=1").fetchone()
             self.assertIsNotNone(transfer_row)
             self.assertEqual(transfer_row["stripe_transfer_id"], "tr_test_123")
-            self.assertEqual(transfer_row["idempotency_key"], "escrow-release:1:full:10000")
+            self.assertEqual(transfer_row["idempotency_key"], "escrow-release:1:full")
             self.assertEqual(transfer_row["status"], "recorded")
             self.assertEqual(transfer_row["transfer_type"], "escrow_release")
         finally:
@@ -1140,8 +1141,8 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
             db.execute("INSERT INTO employer_profiles (user_id) VALUES (3)")
-            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (5,2,'Svc','Desc','writing','fixed',100)")
-            db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (9,'service_order',5,2,3,'disputed',100)")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (5,3,'Disputed job','Desc','writing','fixed',100,'hired')")
+            db.execute("INSERT INTO orders (id,type,job_id,worker_id,employer_id,status,total_amount) VALUES (9,'job_hire',5,2,3,'disputed',100)")
             db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (9,100,'held','pi_live_or_manual')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
             db.commit()
@@ -1195,9 +1196,11 @@ class BackendRegressionTests(unittest.TestCase):
         db = self.module.get_db()
         try:
             escrow_status = db.execute("SELECT status FROM escrow_holds WHERE order_id=9").fetchone()[0]
+            job_status = db.execute("SELECT status FROM jobs WHERE id=5").fetchone()[0]
             audit = db.execute("SELECT action, details FROM audit_log WHERE action='resolve_dispute_manual_settlement'").fetchone()
             notifications = [row[0] for row in db.execute("SELECT message FROM notifications WHERE type='dispute_resolved'").fetchall()]
             self.assertEqual(escrow_status, "released")
+            self.assertEqual(job_status, "completed")
             self.assertTrue(notifications)
             self.assertTrue(all("stripe-tr-123" not in message for message in notifications))
             self.assertTrue(all("manual settlement was verified" in message for message in notifications))

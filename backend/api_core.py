@@ -23,7 +23,7 @@ import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 # Thread-local storage for per-request context (avoids os.environ race conditions)
 _request_ctx = threading.local()
@@ -59,24 +59,28 @@ def _get_db_path():
     if _db_path_resolved is not None:
         return _db_path_resolved
 
-    # Build candidate list: persistent volume FIRST, then explicit env var, then CWD
-    # The volume at /data is the only truly persistent storage on Railway.
-    # /app/ is ephemeral — it gets wiped on every deploy.
-    candidates = []
-    candidates.append(os.path.join(_VOLUME_DIR, "gohirehumans.db"))  # /data/gohirehumans.db (PERSISTENT)
+    # In production the durable database is mandatory. Never replace it with an
+    # empty working-directory or in-memory database because that can make a
+    # financially inconsistent deployment appear healthy.
+    durable_database_required = _VOLUME_ATTACHED or PRODUCTION_MODE
+    candidates = [os.path.join(_VOLUME_DIR, "gohirehumans.db")]
     explicit = os.environ.get("DATABASE_PATH", "")
     if explicit and not explicit.startswith("/app"):
-        # Only use explicit path if it's NOT under /app (ephemeral container fs)
         candidates.append(explicit)
-    candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))  # /app/gohirehumans.db (ephemeral fallback)
+    if not durable_database_required:
+        candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))
+    candidates = list(dict.fromkeys(candidates))
 
     for candidate in candidates:
         parent = os.path.dirname(candidate) or "."
         try:
             os.makedirs(parent, exist_ok=True)
             test_db = sqlite3.connect(candidate)
-            test_db.execute("CREATE TABLE IF NOT EXISTS _ping (id INTEGER)")
-            test_db.commit()
+            # Probe readability without issuing DDL. A transient writer lock must
+            # not make startup abandon the configured durable database for an
+            # empty fallback database; init_db will apply busy-timeout handling
+            # and fail closed if required migrations cannot acquire the lock.
+            test_db.execute("PRAGMA schema_version").fetchone()
             test_db.close()
             _db_path_resolved = candidate
             print(f"[GoHireHumans] DB path: {candidate}", file=sys.stderr)
@@ -84,9 +88,12 @@ def _get_db_path():
         except Exception as e:
             print(f"[GoHireHumans] Cannot use {candidate}: {e}", file=sys.stderr)
 
-    # Last resort: in-memory (won't persist but at least won't crash)
+    if durable_database_required:
+        raise RuntimeError("No durable database path is available in production")
+
+    # Development-only fallback. Production is required to fail closed above.
     _db_path_resolved = ":memory:"
-    print(f"[GoHireHumans] CRITICAL: Using in-memory DB (no persistence!)", file=sys.stderr)
+    print("[GoHireHumans] WARNING: Using in-memory development DB", file=sys.stderr)
     return _db_path_resolved
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
@@ -98,9 +105,14 @@ DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
 BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
 ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
-# Keep new job hires paused until funding idempotency and post-charge
-# reconciliation ship in the dedicated payment-hardening change.
-JOB_HIRING_ENABLED = os.environ.get("JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+# Deliberate code-level release gates: these cannot be enabled by environment drift.
+# The dedicated processor-ledger/reconciliation release must change them explicitly.
+JOB_HIRING_ENABLED = False
+HOURLY_SETTLEMENT_ENABLED = False
+MAX_MONEY_INPUT_CHARS = 96
+MAX_MONEY_ABS = Decimal("999999.99")
+PLATFORM_FEE_BPS = 100
+PROCESSING_FEE_BPS = 300
 
 
 
@@ -239,8 +251,196 @@ def get_db():
     return db
 
 
-def init_db():
-    db = get_db()
+def _table_columns(db, table_name):
+    pragma_sql = {
+        "escrow_holds": "PRAGMA table_info('escrow_holds')",
+        "orders": "PRAGMA table_info('orders')",
+    }.get(table_name)
+    if pragma_sql is None:
+        raise ValueError("Unsupported migration table")
+    return {row[1] for row in db.execute(pragma_sql).fetchall()}
+
+
+def ensure_column(db, table_name, column_name, alter_sql):
+    """Add one expected column without hiding unrelated SQLite failures."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column_name):
+        raise ValueError("Invalid column name")
+    if column_name in _table_columns(db, table_name):
+        return False
+    try:
+        db.execute(alter_sql)
+    except sqlite3.OperationalError as exc:
+        # A concurrent initializer can win the race between schema inspection and
+        # ALTER TABLE. Suppress only SQLite's exact duplicate-column outcome and
+        # only after proving the expected column now exists.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+        if column_name not in _table_columns(db, table_name):
+            raise
+        return False
+    if column_name not in _table_columns(db, table_name):
+        raise RuntimeError(f"Migration did not create {table_name}.{column_name}")
+    return True
+
+
+def _required_transaction_index_is_valid(db, index_name):
+    specifications = {
+        "idx_orders_creation_idempotency": {
+            "index_list_sql": "PRAGMA index_list('orders')",
+            "index_info_sql": "PRAGMA index_info('idx_orders_creation_idempotency')",
+            "columns": ["employer_id", "creation_idempotency_key"],
+            "predicate": "creation_idempotency_key is not null",
+        },
+        "idx_escrow_holds_funding_identity": {
+            "index_list_sql": "PRAGMA index_list('escrow_holds')",
+            "index_info_sql": "PRAGMA index_info('idx_escrow_holds_funding_identity')",
+            "columns": ["funding_identity"],
+            "predicate": "funding_identity is not null",
+        },
+    }
+    specification = specifications.get(index_name)
+    if specification is None:
+        raise ValueError("Unsupported required transaction index")
+
+    index_row = next(
+        (
+            row
+            for row in db.execute(specification["index_list_sql"]).fetchall()
+            if row[1] == index_name
+        ),
+        None,
+    )
+    if index_row is None or int(index_row[2]) != 1 or int(index_row[4]) != 1:
+        return False
+
+    columns = [row[2] for row in db.execute(specification["index_info_sql"]).fetchall()]
+    if columns != specification["columns"]:
+        return False
+
+    schema_row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+        [index_name],
+    ).fetchone()
+    normalized_sql = re.sub(r"\s+", " ", str(schema_row[0] if schema_row else "").strip().lower())
+    _, separator, predicate = normalized_sql.partition(" where ")
+    return bool(separator) and predicate == specification["predicate"]
+
+
+def validate_required_transaction_schema(db):
+    required_columns = {
+        "escrow_holds": {
+            "base_amount_cents",
+            "platform_fee_cents",
+            "processing_fee_cents",
+            "charged_total_cents",
+            "fee_policy_version",
+            "funding_identity",
+        },
+        "orders": {"creation_idempotency_key"},
+    }
+    missing = []
+    for table_name, expected in required_columns.items():
+        for column_name in sorted(expected - _table_columns(db, table_name)):
+            missing.append(f"{table_name}.{column_name}")
+
+    for index_name in (
+        "idx_orders_creation_idempotency",
+        "idx_escrow_holds_funding_identity",
+    ):
+        if not _required_transaction_index_is_valid(db, index_name):
+            missing.append(index_name)
+
+    job_hire_index = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_orders_one_job_hire'"
+    ).fetchone()
+    job_hire_triggers = {
+        row[0]
+        for row in db.execute(
+            """SELECT name FROM sqlite_master
+               WHERE type='trigger' AND name IN (
+                 'trg_orders_one_job_hire_insert',
+                 'trg_orders_one_job_hire_update'
+               )"""
+        ).fetchall()
+    }
+    if not job_hire_index and job_hire_triggers != {
+        "trg_orders_one_job_hire_insert",
+        "trg_orders_one_job_hire_update",
+    }:
+        missing.append("one-job-hire index-or-trigger enforcement")
+
+    if missing:
+        raise RuntimeError("Required transaction schema missing: " + ", ".join(missing))
+
+
+def ensure_one_job_hire_enforcement(db):
+    """Install the one-job-hire invariant without destroying legacy history.
+
+    A pre-existing database may legitimately contain duplicate rows created before
+    the invariant existed. A partial unique index cannot be added to that database,
+    so preserve and audit those rows while installing triggers that reject any new
+    duplicate. Once operators reconcile the legacy rows, a later init can add the
+    stronger unique index.
+    """
+    duplicates = db.execute(
+        """SELECT job_id, COUNT(*) AS duplicate_count, GROUP_CONCAT(id) AS order_ids
+           FROM orders
+           WHERE type='job_hire' AND job_id IS NOT NULL
+           GROUP BY job_id
+           HAVING COUNT(*) > 1
+           ORDER BY job_id"""
+    ).fetchall()
+
+    if not duplicates:
+        db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_job_hire
+               ON orders(job_id) WHERE type='job_hire' AND job_id IS NOT NULL"""
+        )
+        return
+
+    db.executescript("""
+        CREATE TRIGGER IF NOT EXISTS trg_orders_one_job_hire_insert
+        BEFORE INSERT ON orders
+        WHEN NEW.type='job_hire' AND NEW.job_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE type='job_hire' AND job_id=NEW.job_id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'job already has a hire order');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_orders_one_job_hire_update
+        BEFORE UPDATE OF type, job_id ON orders
+        WHEN NEW.type='job_hire' AND NEW.job_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE type='job_hire' AND job_id=NEW.job_id AND id<>NEW.id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'job already has a hire order');
+        END;
+    """)
+    for row in duplicates:
+        details = json.dumps({
+            "job_id": row["job_id"],
+            "duplicate_count": row["duplicate_count"],
+            "order_ids": [int(value) for value in str(row["order_ids"] or "").split(",") if value],
+            "action_required": "reconcile_supported_paths_before_unique_index",
+        }, sort_keys=True)
+        db.execute(
+            """INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+               SELECT NULL, 'legacy_duplicate_job_hire_detected', 'job', ?, ?
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM audit_log
+                 WHERE action='legacy_duplicate_job_hire_detected'
+                   AND entity_type='job' AND entity_id=?
+               )""",
+            [row["job_id"], details, row["job_id"]],
+        )
+
+
+def _init_db_connection(db):
     db.executescript("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -356,6 +556,7 @@ def init_db():
         employer_id INTEGER NOT NULL REFERENCES users(id),
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','in_progress','submitted','revision_requested','completed','canceled','disputed')),
         total_amount REAL NOT NULL,
+        creation_idempotency_key TEXT,
         worker_notes TEXT DEFAULT '',
         employer_notes TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')),
@@ -416,6 +617,12 @@ def init_db():
         order_id INTEGER NOT NULL REFERENCES orders(id),
         milestone_id INTEGER REFERENCES milestones(id),
         amount REAL NOT NULL,
+        base_amount_cents INTEGER,
+        platform_fee_cents INTEGER,
+        processing_fee_cents INTEGER,
+        charged_total_cents INTEGER,
+        fee_policy_version TEXT,
+        funding_identity TEXT,
         status TEXT NOT NULL DEFAULT 'held' CHECK(status IN ('held','released','refunded','partial')),
         stripe_payment_intent_id TEXT,
         created_at TEXT DEFAULT (datetime('now')),
@@ -478,8 +685,6 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_applications_worker ON applications(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_worker ON orders(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_employer ON orders(employer_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_job_hire
-        ON orders(job_id) WHERE type='job_hire' AND job_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_milestones_order ON milestones(order_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_contract ON time_entries(contract_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_order ON reviews(order_id);
@@ -490,6 +695,27 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_payout_transfers_idempotency ON payout_transfers(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     """)
+    for table_name, column_name, col_sql in [
+        ("escrow_holds", "base_amount_cents", "ALTER TABLE escrow_holds ADD COLUMN base_amount_cents INTEGER"),
+        ("escrow_holds", "platform_fee_cents", "ALTER TABLE escrow_holds ADD COLUMN platform_fee_cents INTEGER"),
+        ("escrow_holds", "processing_fee_cents", "ALTER TABLE escrow_holds ADD COLUMN processing_fee_cents INTEGER"),
+        ("escrow_holds", "charged_total_cents", "ALTER TABLE escrow_holds ADD COLUMN charged_total_cents INTEGER"),
+        ("escrow_holds", "fee_policy_version", "ALTER TABLE escrow_holds ADD COLUMN fee_policy_version TEXT"),
+        ("escrow_holds", "funding_identity", "ALTER TABLE escrow_holds ADD COLUMN funding_identity TEXT"),
+        ("orders", "creation_idempotency_key", "ALTER TABLE orders ADD COLUMN creation_idempotency_key TEXT"),
+    ]:
+        ensure_column(db, table_name, column_name, col_sql)
+    db.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_creation_idempotency
+           ON orders(employer_id, creation_idempotency_key)
+           WHERE creation_idempotency_key IS NOT NULL"""
+    )
+    db.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_escrow_holds_funding_identity
+           ON escrow_holds(funding_identity) WHERE funding_identity IS NOT NULL"""
+    )
+    ensure_one_job_hire_enforcement(db)
+    validate_required_transaction_schema(db)
     db.commit()
 
     # ── AI marketplace migrations ─────────────────────────────────────
@@ -601,7 +827,17 @@ def init_db():
     )
 
     db.commit()
-    db.close()
+
+
+def init_db():
+    db = get_db()
+    try:
+        _init_db_connection(db)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 SEEDED_SAMPLE_EMAILS = {
@@ -1012,6 +1248,20 @@ def error_response(message, status=400):
     json_response({"error": message}, status)
 
 
+class JsonDecimalToken(float):
+    """Float-compatible JSON number that retains its original request token."""
+
+    raw: str
+
+    def __new__(cls, raw):
+        value = super().__new__(cls, raw)
+        value.raw = raw
+        return value
+
+    def __str__(self):
+        return self.raw
+
+
 def get_body():
     if not hasattr(_request_ctx, 'body_cache'):
         try:
@@ -1022,7 +1272,10 @@ def get_body():
                 else:
                     raw = getattr(_request_ctx, 'stdin_data', '')
                     _request_ctx.raw_body = raw
-                parsed = json.loads(raw)
+                # Preserve the exact lexical representation of JSON decimals. Money and
+                # quantity validators must see `1e2` and hidden sub-cent tails rather
+                # than a lossy binary-float normalization.
+                parsed = json.loads(raw, parse_float=JsonDecimalToken, parse_constant=str)
                 if not isinstance(parsed, dict):
                     _request_ctx.body_cache = None
                 else:
@@ -1062,17 +1315,114 @@ def row_to_dict(row):
 
 
 def money_to_cents(value, field_name="amount"):
-    """Convert a JSON/SQLite money value to exact cents or reject it."""
+    """Convert a JSON/SQLite money value to exact cents without Decimal context rounding."""
+    text = str(value)
+    if (not text or text != text.strip() or len(text) > MAX_MONEY_INPUT_CHARS
+            or not re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]{1,2})?", text)):
+        raise ValueError(f"{field_name} must be a valid amount in whole cents")
     try:
-        decimal_value = Decimal(str(value))
+        decimal_value = Decimal(text)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
-    if not decimal_value.is_finite():
+    if not decimal_value.is_finite() or decimal_value.copy_abs() > MAX_MONEY_ABS:
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
-    cents = decimal_value * 100
-    if cents != cents.to_integral_value():
-        raise ValueError(f"{field_name} must be specified in whole cents")
-    return int(cents)
+    if decimal_value == 0:
+        return 0
+
+    sign, digits, exponent = decimal_value.as_tuple()
+    coefficient = int("".join(str(digit) for digit in digits))
+    cent_exponent = int(exponent) + 2
+    if cent_exponent >= 0:
+        cents = coefficient * (10 ** cent_exponent)
+    else:
+        scale = -cent_exponent
+        if scale > len(digits):
+            raise ValueError(f"{field_name} must be specified in whole cents")
+        divisor = 10 ** scale
+        cents, remainder = divmod(coefficient, divisor)
+        if remainder:
+            raise ValueError(f"{field_name} must be specified in whole cents")
+    return -cents if sign else cents
+
+
+def bounded_integer(value, field_name, minimum, maximum):
+    """Parse a canonical JSON integer or ASCII integer string without float normalization."""
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a whole number between {minimum} and {maximum}")
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, str) and value == value.strip() and re.fullmatch(r"(?:0|[1-9][0-9]*)", value):
+        number = int(value)
+    else:
+        raise ValueError(f"{field_name} must be a whole number between {minimum} and {maximum}")
+    if number < minimum or number > maximum:
+        raise ValueError(f"{field_name} must be a whole number between {minimum} and {maximum}")
+    return number
+
+
+def canonical_decimal_quantity(value, field_name, maximum=Decimal("10000")):
+    """Parse a bounded canonical ASCII decimal quantity without lossy float normalization."""
+    text = str(value)
+    if (not text or text != text.strip() or len(text) > MAX_MONEY_INPUT_CHARS
+            or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", text)):
+        raise ValueError(f"{field_name} must be a valid positive number")
+    try:
+        quantity = Decimal(text)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid positive number")
+    if not quantity.is_finite() or quantity <= 0 or quantity > maximum:
+        raise ValueError(f"{field_name} must be a valid positive number")
+    return quantity
+
+
+def rounded_product_cents(amount, quantity, field_name="amount"):
+    """Multiply a cent-denominated amount by a bounded quantity and round half-up once."""
+    base_cents = money_to_cents(amount, field_name)
+    quantity_decimal = canonical_decimal_quantity(quantity, f"{field_name} quantity")
+    _, digits, exponent = quantity_decimal.as_tuple()
+    exponent = int(exponent)
+    coefficient = int("".join(str(digit) for digit in digits))
+    sign = -1 if base_cents < 0 else 1
+    exact_product = abs(base_cents) * coefficient
+    if exponent >= 0:
+        rounded = exact_product * (10 ** exponent)
+    else:
+        divisor = 10 ** (-exponent)
+        rounded, remainder = divmod(exact_product, divisor)
+        if remainder * 2 >= divisor:
+            rounded += 1
+    return sign * rounded
+
+
+def component_fee_cents(base_cents, basis_points):
+    """Round a positive fee component half-up, with the UI's one-cent minimum."""
+    if base_cents <= 0:
+        return 0
+    return max(1, (base_cents * basis_points + 5000) // 10000)
+
+
+def buyer_charge_breakdown_cents(amount):
+    """Return the exact component-rounded buyer charge sent to Stripe."""
+    base_cents = money_to_cents(amount, "amount")
+    if base_cents <= 0:
+        raise ValueError("amount must be greater than zero")
+    platform_fee_cents = component_fee_cents(base_cents, PLATFORM_FEE_BPS)
+    processing_fee_cents = component_fee_cents(base_cents, PROCESSING_FEE_BPS)
+    return {
+        "base_cents": base_cents,
+        "platform_fee_cents": platform_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": base_cents + platform_fee_cents + processing_fee_cents,
+    }
+
+
+def synchronize_job_terminal_state(db, order, status="completed"):
+    """Keep a job-hire order and its job in the same terminal lifecycle state."""
+    if order["type"] == "job_hire" and order["job_id"]:
+        db.execute(
+            "UPDATE jobs SET status=?, updated_at=datetime('now') WHERE id=?",
+            [status, order["job_id"]],
+        )
 
 
 def validated_order_notes(value, field_name="notes"):
@@ -1084,6 +1434,14 @@ def validated_order_notes(value, field_name="notes"):
     if len(notes) > MAX_ORDER_NOTES_LENGTH:
         raise ValueError(f"{field_name} must be {MAX_ORDER_NOTES_LENGTH} characters or less")
     return notes
+
+
+def validated_idempotency_key(value):
+    if not isinstance(value, str) or value != value.strip():
+        raise ValueError("idempotency_key must be a 16-128 character operation identity")
+    if not 16 <= len(value) <= 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", value):
+        raise ValueError("idempotency_key must be a 16-128 character operation identity")
+    return value
 
 
 def authenticate_session(db):
@@ -1449,8 +1807,9 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
     """Release escrow hold, transfer to worker via Stripe or simulation."""
     # Employer pays the 1% platform margin on top of the listed amount.
     # Workers receive the listed amount unless Enzo explicitly changes the model.
-    fee = round(amount * SERVICE_FEE_RATE, 2)
-    worker_payout = round(amount, 2)
+    amount_cents = money_to_cents(amount, "escrow amount")
+    fee = component_fee_cents(amount_cents, PLATFORM_FEE_BPS) / 100
+    worker_payout = amount_cents / 100
 
     if stripe_configured() or PRODUCTION_MODE:
         wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [worker_id]).fetchone()
@@ -1459,13 +1818,13 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
             raise ValueError("A live worker Stripe Connect payout account is required before release.")
         if not stripe_configured():
             raise ValueError("Stripe is not configured; live payout release is disabled in production.")
-        idempotency_key = f"escrow-release:{order_id}:{milestone_id or 'full'}:{int(worker_payout * 100)}"
+        idempotency_key = f"escrow-release:{order_id}:{milestone_id or 'full'}"
         try:
             account = retrieve_live_connect_account(payout_account_id)
             if not is_live_connect_account_ready(account):
                 raise ValueError("Worker Stripe Connect account is not payout-ready.")
             transfer = stripe.Transfer.create(
-                amount=int(worker_payout * 100),
+                amount=amount_cents,
                 currency="usd",
                 destination=payout_account_id,
                 metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
@@ -1491,7 +1850,7 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
     return worker_payout, fee
 
 
-def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, description="Escrow hold"):
+def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, description="Escrow hold", funding_identity=None):
     """
     Fund escrow. Returns (payment_intent_id, mode).
     - With Stripe: create PaymentIntent with capture_method=manual, then capture it.
@@ -1499,14 +1858,49 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
     - Without Stripe: simulate.
     """
     ep = db.execute("SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id = ?", [employer_id]).fetchone()
+    charge = buyer_charge_breakdown_cents(amount)
+    if PRODUCTION_MODE and not stripe_configured():
+        raise ValueError("Payments are temporarily unavailable because simulated escrow is disabled in production.")
+    funding_identity = funding_identity or (f"milestone:{milestone_id}" if milestone_id is not None else None)
+    if funding_identity is None:
+        raise ValueError("A stable funding identity is required for escrow funding.")
+
+    existing_hold = db.execute(
+        "SELECT * FROM escrow_holds WHERE funding_identity=?", [funding_identity]
+    ).fetchone()
+    if existing_hold:
+        existing_base_cents = existing_hold['base_amount_cents']
+        if existing_base_cents is None:
+            existing_base_cents = money_to_cents(existing_hold['amount'], "existing escrow amount")
+        same_operation = (
+            int(existing_hold['order_id']) == int(order_id)
+            and existing_hold['milestone_id'] == milestone_id
+            and int(existing_base_cents) == charge["base_cents"]
+        )
+        if not same_operation:
+            raise ValueError("Funding identity conflicts with an existing escrow operation.")
+        return existing_hold['stripe_payment_intent_id'], "replayed"
+
+    if milestone_id is None:
+        unkeyed_hold = db.execute(
+            "SELECT id FROM escrow_holds WHERE order_id=? AND milestone_id IS NULL AND funding_identity IS NULL LIMIT 1",
+            [order_id],
+        ).fetchone()
+    else:
+        unkeyed_hold = db.execute(
+            "SELECT id FROM escrow_holds WHERE order_id=? AND milestone_id=? AND funding_identity IS NULL LIMIT 1",
+            [order_id, milestone_id],
+        ).fetchone()
+    if unkeyed_hold:
+        raise ValueError("Existing funding must complete processor reconciliation before this operation can be retried.")
 
     if stripe_configured():
         if not ep or not ep['stripe_customer_id'] or not ep['payment_method_id']:
             raise ValueError("A confirmed employer payment method is required before escrow can be funded.")
         try:
-            total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% platform fee + ~3% processing fee (4% all-in)
+            idempotency_key = f"escrow-fund:{funding_identity}"
             pi = stripe.PaymentIntent.create(
-                amount=total_charge,
+                amount=charge["total_cents"],
                 currency="usd",
                 customer=ep['stripe_customer_id'],
                 payment_method=ep['payment_method_id'],
@@ -1515,25 +1909,31 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
                 capture_method="automatic",
                 description=description,
                 metadata={
-                    "order_id": str(order_id),
-                    "milestone_id": str(milestone_id or ""),
+                    "funding_identity": funding_identity,
                     "employer_id": str(employer_id),
-                }
+                },
+                idempotency_key=idempotency_key,
             )
             pi_id = pi.id
             mode = "live"
         except stripe.error.StripeError as e:
             raise ValueError(f"Payment failed: {str(e)}")
     else:
-        if PRODUCTION_MODE:
-            raise ValueError("Stripe is not configured; simulated escrow is disabled in production.")
         pi_id = fake_payment_intent_id()
         mode = "simulated"
 
-    # Record escrow hold
+    # Record escrow hold with the exact processor charge breakdown used for this operation.
     db.execute(
-        "INSERT INTO escrow_holds (order_id, milestone_id, amount, status, stripe_payment_intent_id) VALUES (?,?,?,'held',?)",
-        [order_id, milestone_id, amount, pi_id]
+        """INSERT INTO escrow_holds
+           (order_id, milestone_id, amount, base_amount_cents, platform_fee_cents,
+            processing_fee_cents, charged_total_cents, fee_policy_version, funding_identity,
+            status, stripe_payment_intent_id)
+           VALUES (?,?,?,?,?,?,?,'component-half-up-v1',?,'held',?)""",
+        [
+            order_id, milestone_id, charge["base_cents"] / 100, charge["base_cents"],
+            charge["platform_fee_cents"], charge["processing_fee_cents"], charge["total_cents"],
+            funding_identity, pi_id,
+        ]
     )
     return pi_id, mode
 
@@ -1686,6 +2086,9 @@ def _handle_routes(db):
             "service_fee_rate": SERVICE_FEE_RATE,
             "processing_fee_rate": PROCESSING_FEE_RATE,
             "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
+            "fee_rounding": "round each positive component half-up to cents with a one-cent minimum",
+            "platform_fee_basis_points": PLATFORM_FEE_BPS,
+            "processing_fee_basis_points": PROCESSING_FEE_BPS,
             "description": "Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Workers receive the listed payout.",
             "fee_paid_by": "buyer",
             "escrow": False
@@ -2614,8 +3017,8 @@ def _handle_routes(db):
             return error_response("Job not found", 404)
         if job['employer_id'] != user['id'] and not user['is_admin']:
             return error_response("Forbidden", 403)
-        if job['status'] in ('in_progress', 'completed'):
-            return error_response("Cannot cancel a job that is in progress or completed", 409)
+        if job['status'] in ('hired', 'in_progress', 'completed'):
+            return error_response("Cannot cancel a hired, in-progress, or completed job", 409)
         db.execute("UPDATE jobs SET status='canceled', updated_at=datetime('now') WHERE id = ?", [job_id])
         audit(db, user['id'], "cancel_job", "job", job_id)
         db.commit()
@@ -2811,7 +3214,8 @@ def _handle_routes(db):
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, user['id'], first_ms_amount, order_id, first_ms_id,
-                    f"Escrow for job #{job_id} milestone 1"
+                    f"Escrow for job {job_id} application {application_id} milestone 1",
+                    funding_identity=f"job:{job_id}:application:{application_id}:milestone:1",
                 )
             except ValueError as e:
                 db.rollback()
@@ -2828,17 +3232,15 @@ def _handle_routes(db):
             # The client must not be able to rewrite the worker's posted rate at hire time.
             hourly_rate = float(job['budget_amount'] or 0)
             try:
-                weekly_cap = float(body.get("weekly_hour_cap", 40))
-            except (TypeError, ValueError):
+                weekly_cap = bounded_integer(body.get("weekly_hour_cap", 40), "Weekly hour cap", 1, 168)
+            except ValueError as e:
                 db.rollback()
-                return error_response("Weekly hour cap must be a number between 1 and 168", 400)
+                return error_response(str(e), 400)
             if not math.isfinite(hourly_rate) or hourly_rate <= 0:
                 db.rollback()
                 return error_response("Hourly job rate must be greater than zero", 400)
-            if not math.isfinite(weekly_cap) or weekly_cap < 1 or weekly_cap > 168:
-                db.rollback()
-                return error_response("Weekly hour cap must be between 1 and 168", 400)
-            week_escrow = round(hourly_rate * weekly_cap, 2)
+            week_escrow_cents = rounded_product_cents(hourly_rate, weekly_cap, "hourly job rate")
+            week_escrow = week_escrow_cents / 100
 
             week_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             hc = db.execute(
@@ -2853,7 +3255,8 @@ def _handle_routes(db):
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, user['id'], week_escrow, order_id, None,
-                    f"Hourly contract #{contract_id} first week escrow"
+                    f"First week escrow for job {job_id} application {application_id} week {week_start}",
+                    funding_identity=f"job:{job_id}:application:{application_id}:week:{week_start}",
                 )
             except ValueError as e:
                 db.rollback()
@@ -2907,6 +3310,27 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/order$", path).group(1))
+        body = get_body()
+        try:
+            creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
+        except ValueError as e:
+            return error_response(str(e), 400)
+
+        existing_order = db.execute(
+            "SELECT * FROM orders WHERE employer_id=? AND creation_idempotency_key=?",
+            [user['id'], creation_idempotency_key],
+        ).fetchone()
+        if existing_order:
+            if existing_order['service_id'] != service_id:
+                return error_response("idempotency_key was already used for a different service order", 409)
+            result = row_to_dict(existing_order)
+            milestones = db.execute(
+                "SELECT * FROM milestones WHERE order_id=? ORDER BY sequence", [existing_order['id']]
+            ).fetchall()
+            result['milestones'] = [row_to_dict(m) for m in milestones]
+            result['idempotent_replay'] = True
+            return json_response(result, 200)
+
         svc = db.execute("SELECT * FROM services WHERE id = ? AND status = 'active'", [service_id]).fetchone()
         if not svc:
             return error_response("Service not found or unavailable", 404)
@@ -2917,29 +3341,46 @@ def _handle_routes(db):
         if not employer_has_payment_setup(db, user['id']):
             return error_response("You must set up a payment method before ordering. Use /payments/setup-employer.", 402)
 
-        body = get_body()
         pricing_type = svc['pricing_type']
 
-        if pricing_type == 'fixed':
-            total_amount = float(svc['price'] or 0)
-        elif pricing_type == 'hourly':
-            hours = float(body.get("hours", 1))
-            total_amount = round(float(svc['hourly_rate'] or 0) * hours, 2)
-        else:
-            # custom pricing: employer provides amount
-            total_amount = float(body.get("amount", 0))
-            if total_amount <= 0:
-                return error_response("amount required for custom pricing")
+        try:
+            if pricing_type == 'fixed':
+                total_amount_cents = money_to_cents(svc['price'] or 0, "service price")
+            elif pricing_type == 'hourly':
+                hours = canonical_decimal_quantity(body.get("hours", 1), "hours")
+                total_amount_cents = rounded_product_cents(svc['hourly_rate'] or 0, hours, "service hourly rate")
+            else:
+                # custom pricing: employer provides an exact canonical cent amount
+                total_amount_cents = money_to_cents(body.get("amount", 0), "custom service amount")
+            if total_amount_cents <= 0:
+                raise ValueError("Service price must be positive")
+        except ValueError as e:
+            return error_response(str(e), 400)
+        total_amount = total_amount_cents / 100
 
-        if total_amount <= 0:
-            return error_response("Service price must be positive")
-
-        # Create order
-        cursor = db.execute(
-            """INSERT INTO orders (type, service_id, worker_id, employer_id, status, total_amount)
-               VALUES ('service_order', ?, ?, ?, 'in_progress', ?)""",
-            [service_id, svc['worker_id'], user['id'], total_amount]
-        )
+        # Create order. The unique operation key closes the concurrent replay race.
+        try:
+            cursor = db.execute(
+                """INSERT INTO orders
+                   (type, service_id, worker_id, employer_id, status, total_amount, creation_idempotency_key)
+                   VALUES ('service_order', ?, ?, ?, 'in_progress', ?, ?)""",
+                [service_id, svc['worker_id'], user['id'], total_amount, creation_idempotency_key]
+            )
+        except sqlite3.IntegrityError:
+            db.rollback()
+            existing_order = db.execute(
+                "SELECT * FROM orders WHERE employer_id=? AND creation_idempotency_key=?",
+                [user['id'], creation_idempotency_key],
+            ).fetchone()
+            if not existing_order or existing_order['service_id'] != service_id:
+                return error_response("idempotency_key conflicts with another operation", 409)
+            result = row_to_dict(existing_order)
+            milestones = db.execute(
+                "SELECT * FROM milestones WHERE order_id=? ORDER BY sequence", [existing_order['id']]
+            ).fetchall()
+            result['milestones'] = [row_to_dict(m) for m in milestones]
+            result['idempotent_replay'] = True
+            return json_response(result, 200)
         order_id = cursor.lastrowid
 
         # Create single milestone for the full amount
@@ -2953,7 +3394,8 @@ def _handle_routes(db):
         try:
             pi_id, mode = fund_escrow_stripe(
                 db, user['id'], total_amount, order_id, milestone_id,
-                f"Escrow for service order #{order_id}"
+                f"Escrow for service {service_id} operation {creation_idempotency_key}",
+                funding_identity=f"service-order:{user['id']}:{creation_idempotency_key}",
             )
         except ValueError as e:
             db.rollback()
@@ -3018,12 +3460,17 @@ def _handle_routes(db):
                 wu.name as worker_name, wu.avatar_url as worker_avatar,
                 eu.name as employer_name, eu.avatar_url as employer_avatar,
                 s.title as service_title,
-                j.title as job_title
+                j.title as job_title,
+                CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
+                COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
+                hc.weekly_hour_cap,
+                hc.current_week_escrow_amount
                 FROM orders o
                 JOIN users wu ON o.worker_id = wu.id
                 JOIN users eu ON o.employer_id = eu.id
                 LEFT JOIN services s ON o.service_id = s.id
                 LEFT JOIN jobs j ON o.job_id = j.id
+                LEFT JOIN hourly_contracts hc ON hc.order_id = o.id
                 WHERE {where}
                 ORDER BY o.updated_at DESC
                 LIMIT ? OFFSET ?""",
@@ -3075,6 +3522,42 @@ def _handle_routes(db):
             result['time_entries'] = [row_to_dict(e) for e in entries]
         escrow = db.execute("SELECT * FROM escrow_holds WHERE order_id = ? ORDER BY created_at DESC", [order_id]).fetchall()
         result['escrow_holds'] = [row_to_dict(e) for e in escrow]
+        funding_summary = {
+            "base_cents": 0,
+            "platform_fee_cents": 0,
+            "processing_fee_cents": 0,
+            "charged_total_cents": 0,
+            "funded_amount_available": True,
+            "charge_amount_available": True,
+            "record_count": len(escrow),
+        }
+        for hold in escrow:
+            persisted_base_cents = hold['base_amount_cents']
+            if persisted_base_cents is not None:
+                funding_summary["base_cents"] += int(persisted_base_cents)
+            else:
+                try:
+                    funding_summary["base_cents"] += money_to_cents(hold['amount'], "legacy escrow amount")
+                except ValueError:
+                    funding_summary["funded_amount_available"] = False
+
+            persisted_charge = (
+                hold['platform_fee_cents'], hold['processing_fee_cents'], hold['charged_total_cents'],
+            )
+            if all(value is not None for value in persisted_charge):
+                funding_summary["platform_fee_cents"] += int(persisted_charge[0])
+                funding_summary["processing_fee_cents"] += int(persisted_charge[1])
+                funding_summary["charged_total_cents"] += int(persisted_charge[2])
+            else:
+                # Rows created before exact charge persistence require processor reconciliation.
+                funding_summary["charge_amount_available"] = False
+        if not funding_summary["funded_amount_available"]:
+            funding_summary["base_cents"] = None
+        if not funding_summary["charge_amount_available"]:
+            funding_summary["platform_fee_cents"] = None
+            funding_summary["processing_fee_cents"] = None
+            funding_summary["charged_total_cents"] = None
+        result['funding_summary'] = funding_summary
         reviews = db.execute("SELECT * FROM reviews WHERE order_id = ?", [order_id]).fetchall()
         result['reviews'] = [row_to_dict(r) for r in reviews]
         return json_response(result)
@@ -3160,37 +3643,66 @@ def _handle_routes(db):
             [ms_id]
         )
 
-        # Check if there are more milestones to fund
+        # Check if there are more milestones to fund or reconcile.
         next_ms = db.execute(
-            "SELECT * FROM milestones WHERE order_id=? AND status='pending' ORDER BY sequence LIMIT 1",
+            "SELECT * FROM milestones WHERE order_id=? AND status IN ('pending','funded') ORDER BY sequence LIMIT 1",
             [order_id]
         ).fetchone()
 
         if next_ms:
-            # Fund next milestone
-            try:
-                pi_id, mode = fund_escrow_stripe(
-                    db, user['id'], float(next_ms['amount']), order_id, next_ms['id'],
-                    f"Escrow for order #{order_id} milestone {next_ms['sequence']}"
-                )
-                db.execute(
-                    "UPDATE milestones SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
-                    [pi_id, next_ms['id']]
-                )
-                db.execute("UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=?", [order_id])
-                push_notification(db, order['worker_id'], "milestone_funded",
-                    f"Next milestone funded",
-                    f"Milestone {next_ms['sequence']} has been funded. Continue working!",
-                    f"/orders/{order_id}")
-            except ValueError as e:
-                # Can't fund next milestone — mark order as disputed
+            if next_ms['status'] == 'funded':
+                # Legacy manual pre-funding used a lifecycle state that approval did
+                # not consume. Never skip it and falsely complete the order; require
+                # reconciliation without making another processor call.
                 db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
                 push_notification(db, order['worker_id'], "payment_issue",
-                    "Payment issue on next milestone",
-                    f"Could not fund next milestone: {str(e)}",
+                    "Payment reconciliation required",
+                    f"Pre-funded milestone {next_ms['sequence']} must be reconciled before work continues.",
                     f"/orders/{order_id}")
+            else:
+                # Fund next milestone
+                try:
+                    pi_id, mode = fund_escrow_stripe(
+                        db, user['id'], float(next_ms['amount']), order_id, next_ms['id'],
+                        f"Escrow for order #{order_id} milestone {next_ms['sequence']}"
+                    )
+                    db.execute(
+                        "UPDATE milestones SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
+                        [pi_id, next_ms['id']]
+                    )
+                    db.execute("UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=?", [order_id])
+                    push_notification(db, order['worker_id'], "milestone_funded",
+                        f"Next milestone funded",
+                        f"Milestone {next_ms['sequence']} has been funded. Continue working!",
+                        f"/orders/{order_id}")
+                except ValueError as e:
+                    # Can't fund next milestone — mark order as disputed
+                    db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
+                    push_notification(db, order['worker_id'], "payment_issue",
+                        "Payment issue on next milestone",
+                        f"Could not fund next milestone: {str(e)}",
+                        f"/orders/{order_id}")
+        elif (
+            db.execute(
+                "SELECT 1 FROM milestones WHERE order_id=? AND status<>'approved' LIMIT 1",
+                [order_id],
+            ).fetchone()
+            or db.execute(
+                "SELECT 1 FROM escrow_holds WHERE order_id=? AND status IN ('held','partial') LIMIT 1",
+                [order_id],
+            ).fetchone()
+        ):
+            # No ordinary pending/funded next step exists, but the order still has
+            # active child work or unresolved escrow. Fail closed rather than
+            # claiming completion or incrementing marketplace statistics.
+            db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
+            push_notification(db, order['worker_id'], "payment_issue",
+                "Order reconciliation required",
+                f"Order #{order_id} still has unresolved milestone or escrow state after approval.",
+                f"/orders/{order_id}")
         else:
-            # All milestones done — complete order
+            # Positive completion invariant: every milestone is approved and no
+            # held or partially settled escrow remains.
             db.execute(
                 "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
                 [order_id]
@@ -3468,6 +3980,11 @@ def _handle_routes(db):
         hc = db.execute("SELECT * FROM hourly_contracts WHERE order_id = ?", [order_id]).fetchone()
         if not hc:
             return error_response("No hourly contract for this order", 404)
+        if not HOURLY_SETTLEMENT_ENABLED:
+            return error_response(
+                "Hourly settlement is temporarily paused while processor reconciliation safeguards are finalized",
+                503,
+            )
 
         body = get_body()
         week_of = body.get("week_of")
@@ -3482,10 +3999,11 @@ def _handle_routes(db):
         if not entries:
             return error_response("No pending time entries for this week", 404)
 
-        total_hours = sum(float(e['hours']) for e in entries)
-        total_pay = round(total_hours * float(hc['hourly_rate']), 2)
-        fee = round(total_pay * SERVICE_FEE_RATE, 2)
-        worker_pay = round(total_pay, 2)
+        total_hours = sum((Decimal(str(e['hours'])) for e in entries), Decimal("0"))
+        total_pay_cents = rounded_product_cents(hc['hourly_rate'], total_hours, "hourly contract rate")
+        worker_pay = total_pay_cents / 100
+        fee = component_fee_cents(total_pay_cents, PLATFORM_FEE_BPS) / 100
+        total_hours_value = float(total_hours)
 
         if stripe_configured() or PRODUCTION_MODE:
             wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id=?", [order['worker_id']]).fetchone()
@@ -3494,14 +4012,14 @@ def _handle_routes(db):
                 return error_response("A live worker Stripe Connect payout account is required before approving paid hours.", 409)
             if not stripe_configured():
                 return error_response("Stripe is not configured; live hourly payout release is disabled in production.", 503)
-            idempotency_key = f"hourly-release:{order_id}:{week_of}:{int(worker_pay * 100)}"
+            idempotency_key = f"hourly-release:{order_id}:{week_of}"
             try:
                 account = retrieve_live_connect_account(payout_account_id)
                 if not is_live_connect_account_ready(account):
                     db.rollback()
                     return error_response("Worker Stripe Connect account is not payout-ready.", 409)
                 transfer = stripe.Transfer.create(
-                    amount=int(worker_pay * 100),
+                    amount=total_pay_cents,
                     currency="usd",
                     destination=payout_account_id,
                     metadata={"order_id": str(order_id), "week_of": week_of},
@@ -3532,16 +4050,19 @@ def _handle_routes(db):
         )
 
         # Refund unused escrow and fund next week
-        escrow_held = float(hc['current_week_escrow_amount'] or 0)
-        unused = max(0, round(escrow_held - total_pay, 2))
+        escrow_held_cents = money_to_cents(hc['current_week_escrow_amount'] or 0, "hourly escrow")
+        unused = max(0, escrow_held_cents - total_pay_cents) / 100
 
         # Fund next week's escrow
         if hc['status'] == 'active':
-            next_week_escrow = round(float(hc['hourly_rate']) * float(hc['weekly_hour_cap']), 2)
+            next_week_escrow = rounded_product_cents(
+                hc['hourly_rate'], hc['weekly_hour_cap'], "hourly contract rate"
+            ) / 100
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, order['employer_id'], next_week_escrow, order_id, None,
-                    f"Hourly contract next week escrow"
+                    "Hourly contract next week escrow",
+                    funding_identity=f"hourly:{hc['id']}:renewal-after:{week_of}",
                 )
                 db.execute(
                     "UPDATE hourly_contracts SET current_week_escrow_amount=?, current_week_escrow_payment_id=? WHERE id=?",
@@ -3552,14 +4073,14 @@ def _handle_routes(db):
 
         push_notification(db, order['worker_id'], "hours_approved",
             f"Hours approved — payment released!",
-            f"{total_hours}h approved for week of {week_of}. ${worker_pay:.2f} released.",
+            f"{total_hours_value:g}h approved for week of {week_of}. ${worker_pay:.2f} released.",
             f"/orders/{order_id}")
 
-        audit(db, user['id'], "approve_hours", "hourly_contract", hc['id'], {"week_of": week_of, "hours": total_hours})
+        audit(db, user['id'], "approve_hours", "hourly_contract", hc['id'], {"week_of": week_of, "hours": total_hours_value})
         db.commit()
         return json_response({
             "ok": True,
-            "hours_approved": total_hours,
+            "hours_approved": total_hours_value,
             "worker_pay": worker_pay,
             "platform_fee": fee,
             "unused_escrow_refunded": unused
@@ -3581,6 +4102,11 @@ def _handle_routes(db):
             return error_response("No hourly contract for this order", 404)
         if hc['status'] == 'ended':
             return error_response("Contract already ended", 409)
+        if not HOURLY_SETTLEMENT_ENABLED:
+            return error_response(
+                "Hourly settlement is temporarily paused while processor reconciliation safeguards are finalized",
+                503,
+            )
 
         body = get_body()
 
@@ -3589,6 +4115,7 @@ def _handle_routes(db):
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
             [order_id]
         )
+        synchronize_job_terminal_state(db, order)
 
         # Refund remaining escrow
         db.execute(
@@ -3936,31 +4463,206 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
 
         body = get_body()
-        order_id = body.get("order_id")
-        milestone_id = body.get("milestone_id")
-        if not order_id:
+        if body.get("order_id") is None:
             return error_response("order_id required")
+        try:
+            order_id = bounded_integer(body.get("order_id"), "order_id", 1, 9_223_372_036_854_775_807)
+            milestone_id = (
+                None
+                if body.get("milestone_id") is None
+                else bounded_integer(body.get("milestone_id"), "milestone_id", 1, 9_223_372_036_854_775_807)
+            )
+        except ValueError as e:
+            return error_response(str(e), 400)
 
-        order = db.execute("SELECT * FROM orders WHERE id=?", [int(order_id)]).fetchone()
+        order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
         if not order:
             return error_response("Order not found", 404)
         if order['employer_id'] != user['id']:
             return error_response("Forbidden", 403)
 
-        amount = float(body.get("amount", 0))
-        if amount <= 0:
-            return error_response("amount must be positive")
+        # Serialize the final pre-processor eligibility check so two requests
+        # cannot both observe the same target as unfunded.
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+        order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
+        if not order:
+            return error_response("Order not found", 404)
+        if order['employer_id'] != user['id']:
+            return error_response("Forbidden", 403)
+
+        milestone = None
+        if milestone_id is not None:
+            milestone = db.execute(
+                "SELECT * FROM milestones WHERE id=? AND order_id=?",
+                [milestone_id, order_id],
+            ).fetchone()
+            if not milestone:
+                return error_response("Milestone not found for this order", 404)
 
         try:
-            pi_id, mode = fund_escrow_stripe(db, user['id'], amount, order_id, milestone_id, "Owner-approved checkout funding")
+            authoritative_amount = milestone["amount"] if milestone is not None else order["total_amount"]
+            amount_cents = money_to_cents(
+                authoritative_amount,
+                "milestone amount" if milestone is not None else "order total amount",
+            )
+            if body.get("amount") is not None:
+                requested_cents = money_to_cents(body.get("amount"), "amount")
+                if requested_cents != amount_cents:
+                    return error_response("amount must match the authoritative funded amount", 409)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if amount_cents <= 0:
+            return error_response("amount must be positive", 400)
+        amount = amount_cents / 100
+        funding_identity = (
+            f"milestone:{milestone_id}" if milestone_id is not None else f"order:{order_id}:full"
+        )
+
+        exact_replay = db.execute(
+            "SELECT * FROM escrow_holds WHERE order_id=? AND funding_identity=? LIMIT 1",
+            [order_id, funding_identity],
+        ).fetchone()
+        if exact_replay:
+            replay_base_cents = exact_replay["base_amount_cents"]
+            if replay_base_cents is None:
+                try:
+                    replay_base_cents = money_to_cents(exact_replay["amount"], "funded amount")
+                except ValueError:
+                    return error_response("Existing funding requires processor reconciliation", 409)
+            if (replay_base_cents != amount_cents
+                    or exact_replay["milestone_id"] != milestone_id
+                    or not exact_replay["stripe_payment_intent_id"]):
+                return error_response("Existing funding conflicts with this operation", 409)
+
+            hold_status = exact_replay["status"]
+            replay_is_valid = False
+            if milestone is not None:
+                milestone_status = milestone["status"]
+                order_status = order["status"]
+                first_milestone = db.execute(
+                    "SELECT id FROM milestones WHERE order_id=? ORDER BY sequence, id LIMIT 1",
+                    [order_id],
+                ).fetchone()
+                hold_count = db.execute(
+                    "SELECT COUNT(*) FROM escrow_holds WHERE order_id=?",
+                    [order_id],
+                ).fetchone()[0]
+                if (order_status == "pending" and milestone_status == "funded"
+                        and hold_status == "held" and first_milestone
+                        and first_milestone["id"] == milestone_id and hold_count == 1):
+                    updated_ms = db.execute(
+                        "UPDATE milestones SET status='in_progress' WHERE id=? AND order_id=? AND status='funded'",
+                        [milestone_id, order_id],
+                    )
+                    updated_order = db.execute(
+                        "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+                        [order_id],
+                    )
+                    if updated_ms.rowcount != 1 or updated_order.rowcount != 1:
+                        raise RuntimeError("Legacy funding replay state changed during normalization")
+                    audit(db, user['id'], "normalize_legacy_funding_replay", "escrow_hold", exact_replay["id"], {
+                        "order_id": order_id,
+                        "milestone_id": milestone_id,
+                        "funding_identity": funding_identity,
+                    })
+                    replay_is_valid = True
+                elif hold_status == "held" and (
+                    (order_status == "in_progress" and milestone_status == "in_progress")
+                    or (order_status == "submitted" and milestone_status == "submitted")
+                    or (order_status == "revision_requested" and milestone_status == "in_progress")
+                ):
+                    replay_is_valid = True
+                elif (hold_status == "released" and milestone_status == "approved"
+                        and order_status in ("in_progress", "submitted", "revision_requested", "completed")):
+                    replay_is_valid = True
+            else:
+                order_status = order["status"]
+                has_milestones = db.execute(
+                    "SELECT 1 FROM milestones WHERE order_id=? LIMIT 1",
+                    [order_id],
+                ).fetchone()
+                if not has_milestones and order_status == "pending" and hold_status == "held":
+                    updated_order = db.execute(
+                        "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+                        [order_id],
+                    )
+                    if updated_order.rowcount != 1:
+                        raise RuntimeError("Legacy aggregate replay state changed during normalization")
+                    audit(db, user['id'], "normalize_legacy_funding_replay", "escrow_hold", exact_replay["id"], {
+                        "order_id": order_id,
+                        "funding_identity": funding_identity,
+                    })
+                    replay_is_valid = True
+                elif not has_milestones and (
+                    (hold_status == "held" and order_status in ("in_progress", "submitted", "revision_requested"))
+                    or (hold_status == "released" and order_status == "completed")
+                ):
+                    replay_is_valid = True
+
+            if not replay_is_valid:
+                return error_response("Existing funding requires lifecycle reconciliation", 409)
+            db.commit()
+            return json_response({
+                "ok": True,
+                "payment_intent_id": exact_replay["stripe_payment_intent_id"],
+                "mode": "replayed",
+                "amount": amount,
+                "idempotent_replay": True,
+            })
+
+        if order["status"] != "pending":
+            return error_response("Order is not eligible for new funding", 409)
+
+        if milestone is not None:
+            if milestone["status"] != "pending":
+                return error_response("Milestone is not eligible for funding", 409)
+            first_milestone = db.execute(
+                "SELECT id FROM milestones WHERE order_id=? ORDER BY sequence, id LIMIT 1",
+                [order_id],
+            ).fetchone()
+            if not first_milestone or first_milestone["id"] != milestone_id:
+                return error_response("Only the first milestone can start a pending order", 409)
+            overlapping_hold = db.execute(
+                "SELECT id FROM escrow_holds WHERE order_id=? LIMIT 1",
+                [order_id],
+            ).fetchone()
+            if overlapping_hold:
+                return error_response("Order is already funded", 409)
+        else:
+            if db.execute("SELECT 1 FROM milestones WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+                return error_response("milestone_id required for orders with milestones", 409)
+            if db.execute("SELECT 1 FROM escrow_holds WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+                return error_response("Order is already funded", 409)
+
+        try:
+            pi_id, mode = fund_escrow_stripe(
+                db,
+                user['id'],
+                amount,
+                order_id,
+                milestone_id,
+                "Owner-approved checkout funding",
+                funding_identity=funding_identity,
+            )
         except ValueError as e:
             return error_response(str(e), 402)
 
-        if milestone_id:
-            db.execute(
-                "UPDATE milestones SET status='funded', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
-                [pi_id, milestone_id]
+        if milestone_id is not None:
+            updated = db.execute(
+                """UPDATE milestones
+                   SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now')
+                   WHERE id=? AND order_id=? AND status='pending'""",
+                [pi_id, milestone_id, order_id]
             )
+            if updated.rowcount != 1:
+                raise RuntimeError("Milestone funding state changed during settlement")
+        updated_order = db.execute(
+            "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+            [order_id],
+        )
+        if updated_order.rowcount != 1:
+            raise RuntimeError("Order funding state changed during settlement")
 
         audit(db, user['id'], "fund_escrow", "escrow_hold", None, {"order_id": order_id, "amount": amount})
         db.commit()
@@ -4494,12 +5196,16 @@ def _handle_routes(db):
             f"""SELECT o.*,
                wu.name as worker_name, wu.email as worker_email,
                eu.name as employer_name, eu.email as employer_email,
-               s.title as service_title, j.title as job_title
+               s.title as service_title, j.title as job_title,
+               CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
+               COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
+               hc.weekly_hour_cap, hc.current_week_escrow_amount
                FROM orders o
                JOIN users wu ON o.worker_id = wu.id
                JOIN users eu ON o.employer_id = eu.id
                LEFT JOIN services s ON o.service_id = s.id
                LEFT JOIN jobs j ON o.job_id = j.id
+               LEFT JOIN hourly_contracts hc ON hc.order_id = o.id
                WHERE {where}
                ORDER BY o.updated_at DESC
                LIMIT ? OFFSET ?""",
@@ -4585,7 +5291,7 @@ def _handle_routes(db):
         if not holds:
             return error_response("No held payment record available to resolve", 409)
 
-        total_held = round(sum(float(hold['amount']) for hold in holds), 2)
+        total_held_cents = sum(money_to_cents(hold['amount'], "held payment amount") for hold in holds)
         worker_percent = 100.0 if resolution == 'release_to_worker' else 0.0
         if resolution == 'split':
             try:
@@ -4594,8 +5300,14 @@ def _handle_routes(db):
                 return error_response("worker_percent must be a number between 0 and 100", 400)
             if not math.isfinite(worker_percent) or worker_percent < 0 or worker_percent > 100:
                 return error_response("worker_percent must be a finite number between 0 and 100", 400)
-        worker_portion = round(total_held * (worker_percent / 100.0), 2)
-        employer_portion = round(total_held - worker_portion, 2)
+        worker_cents = int(
+            (Decimal(total_held_cents) * Decimal(str(worker_percent)) / Decimal("100"))
+            .to_integral_value(rounding=ROUND_HALF_UP)
+        )
+        employer_cents = total_held_cents - worker_cents
+        total_held = total_held_cents / 100
+        worker_portion = worker_cents / 100
+        employer_portion = employer_cents / 100
 
         escrow_status = 'released' if resolution == 'release_to_worker' else 'refunded' if resolution == 'refund_to_employer' else 'partial'
         db.execute(
@@ -4605,7 +5317,7 @@ def _handle_routes(db):
         if worker_portion > 0:
             db.execute(
                 "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
-                [order_id, round(worker_portion * SERVICE_FEE_RATE, 2), 'manual_dispute_resolution']
+                [order_id, component_fee_cents(worker_cents, PLATFORM_FEE_BPS) / 100, 'manual_dispute_resolution']
             )
 
         push_notification(db, order['worker_id'], "dispute_resolved",
@@ -4621,6 +5333,7 @@ def _handle_routes(db):
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
             [int(order_id)]
         )
+        synchronize_job_terminal_state(db, order)
         audit(db, user['id'], "resolve_dispute_manual_settlement", "order", int(order_id), {
             "resolution": resolution,
             "notes": admin_notes,
