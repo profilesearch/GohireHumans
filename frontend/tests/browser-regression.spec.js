@@ -513,7 +513,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
             { id: 2, description: 'Second', amount: 15.55, status: 'pending' }
           ],
           escrow_holds: [{ id: 1, milestone_id: 1, amount: 10, status: 'held' }],
-          funding_summary: { base_cents: 1000, platform_fee_cents: 10, processing_fee_cents: 30, charged_total_cents: 1040 }
+          funding_summary: { base_cents: 1000, platform_fee_cents: 10, processing_fee_cents: 30, charged_total_cents: 1040, funded_amount_available: true, charge_amount_available: true, record_count: 1 }
         }) });
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -527,6 +527,32 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('body')).toContainText('$10.40');
     await expect(page.locator('body')).not.toContainText('You paid');
     await expect(page.locator('body')).not.toContainText('$26.58');
+  });
+
+  test('legacy funding detail never invents a historical charged total', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders/92') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 92, worker_id: 1, employer_id: 2, status: 'in_progress', total_amount: 25.55,
+          contract_type: 'fixed', job_title: 'Legacy QA', created_at: '2026-07-01T00:00:00Z',
+          milestones: [{ id: 1, description: 'Delivery', amount: 25.55, status: 'in_progress' }],
+          escrow_holds: [{ id: 1, milestone_id: 1, amount: 25.55, status: 'held' }],
+          funding_summary: { base_cents: 2555, platform_fee_cents: null, processing_fee_cents: null, charged_total_cents: null, funded_amount_available: true, charge_amount_available: false, record_count: 1 }
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/92', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Funded to date');
+    await expect(page.locator('body')).toContainText('$25.55');
+    await expect(page.locator('body')).toContainText('Historical charge total unavailable');
+    await expect(page.locator('body')).not.toContainText('Charged to date');
   });
 
   test('hourly hire modal rejects fractional caps without posting', async ({ page }) => {
@@ -546,10 +572,35 @@ test.describe('GoHireHumans public/browser regression suite', () => {
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => showHourlyHireModal(12, 44, 25.55));
-    await page.locator('#weekly-hour-cap').fill('6.1');
+    await page.locator('#weekly-hour-cap').fill('6.0000000000000001');
     await page.getByRole('button', { name: 'Confirm & Fund First Week' }).click();
     await expect(page.locator('body')).toContainText('whole number');
     expect(hireBody).toBeNull();
+  });
+
+  test('service checkout sends a stable client operation identity', async ({ page }) => {
+    let orderBody = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/payments/status') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"employer_ready":true}' });
+      }
+      if (url.pathname === '/services/1/order') {
+        orderBody = route.request().postDataJSON();
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '{"id":93}' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => handleOrderService(1));
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect.poll(() => orderBody).not.toBeNull();
+    expect(orderBody.idempotency_key).toMatch(/^[A-Za-z0-9._:-]{16,128}$/);
   });
 
   test('admin disputes use the admin-scoped filtered order endpoint', async ({ page }) => {

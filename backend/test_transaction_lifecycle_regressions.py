@@ -44,6 +44,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
             db.execute("INSERT INTO worker_profiles (user_id) VALUES (3)")
             db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_test','pm_test')")
+            db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,status) VALUES (1,1,'Custom QA','Scoped QA','testing','custom','active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-worker',datetime('now','+1 day'))")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-employer',datetime('now','+1 day'))")
             db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (1,2,'Fixed QA','Test flows','testing','fixed',25,'open')")
@@ -211,10 +212,113 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertIsNotNone(first_key)
         self.assertEqual(first_key, second_key)
 
+    def test_committed_funding_operation_replay_returns_one_hold_without_recharging(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (510,'service_order',1,2,'in_progress',25.55)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (610,510,'Delivery',25.55,1,'pending')")
+            first_pi, _ = self.api.fund_escrow_stripe(
+                db, 2, 25.55, 510, 610, "Committed retry probe", funding_identity="milestone:610"
+            )
+            db.commit()
+            second_pi, mode = self.api.fund_escrow_stripe(
+                db, 2, 25.55, 510, 610, "Committed retry probe", funding_identity="milestone:610"
+            )
+            db.commit()
+            hold_count = db.execute(
+                "SELECT COUNT(*) FROM escrow_holds WHERE order_id=510 AND milestone_id=610"
+            ).fetchone()[0]
+
+        self.assertEqual(first_pi, second_pi)
+        self.assertEqual(mode, "replayed")
+        self.assertEqual(hold_count, 1)
+        self.payment_create.assert_called_once()
+
+    def test_service_order_retry_uses_client_operation_identity_across_full_rollback(self):
+        payload = {"amount": "25.55", "idempotency_key": "service-order-retry-0001"}
+        with mock.patch.object(self.api, "push_notification", side_effect=RuntimeError("after Stripe")):
+            status, _ = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 500)
+        first_kwargs = dict(self.payment_create.call_args.kwargs)
+        first_key = first_kwargs["idempotency_key"]
+
+        with self.api.get_db() as db:
+            order_id = db.execute(
+                "INSERT INTO orders (type,service_id,worker_id,employer_id,status,total_amount) VALUES ('service_order',1,1,2,'canceled',1)"
+            ).lastrowid
+            db.execute(
+                "INSERT INTO milestones (order_id,title,amount,sequence,status) VALUES (?,'Canceled',1,1,'pending')",
+                [order_id],
+            )
+            db.commit()
+
+        status, result = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 201, result)
+        self.assertEqual(self.payment_create.call_count, 2)
+        second_kwargs = dict(self.payment_create.call_args.kwargs)
+        self.assertEqual(first_key, second_kwargs["idempotency_key"])
+        self.assertEqual(first_kwargs, second_kwargs)
+
+    def test_service_order_response_loss_replay_returns_existing_order_without_recharging(self):
+        payload = {"amount": "25.55", "idempotency_key": "service-checkout-replay123"}
+        status, first = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 201, first)
+        status, replay = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 200, replay)
+        self.assertEqual(replay["id"], first["id"])
+        self.assertTrue(replay["idempotent_replay"])
+        self.payment_create.assert_called_once()
+
+    def test_money_moving_routes_reject_noncanonical_forms_before_stripe(self):
+        status, result = self.request("POST", "/services/1/order", payload={
+            "amount": "１２.００",
+            "idempotency_key": "service-checkout-unicode123",
+        })
+        self.assertEqual(status, 400, result)
+        self.payment_create.assert_not_called()
+
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (500,'service_order',1,2,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (600,500,'Delivery',25,1,'pending')")
+            db.commit()
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 500,
+            "milestone_id": 600,
+            "amount": "1e2",
+        })
+        self.assertEqual(status, 400, result)
+        self.payment_create.assert_not_called()
+
+    def test_init_db_closes_connection_when_migration_step_fails(self):
+        captured = []
+
+        def fail_after_write(db):
+            captured.append(db)
+            db.execute("INSERT INTO audit_log (action) VALUES ('forced_failure')")
+            raise RuntimeError("forced migration failure")
+
+        with mock.patch.object(self.api, "ensure_one_job_hire_enforcement", side_effect=fail_after_write):
+            with self.assertRaisesRegex(RuntimeError, "forced migration failure"):
+                self.api.init_db()
+
+        with self.assertRaises(sqlite3.ProgrammingError):
+            captured[0].execute("SELECT 1")
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO audit_log (action) VALUES ('immediate_retry_write')")
+            db.commit()
+
     def test_hourly_hire_rejects_fractional_weekly_cap_before_stripe(self):
         status, result = self.request("POST", "/jobs/4/hire", payload={
             "application_id": 18,
             "weekly_hour_cap": 6.1,
+        })
+        self.assertEqual(status, 400, result)
+        self.assertIn("whole number", result["error"])
+        self.payment_create.assert_not_called()
+
+    def test_hourly_hire_rejects_precision_hidden_fraction_before_stripe(self):
+        status, result = self.request("POST", "/jobs/4/hire", payload={
+            "application_id": 18,
+            "weekly_hour_cap": "6.0000000000000001",
         })
         self.assertEqual(status, 400, result)
         self.assertIn("whole number", result["error"])
@@ -239,7 +343,33 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "platform_fee_cents": 10,
             "processing_fee_cents": 30,
             "charged_total_cents": 1040,
+            "funded_amount_available": True,
+            "charge_amount_available": True,
+            "record_count": 1,
         })
+
+    def test_legacy_funding_rows_never_reconstruct_historical_processor_charge(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (700,'service_order',1,2,'in_progress',25.55)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (700,25.55,'held','pi_legacy')")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (701,'service_order',1,2,'in_progress',25.555)")
+            db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (701,25.555,'held','pi_legacy_subcent')")
+            db.commit()
+
+        status, legacy = self.request("GET", "/orders/700")
+        self.assertEqual(status, 200, legacy)
+        self.assertEqual(legacy["funding_summary"]["base_cents"], 2555)
+        self.assertTrue(legacy["funding_summary"]["funded_amount_available"])
+        self.assertFalse(legacy["funding_summary"]["charge_amount_available"])
+        self.assertIsNone(legacy["funding_summary"]["charged_total_cents"])
+        self.assertIsNone(legacy["funding_summary"]["platform_fee_cents"])
+        self.assertIsNone(legacy["funding_summary"]["processing_fee_cents"])
+
+        status, subcent = self.request("GET", "/orders/701")
+        self.assertEqual(status, 200, subcent)
+        self.assertFalse(subcent["funding_summary"]["funded_amount_available"])
+        self.assertFalse(subcent["funding_summary"]["charge_amount_available"])
+        self.assertIsNone(subcent["funding_summary"]["base_cents"])
 
     def test_stripe_charge_uses_same_component_rounded_cent_policy_as_ui(self):
         scenarios = [
