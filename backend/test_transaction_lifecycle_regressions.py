@@ -233,6 +233,21 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(hold_count, 1)
         self.payment_create.assert_called_once()
 
+    def test_legacy_funded_milestone_requires_reconciliation_before_any_retry(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (520,'service_order',1,2,'in_progress',25.55)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (620,520,'Legacy',25.55,1,'pending')")
+            db.execute(
+                "INSERT INTO escrow_holds (order_id,milestone_id,amount,status,stripe_payment_intent_id) VALUES (520,620,25.55,'held','pi_legacy')"
+            )
+            db.commit()
+            with self.assertRaisesRegex(ValueError, "reconciliation"):
+                self.api.fund_escrow_stripe(
+                    db, 2, 25.55, 520, 620, "Legacy retry",
+                    funding_identity="milestone:620",
+                )
+        self.payment_create.assert_not_called()
+
     def test_service_order_retry_uses_client_operation_identity_across_full_rollback(self):
         payload = {"amount": "25.55", "idempotency_key": "service-order-retry-0001"}
         with mock.patch.object(self.api, "push_notification", side_effect=RuntimeError("after Stripe")):

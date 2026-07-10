@@ -1725,6 +1725,19 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
             raise ValueError("Funding identity conflicts with an existing escrow operation.")
         return existing_hold['stripe_payment_intent_id'], "replayed"
 
+    if milestone_id is None:
+        unkeyed_hold = db.execute(
+            "SELECT id FROM escrow_holds WHERE order_id=? AND milestone_id IS NULL AND funding_identity IS NULL LIMIT 1",
+            [order_id],
+        ).fetchone()
+    else:
+        unkeyed_hold = db.execute(
+            "SELECT id FROM escrow_holds WHERE order_id=? AND milestone_id=? AND funding_identity IS NULL LIMIT 1",
+            [order_id, milestone_id],
+        ).fetchone()
+    if unkeyed_hold:
+        raise ValueError("Existing funding must complete processor reconciliation before this operation can be retried.")
+
     if stripe_configured():
         if not ep or not ep['stripe_customer_id'] or not ep['payment_method_id']:
             raise ValueError("A confirmed employer payment method is required before escrow can be funded.")
