@@ -23,7 +23,7 @@ import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 # Thread-local storage for per-request context (avoids os.environ race conditions)
 _request_ctx = threading.local()
@@ -101,6 +101,13 @@ PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONM
 # Keep new job hires paused until funding idempotency and post-charge
 # reconciliation ship in the dedicated payment-hardening change.
 JOB_HIRING_ENABLED = os.environ.get("JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+# Hourly approval and termination can move or refund money. Keep both server-side
+# paths closed until the processor-safe ledger/reconciler is deployed.
+HOURLY_SETTLEMENT_ENABLED = os.environ.get("HOURLY_SETTLEMENT_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+MAX_MONEY_INPUT_CHARS = 96
+MAX_MONEY_ABS = Decimal("999999.99")
+PLATFORM_FEE_BPS = 100
+PROCESSING_FEE_BPS = 300
 
 
 
@@ -237,6 +244,73 @@ def get_db():
         db.execute("PRAGMA journal_mode=DELETE")
     db.execute("PRAGMA foreign_keys=ON")
     return db
+
+
+def ensure_one_job_hire_enforcement(db):
+    """Install the one-job-hire invariant without destroying legacy history.
+
+    A pre-existing database may legitimately contain duplicate rows created before
+    the invariant existed. A partial unique index cannot be added to that database,
+    so preserve and audit those rows while installing triggers that reject any new
+    duplicate. Once operators reconcile the legacy rows, a later init can add the
+    stronger unique index.
+    """
+    duplicates = db.execute(
+        """SELECT job_id, COUNT(*) AS duplicate_count, GROUP_CONCAT(id) AS order_ids
+           FROM orders
+           WHERE type='job_hire' AND job_id IS NOT NULL
+           GROUP BY job_id
+           HAVING COUNT(*) > 1
+           ORDER BY job_id"""
+    ).fetchall()
+
+    if not duplicates:
+        db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_job_hire
+               ON orders(job_id) WHERE type='job_hire' AND job_id IS NOT NULL"""
+        )
+        return
+
+    db.executescript("""
+        CREATE TRIGGER IF NOT EXISTS trg_orders_one_job_hire_insert
+        BEFORE INSERT ON orders
+        WHEN NEW.type='job_hire' AND NEW.job_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE type='job_hire' AND job_id=NEW.job_id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'job already has a hire order');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_orders_one_job_hire_update
+        BEFORE UPDATE OF type, job_id ON orders
+        WHEN NEW.type='job_hire' AND NEW.job_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE type='job_hire' AND job_id=NEW.job_id AND id<>NEW.id
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'job already has a hire order');
+        END;
+    """)
+    for row in duplicates:
+        details = json.dumps({
+            "job_id": row["job_id"],
+            "duplicate_count": row["duplicate_count"],
+            "order_ids": [int(value) for value in str(row["order_ids"] or "").split(",") if value],
+            "action_required": "reconcile_supported_paths_before_unique_index",
+        }, sort_keys=True)
+        db.execute(
+            """INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+               SELECT NULL, 'legacy_duplicate_job_hire_detected', 'job', ?, ?
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM audit_log
+                 WHERE action='legacy_duplicate_job_hire_detected'
+                   AND entity_type='job' AND entity_id=?
+               )""",
+            [row["job_id"], details, row["job_id"]],
+        )
 
 
 def init_db():
@@ -478,8 +552,6 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_applications_worker ON applications(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_worker ON orders(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_employer ON orders(employer_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_job_hire
-        ON orders(job_id) WHERE type='job_hire' AND job_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_milestones_order ON milestones(order_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_contract ON time_entries(contract_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_order ON reviews(order_id);
@@ -490,6 +562,7 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_payout_transfers_idempotency ON payout_transfers(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     """)
+    ensure_one_job_hire_enforcement(db)
     db.commit()
 
     # ── AI marketplace migrations ─────────────────────────────────────
@@ -1062,17 +1135,80 @@ def row_to_dict(row):
 
 
 def money_to_cents(value, field_name="amount"):
-    """Convert a JSON/SQLite money value to exact cents or reject it."""
+    """Convert a JSON/SQLite money value to exact cents without Decimal context rounding."""
+    text = str(value)
+    if (not text or text != text.strip() or len(text) > MAX_MONEY_INPUT_CHARS
+            or not re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?", text)):
+        raise ValueError(f"{field_name} must be a valid amount in whole cents")
     try:
-        decimal_value = Decimal(str(value))
+        decimal_value = Decimal(text)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
-    if not decimal_value.is_finite():
+    if not decimal_value.is_finite() or abs(decimal_value) > MAX_MONEY_ABS:
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
-    cents = decimal_value * 100
-    if cents != cents.to_integral_value():
-        raise ValueError(f"{field_name} must be specified in whole cents")
-    return int(cents)
+    if decimal_value == 0:
+        return 0
+
+    sign, digits, exponent = decimal_value.as_tuple()
+    coefficient = int("".join(str(digit) for digit in digits))
+    cent_exponent = int(exponent) + 2
+    if cent_exponent >= 0:
+        cents = coefficient * (10 ** cent_exponent)
+    else:
+        scale = -cent_exponent
+        if scale > len(digits):
+            raise ValueError(f"{field_name} must be specified in whole cents")
+        divisor = 10 ** scale
+        cents, remainder = divmod(coefficient, divisor)
+        if remainder:
+            raise ValueError(f"{field_name} must be specified in whole cents")
+    return -cents if sign else cents
+
+
+def rounded_product_cents(amount, quantity, field_name="amount"):
+    """Multiply a cent-denominated amount by a bounded quantity and round half-up once."""
+    base_cents = money_to_cents(amount, field_name)
+    quantity_text = str(quantity).strip()
+    if not quantity_text or len(quantity_text) > MAX_MONEY_INPUT_CHARS:
+        raise ValueError(f"{field_name} quantity must be a valid number")
+    try:
+        quantity_decimal = Decimal(quantity_text)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} quantity must be a valid number")
+    if not quantity_decimal.is_finite() or abs(quantity_decimal) > Decimal("10000"):
+        raise ValueError(f"{field_name} quantity must be a valid number")
+    return int((Decimal(base_cents) * quantity_decimal).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def component_fee_cents(base_cents, basis_points):
+    """Round a positive fee component half-up, with the UI's one-cent minimum."""
+    if base_cents <= 0:
+        return 0
+    return max(1, (base_cents * basis_points + 5000) // 10000)
+
+
+def buyer_charge_breakdown_cents(amount):
+    """Return the exact component-rounded buyer charge sent to Stripe."""
+    base_cents = money_to_cents(amount, "amount")
+    if base_cents <= 0:
+        raise ValueError("amount must be greater than zero")
+    platform_fee_cents = component_fee_cents(base_cents, PLATFORM_FEE_BPS)
+    processing_fee_cents = component_fee_cents(base_cents, PROCESSING_FEE_BPS)
+    return {
+        "base_cents": base_cents,
+        "platform_fee_cents": platform_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": base_cents + platform_fee_cents + processing_fee_cents,
+    }
+
+
+def synchronize_job_terminal_state(db, order, status="completed"):
+    """Keep a job-hire order and its job in the same terminal lifecycle state."""
+    if order["type"] == "job_hire" and order["job_id"]:
+        db.execute(
+            "UPDATE jobs SET status=?, updated_at=datetime('now') WHERE id=?",
+            [status, order["job_id"]],
+        )
 
 
 def validated_order_notes(value, field_name="notes"):
@@ -1449,8 +1585,9 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
     """Release escrow hold, transfer to worker via Stripe or simulation."""
     # Employer pays the 1% platform margin on top of the listed amount.
     # Workers receive the listed amount unless Enzo explicitly changes the model.
-    fee = round(amount * SERVICE_FEE_RATE, 2)
-    worker_payout = round(amount, 2)
+    amount_cents = money_to_cents(amount, "escrow amount")
+    fee = component_fee_cents(amount_cents, PLATFORM_FEE_BPS) / 100
+    worker_payout = amount_cents / 100
 
     if stripe_configured() or PRODUCTION_MODE:
         wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id = ?", [worker_id]).fetchone()
@@ -1459,13 +1596,13 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
             raise ValueError("A live worker Stripe Connect payout account is required before release.")
         if not stripe_configured():
             raise ValueError("Stripe is not configured; live payout release is disabled in production.")
-        idempotency_key = f"escrow-release:{order_id}:{milestone_id or 'full'}:{int(worker_payout * 100)}"
+        idempotency_key = f"escrow-release:{order_id}:{milestone_id or 'full'}"
         try:
             account = retrieve_live_connect_account(payout_account_id)
             if not is_live_connect_account_ready(account):
                 raise ValueError("Worker Stripe Connect account is not payout-ready.")
             transfer = stripe.Transfer.create(
-                amount=int(worker_payout * 100),
+                amount=amount_cents,
                 currency="usd",
                 destination=payout_account_id,
                 metadata={"order_id": str(order_id), "milestone_id": str(milestone_id or "")},
@@ -1491,7 +1628,7 @@ def release_escrow_to_worker(db, order_id, milestone_id, amount, worker_id):
     return worker_payout, fee
 
 
-def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, description="Escrow hold"):
+def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, description="Escrow hold", funding_identity=None):
     """
     Fund escrow. Returns (payment_intent_id, mode).
     - With Stripe: create PaymentIntent with capture_method=manual, then capture it.
@@ -1504,9 +1641,13 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
         if not ep or not ep['stripe_customer_id'] or not ep['payment_method_id']:
             raise ValueError("A confirmed employer payment method is required before escrow can be funded.")
         try:
-            total_charge = int((amount * (1 + SERVICE_FEE_RATE + PROCESSING_FEE_RATE)) * 100)  # employer pays amount + 1% platform fee + ~3% processing fee (4% all-in)
+            charge = buyer_charge_breakdown_cents(amount)
+            funding_identity = funding_identity or (f"milestone:{milestone_id}" if milestone_id is not None else None)
+            if funding_identity is None:
+                raise ValueError("A stable funding identity is required for live escrow funding.")
+            idempotency_key = f"escrow-fund:{order_id}:{funding_identity}"
             pi = stripe.PaymentIntent.create(
-                amount=total_charge,
+                amount=charge["total_cents"],
                 currency="usd",
                 customer=ep['stripe_customer_id'],
                 payment_method=ep['payment_method_id'],
@@ -1518,7 +1659,8 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
                     "order_id": str(order_id),
                     "milestone_id": str(milestone_id or ""),
                     "employer_id": str(employer_id),
-                }
+                },
+                idempotency_key=idempotency_key,
             )
             pi_id = pi.id
             mode = "live"
@@ -1686,6 +1828,9 @@ def _handle_routes(db):
             "service_fee_rate": SERVICE_FEE_RATE,
             "processing_fee_rate": PROCESSING_FEE_RATE,
             "total_buyer_fee_rate": round(SERVICE_FEE_RATE + PROCESSING_FEE_RATE, 4),
+            "fee_rounding": "round each positive component half-up to cents with a one-cent minimum",
+            "platform_fee_basis_points": PLATFORM_FEE_BPS,
+            "processing_fee_basis_points": PROCESSING_FEE_BPS,
             "description": "Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Workers receive the listed payout.",
             "fee_paid_by": "buyer",
             "escrow": False
@@ -2614,8 +2759,8 @@ def _handle_routes(db):
             return error_response("Job not found", 404)
         if job['employer_id'] != user['id'] and not user['is_admin']:
             return error_response("Forbidden", 403)
-        if job['status'] in ('in_progress', 'completed'):
-            return error_response("Cannot cancel a job that is in progress or completed", 409)
+        if job['status'] in ('hired', 'in_progress', 'completed'):
+            return error_response("Cannot cancel a hired, in-progress, or completed job", 409)
         db.execute("UPDATE jobs SET status='canceled', updated_at=datetime('now') WHERE id = ?", [job_id])
         audit(db, user['id'], "cancel_job", "job", job_id)
         db.commit()
@@ -2838,7 +2983,12 @@ def _handle_routes(db):
             if not math.isfinite(weekly_cap) or weekly_cap < 1 or weekly_cap > 168:
                 db.rollback()
                 return error_response("Weekly hour cap must be between 1 and 168", 400)
-            week_escrow = round(hourly_rate * weekly_cap, 2)
+            if not weekly_cap.is_integer():
+                db.rollback()
+                return error_response("Weekly hour cap must be a whole number between 1 and 168", 400)
+            weekly_cap = int(weekly_cap)
+            week_escrow_cents = rounded_product_cents(hourly_rate, weekly_cap, "hourly job rate")
+            week_escrow = week_escrow_cents / 100
 
             week_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             hc = db.execute(
@@ -2853,7 +3003,8 @@ def _handle_routes(db):
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, user['id'], week_escrow, order_id, None,
-                    f"Hourly contract #{contract_id} first week escrow"
+                    f"Hourly contract #{contract_id} first week escrow",
+                    funding_identity=f"hourly:{contract_id}:week:{week_start}",
                 )
             except ValueError as e:
                 db.rollback()
@@ -3018,12 +3169,17 @@ def _handle_routes(db):
                 wu.name as worker_name, wu.avatar_url as worker_avatar,
                 eu.name as employer_name, eu.avatar_url as employer_avatar,
                 s.title as service_title,
-                j.title as job_title
+                j.title as job_title,
+                CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
+                COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
+                hc.weekly_hour_cap,
+                hc.current_week_escrow_amount
                 FROM orders o
                 JOIN users wu ON o.worker_id = wu.id
                 JOIN users eu ON o.employer_id = eu.id
                 LEFT JOIN services s ON o.service_id = s.id
                 LEFT JOIN jobs j ON o.job_id = j.id
+                LEFT JOIN hourly_contracts hc ON hc.order_id = o.id
                 WHERE {where}
                 ORDER BY o.updated_at DESC
                 LIMIT ? OFFSET ?""",
@@ -3075,6 +3231,19 @@ def _handle_routes(db):
             result['time_entries'] = [row_to_dict(e) for e in entries]
         escrow = db.execute("SELECT * FROM escrow_holds WHERE order_id = ? ORDER BY created_at DESC", [order_id]).fetchall()
         result['escrow_holds'] = [row_to_dict(e) for e in escrow]
+        funding_summary = {
+            "base_cents": 0,
+            "platform_fee_cents": 0,
+            "processing_fee_cents": 0,
+            "charged_total_cents": 0,
+        }
+        for hold in escrow:
+            charge = buyer_charge_breakdown_cents(hold['amount'])
+            funding_summary["base_cents"] += charge["base_cents"]
+            funding_summary["platform_fee_cents"] += charge["platform_fee_cents"]
+            funding_summary["processing_fee_cents"] += charge["processing_fee_cents"]
+            funding_summary["charged_total_cents"] += charge["total_cents"]
+        result['funding_summary'] = funding_summary
         reviews = db.execute("SELECT * FROM reviews WHERE order_id = ?", [order_id]).fetchall()
         result['reviews'] = [row_to_dict(r) for r in reviews]
         return json_response(result)
@@ -3468,6 +3637,11 @@ def _handle_routes(db):
         hc = db.execute("SELECT * FROM hourly_contracts WHERE order_id = ?", [order_id]).fetchone()
         if not hc:
             return error_response("No hourly contract for this order", 404)
+        if not HOURLY_SETTLEMENT_ENABLED:
+            return error_response(
+                "Hourly settlement is temporarily paused while processor reconciliation safeguards are finalized",
+                503,
+            )
 
         body = get_body()
         week_of = body.get("week_of")
@@ -3482,10 +3656,11 @@ def _handle_routes(db):
         if not entries:
             return error_response("No pending time entries for this week", 404)
 
-        total_hours = sum(float(e['hours']) for e in entries)
-        total_pay = round(total_hours * float(hc['hourly_rate']), 2)
-        fee = round(total_pay * SERVICE_FEE_RATE, 2)
-        worker_pay = round(total_pay, 2)
+        total_hours = sum((Decimal(str(e['hours'])) for e in entries), Decimal("0"))
+        total_pay_cents = rounded_product_cents(hc['hourly_rate'], total_hours, "hourly contract rate")
+        worker_pay = total_pay_cents / 100
+        fee = component_fee_cents(total_pay_cents, PLATFORM_FEE_BPS) / 100
+        total_hours_value = float(total_hours)
 
         if stripe_configured() or PRODUCTION_MODE:
             wp = db.execute("SELECT payout_account_id FROM worker_profiles WHERE user_id=?", [order['worker_id']]).fetchone()
@@ -3494,14 +3669,14 @@ def _handle_routes(db):
                 return error_response("A live worker Stripe Connect payout account is required before approving paid hours.", 409)
             if not stripe_configured():
                 return error_response("Stripe is not configured; live hourly payout release is disabled in production.", 503)
-            idempotency_key = f"hourly-release:{order_id}:{week_of}:{int(worker_pay * 100)}"
+            idempotency_key = f"hourly-release:{order_id}:{week_of}"
             try:
                 account = retrieve_live_connect_account(payout_account_id)
                 if not is_live_connect_account_ready(account):
                     db.rollback()
                     return error_response("Worker Stripe Connect account is not payout-ready.", 409)
                 transfer = stripe.Transfer.create(
-                    amount=int(worker_pay * 100),
+                    amount=total_pay_cents,
                     currency="usd",
                     destination=payout_account_id,
                     metadata={"order_id": str(order_id), "week_of": week_of},
@@ -3532,16 +3707,19 @@ def _handle_routes(db):
         )
 
         # Refund unused escrow and fund next week
-        escrow_held = float(hc['current_week_escrow_amount'] or 0)
-        unused = max(0, round(escrow_held - total_pay, 2))
+        escrow_held_cents = money_to_cents(hc['current_week_escrow_amount'] or 0, "hourly escrow")
+        unused = max(0, escrow_held_cents - total_pay_cents) / 100
 
         # Fund next week's escrow
         if hc['status'] == 'active':
-            next_week_escrow = round(float(hc['hourly_rate']) * float(hc['weekly_hour_cap']), 2)
+            next_week_escrow = rounded_product_cents(
+                hc['hourly_rate'], hc['weekly_hour_cap'], "hourly contract rate"
+            ) / 100
             try:
                 pi_id, mode = fund_escrow_stripe(
                     db, order['employer_id'], next_week_escrow, order_id, None,
-                    f"Hourly contract next week escrow"
+                    "Hourly contract next week escrow",
+                    funding_identity=f"hourly:{hc['id']}:renewal-after:{week_of}",
                 )
                 db.execute(
                     "UPDATE hourly_contracts SET current_week_escrow_amount=?, current_week_escrow_payment_id=? WHERE id=?",
@@ -3552,14 +3730,14 @@ def _handle_routes(db):
 
         push_notification(db, order['worker_id'], "hours_approved",
             f"Hours approved — payment released!",
-            f"{total_hours}h approved for week of {week_of}. ${worker_pay:.2f} released.",
+            f"{total_hours_value:g}h approved for week of {week_of}. ${worker_pay:.2f} released.",
             f"/orders/{order_id}")
 
-        audit(db, user['id'], "approve_hours", "hourly_contract", hc['id'], {"week_of": week_of, "hours": total_hours})
+        audit(db, user['id'], "approve_hours", "hourly_contract", hc['id'], {"week_of": week_of, "hours": total_hours_value})
         db.commit()
         return json_response({
             "ok": True,
-            "hours_approved": total_hours,
+            "hours_approved": total_hours_value,
             "worker_pay": worker_pay,
             "platform_fee": fee,
             "unused_escrow_refunded": unused
@@ -3581,6 +3759,11 @@ def _handle_routes(db):
             return error_response("No hourly contract for this order", 404)
         if hc['status'] == 'ended':
             return error_response("Contract already ended", 409)
+        if not HOURLY_SETTLEMENT_ENABLED:
+            return error_response(
+                "Hourly settlement is temporarily paused while processor reconciliation safeguards are finalized",
+                503,
+            )
 
         body = get_body()
 
@@ -3589,6 +3772,7 @@ def _handle_routes(db):
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
             [order_id]
         )
+        synchronize_job_terminal_state(db, order)
 
         # Refund remaining escrow
         db.execute(
@@ -4494,12 +4678,16 @@ def _handle_routes(db):
             f"""SELECT o.*,
                wu.name as worker_name, wu.email as worker_email,
                eu.name as employer_name, eu.email as employer_email,
-               s.title as service_title, j.title as job_title
+               s.title as service_title, j.title as job_title,
+               CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
+               COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
+               hc.weekly_hour_cap, hc.current_week_escrow_amount
                FROM orders o
                JOIN users wu ON o.worker_id = wu.id
                JOIN users eu ON o.employer_id = eu.id
                LEFT JOIN services s ON o.service_id = s.id
                LEFT JOIN jobs j ON o.job_id = j.id
+               LEFT JOIN hourly_contracts hc ON hc.order_id = o.id
                WHERE {where}
                ORDER BY o.updated_at DESC
                LIMIT ? OFFSET ?""",
@@ -4585,7 +4773,7 @@ def _handle_routes(db):
         if not holds:
             return error_response("No held payment record available to resolve", 409)
 
-        total_held = round(sum(float(hold['amount']) for hold in holds), 2)
+        total_held_cents = sum(money_to_cents(hold['amount'], "held payment amount") for hold in holds)
         worker_percent = 100.0 if resolution == 'release_to_worker' else 0.0
         if resolution == 'split':
             try:
@@ -4594,8 +4782,14 @@ def _handle_routes(db):
                 return error_response("worker_percent must be a number between 0 and 100", 400)
             if not math.isfinite(worker_percent) or worker_percent < 0 or worker_percent > 100:
                 return error_response("worker_percent must be a finite number between 0 and 100", 400)
-        worker_portion = round(total_held * (worker_percent / 100.0), 2)
-        employer_portion = round(total_held - worker_portion, 2)
+        worker_cents = int(
+            (Decimal(total_held_cents) * Decimal(str(worker_percent)) / Decimal("100"))
+            .to_integral_value(rounding=ROUND_HALF_UP)
+        )
+        employer_cents = total_held_cents - worker_cents
+        total_held = total_held_cents / 100
+        worker_portion = worker_cents / 100
+        employer_portion = employer_cents / 100
 
         escrow_status = 'released' if resolution == 'release_to_worker' else 'refunded' if resolution == 'refund_to_employer' else 'partial'
         db.execute(
@@ -4605,7 +4799,7 @@ def _handle_routes(db):
         if worker_portion > 0:
             db.execute(
                 "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
-                [order_id, round(worker_portion * SERVICE_FEE_RATE, 2), 'manual_dispute_resolution']
+                [order_id, component_fee_cents(worker_cents, PLATFORM_FEE_BPS) / 100, 'manual_dispute_resolution']
             )
 
         push_notification(db, order['worker_id'], "dispute_resolved",
@@ -4621,6 +4815,7 @@ def _handle_routes(db):
             "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
             [int(order_id)]
         )
+        synchronize_job_terminal_state(db, order)
         audit(db, user['id'], "resolve_dispute_manual_settlement", "order", int(order_id), {
             "resolution": resolution,
             "notes": admin_notes,
