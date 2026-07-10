@@ -93,45 +93,40 @@ def _init_db_once():
         if _INITIALIZED:
             return
         try:
-            # Use whichever helper api_core.py exposes (get_db / _get_db / connect_db).
-            get_db = getattr(api_module, "get_db", None) or getattr(api_module, "_get_db", None) or getattr(api_module, "connect_db", None)
+            get_db = (
+                getattr(api_module, "get_db", None)
+                or getattr(api_module, "_get_db", None)
+                or getattr(api_module, "connect_db", None)
+            )
             init_fn = getattr(api_module, "init_db", None) or getattr(api_module, "_init_db", None)
-            if callable(get_db) and callable(init_fn):
-                db = get_db()
-                try:
-                    init_fn()
-                finally:
-                    # Tune SQLite for concurrent reads + occasional writes.
-                    try:
-                        db.execute("PRAGMA journal_mode=WAL")
-                        db.execute("PRAGMA synchronous=NORMAL")
-                        db.execute("PRAGMA busy_timeout=5000")
-                        db.execute("PRAGMA foreign_keys=ON")
-                    except Exception:
-                        log.exception(json.dumps({"event": "pragma_failed"}))
-                    try:
-                        db.close()
-                    except Exception:
-                        pass
-                _INITIALIZED = True
-                log.info(json.dumps({"event": "db_initialized"}))
-            else:
-                # api_core.py uses a different pattern — leave init to per-request
-                # handlers (their original behavior). Health check will still pass.
-                _INITIALIZED = True
-                log.warning(json.dumps({"event": "db_init_skipped", "reason": "helper_not_found"}))
-        except Exception:
-            log.exception(json.dumps({"event": "db_init_failed"}))
-            # Don't re-raise — let /health flag degraded state instead of
-            # crash-looping the worker. Original per-request init still runs.
-            _INITIALIZED = True
+            if not callable(get_db) or not callable(init_fn):
+                raise RuntimeError("Database initialization helpers are unavailable")
 
-# Initialize at import time so Gunicorn workers come up ready.
-try:
-    _init_db_once()
-except Exception:
-    # Surface on /health rather than crashing the worker indefinitely.
-    pass
+            # init_db owns its migration connection and validates the required
+            # transaction schema before returning. Any failure must keep the
+            # worker unhealthy and propagate so the process cannot serve traffic.
+            init_fn()
+
+            db = get_db()
+            try:
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("PRAGMA synchronous=NORMAL")
+                db.execute("PRAGMA busy_timeout=5000")
+                db.execute("PRAGMA foreign_keys=ON")
+            finally:
+                db.close()
+
+            _INITIALIZED = True
+            log.info(json.dumps({"event": "db_initialized"}))
+        except Exception:
+            _INITIALIZED = False
+            log.exception(json.dumps({"event": "db_init_failed"}))
+            raise
+
+
+# Initialize at import time so Gunicorn workers only become ready after the
+# complete required schema has been established.
+_init_db_once()
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
 @app.route("/health", methods=["GET"])

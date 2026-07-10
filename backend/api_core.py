@@ -59,24 +59,28 @@ def _get_db_path():
     if _db_path_resolved is not None:
         return _db_path_resolved
 
-    # Build candidate list: persistent volume FIRST, then explicit env var, then CWD
-    # The volume at /data is the only truly persistent storage on Railway.
-    # /app/ is ephemeral — it gets wiped on every deploy.
-    candidates = []
-    candidates.append(os.path.join(_VOLUME_DIR, "gohirehumans.db"))  # /data/gohirehumans.db (PERSISTENT)
+    # In production the durable database is mandatory. Never replace it with an
+    # empty working-directory or in-memory database because that can make a
+    # financially inconsistent deployment appear healthy.
+    durable_database_required = _VOLUME_ATTACHED or PRODUCTION_MODE
+    candidates = [os.path.join(_VOLUME_DIR, "gohirehumans.db")]
     explicit = os.environ.get("DATABASE_PATH", "")
     if explicit and not explicit.startswith("/app"):
-        # Only use explicit path if it's NOT under /app (ephemeral container fs)
         candidates.append(explicit)
-    candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))  # /app/gohirehumans.db (ephemeral fallback)
+    if not durable_database_required:
+        candidates.append(os.path.join(os.getcwd(), "gohirehumans.db"))
+    candidates = list(dict.fromkeys(candidates))
 
     for candidate in candidates:
         parent = os.path.dirname(candidate) or "."
         try:
             os.makedirs(parent, exist_ok=True)
             test_db = sqlite3.connect(candidate)
-            test_db.execute("CREATE TABLE IF NOT EXISTS _ping (id INTEGER)")
-            test_db.commit()
+            # Probe readability without issuing DDL. A transient writer lock must
+            # not make startup abandon the configured durable database for an
+            # empty fallback database; init_db will apply busy-timeout handling
+            # and fail closed if required migrations cannot acquire the lock.
+            test_db.execute("PRAGMA schema_version").fetchone()
             test_db.close()
             _db_path_resolved = candidate
             print(f"[GoHireHumans] DB path: {candidate}", file=sys.stderr)
@@ -84,9 +88,12 @@ def _get_db_path():
         except Exception as e:
             print(f"[GoHireHumans] Cannot use {candidate}: {e}", file=sys.stderr)
 
-    # Last resort: in-memory (won't persist but at least won't crash)
+    if durable_database_required:
+        raise RuntimeError("No durable database path is available in production")
+
+    # Development-only fallback. Production is required to fail closed above.
     _db_path_resolved = ":memory:"
-    print(f"[GoHireHumans] CRITICAL: Using in-memory DB (no persistence!)", file=sys.stderr)
+    print("[GoHireHumans] WARNING: Using in-memory development DB", file=sys.stderr)
     return _db_path_resolved
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
@@ -276,6 +283,49 @@ def ensure_column(db, table_name, column_name, alter_sql):
     return True
 
 
+def _required_transaction_index_is_valid(db, index_name):
+    specifications = {
+        "idx_orders_creation_idempotency": {
+            "index_list_sql": "PRAGMA index_list('orders')",
+            "index_info_sql": "PRAGMA index_info('idx_orders_creation_idempotency')",
+            "columns": ["employer_id", "creation_idempotency_key"],
+            "predicate": "creation_idempotency_key is not null",
+        },
+        "idx_escrow_holds_funding_identity": {
+            "index_list_sql": "PRAGMA index_list('escrow_holds')",
+            "index_info_sql": "PRAGMA index_info('idx_escrow_holds_funding_identity')",
+            "columns": ["funding_identity"],
+            "predicate": "funding_identity is not null",
+        },
+    }
+    specification = specifications.get(index_name)
+    if specification is None:
+        raise ValueError("Unsupported required transaction index")
+
+    index_row = next(
+        (
+            row
+            for row in db.execute(specification["index_list_sql"]).fetchall()
+            if row[1] == index_name
+        ),
+        None,
+    )
+    if index_row is None or int(index_row[2]) != 1 or int(index_row[4]) != 1:
+        return False
+
+    columns = [row[2] for row in db.execute(specification["index_info_sql"]).fetchall()]
+    if columns != specification["columns"]:
+        return False
+
+    schema_row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+        [index_name],
+    ).fetchone()
+    normalized_sql = re.sub(r"\s+", " ", str(schema_row[0] if schema_row else "").strip().lower())
+    _, separator, predicate = normalized_sql.partition(" where ")
+    return bool(separator) and predicate == specification["predicate"]
+
+
 def validate_required_transaction_schema(db):
     required_columns = {
         "escrow_holds": {
@@ -297,10 +347,7 @@ def validate_required_transaction_schema(db):
         "idx_orders_creation_idempotency",
         "idx_escrow_holds_funding_identity",
     ):
-        if not db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
-            [index_name],
-        ).fetchone():
+        if not _required_transaction_index_is_valid(db, index_name):
             missing.append(index_name)
 
     job_hire_index = db.execute(

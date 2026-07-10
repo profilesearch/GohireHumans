@@ -1,8 +1,11 @@
 import importlib.util
 import os
 from pathlib import Path
+import sqlite3
+import tempfile
 from types import ModuleType
 from typing import Any, cast
+from unittest import mock
 import unittest
 
 
@@ -95,6 +98,34 @@ class SeededSampleAccountTests(unittest.TestCase):
         self.assertEqual(condition.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
         self.assertEqual(subquery.count("?"), len(module.SEEDED_SAMPLE_EMAILS))
         self.assertEqual(set(values), module.SEEDED_SAMPLE_EMAILS)
+
+
+class ServerInitializationGateTests(unittest.TestCase):
+    def test_database_initialization_failure_reraises_and_keeps_health_unhealthy(self):
+        old_database_path = os.environ.get("DATABASE_PATH")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.environ["DATABASE_PATH"] = str(Path(temp_dir) / "server-test.db")
+            try:
+                module = load_server()
+                module._INITIALIZED = False
+                with mock.patch.object(
+                    module.api_module,
+                    "init_db",
+                    side_effect=sqlite3.OperationalError("database is locked"),
+                ):
+                    with self.assertRaisesRegex(sqlite3.OperationalError, "database is locked"):
+                        module._init_db_once()
+
+                self.assertFalse(module._INITIALIZED)
+                with module.app.test_client() as client:
+                    response = client.get("/health")
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.get_json()["status"], "degraded")
+            finally:
+                if old_database_path is None:
+                    os.environ.pop("DATABASE_PATH", None)
+                else:
+                    os.environ["DATABASE_PATH"] = old_database_path
 
 
 class ApiSecurityHeaderTests(unittest.TestCase):

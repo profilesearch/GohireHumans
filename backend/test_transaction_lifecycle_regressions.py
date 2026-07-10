@@ -123,6 +123,60 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.close()
         return order_id
 
+    def test_configured_database_path_is_not_abandoned_during_writer_lock(self):
+        configured_path = self.api._get_db_path()
+        writer = sqlite3.connect(configured_path, timeout=0.1)
+        writer.execute("DROP TABLE IF EXISTS _ping")
+        writer.commit()
+        writer.execute("BEGIN IMMEDIATE")
+        old_database_path = os.environ.get("DATABASE_PATH")
+        old_volume_dir = self.api._VOLUME_DIR
+        old_cwd = os.getcwd()
+        fallback_dir = os.path.join(self.tmp.name, "fallback")
+        os.makedirs(fallback_dir)
+        try:
+            os.environ["DATABASE_PATH"] = configured_path
+            self.api._VOLUME_DIR = os.path.join(configured_path, "unavailable-volume")
+            self.api._db_path_resolved = None
+            os.chdir(fallback_dir)
+            self.assertEqual(self.api._get_db_path(), configured_path)
+        finally:
+            os.chdir(old_cwd)
+            self.api._VOLUME_DIR = old_volume_dir
+            self.api._db_path_resolved = configured_path
+            if old_database_path is None:
+                os.environ.pop("DATABASE_PATH", None)
+            else:
+                os.environ["DATABASE_PATH"] = old_database_path
+            writer.rollback()
+            writer.close()
+
+    def test_production_database_resolution_never_falls_back_to_ephemeral_storage(self):
+        configured_path = self.api._get_db_path()
+        old_database_path = os.environ.pop("DATABASE_PATH", None)
+        old_volume_dir = self.api._VOLUME_DIR
+        old_volume_attached = self.api._VOLUME_ATTACHED
+        old_production_mode = self.api.PRODUCTION_MODE
+        old_cwd = os.getcwd()
+        fallback_dir = os.path.join(self.tmp.name, "ephemeral-fallback")
+        os.makedirs(fallback_dir)
+        try:
+            self.api._VOLUME_DIR = os.path.join(configured_path, "unavailable-volume")
+            self.api._VOLUME_ATTACHED = True
+            self.api.PRODUCTION_MODE = True
+            self.api._db_path_resolved = None
+            os.chdir(fallback_dir)
+            with self.assertRaisesRegex(RuntimeError, "durable database"):
+                self.api._get_db_path()
+        finally:
+            os.chdir(old_cwd)
+            self.api._VOLUME_DIR = old_volume_dir
+            self.api._VOLUME_ATTACHED = old_volume_attached
+            self.api.PRODUCTION_MODE = old_production_mode
+            self.api._db_path_resolved = configured_path
+            if old_database_path is not None:
+                os.environ["DATABASE_PATH"] = old_database_path
+
     def test_financial_column_migration_propagates_writer_lock(self):
         columns = mock.Mock()
         columns.fetchall.return_value = [(0, "id", "INTEGER", 0, None, 1)]
@@ -143,6 +197,20 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.commit()
             with self.assertRaisesRegex(RuntimeError, "escrow_holds.base_amount_cents"):
                 self.api.validate_required_transaction_schema(db)
+
+    def test_transaction_schema_validation_rejects_malformed_same_name_indexes(self):
+        with self.api.get_db() as db:
+            db.execute("DROP INDEX idx_orders_creation_idempotency")
+            db.execute("DROP INDEX idx_escrow_holds_funding_identity")
+            db.execute("CREATE INDEX idx_orders_creation_idempotency ON orders(id)")
+            db.execute("CREATE INDEX idx_escrow_holds_funding_identity ON escrow_holds(id)")
+            db.commit()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "idx_orders_creation_idempotency.*idx_escrow_holds_funding_identity",
+        ):
+            self.api.init_db()
 
     def test_clean_database_keeps_partial_unique_job_hire_index(self):
         with self.api.get_db() as db:
