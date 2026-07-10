@@ -1,7 +1,10 @@
 import contextlib
+import decimal
+import importlib.util
 import io
 import json
 import os
+import pathlib
 import sqlite3
 import tempfile
 import unittest
@@ -66,11 +69,11 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
-    def request(self, method, path, token="tok-employer", payload=None):
+    def request(self, method, path, token="tok-employer", payload=None, raw_body=None):
         for cached in ("body_cache", "raw_body"):
             if hasattr(self.api._request_ctx, cached):
                 delattr(self.api._request_ctx, cached)
-        body = json.dumps(payload or {})
+        body = raw_body if raw_body is not None else json.dumps(payload or {})
         ctx = self.api._request_ctx
         ctx.request_method = method
         ctx.path_info = path
@@ -170,6 +173,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "1000000",
             "1e-999999",
             "25.5500000000000000000000000000000001",
+            "25.550",
             "1__0.00",
             "_1.00",
             "1_.00",
@@ -283,6 +287,50 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertTrue(replay["idempotent_replay"])
         self.payment_create.assert_called_once()
 
+    def test_manual_funding_cannot_overlap_normal_service_checkout_or_regress_status(self):
+        status, order = self.request("POST", "/services/1/order", payload={
+            "amount": "25.00",
+            "idempotency_key": "service-order-aggregate-funding-0001",
+        })
+        self.assertEqual(status, 201, order)
+        order_id = order["id"]
+        with self.api.get_db() as db:
+            milestone = db.execute(
+                "SELECT id,status FROM milestones WHERE order_id=?",
+                [order_id],
+            ).fetchone()
+            self.assertEqual(milestone["status"], "in_progress")
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=?", [order_id]).fetchone()[0],
+                1,
+            )
+
+        self.payment_create.reset_mock()
+        for payload in (
+            {"order_id": order_id, "milestone_id": milestone["id"], "amount": "25.00"},
+            {"order_id": order_id, "amount": "25.00"},
+        ):
+            with self.subTest(payload=payload):
+                status, result = self.request("POST", "/payments/fund-escrow", payload=payload)
+                self.assertEqual(status, 409, result)
+                self.payment_create.assert_not_called()
+
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=?", [order_id]).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                db.execute("SELECT status FROM milestones WHERE id=?", [milestone["id"]]).fetchone()[0],
+                "in_progress",
+            )
+
+    def test_money_parser_is_independent_of_decimal_context(self):
+        with decimal.localcontext() as context:
+            context.prec = 6
+            context.traps[decimal.Rounded] = True
+            self.assertEqual(self.api.money_to_cents("999999.99"), 99_999_999)
+
     def test_money_moving_routes_reject_noncanonical_forms_before_stripe(self):
         status, result = self.request("POST", "/services/1/order", payload={
             "amount": "１２.００",
@@ -302,6 +350,223 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         })
         self.assertEqual(status, 400, result)
         self.payment_create.assert_not_called()
+
+    def test_raw_json_money_numbers_preserve_lexical_form_and_fail_before_stripe(self):
+        for amount_token in ("1e2", "25.550", "25.5500000000000000000000000000000001"):
+            with self.subTest(route="service", amount_token=amount_token):
+                self.payment_create.reset_mock()
+                status, result = self.request(
+                    "POST",
+                    "/services/1/order",
+                    raw_body=(
+                        '{"amount":' + amount_token
+                        + ',"idempotency_key":"service-raw-number-' + ("exponent" if "e" in amount_token else "subcent") + '"}'
+                    ),
+                )
+                self.assertEqual(status, 400, result)
+                self.payment_create.assert_not_called()
+
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (530,'service_order',1,2,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (630,530,'Delivery',25,1,'pending')")
+            db.commit()
+        status, result = self.request(
+            "POST",
+            "/payments/fund-escrow",
+            raw_body='{"order_id":530,"milestone_id":630,"amount":1e2}',
+        )
+        self.assertEqual(status, 400, result)
+        self.payment_create.assert_not_called()
+
+    def test_hourly_service_product_rounds_from_exact_decimal_coefficients(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO services (id,worker_id,title,description,category,pricing_type,hourly_rate,status) VALUES (2,1,'Tiny hourly','Exact rounding','testing','hourly',0.01,'active')"
+            )
+            db.commit()
+        status, result = self.request("POST", "/services/2/order", payload={
+            "hours": "1.49999999999999999999999999999",
+            "idempotency_key": "service-hourly-exact-rounding",
+        })
+        self.assertEqual(status, 201, result)
+        self.assertEqual(self.payment_create.call_args.kwargs["amount"], 3)
+        with self.api.get_db() as db:
+            hold = db.execute(
+                "SELECT base_amount_cents,charged_total_cents FROM escrow_holds WHERE order_id=?",
+                [result["id"]],
+            ).fetchone()
+        self.assertEqual(tuple(hold), (1, 3))
+
+    def test_manual_funding_requires_canonical_ids_binding_and_authoritative_amounts(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (99,'foreign@example.com','Foreign','x')")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (540,'service_order',1,2,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (640,540,'Owned',25,1,'pending')")
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (541,'service_order',1,99,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (641,541,'Foreign',25,1,'pending')")
+            db.commit()
+
+        for milestone_id in ("0640", 640.0):
+            with self.subTest(milestone_id=milestone_id):
+                self.payment_create.reset_mock()
+                status, result = self.request("POST", "/payments/fund-escrow", payload={
+                    "order_id": 540,
+                    "milestone_id": milestone_id,
+                    "amount": "25.00",
+                })
+                self.assertEqual(status, 400, result)
+                self.payment_create.assert_not_called()
+
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 540,
+            "milestone_id": 641,
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 404, result)
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=641").fetchone()[0], "pending")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE milestone_id=641").fetchone()[0], 0)
+
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 540,
+            "milestone_id": 640,
+            "amount": "24.99",
+        })
+        self.assertEqual(status, 409, result)
+        self.payment_create.assert_not_called()
+
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 540,
+            "milestone_id": 640,
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 200, result)
+        self.assertEqual(self.payment_create.call_args.kwargs["amount"], 2600)
+        self.assertEqual(self.payment_create.call_args.kwargs["metadata"]["funding_identity"], "milestone:640")
+        with self.api.get_db() as db:
+            hold = db.execute(
+                "SELECT order_id,milestone_id,base_amount_cents,funding_identity FROM escrow_holds WHERE milestone_id=640"
+            ).fetchone()
+            self.assertEqual(tuple(hold), (540, 640, 2500, "milestone:640"))
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=640").fetchone()[0], "funded")
+
+        self.payment_create.reset_mock()
+        for payload in (
+            {"order_id": 540, "milestone_id": 640, "amount": "25.00"},
+            {"order_id": 540, "amount": "25.00"},
+        ):
+            with self.subTest(duplicate_payload=payload):
+                status, result = self.request("POST", "/payments/fund-escrow", payload=payload)
+                if payload.get("milestone_id") is not None:
+                    self.assertEqual(status, 200, result)
+                    self.assertTrue(result["idempotent_replay"])
+                else:
+                    self.assertEqual(status, 409, result)
+                self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=540").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=640").fetchone()[0], "funded")
+
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (542,'service_order',1,2,'pending',25)")
+            db.commit()
+        self.payment_create.reset_mock()
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 542,
+            "amount": "24.99",
+        })
+        self.assertEqual(status, 409, result)
+        self.payment_create.assert_not_called()
+
+        status, result = self.request("POST", "/payments/fund-escrow", payload={"order_id": 542})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(self.payment_create.call_args.kwargs["amount"], 2600)
+        self.assertEqual(self.payment_create.call_args.kwargs["metadata"]["funding_identity"], "order:542:full")
+        self.payment_create.reset_mock()
+        status, result = self.request("POST", "/payments/fund-escrow", payload={"order_id": 542})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["idempotent_replay"])
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=542").fetchone()[0], 1)
+
+    def test_manual_funding_allows_distinct_pending_milestones_only(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (543,'service_order',1,2,'pending',35)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (643,543,'First',10,1,'pending')")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (644,543,'Second',25,2,'pending')")
+            db.commit()
+
+        for milestone_id in (643, 644):
+            status, result = self.request("POST", "/payments/fund-escrow", payload={
+                "order_id": 543,
+                "milestone_id": milestone_id,
+            })
+            self.assertEqual(status, 200, result)
+
+        self.assertEqual(self.payment_create.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["metadata"]["funding_identity"] for call in self.payment_create.call_args_list],
+            ["milestone:643", "milestone:644"],
+        )
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=543").fetchone()[0], 2)
+            self.assertEqual(
+                [row[0] for row in db.execute("SELECT status FROM milestones WHERE order_id=543 ORDER BY id")],
+                ["funded", "funded"],
+            )
+
+    def test_mcp_checkout_requires_and_forwards_stable_operation_identity(self):
+        backend_dir = pathlib.Path(__file__).resolve().parent
+        expected_key = "mcp-service-operation-0001"
+        for index, relative in enumerate(("mcp_server.py", "mcp-package/mcp_server.py")):
+            path = backend_dir / relative
+            spec = importlib.util.spec_from_file_location(f"mcp_server_under_test_{index}", path)
+            if spec is None or spec.loader is None:
+                self.fail(f"Could not load {path}")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            hire_tool = next(tool for tool in module.TOOLS if tool["name"] == "hire_worker")
+            self.assertIn("idempotency_key", hire_tool["inputSchema"]["required"])
+            self.assertEqual(hire_tool["inputSchema"]["properties"]["budget_amount"]["type"], "string")
+            calls = []
+
+            def fake_api(method, route, body=None, params=None):
+                calls.append((method, route, body))
+                if method == "GET":
+                    return {"id": 1, "worker_id": 1, "title": "Custom QA", "price": 25}
+                return {"id": 77, "status": "pending"}
+
+            with mock.patch.object(module, "api_request", side_effect=fake_api):
+                missing_key = module.handle_hire_worker({
+                    "service_id": 1,
+                    "budget_amount": "25.00",
+                })
+                invalid = module.handle_hire_worker({
+                    "service_id": 1,
+                    "budget_amount": 25.0,
+                    "idempotency_key": expected_key,
+                })
+            self.assertIn("idempotency_key", missing_key[0]["text"])
+            self.assertIn("canonical USD string", invalid[0]["text"])
+            self.assertEqual(calls, [])
+
+            args = {
+                "service_id": 1,
+                "requirements": "Check flow",
+                "budget_amount": "25.00",
+                "idempotency_key": expected_key,
+            }
+            with mock.patch.object(module, "api_request", side_effect=fake_api):
+                module.handle_hire_worker(args)
+                module.handle_hire_worker(args)
+            posts = [call for call in calls if call[0] == "POST"]
+            self.assertEqual(len(posts), 2)
+            self.assertEqual(
+                [call[2]["idempotency_key"] for call in posts],
+                [expected_key, expected_key],
+            )
 
     def test_init_db_closes_connection_when_migration_step_fails(self):
         captured = []

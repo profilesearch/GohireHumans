@@ -578,8 +578,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(hireBody).toBeNull();
   });
 
-  test('service checkout sends a stable client operation identity', async ({ page }) => {
-    let orderBody = null;
+  test('service checkout reuses one client operation identity after an ambiguous retry', async ({ page }) => {
+    const orderBodies = [];
     await page.addInitScript(() => {
       sessionStorage.setItem('ghh_token', 'employer-token');
       localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
@@ -590,7 +590,10 @@ test.describe('GoHireHumans public/browser regression suite', () => {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"employer_ready":true}' });
       }
       if (url.pathname === '/services/1/order') {
-        orderBody = route.request().postDataJSON();
+        orderBodies.push(route.request().postDataJSON());
+        if (orderBodies.length === 1) {
+          return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"ambiguous response loss"}' });
+        }
         return route.fulfill({ status: 201, contentType: 'application/json', body: '{"id":93}' });
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -599,8 +602,14 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => handleOrderService(1));
     await page.getByRole('button', { name: 'Place Order' }).click();
-    await expect.poll(() => orderBody).not.toBeNull();
-    expect(orderBody.idempotency_key).toMatch(/^[A-Za-z0-9._:-]{16,128}$/);
+    await expect.poll(() => orderBodies.length).toBe(1);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => handleOrderService(1));
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect.poll(() => orderBodies.length).toBe(2);
+    expect(orderBodies[0].idempotency_key).toMatch(/^[A-Za-z0-9._:-]{16,128}$/);
+    expect(orderBodies[1].idempotency_key).toBe(orderBodies[0].idempotency_key);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ghh_pending_service_order_1'))).toBeNull();
   });
 
   test('admin disputes use the admin-scoped filtered order endpoint', async ({ page }) => {

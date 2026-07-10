@@ -208,11 +208,18 @@ TOOLS = [
                     "description": "Specific requirements or instructions for the worker"
                 },
                 "budget_amount": {
-                    "type": "number",
-                    "description": "Agreed amount in USD. Defaults to the service listing price if not specified."
+                    "type": "string",
+                    "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$",
+                    "description": "Canonical USD amount with at most two decimal places. Defaults to the service listing price if omitted."
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128,
+                    "description": "Unique operation identity. Reuse this exact value when retrying an ambiguous or failed checkout."
                 }
             },
-            "required": ["service_id"]
+            "required": ["service_id", "idempotency_key"]
         }
     },
     {
@@ -538,6 +545,12 @@ def handle_hire_worker(args):
     """Hire a worker by creating an order for a service."""
     service_id = args["service_id"]
     requirements = args.get("requirements", "")
+    idempotency_key = args.get("idempotency_key")
+    if not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 128:
+        return [{"type": "text", "text": "Error hiring worker: idempotency_key must be a stable 16-128 character string and reused for retries."}]
+    budget_amount = args.get("budget_amount")
+    if budget_amount is not None and not isinstance(budget_amount, str):
+        return [{"type": "text", "text": "Error hiring worker: budget_amount must be a canonical USD string with at most two decimal places."}]
     
     # First get the service details
     service = api_request("GET", f"/services/{service_id}")
@@ -545,22 +558,32 @@ def handle_hire_worker(args):
         return [{"type": "text", "text": f"Error fetching service: {service['error']}"}]
     
     s = service.get("service", service)
+    if not isinstance(s, dict):
+        return [{"type": "text", "text": "Error fetching service: invalid API response"}]
     
     # Create an order
     order_body = {
         "service_id": service_id,
         "worker_id": s.get("worker_id", s.get("user_id")),
         "requirements": requirements,
-        "amount": args.get("budget_amount", s.get("price", 0)),
+        "amount": budget_amount if budget_amount is not None else s.get("price", 0),
         "type": "service_order"
     }
     
-    result = api_request("POST", f"/services/{service_id}/order", body={"notes": requirements, "amount": order_body.get("amount")})
+    checkout_body = {
+        "notes": requirements,
+        "idempotency_key": idempotency_key,
+    }
+    if budget_amount is not None:
+        checkout_body["amount"] = budget_amount
+    result = api_request("POST", f"/services/{service_id}/order", body=checkout_body)
     
     if "error" in result:
         return [{"type": "text", "text": f"Error hiring worker: {result['error']}. Ensure you are authenticated and have a payment method on file. Use GOHIREHUMANS_AUTH_TOKEN or GOHIREHUMANS_API_KEY environment variable."}]
     
     order = result.get("order", result)
+    if not isinstance(order, dict):
+        return [{"type": "text", "text": "Error hiring worker: invalid API response"}]
     output = f"Worker hired successfully!\n\n"
     output += f"**Order ID:** {order.get('id', 'N/A')}\n"
     output += f"**Service:** {s.get('title', 'N/A')}\n"
@@ -825,7 +848,8 @@ def handle_get_recommended(args):
         rating = s.get('rating', s.get('avg_rating', 'New'))
         output += f"**Rating:** {'⭐' * int(float(rating)) if isinstance(rating, (int, float)) else rating}\n"
         output += f"{s.get('description', '')[:150]}\n"
-        output += f"\nTo hire: `hire_worker(service_id={s.get('id', 'N/A')})`\n\n"
+        output += f"\nTo hire: `hire_worker(service_id={s.get('id', 'N/A')}, idempotency_key=\"service-order-<stable-uuid>\")`\n"
+        output += "Reuse that exact idempotency key for any ambiguous retry.\n\n"
     
     return [{"type": "text", "text": output}]
 
@@ -1046,10 +1070,12 @@ Agent: "I need a logo designer for my startup"
 
 1. search_services(query="logo design") → finds 5 designers
 2. get_service_details(service_id=12) → reviews top pick
-3. hire_worker(service_id=12, requirements="Modern minimalist logo for a fintech startup") → creates order
-4. get_job_status(order_id=45) → checks progress
-5. release_payment(order_id=45) → approves and pays
-6. submit_review(order_id=45, rating=5, comment="Excellent work") → leaves feedback
+3. Generate one stable operation key for this checkout (for example, `service-order-<uuid>`)
+4. hire_worker(service_id=12, requirements="Modern minimalist logo for a fintech startup", idempotency_key="service-order-<same-uuid>") → creates order
+5. On any ambiguous failure, retry step 4 with the exact same idempotency key
+6. get_job_status(order_id=45) → checks progress
+7. release_payment(order_id=45) → approves and pays
+8. submit_review(order_id=45, rating=5, comment="Excellent work") → leaves feedback
 ```
 
 ## Support

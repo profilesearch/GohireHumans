@@ -1900,6 +1900,27 @@ async function renderServiceDetail(id) {
   }
 }
 
+const pendingServiceOrderOperations = new Map();
+
+function pendingServiceOrderOperationKey(id) {
+  const serviceId = String(id);
+  const storageKey = `ghh_pending_service_order_${serviceId}`;
+  let operationKey = pendingServiceOrderOperations.get(serviceId) || '';
+  try { operationKey = sessionStorage.getItem(storageKey) || operationKey; } catch (_) {}
+  if (!/^service-order-[A-Za-z0-9-]{16,114}$/.test(operationKey)) {
+    operationKey = `service-order-${crypto.randomUUID()}`;
+  }
+  pendingServiceOrderOperations.set(serviceId, operationKey);
+  try { sessionStorage.setItem(storageKey, operationKey); } catch (_) {}
+  return operationKey;
+}
+
+function clearPendingServiceOrderOperation(id) {
+  const serviceId = String(id);
+  pendingServiceOrderOperations.delete(serviceId);
+  try { sessionStorage.removeItem(`ghh_pending_service_order_${serviceId}`); } catch (_) {}
+}
+
 async function handleOrderService(id) {
   trackEvent('service_order_intent', { service_id: String(id), source: 'service_detail' });
   if (!requireAuth(`services/${id}`)) return;
@@ -1910,14 +1931,16 @@ async function handleOrderService(id) {
       showModal('Payment Required', 'You need to set up a payment method before ordering. Would you like to set up your payment method now?', () => navigate('#/payments'), 'Set Up Payment');
       return;
     }
-    // Proceed to order with modal confirmation. The key is created once and reused by this confirmation callback.
-    const orderOperationKey = `service-order-${crypto.randomUUID()}`;
+    // Persist the operation identity until the API confirms success. Ambiguous
+    // failures and page reloads must retry with the same processor identity.
+    const orderOperationKey = pendingServiceOrderOperationKey(id);
     showModal('Confirm Order', `<p>Your payment will be processed through the configured checkout flow after you confirm the order.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p><div style="display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span style="font-size:11px;color:var(--color-text-muted)">Payment processing by <strong style="color:#635bff">Stripe</strong> where configured</span></div>`, async () => {
       try {
         trackEvent('service_order_submit', { service_id: String(id) });
         trackRecommendedEvent('generate_lead', { lead_type: 'service_order_submit', service_id: String(id) });
         trackConfiguredKeyEvent('qualify_lead', { lead_type: 'service_order_submit', service_id: String(id) });
         const order = await api(`/services/${id}/order`, { method: 'POST', body: { idempotency_key: orderOperationKey } });
+        clearPendingServiceOrderOperation(id);
         trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id || '') });
         trackRecommendedEvent('generate_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
         trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });

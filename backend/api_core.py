@@ -1121,6 +1121,20 @@ def error_response(message, status=400):
     json_response({"error": message}, status)
 
 
+class JsonDecimalToken(float):
+    """Float-compatible JSON number that retains its original request token."""
+
+    raw: str
+
+    def __new__(cls, raw):
+        value = super().__new__(cls, raw)
+        value.raw = raw
+        return value
+
+    def __str__(self):
+        return self.raw
+
+
 def get_body():
     if not hasattr(_request_ctx, 'body_cache'):
         try:
@@ -1131,7 +1145,10 @@ def get_body():
                 else:
                     raw = getattr(_request_ctx, 'stdin_data', '')
                     _request_ctx.raw_body = raw
-                parsed = json.loads(raw)
+                # Preserve the exact lexical representation of JSON decimals. Money and
+                # quantity validators must see `1e2` and hidden sub-cent tails rather
+                # than a lossy binary-float normalization.
+                parsed = json.loads(raw, parse_float=JsonDecimalToken, parse_constant=str)
                 if not isinstance(parsed, dict):
                     _request_ctx.body_cache = None
                 else:
@@ -1174,13 +1191,13 @@ def money_to_cents(value, field_name="amount"):
     """Convert a JSON/SQLite money value to exact cents without Decimal context rounding."""
     text = str(value)
     if (not text or text != text.strip() or len(text) > MAX_MONEY_INPUT_CHARS
-            or not re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?", text)):
+            or not re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]{1,2})?", text)):
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
     try:
         decimal_value = Decimal(text)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
-    if not decimal_value.is_finite() or abs(decimal_value) > MAX_MONEY_ABS:
+    if not decimal_value.is_finite() or decimal_value.copy_abs() > MAX_MONEY_ABS:
         raise ValueError(f"{field_name} must be a valid amount in whole cents")
     if decimal_value == 0:
         return 0
@@ -1207,7 +1224,7 @@ def bounded_integer(value, field_name, minimum, maximum):
         raise ValueError(f"{field_name} must be a whole number between {minimum} and {maximum}")
     if isinstance(value, int):
         number = value
-    elif isinstance(value, str) and value == value.strip() and re.fullmatch(r"[0-9]+", value):
+    elif isinstance(value, str) and value == value.strip() and re.fullmatch(r"(?:0|[1-9][0-9]*)", value):
         number = int(value)
     else:
         raise ValueError(f"{field_name} must be a whole number between {minimum} and {maximum}")
@@ -1235,7 +1252,19 @@ def rounded_product_cents(amount, quantity, field_name="amount"):
     """Multiply a cent-denominated amount by a bounded quantity and round half-up once."""
     base_cents = money_to_cents(amount, field_name)
     quantity_decimal = canonical_decimal_quantity(quantity, f"{field_name} quantity")
-    return int((Decimal(base_cents) * quantity_decimal).to_integral_value(rounding=ROUND_HALF_UP))
+    _, digits, exponent = quantity_decimal.as_tuple()
+    exponent = int(exponent)
+    coefficient = int("".join(str(digit) for digit in digits))
+    sign = -1 if base_cents < 0 else 1
+    exact_product = abs(base_cents) * coefficient
+    if exponent >= 0:
+        rounded = exact_product * (10 ** exponent)
+    else:
+        divisor = 10 ** (-exponent)
+        rounded, remainder = divmod(exact_product, divisor)
+        if remainder * 2 >= divisor:
+            rounded += 1
+    return sign * rounded
 
 
 def component_fee_cents(base_cents, basis_points):
@@ -4278,35 +4307,127 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
 
         body = get_body()
-        order_id = body.get("order_id")
-        milestone_id = body.get("milestone_id")
-        if not order_id:
+        if body.get("order_id") is None:
             return error_response("order_id required")
+        try:
+            order_id = bounded_integer(body.get("order_id"), "order_id", 1, 9_223_372_036_854_775_807)
+            milestone_id = (
+                None
+                if body.get("milestone_id") is None
+                else bounded_integer(body.get("milestone_id"), "milestone_id", 1, 9_223_372_036_854_775_807)
+            )
+        except ValueError as e:
+            return error_response(str(e), 400)
 
-        order = db.execute("SELECT * FROM orders WHERE id=?", [int(order_id)]).fetchone()
+        order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
         if not order:
             return error_response("Order not found", 404)
         if order['employer_id'] != user['id']:
             return error_response("Forbidden", 403)
 
+        # Serialize the final pre-processor eligibility check so two requests
+        # cannot both observe the same target as unfunded.
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+        order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
+        if not order:
+            return error_response("Order not found", 404)
+        if order['employer_id'] != user['id']:
+            return error_response("Forbidden", 403)
+
+        milestone = None
+        if milestone_id is not None:
+            milestone = db.execute(
+                "SELECT * FROM milestones WHERE id=? AND order_id=?",
+                [milestone_id, order_id],
+            ).fetchone()
+            if not milestone:
+                return error_response("Milestone not found for this order", 404)
+
         try:
-            amount_cents = money_to_cents(body.get("amount", 0), "amount")
+            authoritative_amount = milestone["amount"] if milestone is not None else order["total_amount"]
+            amount_cents = money_to_cents(
+                authoritative_amount,
+                "milestone amount" if milestone is not None else "order total amount",
+            )
+            if body.get("amount") is not None:
+                requested_cents = money_to_cents(body.get("amount"), "amount")
+                if requested_cents != amount_cents:
+                    return error_response("amount must match the authoritative funded amount", 409)
         except ValueError as e:
             return error_response(str(e), 400)
         if amount_cents <= 0:
             return error_response("amount must be positive", 400)
         amount = amount_cents / 100
+        funding_identity = (
+            f"milestone:{milestone_id}" if milestone_id is not None else f"order:{order_id}:full"
+        )
+
+        exact_replay = db.execute(
+            "SELECT * FROM escrow_holds WHERE order_id=? AND funding_identity=? LIMIT 1",
+            [order_id, funding_identity],
+        ).fetchone()
+        if exact_replay:
+            replay_base_cents = exact_replay["base_amount_cents"]
+            if replay_base_cents is None:
+                try:
+                    replay_base_cents = money_to_cents(exact_replay["amount"], "funded amount")
+                except ValueError:
+                    return error_response("Existing funding requires processor reconciliation", 409)
+            if (replay_base_cents != amount_cents
+                    or exact_replay["milestone_id"] != milestone_id
+                    or not exact_replay["stripe_payment_intent_id"]):
+                return error_response("Existing funding conflicts with this operation", 409)
+            db.commit()
+            return json_response({
+                "ok": True,
+                "payment_intent_id": exact_replay["stripe_payment_intent_id"],
+                "mode": "replayed",
+                "amount": amount,
+                "idempotent_replay": True,
+            })
+
+        if milestone is not None:
+            if milestone["status"] != "pending":
+                return error_response("Milestone is not eligible for funding", 409)
+            overlapping_hold = db.execute(
+                """SELECT id FROM escrow_holds
+                   WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL)
+                   LIMIT 1""",
+                [order_id, milestone_id],
+            ).fetchone()
+            if overlapping_hold:
+                return error_response("Milestone or order is already funded", 409)
+        else:
+            if order["status"] != "pending":
+                return error_response("Order is not eligible for full-order funding", 409)
+            if db.execute("SELECT 1 FROM milestones WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+                return error_response("milestone_id required for orders with milestones", 409)
+            if db.execute("SELECT 1 FROM escrow_holds WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+                return error_response("Order is already funded", 409)
 
         try:
-            pi_id, mode = fund_escrow_stripe(db, user['id'], amount, order_id, milestone_id, "Owner-approved checkout funding")
+            pi_id, mode = fund_escrow_stripe(
+                db,
+                user['id'],
+                amount,
+                order_id,
+                milestone_id,
+                "Owner-approved checkout funding",
+                funding_identity=funding_identity,
+            )
         except ValueError as e:
             return error_response(str(e), 402)
 
-        if milestone_id:
-            db.execute(
-                "UPDATE milestones SET status='funded', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
-                [pi_id, milestone_id]
+        if milestone_id is not None:
+            updated = db.execute(
+                """UPDATE milestones
+                   SET status='funded', escrow_payment_id=?, funded_at=datetime('now')
+                   WHERE id=? AND order_id=? AND status='pending'""",
+                [pi_id, milestone_id, order_id]
             )
+            if updated.rowcount != 1:
+                raise RuntimeError("Milestone funding state changed during settlement")
 
         audit(db, user['id'], "fund_escrow", "escrow_hold", None, {"order_id": order_id, "amount": amount})
         db.commit()
