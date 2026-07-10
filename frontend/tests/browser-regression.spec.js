@@ -612,6 +612,30 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ghh_pending_service_order_1'))).toBeNull();
   });
 
+  test('clearing a session removes pending service checkout operation identities', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    );
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    const cleared = await page.evaluate(() => {
+      const value = 'service-order-12345678-1234-1234-1234-123456789012';
+      sessionStorage.setItem('ghh_pending_service_order_1', value);
+      pendingServiceOrderOperations.set('1', value);
+      clearSession();
+      return {
+        stored: sessionStorage.getItem('ghh_pending_service_order_1'),
+        cached: pendingServiceOrderOperations.has('1'),
+      };
+    });
+
+    expect(cleared).toEqual({ stored: null, cached: false });
+  });
+
   test('admin disputes use the admin-scoped filtered order endpoint', async ({ page }) => {
     const requestedPaths = [];
     await page.addInitScript(() => {

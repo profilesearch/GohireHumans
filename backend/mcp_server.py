@@ -36,6 +36,7 @@ MCP Config (for Claude Desktop, etc.):
 import json
 import sys
 import os
+import re
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -209,6 +210,7 @@ TOOLS = [
                 },
                 "budget_amount": {
                     "type": "string",
+                    "maxLength": 128,
                     "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$",
                     "description": "Canonical USD amount with at most two decimal places. Defaults to the service listing price if omitted."
                 },
@@ -216,6 +218,7 @@ TOOLS = [
                     "type": "string",
                     "minLength": 16,
                     "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]{16,128}$",
                     "description": "Unique operation identity. Reuse this exact value when retrying an ambiguous or failed checkout."
                 }
             },
@@ -543,17 +546,27 @@ def handle_browse_jobs(args):
 
 def handle_hire_worker(args):
     """Hire a worker by creating an order for a service."""
-    service_id = args["service_id"]
-    requirements = args.get("requirements", "")
     idempotency_key = args.get("idempotency_key")
-    if not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 128:
+    if not isinstance(idempotency_key, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
         return [{"type": "text", "text": "Error hiring worker: idempotency_key must be a stable 16-128 character string and reused for retries."}]
+    service_id = args.get("service_id")
+    if isinstance(service_id, bool) or not isinstance(service_id, int) or service_id <= 0:
+        return [{"type": "text", "text": "Error hiring worker: service_id must be a positive integer."}]
+    requirements = args.get("requirements", "")
+    if not isinstance(requirements, str):
+        return [{"type": "text", "text": "Error hiring worker: requirements must be a string."}]
     budget_amount = args.get("budget_amount")
-    if budget_amount is not None and not isinstance(budget_amount, str):
+    if budget_amount is not None and (
+        not isinstance(budget_amount, str)
+        or len(budget_amount) > 128
+        or not re.fullmatch(r"[0-9]+(?:\.[0-9]{1,2})?", budget_amount)
+    ):
         return [{"type": "text", "text": "Error hiring worker: budget_amount must be a canonical USD string with at most two decimal places."}]
     
     # First get the service details
     service = api_request("GET", f"/services/{service_id}")
+    if not isinstance(service, dict):
+        return [{"type": "text", "text": "Error fetching service: invalid API response"}]
     if "error" in service:
         return [{"type": "text", "text": f"Error fetching service: {service['error']}"}]
     
@@ -577,9 +590,11 @@ def handle_hire_worker(args):
     if budget_amount is not None:
         checkout_body["amount"] = budget_amount
     result = api_request("POST", f"/services/{service_id}/order", body=checkout_body)
-    
+
+    if not isinstance(result, dict):
+        return [{"type": "text", "text": "Error hiring worker: invalid API response. Retry with the same idempotency_key."}]
     if "error" in result:
-        return [{"type": "text", "text": f"Error hiring worker: {result['error']}. Ensure you are authenticated and have a payment method on file. Use GOHIREHUMANS_AUTH_TOKEN or GOHIREHUMANS_API_KEY environment variable."}]
+        return [{"type": "text", "text": f"Error hiring worker: {result['error']}. Retry with the same idempotency_key after resolving authentication or payment setup. Use GOHIREHUMANS_AUTH_TOKEN or GOHIREHUMANS_API_KEY environment variable."}]
     
     order = result.get("order", result)
     if not isinstance(order, dict):

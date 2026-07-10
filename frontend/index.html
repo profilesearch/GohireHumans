@@ -294,11 +294,18 @@ function saveSession(token, user) {
   } catch(e) {}
 }
 
+const pendingServiceOrderOperations = new Map();
+
 function clearSession() {
   state.user = null;
   state.token = null;
+  pendingServiceOrderOperations.clear();
   try {
     sessionStorage.removeItem('ghh_token');
+    for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('ghh_pending_service_order_')) sessionStorage.removeItem(key);
+    }
     localStorage.removeItem('ghh_token');
     localStorage.removeItem('ghh_user');
   } catch(e) {}
@@ -1899,8 +1906,6 @@ async function renderServiceDetail(id) {
       </div>`;
   }
 }
-
-const pendingServiceOrderOperations = new Map();
 
 function pendingServiceOrderOperationKey(id) {
   const serviceId = String(id);

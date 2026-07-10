@@ -244,6 +244,88 @@ def get_db():
     return db
 
 
+def _table_columns(db, table_name):
+    pragma_sql = {
+        "escrow_holds": "PRAGMA table_info('escrow_holds')",
+        "orders": "PRAGMA table_info('orders')",
+    }.get(table_name)
+    if pragma_sql is None:
+        raise ValueError("Unsupported migration table")
+    return {row[1] for row in db.execute(pragma_sql).fetchall()}
+
+
+def ensure_column(db, table_name, column_name, alter_sql):
+    """Add one expected column without hiding unrelated SQLite failures."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column_name):
+        raise ValueError("Invalid column name")
+    if column_name in _table_columns(db, table_name):
+        return False
+    try:
+        db.execute(alter_sql)
+    except sqlite3.OperationalError as exc:
+        # A concurrent initializer can win the race between schema inspection and
+        # ALTER TABLE. Suppress only SQLite's exact duplicate-column outcome and
+        # only after proving the expected column now exists.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+        if column_name not in _table_columns(db, table_name):
+            raise
+        return False
+    if column_name not in _table_columns(db, table_name):
+        raise RuntimeError(f"Migration did not create {table_name}.{column_name}")
+    return True
+
+
+def validate_required_transaction_schema(db):
+    required_columns = {
+        "escrow_holds": {
+            "base_amount_cents",
+            "platform_fee_cents",
+            "processing_fee_cents",
+            "charged_total_cents",
+            "fee_policy_version",
+            "funding_identity",
+        },
+        "orders": {"creation_idempotency_key"},
+    }
+    missing = []
+    for table_name, expected in required_columns.items():
+        for column_name in sorted(expected - _table_columns(db, table_name)):
+            missing.append(f"{table_name}.{column_name}")
+
+    for index_name in (
+        "idx_orders_creation_idempotency",
+        "idx_escrow_holds_funding_identity",
+    ):
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            [index_name],
+        ).fetchone():
+            missing.append(index_name)
+
+    job_hire_index = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_orders_one_job_hire'"
+    ).fetchone()
+    job_hire_triggers = {
+        row[0]
+        for row in db.execute(
+            """SELECT name FROM sqlite_master
+               WHERE type='trigger' AND name IN (
+                 'trg_orders_one_job_hire_insert',
+                 'trg_orders_one_job_hire_update'
+               )"""
+        ).fetchall()
+    }
+    if not job_hire_index and job_hire_triggers != {
+        "trg_orders_one_job_hire_insert",
+        "trg_orders_one_job_hire_update",
+    }:
+        missing.append("one-job-hire index-or-trigger enforcement")
+
+    if missing:
+        raise RuntimeError("Required transaction schema missing: " + ", ".join(missing))
+
+
 def ensure_one_job_hire_enforcement(db):
     """Install the one-job-hire invariant without destroying legacy history.
 
@@ -566,19 +648,16 @@ def _init_db_connection(db):
     CREATE INDEX IF NOT EXISTS idx_payout_transfers_idempotency ON payout_transfers(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     """)
-    for col_sql in [
-        "ALTER TABLE escrow_holds ADD COLUMN base_amount_cents INTEGER",
-        "ALTER TABLE escrow_holds ADD COLUMN platform_fee_cents INTEGER",
-        "ALTER TABLE escrow_holds ADD COLUMN processing_fee_cents INTEGER",
-        "ALTER TABLE escrow_holds ADD COLUMN charged_total_cents INTEGER",
-        "ALTER TABLE escrow_holds ADD COLUMN fee_policy_version TEXT",
-        "ALTER TABLE escrow_holds ADD COLUMN funding_identity TEXT",
-        "ALTER TABLE orders ADD COLUMN creation_idempotency_key TEXT",
+    for table_name, column_name, col_sql in [
+        ("escrow_holds", "base_amount_cents", "ALTER TABLE escrow_holds ADD COLUMN base_amount_cents INTEGER"),
+        ("escrow_holds", "platform_fee_cents", "ALTER TABLE escrow_holds ADD COLUMN platform_fee_cents INTEGER"),
+        ("escrow_holds", "processing_fee_cents", "ALTER TABLE escrow_holds ADD COLUMN processing_fee_cents INTEGER"),
+        ("escrow_holds", "charged_total_cents", "ALTER TABLE escrow_holds ADD COLUMN charged_total_cents INTEGER"),
+        ("escrow_holds", "fee_policy_version", "ALTER TABLE escrow_holds ADD COLUMN fee_policy_version TEXT"),
+        ("escrow_holds", "funding_identity", "ALTER TABLE escrow_holds ADD COLUMN funding_identity TEXT"),
+        ("orders", "creation_idempotency_key", "ALTER TABLE orders ADD COLUMN creation_idempotency_key TEXT"),
     ]:
-        try:
-            db.execute(col_sql)
-        except sqlite3.OperationalError:
-            pass
+        ensure_column(db, table_name, column_name, col_sql)
     db.execute(
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_creation_idempotency
            ON orders(employer_id, creation_idempotency_key)
@@ -589,6 +668,7 @@ def _init_db_connection(db):
            ON escrow_holds(funding_identity) WHERE funding_identity IS NOT NULL"""
     )
     ensure_one_job_hire_enforcement(db)
+    validate_required_transaction_schema(db)
     db.commit()
 
     # ── AI marketplace migrations ─────────────────────────────────────
@@ -3516,37 +3596,66 @@ def _handle_routes(db):
             [ms_id]
         )
 
-        # Check if there are more milestones to fund
+        # Check if there are more milestones to fund or reconcile.
         next_ms = db.execute(
-            "SELECT * FROM milestones WHERE order_id=? AND status='pending' ORDER BY sequence LIMIT 1",
+            "SELECT * FROM milestones WHERE order_id=? AND status IN ('pending','funded') ORDER BY sequence LIMIT 1",
             [order_id]
         ).fetchone()
 
         if next_ms:
-            # Fund next milestone
-            try:
-                pi_id, mode = fund_escrow_stripe(
-                    db, user['id'], float(next_ms['amount']), order_id, next_ms['id'],
-                    f"Escrow for order #{order_id} milestone {next_ms['sequence']}"
-                )
-                db.execute(
-                    "UPDATE milestones SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
-                    [pi_id, next_ms['id']]
-                )
-                db.execute("UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=?", [order_id])
-                push_notification(db, order['worker_id'], "milestone_funded",
-                    f"Next milestone funded",
-                    f"Milestone {next_ms['sequence']} has been funded. Continue working!",
-                    f"/orders/{order_id}")
-            except ValueError as e:
-                # Can't fund next milestone — mark order as disputed
+            if next_ms['status'] == 'funded':
+                # Legacy manual pre-funding used a lifecycle state that approval did
+                # not consume. Never skip it and falsely complete the order; require
+                # reconciliation without making another processor call.
                 db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
                 push_notification(db, order['worker_id'], "payment_issue",
-                    "Payment issue on next milestone",
-                    f"Could not fund next milestone: {str(e)}",
+                    "Payment reconciliation required",
+                    f"Pre-funded milestone {next_ms['sequence']} must be reconciled before work continues.",
                     f"/orders/{order_id}")
+            else:
+                # Fund next milestone
+                try:
+                    pi_id, mode = fund_escrow_stripe(
+                        db, user['id'], float(next_ms['amount']), order_id, next_ms['id'],
+                        f"Escrow for order #{order_id} milestone {next_ms['sequence']}"
+                    )
+                    db.execute(
+                        "UPDATE milestones SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now') WHERE id=?",
+                        [pi_id, next_ms['id']]
+                    )
+                    db.execute("UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=?", [order_id])
+                    push_notification(db, order['worker_id'], "milestone_funded",
+                        f"Next milestone funded",
+                        f"Milestone {next_ms['sequence']} has been funded. Continue working!",
+                        f"/orders/{order_id}")
+                except ValueError as e:
+                    # Can't fund next milestone — mark order as disputed
+                    db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
+                    push_notification(db, order['worker_id'], "payment_issue",
+                        "Payment issue on next milestone",
+                        f"Could not fund next milestone: {str(e)}",
+                        f"/orders/{order_id}")
+        elif (
+            db.execute(
+                "SELECT 1 FROM milestones WHERE order_id=? AND status<>'approved' LIMIT 1",
+                [order_id],
+            ).fetchone()
+            or db.execute(
+                "SELECT 1 FROM escrow_holds WHERE order_id=? AND status IN ('held','partial') LIMIT 1",
+                [order_id],
+            ).fetchone()
+        ):
+            # No ordinary pending/funded next step exists, but the order still has
+            # active child work or unresolved escrow. Fail closed rather than
+            # claiming completion or incrementing marketplace statistics.
+            db.execute("UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?", [order_id])
+            push_notification(db, order['worker_id'], "payment_issue",
+                "Order reconciliation required",
+                f"Order #{order_id} still has unresolved milestone or escrow state after approval.",
+                f"/orders/{order_id}")
         else:
-            # All milestones done — complete order
+            # Positive completion invariant: every milestone is approved and no
+            # held or partially settled escrow remains.
             db.execute(
                 "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
                 [order_id]
@@ -4378,6 +4487,74 @@ def _handle_routes(db):
                     or exact_replay["milestone_id"] != milestone_id
                     or not exact_replay["stripe_payment_intent_id"]):
                 return error_response("Existing funding conflicts with this operation", 409)
+
+            hold_status = exact_replay["status"]
+            replay_is_valid = False
+            if milestone is not None:
+                milestone_status = milestone["status"]
+                order_status = order["status"]
+                first_milestone = db.execute(
+                    "SELECT id FROM milestones WHERE order_id=? ORDER BY sequence, id LIMIT 1",
+                    [order_id],
+                ).fetchone()
+                hold_count = db.execute(
+                    "SELECT COUNT(*) FROM escrow_holds WHERE order_id=?",
+                    [order_id],
+                ).fetchone()[0]
+                if (order_status == "pending" and milestone_status == "funded"
+                        and hold_status == "held" and first_milestone
+                        and first_milestone["id"] == milestone_id and hold_count == 1):
+                    updated_ms = db.execute(
+                        "UPDATE milestones SET status='in_progress' WHERE id=? AND order_id=? AND status='funded'",
+                        [milestone_id, order_id],
+                    )
+                    updated_order = db.execute(
+                        "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+                        [order_id],
+                    )
+                    if updated_ms.rowcount != 1 or updated_order.rowcount != 1:
+                        raise RuntimeError("Legacy funding replay state changed during normalization")
+                    audit(db, user['id'], "normalize_legacy_funding_replay", "escrow_hold", exact_replay["id"], {
+                        "order_id": order_id,
+                        "milestone_id": milestone_id,
+                        "funding_identity": funding_identity,
+                    })
+                    replay_is_valid = True
+                elif hold_status == "held" and (
+                    (order_status == "in_progress" and milestone_status == "in_progress")
+                    or (order_status == "submitted" and milestone_status == "submitted")
+                    or (order_status == "revision_requested" and milestone_status == "in_progress")
+                ):
+                    replay_is_valid = True
+                elif (hold_status == "released" and milestone_status == "approved"
+                        and order_status in ("in_progress", "submitted", "revision_requested", "completed")):
+                    replay_is_valid = True
+            else:
+                order_status = order["status"]
+                has_milestones = db.execute(
+                    "SELECT 1 FROM milestones WHERE order_id=? LIMIT 1",
+                    [order_id],
+                ).fetchone()
+                if not has_milestones and order_status == "pending" and hold_status == "held":
+                    updated_order = db.execute(
+                        "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+                        [order_id],
+                    )
+                    if updated_order.rowcount != 1:
+                        raise RuntimeError("Legacy aggregate replay state changed during normalization")
+                    audit(db, user['id'], "normalize_legacy_funding_replay", "escrow_hold", exact_replay["id"], {
+                        "order_id": order_id,
+                        "funding_identity": funding_identity,
+                    })
+                    replay_is_valid = True
+                elif not has_milestones and (
+                    (hold_status == "held" and order_status in ("in_progress", "submitted", "revision_requested"))
+                    or (hold_status == "released" and order_status == "completed")
+                ):
+                    replay_is_valid = True
+
+            if not replay_is_valid:
+                return error_response("Existing funding requires lifecycle reconciliation", 409)
             db.commit()
             return json_response({
                 "ok": True,
@@ -4387,20 +4564,25 @@ def _handle_routes(db):
                 "idempotent_replay": True,
             })
 
+        if order["status"] != "pending":
+            return error_response("Order is not eligible for new funding", 409)
+
         if milestone is not None:
             if milestone["status"] != "pending":
                 return error_response("Milestone is not eligible for funding", 409)
+            first_milestone = db.execute(
+                "SELECT id FROM milestones WHERE order_id=? ORDER BY sequence, id LIMIT 1",
+                [order_id],
+            ).fetchone()
+            if not first_milestone or first_milestone["id"] != milestone_id:
+                return error_response("Only the first milestone can start a pending order", 409)
             overlapping_hold = db.execute(
-                """SELECT id FROM escrow_holds
-                   WHERE order_id=? AND (milestone_id=? OR milestone_id IS NULL)
-                   LIMIT 1""",
-                [order_id, milestone_id],
+                "SELECT id FROM escrow_holds WHERE order_id=? LIMIT 1",
+                [order_id],
             ).fetchone()
             if overlapping_hold:
-                return error_response("Milestone or order is already funded", 409)
+                return error_response("Order is already funded", 409)
         else:
-            if order["status"] != "pending":
-                return error_response("Order is not eligible for full-order funding", 409)
             if db.execute("SELECT 1 FROM milestones WHERE order_id=? LIMIT 1", [order_id]).fetchone():
                 return error_response("milestone_id required for orders with milestones", 409)
             if db.execute("SELECT 1 FROM escrow_holds WHERE order_id=? LIMIT 1", [order_id]).fetchone():
@@ -4422,12 +4604,18 @@ def _handle_routes(db):
         if milestone_id is not None:
             updated = db.execute(
                 """UPDATE milestones
-                   SET status='funded', escrow_payment_id=?, funded_at=datetime('now')
+                   SET status='in_progress', escrow_payment_id=?, funded_at=datetime('now')
                    WHERE id=? AND order_id=? AND status='pending'""",
                 [pi_id, milestone_id, order_id]
             )
             if updated.rowcount != 1:
                 raise RuntimeError("Milestone funding state changed during settlement")
+        updated_order = db.execute(
+            "UPDATE orders SET status='in_progress', updated_at=datetime('now') WHERE id=? AND status='pending'",
+            [order_id],
+        )
+        if updated_order.rowcount != 1:
+            raise RuntimeError("Order funding state changed during settlement")
 
         audit(db, user['id'], "fund_escrow", "escrow_hold", None, {"order_id": order_id, "amount": amount})
         db.commit()
