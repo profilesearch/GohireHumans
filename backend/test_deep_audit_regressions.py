@@ -1016,9 +1016,10 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("allowHtml = false", text)
         self.assertIn("modalBody.textContent = message || ''", text)
         self.assertIn("admin_password: adminPassword", text)
-        self.assertIn("manual_money_movement_confirmed: true", text)
-        self.assertIn("processor_reference: processorReference", text)
-        self.assertIn("Record Manual Dispute Settlement", text)
+        self.assertNotIn("manual_money_movement_confirmed: true", text)
+        self.assertNotIn("processor_reference: processorReference", text)
+        self.assertIn("Issue task-amount refund", text)
+        self.assertIn("Stripe processing and the 1% platform fee are not automatically refunded", text)
         self.assertIn("/trust-safety.html", text)
 
     def test_first_task_wizard_and_measurement_invariants(self):
@@ -1225,7 +1226,7 @@ class BackendRegressionTests(unittest.TestCase):
         for payload in payloads:
             status, body = call(payload)
             self.assertEqual(status, 503, body)
-            self.assertIn("Task 4", body["error"])
+            self.assertIn("remain disabled", body["error"])
         db = self.module.get_db()
         try:
             self.assertEqual(db.execute("SELECT status FROM orders WHERE id=9").fetchone()[0], "disputed")
@@ -1642,7 +1643,7 @@ class BackendRegressionTests(unittest.TestCase):
                 missing[rel] = misses
         self.assertEqual(missing, {})
 
-    def test_owner_admin_bootstrap_promotes_enzo_account(self):
+    def test_schema_initialization_never_resets_or_promotes_an_existing_account(self):
         db = self.module.get_db()
         try:
             db.execute("INSERT INTO users (email,password_hash,name,is_admin,is_active,is_suspended,is_banned) VALUES ('enzo@profilesearch.com','old','Enzo',0,0,1,1)")
@@ -1656,13 +1657,80 @@ class BackendRegressionTests(unittest.TestCase):
         try:
             user = db.execute("SELECT email,password_hash,is_admin,is_active,is_suspended,is_banned FROM users WHERE email='enzo@profilesearch.com'").fetchone()
             self.assertIsNotNone(user)
-            self.assertEqual(user["is_admin"], 1)
-            self.assertEqual(user["is_active"], 1)
-            self.assertEqual(user["is_suspended"], 0)
-            self.assertEqual(user["is_banned"], 0)
-            self.assertNotEqual(user["password_hash"], "old")
+            self.assertEqual(dict(user), {
+                "email": "enzo@profilesearch.com",
+                "password_hash": "old",
+                "is_admin": 0,
+                "is_active": 0,
+                "is_suspended": 1,
+                "is_banned": 1,
+            })
         finally:
             db.close()
+
+    def test_seed_requires_explicit_admin_credentials_before_any_insert(self):
+        self.module.SEED_SECRET = "seed-test-secret"
+        payload = json.dumps({"secret": "seed-test-secret"})
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/seed"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = payload
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(payload))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 400, body)
+        self.assertIn("admin credentials", body["error"].lower())
+        db = self.module.get_db()
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 0)
+        finally:
+            db.close()
+
+    def test_seed_accepts_only_caller_supplied_strong_admin_credentials(self):
+        self.module.SEED_SECRET = "seed-test-secret"
+        admin_password = "StrongSeed1!Pass"
+        payload = json.dumps({
+            "secret": "seed-test-secret",
+            "admin_email": "owner@example.com",
+            "admin_password": admin_password,
+            "admin_name": "Owner",
+        })
+        self.module._request_ctx.request_method = "POST"
+        self.module._request_ctx.path_info = "/seed"
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = payload
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(payload))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        status, body = parse_cgi_output(out.getvalue())
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["admin"]["email"], "owner@example.com")
+        self.assertNotIn(admin_password, json.dumps(body))
+        db = self.module.get_db()
+        try:
+            user = db.execute("SELECT email,password_hash,is_admin FROM users WHERE email='owner@example.com'").fetchone()
+            self.assertIsNotNone(user)
+            self.assertEqual(user["is_admin"], 1)
+            self.assertNotEqual(user["password_hash"], admin_password)
+            self.assertTrue(self.module.verify_password(admin_password, user["password_hash"]))
+        finally:
+            db.close()
+
+    def test_seed_helpers_embed_no_deterministic_sample_passwords(self):
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("Worker1234", source)
+        self.assertNotIn("Employer1234", source)
+        self.assertNotIn("Admin1234", source)
+        self.assertNotRegex(source, r"hash_password\(\s*['\"][^'\"]+['\"]\s*\)")
 
     def test_public_pricing_info_uses_connector_fee_language(self):
         self.module._request_ctx.request_method = "GET"

@@ -23,6 +23,7 @@ import threading
 import logging
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -328,7 +329,8 @@ def _table_columns(db, table_name):
         "escrow_holds", "orders", "payout_transfers", "funding_attempts",
         "funding_attempt_conflict_evidence", "payout_release_attempts",
         "payout_release_conflict_evidence", "services", "users",
-        "api_key_usage",
+        "api_key_usage", "disputes", "refund_attempts",
+        "refund_attempt_conflict_evidence",
     }
     if table_name not in supported_tables:
         raise ValueError("Unsupported migration table")
@@ -631,6 +633,84 @@ _REQUIRED_PAYOUT_TABLE_SQL = {
         )
     """,
 }
+
+
+_REQUIRED_REFUND_TABLE_SQL = {
+    "disputes": """CREATE TABLE disputes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id),
+        opened_by INTEGER REFERENCES users(id), reason TEXT,
+        reason_sha256 TEXT NOT NULL CHECK(length(reason_sha256)=64), reason_length INTEGER NOT NULL,
+        source TEXT NOT NULL DEFAULT 'participant' CHECK(source IN ('participant','legacy')),
+        status TEXT NOT NULL CHECK(status IN ('open','resolved_refund')), resolution TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), resolved_at TEXT,
+        CHECK((source='participant' AND opened_by IS NOT NULL AND reason IS NOT NULL AND reason=trim(reason) AND length(reason) BETWEEN 10 AND 2000 AND reason_length=length(reason)) OR (source='legacy' AND opened_by IS NULL AND reason IS NULL AND reason_length=0)),
+        CHECK((status='open' AND resolution IS NULL AND resolved_at IS NULL) OR (status='resolved_refund' AND resolution='refund_to_employer' AND resolved_at IS NOT NULL))
+    )""",
+    "refund_attempts": """CREATE TABLE refund_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, operation_key TEXT NOT NULL,
+        attempt_number INTEGER NOT NULL CHECK(attempt_number > 0), request_fingerprint TEXT NOT NULL CHECK(length(request_fingerprint)=64),
+        processor_idempotency_key TEXT NOT NULL, admin_id INTEGER NOT NULL REFERENCES users(id),
+        dispute_id INTEGER NOT NULL REFERENCES disputes(id), hold_id INTEGER NOT NULL REFERENCES escrow_holds(id),
+        funding_attempt_id INTEGER NOT NULL REFERENCES funding_attempts(id), order_id INTEGER NOT NULL REFERENCES orders(id),
+        employer_id INTEGER NOT NULL REFERENCES users(id), worker_id INTEGER NOT NULL REFERENCES users(id),
+        amount_cents INTEGER NOT NULL CHECK(amount_cents > 0), currency TEXT NOT NULL DEFAULT 'usd' CHECK(currency='usd'),
+        payment_intent_id TEXT NOT NULL, expected_hold_snapshot_json TEXT NOT NULL,
+        expected_hold_snapshot_sha256 TEXT NOT NULL CHECK(length(expected_hold_snapshot_sha256)=64), expected_lifecycle_snapshot_json TEXT NOT NULL,
+        expected_lifecycle_snapshot_sha256 TEXT NOT NULL CHECK(length(expected_lifecycle_snapshot_sha256)=64),
+        status TEXT NOT NULL CHECK(status IN ('prepared','unknown','processor_pending','processor_succeeded','committed','failed')),
+        lifecycle_status TEXT NOT NULL DEFAULT 'pending' CHECK(lifecycle_status IN ('pending','completed','manual_review')),
+        processor_call_started_at TEXT, processor_refund_id TEXT, processor_status TEXT, evidence_source TEXT, processor_evidence_at TEXT,
+        processor_evidence_json TEXT, processor_evidence_sha256 TEXT CHECK(processor_evidence_sha256 IS NULL OR length(processor_evidence_sha256)=64),
+        error_code TEXT, manual_review_required INTEGER NOT NULL DEFAULT 0 CHECK(manual_review_required IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        committed_at TEXT, lifecycle_completed_at TEXT,
+        CHECK((manual_review_required=1 AND lifecycle_status='manual_review') OR (manual_review_required=0 AND lifecycle_status<>'manual_review')),
+        CHECK((status='committed' AND lifecycle_status IN ('completed','manual_review') AND committed_at IS NOT NULL AND lifecycle_completed_at IS NOT NULL) OR status<>'committed'),
+        CHECK(processor_evidence_sha256 IS NULL OR (processor_evidence_json IS NOT NULL AND processor_evidence_at IS NOT NULL AND evidence_source IN ('processor_create','processor_retrieve','processor_search','signed_webhook')))
+    )""",
+    "refund_attempt_conflict_evidence": """CREATE TABLE refund_attempt_conflict_evidence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, evidence_key TEXT NOT NULL UNIQUE,
+        attempt_id INTEGER NOT NULL REFERENCES refund_attempts(id), conflict_type TEXT NOT NULL,
+        redacted_evidence_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+}
+_REFUND_INDEX_SQL = {
+    "idx_refund_attempts_operation_attempt": "CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_attempts_operation_attempt ON refund_attempts(operation_key,attempt_number)",
+    "idx_refund_attempts_processor_key": "CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_attempts_processor_key ON refund_attempts(processor_idempotency_key)",
+    "idx_refund_attempts_processor_refund": "CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_attempts_processor_refund ON refund_attempts(processor_refund_id) WHERE processor_refund_id IS NOT NULL",
+    "idx_refund_attempts_active_hold": "CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_attempts_active_hold ON refund_attempts(hold_id) WHERE status IN ('prepared','unknown','processor_pending','processor_succeeded') OR lifecycle_status='manual_review'",
+}
+_REFUND_TRIGGER_SQL = {
+    "trg_disputes_evidence_immutable": "CREATE TRIGGER IF NOT EXISTS trg_disputes_evidence_immutable BEFORE UPDATE OF order_id,opened_by,reason,reason_sha256,reason_length,source ON disputes BEGIN SELECT RAISE(ABORT, 'dispute evidence is immutable'); END",
+    "trg_disputes_no_delete": "CREATE TRIGGER IF NOT EXISTS trg_disputes_no_delete BEFORE DELETE ON disputes BEGIN SELECT RAISE(ABORT, 'disputes are append-only'); END",
+    "trg_refund_attempts_bindings_immutable": "CREATE TRIGGER IF NOT EXISTS trg_refund_attempts_bindings_immutable BEFORE UPDATE OF operation_key,attempt_number,request_fingerprint,processor_idempotency_key,admin_id,dispute_id,hold_id,funding_attempt_id,order_id,employer_id,worker_id,amount_cents,currency,payment_intent_id,expected_hold_snapshot_json,expected_hold_snapshot_sha256,expected_lifecycle_snapshot_json,expected_lifecycle_snapshot_sha256 ON refund_attempts BEGIN SELECT RAISE(ABORT, 'refund attempt bindings are immutable'); END",
+    "trg_refund_attempts_no_delete": "CREATE TRIGGER IF NOT EXISTS trg_refund_attempts_no_delete BEFORE DELETE ON refund_attempts BEGIN SELECT RAISE(ABORT, 'refund attempts are append-only'); END",
+    "trg_refund_conflict_no_update": "CREATE TRIGGER IF NOT EXISTS trg_refund_conflict_no_update BEFORE UPDATE ON refund_attempt_conflict_evidence BEGIN SELECT RAISE(ABORT, 'refund conflict evidence is append-only'); END",
+    "trg_refund_conflict_no_delete": "CREATE TRIGGER IF NOT EXISTS trg_refund_conflict_no_delete BEFORE DELETE ON refund_attempt_conflict_evidence BEGIN SELECT RAISE(ABORT, 'refund conflict evidence is append-only'); END",
+    "trg_refund_conflict_no_replace": "CREATE TRIGGER IF NOT EXISTS trg_refund_conflict_no_replace BEFORE INSERT ON refund_attempt_conflict_evidence WHEN EXISTS (SELECT 1 FROM refund_attempt_conflict_evidence WHERE evidence_key=NEW.evidence_key) BEGIN SELECT RAISE(IGNORE); END",
+}
+_REFUND_ALLOWED_TRIGGERS = {
+    "disputes": {"trg_disputes_evidence_immutable", "trg_disputes_no_delete"},
+    "refund_attempts": {"trg_refund_attempts_bindings_immutable", "trg_refund_attempts_no_delete"},
+    "refund_attempt_conflict_evidence": {
+        "trg_refund_conflict_no_update", "trg_refund_conflict_no_delete",
+        "trg_refund_conflict_no_replace",
+    },
+}
+
+
+def validate_required_refund_schema(db):
+    invalid = []
+    for name, sql in _REQUIRED_REFUND_TABLE_SQL.items():
+        if not _required_table_schema_is_valid(db, name, sql): invalid.append(name)
+    for kind, objects in (("index", _REFUND_INDEX_SQL), ("trigger", _REFUND_TRIGGER_SQL)):
+        for name, sql in objects.items():
+            if not _required_payout_schema_object_is_valid(db, name, sql, kind): invalid.append(name)
+    for row in db.execute("SELECT name,tbl_name FROM sqlite_master WHERE type='trigger'"):
+        if row["tbl_name"] in _REQUIRED_REFUND_TABLE_SQL and row["name"] not in _REFUND_ALLOWED_TRIGGERS.get(row["tbl_name"], set()):
+            invalid.append("unexpected trigger " + row["name"])
+    if invalid:
+        raise RuntimeError("Required refund schema missing: " + ", ".join(invalid))
 
 
 def _normalized_table_xinfo(rows):
@@ -1211,10 +1291,14 @@ def _prevalidate_financial_schema_before_mutation(db):
         "funding_attempt_conflict_evidence",
         "payout_release_attempts",
         "payout_release_conflict_evidence",
+        "disputes",
+        "refund_attempts",
+        "refund_attempt_conflict_evidence",
     }
     allowed_triggers = {
         "funding_attempt_conflict_evidence": set(_FUNDING_CONFLICT_EVIDENCE_TRIGGER_SQL),
         "payout_release_conflict_evidence": set(_PAYOUT_CONFLICT_EVIDENCE_TRIGGER_SQL),
+        **_REFUND_ALLOWED_TRIGGERS,
     }
     rows = db.execute(
         "SELECT name,tbl_name FROM sqlite_master WHERE type='trigger' ORDER BY name"
@@ -1229,6 +1313,12 @@ def _prevalidate_financial_schema_before_mutation(db):
             "Required financial schema has unexpected protected trigger(s): "
             + ", ".join(unexpected)
         )
+
+    refund_objects = db.execute(
+        "SELECT name FROM sqlite_master WHERE name IN ('disputes','refund_attempts','refund_attempt_conflict_evidence')"
+    ).fetchall()
+    if refund_objects:
+        validate_required_refund_schema(db)
 
     setup = db.execute(
         "SELECT type FROM sqlite_master WHERE name='payment_setup_operations'"
@@ -1632,6 +1722,17 @@ def _init_db_connection_steps(db):
                 count=1,
             )
         )
+    for table_sql in _REQUIRED_REFUND_TABLE_SQL.values():
+        db.execute(re.sub(r"^\s*CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", table_sql, count=1))
+    # Deterministic, privacy-safe lazy import for pre-ledger disputed orders.  An
+    # ambiguous multi-hold order is deliberately left without a dispute row so
+    # every refund path fails closed instead of inventing an authoritative hold.
+    for legacy in db.execute("""SELECT o.id FROM orders o LEFT JOIN disputes d ON d.order_id=o.id
+        WHERE o.status='disputed' AND d.id IS NULL ORDER BY o.id""").fetchall():
+        hold_count = db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=? AND status IN ('held','refunded')", [legacy['id']]).fetchone()[0]
+        if hold_count <= 1:
+            db.execute("""INSERT INTO disputes(order_id,opened_by,reason,reason_sha256,reason_length,source,status)
+                VALUES(?,NULL,NULL,?,0,'legacy','open')""", [legacy['id'], hashlib.sha256(b'').hexdigest()])
     for table_name, column_name, col_sql in [
         ("escrow_holds", "base_amount_cents", "ALTER TABLE escrow_holds ADD COLUMN base_amount_cents INTEGER"),
         ("escrow_holds", "platform_fee_cents", "ALTER TABLE escrow_holds ADD COLUMN platform_fee_cents INTEGER"),
@@ -1669,10 +1770,15 @@ def _init_db_connection_steps(db):
         db.execute(trigger_sql)
     for trigger_sql in _PAYOUT_CONFLICT_EVIDENCE_TRIGGER_SQL.values():
         db.execute(trigger_sql)
+    for index_sql in _REFUND_INDEX_SQL.values():
+        db.execute(index_sql)
+    for trigger_sql in _REFUND_TRIGGER_SQL.values():
+        db.execute(trigger_sql)
     ensure_one_job_hire_enforcement(db)
     validate_required_transaction_schema(db)
     validate_required_payout_schema(db)
     validate_required_payment_setup_schema(db)
+    validate_required_refund_schema(db)
 
     # ── AI marketplace migrations ─────────────────────────────────────
     for column_name, col_sql in [
@@ -1781,21 +1887,6 @@ def _init_db_connection_steps(db):
     )""")
     db.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_state ON transactional_email_outbox(state,id)")
 
-    # ── Owner admin bootstrap ───────────────────────────────────────────────
-    # Requested by Billy Ray: make enzo@profilesearch.com an admin account and
-    # set a locally stored strong password so Hermes can perform admin ops.
-    db.execute(
-        """UPDATE users
-           SET is_admin=1, is_active=1, is_suspended=0, is_banned=0,
-               password_hash=?, updated_at=datetime('now')
-           WHERE lower(email)=lower(?)""",
-        [
-            "b719c181144650cf39b3c0036c4bd010:1f742ba78ac305a14137a54f0a0c5a24da241fe2185dfe7954aafb7082ec01d1",
-            "enzo@profilesearch.com",
-        ]
-    )
-
-
 _init_db_failure_hook = None
 
 
@@ -1819,6 +1910,7 @@ def _init_db_connection(db):
         validate_required_transaction_schema(db)
         validate_required_payout_schema(db)
         validate_required_payment_setup_schema(db)
+        validate_required_refund_schema(db)
         _prevalidate_financial_schema_before_mutation(db)
         db.commit()
     except Exception:
@@ -1914,7 +2006,7 @@ def auto_seed_if_empty():
         worker_ids = []
         for w in workers_data:
             cursor = db.execute("INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
-                [w['email'], hash_password('Worker1234!'), w['name']])
+                [w['email'], hash_password(secrets.token_urlsafe(32)), w['name']])
             uid = cursor.lastrowid
             worker_ids.append(uid)
             payout_id = f"acct_sim_{secrets.token_hex(8)}"
@@ -1936,7 +2028,7 @@ def auto_seed_if_empty():
         employer_ids = []
         for e in employers_data:
             cursor = db.execute("INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
-                [e['email'], hash_password('Employer1234!'), e['name']])
+                [e['email'], hash_password(secrets.token_urlsafe(32)), e['name']])
             uid = cursor.lastrowid
             employer_ids.append(uid)
             pm_id = f"pm_sim_{secrets.token_hex(8)}"
@@ -6584,6 +6676,264 @@ print(f"[GoHireHumans] RAILWAY_VOLUME_MOUNT_PATH: {os.environ.get('RAILWAY_VOLUM
 print(f"[GoHireHumans] DB path will be resolved lazily on first request", file=sys.stderr)
 
 
+def _refund_value(obj, key, default=None):
+    if isinstance(obj, dict): return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _refund_json(payload):
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return encoded, hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _refund_metadata(attempt):
+    return {"attempt_id": str(attempt["id"]), "operation_key": attempt["operation_key"],
+            "attempt_number": str(attempt["attempt_number"]), "request_fingerprint": attempt["request_fingerprint"],
+            "dispute_id": str(attempt["dispute_id"]), "order_id": str(attempt["order_id"]),
+            "hold_id": str(attempt["hold_id"]), "funding_attempt_id": str(attempt["funding_attempt_id"])}
+
+
+def _refund_snapshots(db, hold, dispute, order, funding):
+    hold_payload = {k: hold[k] for k in ("id","order_id","milestone_id","status","base_amount_cents",
+        "platform_fee_cents","processing_fee_cents","charged_total_cents","fee_policy_version","funding_identity",
+        "funding_attempt_id","stripe_payment_intent_id","release_attempt_id")}
+    lifecycle = {"dispute": {k: dispute[k] for k in ("id","order_id","opened_by","reason_sha256","reason_length","source","status","resolution")},
+        "order": {k: order[k] for k in ("id","type","job_id","worker_id","employer_id","status","total_amount")},
+        "funding": {k: funding[k] for k in ("id","operation_key","request_fingerprint","order_id","milestone_id","employer_id",
+            "base_amount_cents","platform_fee_cents","processing_fee_cents","charged_total_cents","currency","status",
+            "stripe_payment_intent_id","processor_status","evidence_source","processor_evidence_at")}}
+    return (*_refund_json(hold_payload), *_refund_json(lifecycle))
+
+
+def _refund_bindings_valid(db, attempt, committed=False):
+    hold=db.execute("SELECT * FROM escrow_holds WHERE id=?",[attempt["hold_id"]]).fetchone()
+    dispute=db.execute("SELECT * FROM disputes WHERE id=?",[attempt["dispute_id"]]).fetchone()
+    order=db.execute("SELECT * FROM orders WHERE id=?",[attempt["order_id"]]).fetchone()
+    funding=db.execute("SELECT * FROM funding_attempts WHERE id=?",[attempt["funding_attempt_id"]]).fetchone()
+    if not all((hold,dispute,order,funding)): return False
+    if committed:
+        if not (hold["status"]=="refunded" and dispute["status"]=="resolved_refund" and order["status"]=="canceled"): return False
+        # Compare immutable fields while allowing the three intentional lifecycle transitions.
+        expected_life=json.loads(attempt["expected_lifecycle_snapshot_json"])
+        expected_life["dispute"].update(status="resolved_refund",resolution="refund_to_employer")
+        expected_life["order"]["status"]="canceled"
+        expected_hold=json.loads(attempt["expected_hold_snapshot_json"]); expected_hold["status"]="refunded"
+        return _refund_json(expected_hold)[1] == _refund_json({k:hold[k] for k in expected_hold})[1] and _refund_json(expected_life)[1] == _refund_json({"dispute":{k:dispute[k] for k in expected_life["dispute"]},"order":{k:order[k] for k in expected_life["order"]},"funding":{k:funding[k] for k in expected_life["funding"]}})[1]
+    hs,hh,ls,lh=_refund_snapshots(db,hold,dispute,order,funding)
+    return hs==attempt["expected_hold_snapshot_json"] and hh==attempt["expected_hold_snapshot_sha256"] and ls==attempt["expected_lifecycle_snapshot_json"] and lh==attempt["expected_lifecycle_snapshot_sha256"]
+
+
+def _redact_refund_conflict_summary(summary):
+    safe={}
+    for key,value in summary.items():
+        if key in {"id","payment_intent","processor_refund_id"} and value:
+            safe[f"{key}_sha256_16"]=hashlib.sha256(str(value).encode()).hexdigest()[:16]
+        elif key in {"amount","currency","status","candidate_count","owner_attempt_id","subject_attempt_id"}:
+            safe[key]=value if not isinstance(value,str) else value[:64]
+    return safe
+
+
+def _insert_refund_conflict(db, attempt_id, conflict_type, summary):
+    redacted=json.dumps(_redact_refund_conflict_summary(summary),sort_keys=True,separators=(",",":"))
+    key=hashlib.sha256(f'{attempt_id}:{conflict_type}:{redacted}'.encode()).hexdigest()
+    db.execute("INSERT OR IGNORE INTO refund_attempt_conflict_evidence(evidence_key,attempt_id,conflict_type,redacted_evidence_json) VALUES(?,?,?,?)",[key,attempt_id,conflict_type,redacted])
+
+
+def _freeze_refund_attempt(db, attempt, conflict_type, summary):
+    _insert_refund_conflict(db,attempt["id"],conflict_type,summary)
+    db.execute("UPDATE refund_attempts SET lifecycle_status='manual_review',manual_review_required=1,error_code=CASE WHEN manual_review_required=0 THEN ? ELSE error_code END,updated_at=CASE WHEN manual_review_required=0 THEN datetime('now') ELSE updated_at END WHERE id=?",[conflict_type,attempt["id"]]);db.commit()
+    return {"outcome":"manual_review"}
+
+
+def _record_refund_evidence(db, attempt, evidence, source):
+    raw_metadata=_refund_value(evidence,"metadata",{})
+    metadata_is_mapping=isinstance(raw_metadata,Mapping)
+    metadata=dict(raw_metadata) if metadata_is_mapping else {}
+    observed={"id":_refund_value(evidence,"id"),"payment_intent":_refund_value(evidence,"payment_intent"),"amount":_refund_value(evidence,"amount"),"currency":_refund_value(evidence,"currency"),"status":_refund_value(evidence,"status"),"metadata":metadata}
+    db.execute("BEGIN IMMEDIATE")
+    current=db.execute("SELECT * FROM refund_attempts WHERE id=?",[attempt["id"]]).fetchone()
+    if not current:db.rollback();return "unresolved"
+    owner=None
+    if isinstance(observed["id"],str) and observed["id"]:
+        owner=db.execute("SELECT * FROM refund_attempts WHERE processor_refund_id=?",[observed["id"]]).fetchone()
+    metadata_attempt=None
+    metadata_attempt_id=str(metadata.get("attempt_id", ""))
+    if metadata_attempt_id.isdigit():
+        metadata_attempt=db.execute("SELECT * FROM refund_attempts WHERE id=?",[int(metadata_attempt_id)]).fetchone()
+    conflict_row=None;conflict_type=None;conflict_owner_id=None;conflict_subject_id=None
+    if owner and owner["id"]!=current["id"]:
+        conflict_row=owner;conflict_type="processor_refund_id_owned_by_other_attempt";conflict_owner_id=owner["id"];conflict_subject_id=current["id"]
+    elif metadata_attempt and metadata_attempt["id"]!=current["id"]:
+        conflict_row=metadata_attempt;conflict_type="processor_metadata_attempt_owned_by_other_attempt";conflict_owner_id=current["id"];conflict_subject_id=metadata_attempt["id"]
+    if conflict_row:
+        summary={"id":observed["id"],"owner_attempt_id":conflict_owner_id,"subject_attempt_id":conflict_subject_id}
+        for row in (current,conflict_row):
+            _insert_refund_conflict(db,row["id"],conflict_type,summary)
+            db.execute("UPDATE refund_attempts SET lifecycle_status='manual_review',manual_review_required=1,error_code=CASE WHEN manual_review_required=0 THEN ? ELSE error_code END,updated_at=CASE WHEN manual_review_required=0 THEN datetime('now') ELSE updated_at END WHERE id=?",[conflict_type,row["id"]])
+        db.commit();return "manual_review"
+    if not metadata_is_mapping:
+        db.rollback()
+        return _freeze_refund_attempt(
+            db,current,"malformed_processor_metadata",{"id":observed["id"],"status":observed["status"]}
+        )["outcome"]
+    exact=(isinstance(observed["id"],str) and observed["id"] and (not current["processor_refund_id"] or observed["id"]==current["processor_refund_id"]) and observed["payment_intent"]==current["payment_intent_id"] and type(observed["amount"]) is int and observed["amount"]==current["amount_cents"] and observed["currency"]==current["currency"] and all(str(metadata.get(k,''))==str(v) for k,v in _refund_metadata(current).items()))
+    if not exact:
+        db.rollback();return _freeze_refund_attempt(db,current,"processor_evidence_mismatch",{k:observed[k] for k in ("id","amount","currency","status")})["outcome"]
+    status=str(observed["status"] or ""); mapping={"succeeded":"processor_succeeded","pending":"processor_pending","requires_action":"processor_pending","failed":"failed","canceled":"failed"}
+    if status not in mapping:
+        db.rollback();return _freeze_refund_attempt(db,current,"unknown_processor_status",{"status":status})["outcome"]
+    if current["status"] == "committed" and status != "succeeded":
+        db.rollback()
+        return _freeze_refund_attempt(
+            db, current, "committed_processor_status_divergence", {"status": status}
+        )["outcome"]
+    evidence_json,evidence_hash=_refund_json(observed)
+    if current["lifecycle_status"]=="manual_review": db.rollback(); return "manual_review"
+    if current["status"]=="committed": db.rollback(); return "committed"
+    target=mapping[status]
+    ranks={"prepared":0,"unknown":1,"processor_pending":2,"failed":3,"processor_succeeded":4,"committed":5}
+    if ranks[target] < ranks[current["status"]]: db.rollback(); return current["processor_status"] or current["status"]
+    changed=db.execute("""UPDATE refund_attempts SET status=?,processor_refund_id=?,processor_status=?,evidence_source=?,processor_evidence_at=COALESCE(processor_evidence_at,datetime('now')),processor_evidence_json=?,processor_evidence_sha256=?,lifecycle_status=CASE WHEN ?='failed' THEN 'completed' ELSE lifecycle_status END,lifecycle_completed_at=CASE WHEN ?='failed' THEN COALESCE(lifecycle_completed_at,datetime('now')) ELSE lifecycle_completed_at END,updated_at=CASE WHEN processor_evidence_sha256=? AND status=? THEN updated_at ELSE datetime('now') END WHERE id=? AND status=? AND lifecycle_status='pending' AND manual_review_required=0""",[target,observed["id"],status,source,evidence_json,evidence_hash,target,target,evidence_hash,target,current["id"],current["status"]])
+    if changed.rowcount!=1:db.rollback();return "unresolved"
+    db.commit();return status
+
+
+def _validate_committed_refund(db, attempt):
+    if attempt["lifecycle_status"] != "completed" or attempt["manual_review_required"]:
+        return False
+    if not _refund_bindings_valid(db,attempt,True):return False
+    if not attempt["processor_refund_id"] or not attempt["processor_evidence_sha256"]:return False
+    if db.execute("SELECT COUNT(*) FROM audit_log WHERE action='resolve_dispute_refund' AND entity_type='refund_attempt' AND entity_id=?",[attempt["id"]]).fetchone()[0]!=1:return False
+    for uid in (attempt["employer_id"],attempt["worker_id"]):
+        if db.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND type=?",[uid,f'refund_committed:{attempt["id"]}']).fetchone()[0]!=1:return False
+    return True
+
+
+def _settle_refund_attempt(db, attempt_id):
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        a=db.execute("SELECT * FROM refund_attempts WHERE id=?",[attempt_id]).fetchone()
+        if not a:
+            db.rollback();return {"outcome":"unresolved"}
+        if a["status"]=="committed":
+            ok=_validate_committed_refund(db,a);db.commit() if ok else db.rollback()
+            return {"outcome":"succeeded","replayed":True} if ok else _freeze_refund_attempt(db,a,"committed_replay_divergence",{})
+        if a["status"]!="processor_succeeded" or a["lifecycle_status"]!="pending" or a["manual_review_required"] or not _refund_bindings_valid(db,a):db.rollback();return _freeze_refund_attempt(db,a,"settlement_binding_changed",{})
+        hold=db.execute("UPDATE escrow_holds SET status='refunded',released_at=datetime('now') WHERE id=? AND status='held' AND release_attempt_id IS NULL",[a["hold_id"]]); dispute=db.execute("UPDATE disputes SET status='resolved_refund',resolution='refund_to_employer',resolved_at=datetime('now') WHERE id=? AND status='open' AND resolution IS NULL",[a["dispute_id"]]); order=db.execute("UPDATE orders SET status='canceled',updated_at=datetime('now') WHERE id=? AND status='disputed'",[a["order_id"]])
+        if (hold.rowcount,dispute.rowcount,order.rowcount)!=(1,1,1):db.rollback();return _freeze_refund_attempt(db,a,"settlement_cas_failed",{})
+        fresh_order=db.execute("SELECT * FROM orders WHERE id=?",[a["order_id"]]).fetchone();synchronize_job_terminal_state(db,fresh_order,status="canceled")
+        audit(db,a["admin_id"],"resolve_dispute_refund","refund_attempt",a["id"],{"order_id":a["order_id"],"amount_cents":a["amount_cents"],"processor_refund_id":a["processor_refund_id"]})
+        for uid in (a["employer_id"],a["worker_id"]):push_notification(db,uid,f'refund_committed:{a["id"]}',"Task-amount refund issued",f'The funded task amount for order #{a["order_id"]} was refunded.',f'/orders/{a["order_id"]}')
+        done=db.execute("UPDATE refund_attempts SET status='committed',lifecycle_status='completed',committed_at=datetime('now'),lifecycle_completed_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND status='processor_succeeded' AND lifecycle_status='pending' AND manual_review_required=0",[a["id"]])
+        if done.rowcount!=1:db.rollback();return {"outcome":"unresolved"}
+        db.commit();return {"outcome":"succeeded","replayed":False}
+    except Exception:
+        if db.in_transaction:
+            db.rollback()
+        raise
+
+
+def _list_refund_candidates(attempt):
+    items=[];starting=None
+    while True:
+        kw={"payment_intent":attempt["payment_intent_id"],"limit":100}
+        if starting:kw["starting_after"]=starting
+        page=stripe.Refund.list(**kw);data=_refund_value(page,"data",[]) or [];items.extend(data)
+        if not _refund_value(page,"has_more",False):break
+        if not data or not _refund_value(data[-1],"id"):raise ValueError("Incomplete refund pagination")
+        starting=_refund_value(data[-1],"id")
+    return [x for x in items if all(str((_refund_value(x,"metadata",{}) or {}).get(k,''))==str(v) for k,v in _refund_metadata(attempt).items())]
+
+
+def _try_list_refund_candidates(attempt):
+    try:
+        return _list_refund_candidates(attempt)
+    except (STRIPE_ERROR, ValueError):
+        return None
+
+
+def reconcile_refund_attempt(db, attempt, apply=True, evidence=None, evidence_source="processor_retrieve"):
+    attempt=db.execute("SELECT * FROM refund_attempts WHERE id=?",[attempt["id"]]).fetchone()
+    if attempt["lifecycle_status"]=="manual_review":return {"outcome":"manual_review"}
+    if attempt["status"]=="committed":
+        if evidence is None:
+            if not attempt["processor_refund_id"]:
+                return _freeze_refund_attempt(db,attempt,"committed_refund_id_missing",{})
+            try:
+                evidence=stripe.Refund.retrieve(attempt["processor_refund_id"])
+            except (STRIPE_ERROR, ValueError):
+                return {"outcome":"unresolved"}
+            evidence_source="processor_retrieve"
+        outcome=_record_refund_evidence(db,attempt,evidence,evidence_source)
+        if outcome=="manual_review":return {"outcome":"manual_review"}
+        return _settle_refund_attempt(db,attempt["id"])
+    if evidence is None:
+        try:
+            if attempt["processor_refund_id"]:evidence=stripe.Refund.retrieve(attempt["processor_refund_id"])
+            else:
+                matches=_list_refund_candidates(attempt)
+                if len(matches)!=1:return _freeze_refund_attempt(db,attempt,"duplicate_or_conflicting_processor_evidence",{"match_count":len(matches)}) if len(matches)>1 else {"outcome":"unresolved"}
+                evidence=matches[0];evidence_source="processor_search"
+        except (STRIPE_ERROR, ValueError):
+            return {"outcome":"unresolved"}
+    outcome=_record_refund_evidence(db,attempt,evidence,evidence_source)
+    current=db.execute("SELECT * FROM refund_attempts WHERE id=?",[attempt["id"]]).fetchone()
+    if outcome in ("succeeded","committed") and apply:return _settle_refund_attempt(db,current["id"])
+    return {"outcome":outcome}
+
+
+def issue_dispute_refund(db, order_id, admin_id):
+    db.execute("BEGIN IMMEDIATE");dispute=db.execute("SELECT * FROM disputes WHERE order_id=?",[order_id]).fetchone();order=db.execute("SELECT * FROM orders WHERE id=?",[order_id]).fetchone()
+    if not dispute or not order:db.rollback();raise ValueError("Order must have an open durable dispute")
+    holds=db.execute("SELECT * FROM escrow_holds WHERE order_id=? AND status IN ('held','refunded') ORDER BY id",[order_id]).fetchall()
+    if db.execute("SELECT 1 FROM hourly_contracts WHERE order_id=?",[order_id]).fetchone() or len(holds)!=1:db.rollback();raise ValueError("Exactly one fixed authoritative payment is required")
+    hold=holds[0];active=db.execute("SELECT * FROM refund_attempts WHERE hold_id=? ORDER BY attempt_number DESC LIMIT 1",[hold["id"]]).fetchone()
+    if active and (active["status"]!="failed" or active["lifecycle_status"]!="completed"):
+        db.commit()
+        if active["status"]!="prepared" or active["processor_call_started_at"] is not None:
+            return reconcile_refund_attempt(db,active,True)
+        attempt=active;aid=active["id"]
+        matches=_try_list_refund_candidates(attempt)
+        if matches is None:return {"outcome":"unresolved"}
+        if len(matches)==1:return reconcile_refund_attempt(db,attempt,True,matches[0],"processor_search")
+        if len(matches)>1:return _freeze_refund_attempt(db,attempt,"duplicate_processor_evidence",{"match_count":len(matches)})
+    else:
+        if dispute["status"]!="open" or order["status"]!="disputed" or hold["status"]!="held":db.rollback();raise ValueError("Refund lifecycle is not eligible")
+        _assert_escrow_funding_conflict_free(db,order_id,hold["milestone_id"]);funding=_validate_live_hold_funding_provenance(db,hold)
+        hs,hh,ls,lh=_refund_snapshots(db,hold,dispute,order,funding);n=active["attempt_number"]+1 if active else 1;op=f'dispute-refund:dispute:{dispute["id"]}:hold:{hold["id"]}';key=f'{op}:attempt:{n}'
+        values=[op,n,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],hold["base_amount_cents"],hold["stripe_payment_intent_id"],hs,hh,ls,lh]
+        fingerprint=hashlib.sha256(json.dumps(values,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        aid=db.execute("""INSERT INTO refund_attempts(operation_key,attempt_number,request_fingerprint,processor_idempotency_key,admin_id,dispute_id,hold_id,funding_attempt_id,order_id,employer_id,worker_id,amount_cents,currency,payment_intent_id,expected_hold_snapshot_json,expected_hold_snapshot_sha256,expected_lifecycle_snapshot_json,expected_lifecycle_snapshot_sha256,status) VALUES(?,?,?, ?,?,?,?,?,?,?,?,?, 'usd',?,?,?,?,?,'prepared')""",[op,n,fingerprint,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],hold["base_amount_cents"],hold["stripe_payment_intent_id"],hs,hh,ls,lh]).lastrowid
+        db.commit();attempt=db.execute("SELECT * FROM refund_attempts WHERE id=?",[aid]).fetchone()
+        matches=_try_list_refund_candidates(attempt)
+        if matches is None:return {"outcome":"unresolved"}
+        if len(matches)==1:return reconcile_refund_attempt(db,attempt,True,matches[0],"processor_search")
+        if len(matches)>1:return _freeze_refund_attempt(db,attempt,"duplicate_processor_evidence",{"match_count":len(matches)})
+    db.execute("BEGIN IMMEDIATE");current=db.execute("SELECT * FROM refund_attempts WHERE id=?",[aid]).fetchone()
+    if current["status"]!='prepared' or current["processor_call_started_at"] is not None or not _refund_bindings_valid(db,current):db.rollback();return {"outcome":"unresolved"}
+    changed=db.execute("UPDATE refund_attempts SET processor_call_started_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND status='prepared' AND processor_call_started_at IS NULL AND manual_review_required=0",[aid])
+    if changed.rowcount!=1:db.rollback();return {"outcome":"unresolved"}
+    db.commit();attempt=db.execute("SELECT * FROM refund_attempts WHERE id=?",[aid]).fetchone()
+    try:evidence=stripe.Refund.create(payment_intent=attempt["payment_intent_id"],amount=attempt["amount_cents"],metadata=_refund_metadata(attempt),idempotency_key=attempt["processor_idempotency_key"])
+    except STRIPE_ERROR as exc:
+        if isinstance(exc, STRIPE_PAYOUT_DEFINITIVE_PREOP_ERRORS):
+            db.execute("UPDATE refund_attempts SET status='failed',lifecycle_status='completed',error_code='processor_preoperation_failure',lifecycle_completed_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND status='prepared' AND lifecycle_status='pending'",[aid]);db.commit();return {"outcome":"failed"}
+        db.execute("UPDATE refund_attempts SET status='unknown',error_code='processor_outcome_ambiguous',updated_at=datetime('now') WHERE id=? AND status='prepared' AND lifecycle_status='pending'",[aid]);db.commit();return {"outcome":"unknown"}
+    if not _refund_value(evidence,"id"):return _freeze_refund_attempt(db,attempt,"sparse_create_without_id",{})
+    if any(_refund_value(evidence,k) is None for k in ("payment_intent","amount","currency","status")):
+        refund_id=_refund_value(evidence,"id")
+        try:
+            evidence=stripe.Refund.retrieve(refund_id);source="processor_retrieve"
+        except (STRIPE_ERROR, ValueError):
+            try:
+                db.execute("UPDATE refund_attempts SET status='unknown',processor_refund_id=?,error_code='processor_retrieve_unavailable',updated_at=datetime('now') WHERE id=? AND status='prepared' AND lifecycle_status='pending'",[refund_id,aid]);db.commit()
+            except sqlite3.IntegrityError:
+                db.rollback();return _freeze_refund_attempt(db,attempt,"duplicate_processor_refund_id",{})
+            return {"outcome":"unknown"}
+    else:source="processor_create"
+    return reconcile_refund_attempt(db,attempt,True,evidence,source)
+
+
 def handle_request():
     install_sensitive_logging_filters()
     # If server.py already set thread-local context, skip os.environ fallback.
@@ -9019,23 +9369,30 @@ def _handle_routes(db):
             return error_response("Cannot dispute an order in this state", 409)
 
         body = get_body()
+        reason = str(body.get('reason', '')).strip()
+        if len(reason) < 10 or len(reason) > 2000:
+            db.rollback()
+            return error_response("Dispute reason must be 10-2000 characters", 400)
+        reason_hash = hashlib.sha256(reason.encode()).hexdigest()
         db.execute(
-            "UPDATE orders SET status='disputed', updated_at=datetime('now') WHERE id=?",
-            [order_id]
+            "INSERT INTO disputes(order_id,opened_by,reason,reason_sha256,reason_length,source,status) VALUES(?,?,?,?,?,'participant','open')",
+            [order_id, user['id'], reason, reason_hash, len(reason)],
         )
+        changed = db.execute("UPDATE orders SET status='disputed',updated_at=datetime('now') WHERE id=? AND status=?", [order_id, order['status']])
+        if changed.rowcount != 1:
+            db.rollback(); return error_response("Order lifecycle changed", 409)
 
         # Notify both parties
         other_id = order['employer_id'] if user['id'] == order['worker_id'] else order['worker_id']
         push_notification(db, other_id, "order_disputed",
             f"Dispute opened on order #{order_id}",
-            f"A dispute has been raised. Reason: {body.get('reason', '')}",
+            "A dispute has been opened. Review the order for details.",
             f"/orders/{order_id}")
-        push_notification(db, 1, "admin_dispute",  # Admin user_id=1 (or we'd fetch admin IDs)
-            f"Dispute on order #{order_id}",
-            f"Order #{order_id} has been disputed.",
-            f"/admin/orders")
+        for admin in db.execute("SELECT id FROM users WHERE is_admin=1 ORDER BY id").fetchall():
+            push_notification(db, admin['id'], "admin_dispute", f"Dispute on order #{order_id}",
+                f"Order #{order_id} has been disputed.", "/admin/orders")
 
-        audit(db, user['id'], "dispute_order", "order", order_id, {"reason": body.get("reason", "")})
+        audit(db, user['id'], "dispute_order", "order", order_id, {"reason_sha256": reason_hash, "reason_length": len(reason)})
         db.commit()
         return json_response({"ok": True, "status": "disputed"})
 
@@ -10111,6 +10468,16 @@ def _handle_routes(db):
                     )
                     db.commit()
 
+        elif event_type in {'refund.created','refund.updated','refund.failed'}:
+            refund_id = data.get('id')
+            metadata = data.get('metadata') or {}
+            attempt = db.execute("SELECT * FROM refund_attempts WHERE processor_refund_id=?",[refund_id]).fetchone() if refund_id else None
+            if not attempt and metadata.get('operation_key'):
+                attempt = db.execute("SELECT * FROM refund_attempts WHERE operation_key=? AND attempt_number=?",[metadata.get('operation_key'),metadata.get('attempt_number')]).fetchone()
+            # Signed webhooks reconcile only an already-durable local intent.
+            if attempt:
+                reconcile_refund_attempt(db,attempt,apply=True,evidence=data,evidence_source='signed_webhook')
+
         elif event_type == 'account.updated':
             # Worker Connect account updated
             account_id = data['id']
@@ -10604,105 +10971,23 @@ def _handle_routes(db):
         user = authenticate(db)
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
-        return error_response(
-            "Refund and dispute settlement are deferred to Task 4.", 503
-        )
-
         body = get_body()
-        order_id = body.get("order_id")
-        resolution = body.get("resolution")  # "release_to_worker", "refund_to_employer", "split"
-        if not order_id or not resolution:
-            return error_response("order_id and resolution required")
-        if resolution not in ('release_to_worker', 'refund_to_employer', 'split'):
-            return error_response("resolution must be release_to_worker, refund_to_employer, or split")
-
-        order = db.execute("SELECT * FROM orders WHERE id=?", [int(order_id)]).fetchone()
-        if not order:
-            return error_response("Order not found", 404)
-        if order['status'] != 'disputed':
-            return error_response("Order must be disputed to resolve", 409)
-
-        admin_notes = body.get("notes", "")
+        if body.get("resolution") != "refund_to_employer":
+            return error_response("Only refund_to_employer is enabled; release, split, and hourly paths remain disabled.", 503)
         step_error, step_status = require_admin_step_up(db, user, body, "admin_resolve_dispute")
         if step_error:
             return error_response(step_error, step_status)
-
-        if body.get("manual_money_movement_confirmed") is not True:
-            return error_response(
-                "Manual money movement confirmation required. Complete and verify any Stripe refund/transfer outside this admin action before recording the dispute resolution.",
-                409
-            )
-        processor_reference = str(body.get("processor_reference") or "").strip()
-        if not processor_reference:
-            return error_response("processor_reference required for manual dispute settlement audit trail", 400)
-
-        holds = db.execute(
-            "SELECT * FROM escrow_holds WHERE order_id=? AND status='held'",
-            [int(order_id)]
-        ).fetchall()
-        if not holds:
-            return error_response("No held payment record available to resolve", 409)
-
-        total_held_cents = sum(money_to_cents(hold['amount'], "held payment amount") for hold in holds)
-        worker_percent = 100.0 if resolution == 'release_to_worker' else 0.0
-        if resolution == 'split':
-            try:
-                worker_percent = float(body.get("worker_percent", 50))
-            except (TypeError, ValueError):
-                return error_response("worker_percent must be a number between 0 and 100", 400)
-            if not math.isfinite(worker_percent) or worker_percent < 0 or worker_percent > 100:
-                return error_response("worker_percent must be a finite number between 0 and 100", 400)
-        worker_cents = int(
-            (Decimal(total_held_cents) * Decimal(str(worker_percent)) / Decimal("100"))
-            .to_integral_value(rounding=ROUND_HALF_UP)
-        )
-        employer_cents = total_held_cents - worker_cents
-        total_held = total_held_cents / 100
-        worker_portion = worker_cents / 100
-        employer_portion = employer_cents / 100
-
-        escrow_status = 'released' if resolution == 'release_to_worker' else 'refunded' if resolution == 'refund_to_employer' else 'partial'
-        db.execute(
-            "UPDATE escrow_holds SET status=?, released_at=datetime('now') WHERE order_id=? AND status='held'",
-            [escrow_status, int(order_id)]
-        )
-        if worker_portion > 0:
-            db.execute(
-                "INSERT INTO platform_revenue (order_id, fee_amount, fee_type) VALUES (?,?,?)",
-                [order_id, component_fee_cents(worker_cents, PLATFORM_FEE_BPS) / 100, 'manual_dispute_resolution']
-            )
-
-        push_notification(db, order['worker_id'], "dispute_resolved",
-            "Dispute resolution recorded",
-            f"The dispute for order #{order_id} was resolved after manual settlement was verified by an admin.",
-            f"/orders/{order_id}")
-        push_notification(db, order['employer_id'], "dispute_resolved",
-            "Dispute resolution recorded",
-            f"The dispute for order #{order_id} was resolved after manual settlement was verified by an admin.",
-            f"/orders/{order_id}")
-
-        db.execute(
-            "UPDATE orders SET status='completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
-            [int(order_id)]
-        )
-        synchronize_job_terminal_state(db, order)
-        audit(db, user['id'], "resolve_dispute_manual_settlement", "order", int(order_id), {
-            "resolution": resolution,
-            "notes": admin_notes,
-            "manual_money_movement_confirmed": True,
-            "processor_reference": processor_reference,
-            "worker_portion": worker_portion,
-            "employer_portion": employer_portion,
-        })
-        db.commit()
-        return json_response({
-            "ok": True,
-            "resolution": resolution,
-            "mode": "manual_settlement_recorded",
-            "processor_reference": processor_reference,
-            "worker_portion": worker_portion,
-            "employer_portion": employer_portion,
-        })
+        try:
+            order_id = int(body.get("order_id"))
+            result = issue_dispute_refund(db, order_id, user['id'])
+        except (TypeError, ValueError) as exc:
+            return error_response(str(exc), 409)
+        outcome = result.get("outcome")
+        if outcome == "succeeded":
+            return json_response({"ok":True,"resolution":"refund_to_employer","status":"succeeded","idempotent_replay":bool(result.get("replayed"))})
+        if outcome in ("pending","requires_action","unknown","unresolved"):
+            return json_response({"ok":False,"status":outcome,"message":"Refund remains unresolved; no local settlement was applied."},202)
+        return error_response("Refund evidence requires manual review or is definitively unsuccessful.",409)
 
     elif path == "/admin/audit-log" and method == "GET":
         user = authenticate(db)
@@ -10736,10 +11021,24 @@ def _handle_routes(db):
         if existing > 0:
             return json_response({"message": "Already seeded", "users": existing})
 
+        admin_email = str(seed_body.get("admin_email") or "").strip().lower()
+        admin_password = str(seed_body.get("admin_password") or "")
+        admin_name = str(seed_body.get("admin_name") or "GoHireHumans Admin").strip()
+        if not admin_email or not admin_password or not admin_name:
+            return error_response("Explicit admin credentials are required for an empty seed database", 400)
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", admin_email):
+            return error_response("Invalid seed admin email", 400)
+        if (len(admin_password) < 12 or len(admin_password) > 128
+                or not re.search(r"[a-z]", admin_password)
+                or not re.search(r"[A-Z]", admin_password)
+                or not re.search(r"[0-9]", admin_password)
+                or not re.search(r"[^A-Za-z0-9]", admin_password)):
+            return error_response("Seed admin password must be 12-128 characters with upper, lower, number, and symbol", 400)
+
         # ── Create Admin ──────────────────────────────────────────────────────
         admin_cursor = db.execute(
             "INSERT INTO users (email, password_hash, name, is_admin) VALUES (?,?,?,1)",
-            ["admin@gohirehumans.com", hash_password("Admin1234!"), "GoHireHumans Admin"]
+            [admin_email, hash_password(admin_password), admin_name]
         )
         admin_id = admin_cursor.lastrowid
 
@@ -10786,7 +11085,7 @@ def _handle_routes(db):
         for w in workers_data:
             cursor = db.execute(
                 "INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
-                [w['email'], hash_password("Worker1234!"), w['name']]
+                [w['email'], hash_password(secrets.token_urlsafe(32)), w['name']]
             )
             uid = cursor.lastrowid
             worker_ids.append(uid)
@@ -10825,7 +11124,7 @@ def _handle_routes(db):
         for e in employers_data:
             cursor = db.execute(
                 "INSERT INTO users (email, password_hash, name) VALUES (?,?,?)",
-                [e['email'], hash_password("Employer1234!"), e['name']]
+                [e['email'], hash_password(secrets.token_urlsafe(32)), e['name']]
             )
             uid = cursor.lastrowid
             employer_ids.append(uid)
@@ -11101,7 +11400,7 @@ def _handle_routes(db):
 
         return json_response({
             "message": "Seed data created successfully",
-            "admin": {"email": "admin@gohirehumans.com", "note": "Credentials redacted. Change default password immediately."},
+            "admin": {"email": admin_email, "note": "Caller-supplied credentials were not returned."},
             "workers": [{"email": w['email']} for w in workers_data],
             "employers": [{"email": e['email']} for e in employers_data],
             "services_created": len(service_ids),

@@ -78,7 +78,7 @@ class V7PaymentLifecycleRedTests(unittest.TestCase):
             "processor_reference": "tr_unsafe",
         })
         self.assertEqual(status, 503, payload)
-        self.assertIn("Task 4", payload["error"])
+        self.assertIn("remain disabled", payload["error"])
         with self.api.get_db() as db:
             after = {
                 table: [tuple(row) for row in db.execute(f"SELECT * FROM {table} ORDER BY 1")]

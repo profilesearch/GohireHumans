@@ -4082,9 +4082,9 @@ async function renderAdminDisputes() {
                 <span>Employer: ${esc(o.employer_name||o.client_name||'')}</span>
                 <span>${formatOrderAmount(o)}</span>
               </div>
-              <div style="margin-top:var(--space-3);display:flex;gap:var(--space-2)">
-                <button class="btn btn-sm btn-primary" onclick="adminResolveDispute(${o.id},'release_to_worker')">Record Worker Settlement</button>
-                <button class="btn btn-sm btn-secondary" onclick="adminResolveDispute(${o.id},'refund_to_employer')">Record Employer Refund</button>
+              <div style="margin-top:var(--space-3)">
+                <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)">Refunds the funded task amount only. Stripe processing and the 1% platform fee are not automatically refunded.</p>
+                <button class="btn btn-sm btn-danger" onclick="adminResolveDispute(${o.id},'refund_to_employer')">Issue task-amount refund</button>
               </div>
             </div>`).join('')}
         </div>` : `<div class="empty-state"><p>No active disputes.</p></div>`}
@@ -4095,23 +4095,17 @@ async function renderAdminDisputes() {
 }
 
 async function adminResolveDispute(orderId, resolution) {
-  const labels = {
-    release_to_worker: 'Record worker settlement',
-    refund_to_employer: 'Record employer refund',
-    split: 'Record split settlement'
-  };
-  const label = labels[resolution] || 'Record dispute settlement';
-  const adminPassword = window.prompt(`Confirm your admin password to ${label.toLowerCase()}:`);
+  if (resolution !== 'refund_to_employer') { toast('Only task-amount refunds are enabled', 'error'); return; }
+  const adminPassword = window.prompt('Confirm your admin password to issue the task-amount refund:');
   if (!adminPassword) { toast('Admin password confirmation required', 'error'); return; }
-  const processorReference = window.prompt('Enter the Stripe/manual settlement reference after external money movement has been completed and verified:');
-  if (!processorReference) { toast('Settlement reference required before recording resolution', 'error'); return; }
-  showModal('Record Manual Dispute Settlement', `<p>This records a dispute outcome after money movement has been completed and verified outside this admin action.</p><p style="margin-top:var(--space-2);font-weight:600">${esc(label)}</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">This does not initiate a Stripe refund or transfer. Reference: ${esc(processorReference)}</p>`, async () => {
+  showModal('Issue task-amount refund', `<p>This initiates a Stripe refund of the funded task amount to the original PaymentIntent.</p><p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-2)">Stripe processing and the 1% platform fee are not automatically refunded.</p>`, async () => {
     try {
-      await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution, admin_password: adminPassword, manual_money_movement_confirmed: true, processor_reference: processorReference } });
-      toast('Manual dispute settlement recorded', 'success');
+      const result = await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution: 'refund_to_employer', admin_password: adminPassword } });
+      if (result.status === 'succeeded') toast('Task-amount refund committed', 'success');
+      else toast('Refund is pending processor confirmation; no local settlement was committed.', 'info');
       renderAdminDisputes();
     } catch(err) { toast(err.message, 'error'); }
-  }, 'Record Settlement', 'Cancel', true, true);
+  }, 'Issue refund', 'Cancel', true, true);
 }
 
 async function renderAdminAudit() {
