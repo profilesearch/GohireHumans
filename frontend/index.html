@@ -531,6 +531,42 @@ function relativeDate(str) {
   if (diff < 2592000) return `${Math.floor(diff/86400)}d ago`;
   return d.toLocaleDateString();
 }
+function utcDate(str) {
+  if (!str) return null;
+  const normalized = /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/.test(str)
+    ? str.replace(' ', 'T') + 'Z'
+    : str;
+  const value = new Date(normalized);
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+function formatUtcDateTime(str) {
+  const value = utcDate(str);
+  return value ? value.toLocaleString() : 'Not set';
+}
+function localDateTimeInputValue(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+function defaultDeadlineInput(days = 3) {
+  return localDateTimeInputValue(new Date(Date.now() + days * 86400000));
+}
+function minimumDeadlineInput() {
+  return localDateTimeInputValue(new Date(Date.now() + 3600000));
+}
+function canonicalDeadlineInput(raw) {
+  const value = new Date(raw);
+  if (!raw || Number.isNaN(value.getTime()) || value.getTime() <= Date.now() + 3600000) {
+    throw new Error('Deadline must be at least one hour in the future.');
+  }
+  return value.toISOString();
+}
+function orderDeadlineLabel(order) {
+  const deadline = utcDate(order?.deadline_at);
+  if (!deadline) return '';
+  const active = ['in_progress', 'revision_requested'].includes(order.status);
+  const overdue = Boolean(Number(order.is_overdue)) || (active && deadline.getTime() <= Date.now());
+  return `${overdue ? 'Overdue' : 'Due'}: ${deadline.toLocaleString()}`;
+}
 function statusBadge(status) {
   const map = {
     active: 'open', paused: 'submitted', removed: 'canceled',
@@ -3160,8 +3196,9 @@ async function renderOrders() {
               </div>
               <div class="task-card-meta">
                 <span>${I.dollar} ${formatOrderAmount(o)}</span>
-                <span style="text-transform:capitalize">${o.type === 'service' ? 'Service Order' : 'Job Contract'}</span>
+                <span style="text-transform:capitalize">${o.type === 'service_order' ? 'Service Order' : 'Job Contract'}</span>
                 <span>${I.clock} ${relativeDate(o.created_at)}</span>
+                ${o.contract_type !== 'hourly' && o.deadline_at ? `<span style="color:${Number(o.is_overdue) ? 'var(--color-danger)' : 'var(--color-text-muted)'}">${I.clock} ${esc(orderDeadlineLabel(o))}</span>` : ''}
               </div>
             </div>`).join('')}
         </div>` : `
@@ -3199,6 +3236,9 @@ async function renderOrderDetail(id) {
     let actions = '';
     if (isWorker && !isHourly && ['in_progress','revision_requested'].includes(order.status)) {
       actions += `<button class="btn btn-primary" onclick="submitOrder(${id})">Submit Deliverables</button>`;
+    }
+    if (isEmployer && !isHourly && !order.deadline_at && ['pending','in_progress'].includes(order.status)) {
+      actions += `<button class="btn btn-secondary btn-sm" onclick="setOrderDeadline(${id})">Set Deadline</button>`;
     }
     if (isEmployer && !isHourly && order.status === 'submitted') {
       actions += `<button class="btn btn-primary" onclick="approveOrder(${id})">Approve Payment</button>
@@ -3282,6 +3322,9 @@ async function renderOrderDetail(id) {
               <div><span style="color:var(--color-text-faint)">Order ID:</span> #${id}</div>
               <div><span style="color:var(--color-text-faint)">Type:</span> ${isHourly ? 'Hourly' : 'Fixed Price'}</div>
               <div><span style="color:var(--color-text-faint)">${isHourly ? 'Current week funded' : 'Total'}:</span> $${displayAmount.toFixed(2)}</div>
+              ${!isHourly ? `<div><span style="color:var(--color-text-faint)">Deadline:</span> <span style="color:${orderDeadlineLabel(order).startsWith('Overdue') ? 'var(--color-danger)' : 'inherit'}">${esc(orderDeadlineLabel(order) || 'Not set')}</span></div>` : ''}
+              ${order.submitted_at ? `<div><span style="color:var(--color-text-faint)">Submitted:</span> ${esc(formatUtcDateTime(order.submitted_at))}</div>` : ''}
+              ${order.revision_requested_at ? `<div><span style="color:var(--color-text-faint)">Revision requested:</span> ${esc(formatUtcDateTime(order.revision_requested_at))}</div>` : ''}
               ${isEmployer && !isHourly && hasFundingSummary ? `<div style="margin-top:var(--space-2);padding-top:var(--space-2);border-top:1px dashed var(--color-divider)">
                 ${fundedAmountAvailable ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--color-text-faint)">Funded to date</span><span>$${(fundingSummary.base_cents/100).toFixed(2)}</span></div>` : `<div style="color:var(--color-warning,#9a6700)">Exact historical funded amount unavailable; processor reconciliation required.</div>`}
                 ${chargeAmountAvailable ? `
@@ -3347,6 +3390,37 @@ async function approveOrder(id) {
   }, 'Approve & Pay');
 }
 
+async function setOrderDeadline(id) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Set Order Deadline</div>
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)">This one-time deadline is shown to both parties and drives in-app reminders.</p>
+      <form id="deadlineForm">
+        <div class="form-group">
+          <label class="label" for="order-deadline">Deadline</label>
+          <input class="input" id="order-deadline" name="deadline" type="datetime-local" required min="${minimumDeadlineInput()}" value="${defaultDeadlineInput(7)}">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Set Deadline</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#deadlineForm').onsubmit = async(e) => {
+    e.preventDefault();
+    try {
+      const deadlineAt = canonicalDeadlineInput(new FormData(e.target).get('deadline'));
+      await api(`/orders/${id}/deadline`, { method: 'PUT', body: { deadline_at: deadlineAt } });
+      overlay.remove();
+      toast('Order deadline set.', 'success');
+      renderOrderDetail(id);
+    } catch(err) { toast(err.message, 'error'); }
+  };
+}
+
 async function requestRevision(id) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
@@ -3358,6 +3432,11 @@ async function requestRevision(id) {
           <label class="label">What needs to be revised?</label>
           <textarea class="textarea" name="message" rows="4" required placeholder="Describe the changes you'd like..."></textarea>
         </div>
+        <div class="form-group">
+          <label class="label" for="revision-deadline">Revision deadline</label>
+          <input class="input" id="revision-deadline" name="deadline" type="datetime-local" required min="${minimumDeadlineInput()}" value="${defaultDeadlineInput(3)}">
+          <div class="form-help">The worker receives in-app reminders as this UTC deadline approaches.</div>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
           <button type="submit" class="btn btn-primary">Request Revision</button>
@@ -3367,9 +3446,13 @@ async function requestRevision(id) {
   document.body.appendChild(overlay);
   overlay.querySelector('#revisionForm').onsubmit = async(e) => {
     e.preventDefault();
-    const message = new FormData(e.target).get('message');
+    const form = new FormData(e.target);
     try {
-      await api(`/orders/${id}/request-revision`, { method: 'POST', body: { notes: message } });
+      const deadlineAt = canonicalDeadlineInput(form.get('deadline'));
+      await api(`/orders/${id}/request-revision`, {
+        method: 'POST',
+        body: { notes: form.get('message'), deadline_at: deadlineAt }
+      });
       overlay.remove();
       toast('Revision requested.', 'info');
       renderOrderDetail(id);
@@ -4013,16 +4096,25 @@ async function adminToggleBan(id, currentlyBanned) {
   }, action, 'Cancel', !currentlyBanned);
 }
 
-async function renderAdminOrders() {
+async function renderAdminOrders(overdueOnly = false) {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'admin-orders');
   try {
-    const data = await api('/admin/orders');
+    const data = await api(overdueOnly ? '/admin/orders?overdue=true' : '/admin/orders');
     const orders = Array.isArray(data) ? data : (data.orders||[]);
+    const total = Array.isArray(data) ? orders.length : Number(data.total ?? orders.length);
     appShell(`
-      <h1 class="page-title">Order Management</h1>
-      <p class="page-desc">${orders.length} orders total</p>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap">
+        <div>
+          <h1 class="page-title">Order Management</h1>
+          <p class="page-desc">${total} order${total !== 1 ? 's' : ''}</p>
+        </div>
+        <label style="display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-sm)">
+          <input type="checkbox" aria-label="Overdue only" ${overdueOnly ? 'checked' : ''} onchange="renderAdminOrders(this.checked)">
+          Overdue only
+        </label>
+      </div>
       <div class="card">
-        <table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Worker</th><th>Employer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>
+        <table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Worker</th><th>Employer</th><th>Amount</th><th>Status</th><th>Deadline</th><th>Created</th></tr></thead><tbody>
           ${orders.map(o => `<tr>
             <td>#${o.id}</td>
             <td>${esc(o.title||o.service_title||o.job_title||'')}</td>
@@ -4030,7 +4122,8 @@ async function renderAdminOrders() {
             <td style="font-size:var(--text-xs)">${esc(o.employer_name||o.client_name||'')}</td>
             <td>${formatOrderAmount(o)}</td>
             <td>${statusBadge(o.status)}</td>
-            <td style="font-size:var(--text-xs)">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td style="font-size:var(--text-xs);color:${Number(o.is_overdue) ? 'var(--color-danger)' : 'inherit'}">${esc(orderDeadlineLabel(o) || 'Not set')}</td>
+            <td style="font-size:var(--text-xs)">${formatUtcDateTime(o.created_at)}</td>
           </tr>`).join('')}
         </tbody></table>
       </div>

@@ -636,6 +636,89 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(cleared).toEqual({ stored: null, cached: false });
   });
 
+  test('order deadline UI renders lifecycle evidence and sends a canonical revision deadline', async ({ page }) => {
+    let revisionBody = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/orders/7/request-revision') {
+        revisionBody = route.request().postDataJSON();
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'revision_requested' }) });
+      }
+      if (url.pathname === '/orders/7') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 7, type: 'job_hire', budget_type: 'fixed', worker_id: 1, employer_id: 2,
+          status: 'submitted', total_amount: 25, deadline_at: '2026-07-14T18:00:00Z',
+          submitted_at: '2026-07-13T15:00:00Z', revision_requested_at: null, milestones: []
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/7', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText('Deadline');
+    await expect(page.locator('body')).toContainText('Submitted');
+    await page.getByRole('button', { name: 'Request Revision' }).click();
+    await page.locator('textarea[name="message"]').fill('Retest the checkout state');
+    await page.locator('#revisionForm').getByRole('button', { name: 'Request Revision' }).click();
+    await expect.poll(() => revisionBody).not.toBeNull();
+    expect(revisionBody.notes).toBe('Retest the checkout state');
+    expect(revisionBody.deadline_at).toMatch(/Z$/);
+    expect(Number.isNaN(Date.parse(revisionBody.deadline_at))).toBe(false);
+  });
+
+  test('legacy fixed order deadline action and admin overdue filter use scoped APIs', async ({ page }) => {
+    let deadlineBody = null;
+    const requestedPaths = [];
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      requestedPaths.push(url.pathname + url.search);
+      if (url.pathname === '/orders/10/deadline') {
+        deadlineBody = request.postDataJSON();
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 10, deadline_at: deadlineBody.deadline_at }) });
+      }
+      if (url.pathname === '/orders/10') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 10, type: 'job_hire', budget_type: 'fixed', worker_id: 1, employer_id: 2,
+          status: 'in_progress', total_amount: 25, deadline_at: null, milestones: []
+        }) });
+      }
+      if (url.pathname === '/admin/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          orders: [{ id: 10, status: 'in_progress', total_amount: 25, contract_type: 'fixed',
+            worker_name: 'Worker', employer_name: 'Employer', job_title: 'Legacy QA',
+            deadline_at: '2026-07-10T12:00:00Z', is_overdue: 1, created_at: '2026-07-01T00:00:00Z' }], total: 1
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/orders/10', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Set Deadline' }).click();
+    await page.locator('#deadlineForm').getByRole('button', { name: 'Set Deadline' }).click();
+    await expect.poll(() => deadlineBody).not.toBeNull();
+    expect(deadlineBody.deadline_at).toMatch(/Z$/);
+
+    await page.evaluate(() => {
+      sessionStorage.setItem('ghh_token', 'admin-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 9, name: 'Admin', is_admin: true }));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto('/#/admin/orders', { waitUntil: 'domcontentloaded' });
+    await page.getByLabel('Overdue only').check();
+    await expect.poll(() => requestedPaths.includes('/admin/orders?overdue=true')).toBe(true);
+    await expect(page.locator('body')).toContainText('Overdue');
+    await expect(page.locator('body')).toContainText('Deadline');
+  });
+
   test('admin disputes use the admin-scoped filtered order endpoint', async ({ page }) => {
     const requestedPaths = [];
     await page.addInitScript(() => {
