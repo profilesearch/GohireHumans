@@ -662,6 +662,28 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(requestedPaths).not.toContain('/orders?status=disputed');
   });
 
+  test('admin task-amount refund requires password and sends no manual settlement claim', async ({ page }) => {
+    let body = null;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'admin-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 9, name: 'Admin', is_admin: true }));
+      window.prompt = () => 'step-up-password';
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/admin/orders') return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({orders:[{id:88,status:'disputed',total_amount:25,worker_name:'Worker',employer_name:'Employer'}]})});
+      if (url.pathname === '/admin/resolve-dispute') { body=route.request().postDataJSON(); return route.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"resolution":"refund_to_employer","status":"succeeded","idempotent_replay":false}'}); }
+      return route.fulfill({status:200,contentType:'application/json',body:'{}'});
+    });
+    await page.goto('/#/admin/disputes', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Stripe processing and the 1% platform fee are not automatically refunded.')).toBeVisible();
+    await page.getByRole('button',{name:'Issue task-amount refund'}).click();
+    await page.getByRole('button',{name:'Issue refund'}).click();
+    await expect.poll(() => body).not.toBeNull();
+    expect(body).toEqual({order_id:88,resolution:'refund_to_employer',admin_password:'step-up-password'});
+    await expect(page.getByText('Task-amount refund committed')).toBeVisible();
+  });
+
   test('new job hiring stays visibly paused until payment safeguards ship', async ({ page }) => {
     let hireBody = null;
     await page.addInitScript(() => {
