@@ -16,6 +16,16 @@ from unittest import mock
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
 
 
+def exact_transfer(transfer_id, kwargs):
+    return type("TransferResult", (), {
+        "id": transfer_id,
+        "amount": kwargs["amount"],
+        "currency": kwargs["currency"],
+        "destination": kwargs["destination"],
+        "metadata": kwargs["metadata"],
+    })()
+
+
 class TransactionLifecycleRegressionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -29,7 +39,24 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.api.JOB_HIRING_ENABLED = True
         self.api.STRIPE_AVAILABLE = True
         self.api.STRIPE_SECRET_KEY = "configured-test-key"
-        self.payment_create = mock.Mock(return_value=type("PaymentIntentResult", (), {"id": "pi_mock_hire"})())
+        self._payment_sequence = 0
+
+        def create_payment_intent(**kwargs):
+            self._payment_sequence += 1
+            return type(
+                "PaymentIntentResult",
+                (),
+                {
+                    "id": f"pi_mock_hire_{self._payment_sequence}",
+                    "status": "succeeded",
+                    "amount": kwargs["amount"],
+                    "amount_received": kwargs["amount"],
+                    "currency": kwargs["currency"],
+                    "metadata": kwargs["metadata"],
+                },
+            )()
+
+        self.payment_create = mock.Mock(side_effect=create_payment_intent)
         self.api.stripe = type("Stripe", (), {
             "PaymentIntent": type("PaymentIntent", (), {"create": self.payment_create}),
             "error": type("Error", (), {"StripeError": Exception}),
@@ -71,6 +98,37 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.commit()
         finally:
             db.close()
+
+    def _bind_verified_funding(self, db, order_id, milestone_id, amount, intent_id):
+        charge = self.api.buyer_charge_breakdown_cents(amount)
+        operation_key = f"milestone:{milestone_id}"
+        fingerprint = self.api.funding_request_fingerprint(
+            operation_key, 2, order_id, milestone_id, charge
+        )
+        attempt_id = db.execute(
+            """INSERT INTO funding_attempts
+               (operation_key,attempt_number,request_fingerprint,
+                processor_idempotency_key,employer_id,order_id,milestone_id,
+                base_amount_cents,platform_fee_cents,processing_fee_cents,
+                charged_total_cents,currency,status,stripe_payment_intent_id,
+                processor_status,evidence_source,processor_evidence_at,committed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'usd','committed',?,
+                       'succeeded','processor_create',datetime('now'),datetime('now'))""",
+            [operation_key, 1, fingerprint, f"escrow-fund:{operation_key}:attempt:1",
+             2, order_id, milestone_id, charge["base_cents"],
+             charge["platform_fee_cents"], charge["processing_fee_cents"],
+             charge["total_cents"], intent_id],
+        ).lastrowid
+        db.execute(
+            """UPDATE escrow_holds SET base_amount_cents=?,platform_fee_cents=?,
+                      processing_fee_cents=?,charged_total_cents=?,
+                      fee_policy_version='component-half-up-v1',funding_identity=?,
+                      funding_attempt_id=?
+               WHERE order_id=? AND milestone_id=? AND stripe_payment_intent_id=?""",
+            [charge["base_cents"], charge["platform_fee_cents"],
+             charge["processing_fee_cents"], charge["total_cents"], operation_key,
+             attempt_id, order_id, milestone_id, intent_id],
+        )
 
     def request(self, method, path, token="tok-employer", payload=None, raw_body=None):
         for cached in ("body_cache", "raw_body"):
@@ -212,12 +270,148 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         ):
             self.api.init_db()
 
+    def test_transaction_schema_rejects_poisoned_collation_and_desc_index(self):
+        with self.api.get_db() as db:
+            db.execute("DROP INDEX idx_funding_attempts_operation_attempt")
+            db.execute(
+                """CREATE UNIQUE INDEX idx_funding_attempts_operation_attempt
+                   ON funding_attempts(operation_key COLLATE NOCASE DESC, attempt_number)"""
+            )
+            db.commit()
+            self.assertFalse(
+                self.api._required_transaction_index_is_valid(
+                    db, "idx_funding_attempts_operation_attempt"
+                )
+            )
+        with self.assertRaisesRegex(
+            RuntimeError, "idx_funding_attempts_operation_attempt"
+        ):
+            self.api.init_db()
+
+    def test_required_migration_operational_error_is_not_suppressed(self):
+        real = self.api.get_db()
+
+        class FailingMigrationConnection:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            @property
+            def in_transaction(self):
+                return self.wrapped.in_transaction
+
+            def executescript(self, sql):
+                return self.wrapped.executescript(sql)
+
+            def execute(self, sql, parameters=()):
+                if "idx_services_provider_type" in sql:
+                    raise sqlite3.OperationalError("database is locked")
+                return self.wrapped.execute(sql, parameters)
+
+            def commit(self):
+                return self.wrapped.commit()
+
+            def rollback(self):
+                return self.wrapped.rollback()
+
+        try:
+            with self.assertRaisesRegex(sqlite3.OperationalError, "database is locked"):
+                self.api._init_db_connection(FailingMigrationConnection(real))
+        finally:
+            real.close()
+
+    def test_transaction_schema_rejects_wrong_shape_same_name_financial_table(self):
+        with self.api.get_db() as db:
+            db.execute("DROP TABLE funding_attempt_conflict_evidence")
+            db.execute(
+                "CREATE TABLE funding_attempt_conflict_evidence (id INTEGER PRIMARY KEY, payload TEXT)"
+            )
+            db.commit()
+            with self.assertRaisesRegex(RuntimeError, "funding_attempt_conflict_evidence"):
+                self.api.validate_required_transaction_schema(db)
+        with self.assertRaises((RuntimeError, sqlite3.OperationalError)):
+            self.api.init_db()
+
     def test_clean_database_keeps_partial_unique_job_hire_index(self):
         with self.api.get_db() as db:
             indexes = {row[1]: row for row in db.execute("PRAGMA index_list('orders')").fetchall()}
         self.assertIn("idx_orders_one_job_hire", indexes)
         self.assertEqual(indexes["idx_orders_one_job_hire"][2], 1)
         self.assertEqual(indexes["idx_orders_one_job_hire"][4], 1)
+
+    def test_transaction_schema_validation_rejects_malformed_same_name_job_hire_index(self):
+        with self.api.get_db() as db:
+            db.execute("DROP INDEX idx_orders_one_job_hire")
+            db.execute("CREATE INDEX idx_orders_one_job_hire ON orders(id)")
+            db.commit()
+        with self.assertRaisesRegex(RuntimeError, "idx_orders_one_job_hire"):
+            self.api.init_db()
+
+    def test_duplicate_history_rejects_malformed_same_name_job_hire_guards(self):
+        with self.api.get_db() as db:
+            db.execute("DROP INDEX idx_orders_one_job_hire")
+            db.execute(
+                "INSERT INTO orders (id,type,job_id,worker_id,employer_id,status,total_amount) "
+                "VALUES (100,'job_hire',2,1,2,'completed',10)"
+            )
+            db.execute(
+                "INSERT INTO orders (id,type,job_id,worker_id,employer_id,status,total_amount) "
+                "VALUES (101,'job_hire',2,3,2,'canceled',10)"
+            )
+            db.execute("CREATE INDEX idx_orders_one_job_hire ON orders(id)")
+            db.execute(
+                """CREATE TRIGGER trg_orders_one_job_hire_insert
+                   BEFORE INSERT ON orders BEGIN SELECT 1; END"""
+            )
+            db.execute(
+                """CREATE TRIGGER trg_orders_one_job_hire_update
+                   BEFORE UPDATE OF job_id,type ON orders BEGIN SELECT 1; END"""
+            )
+            db.commit()
+
+        with self.assertRaisesRegex(RuntimeError, "idx_orders_one_job_hire"):
+            self.api.init_db()
+
+        # Failed startup must release its writer transaction and preserve history.
+        with self.api.get_db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM orders WHERE job_id=2 AND type='job_hire'"
+                ).fetchone()[0],
+                2,
+            )
+            db.execute("DROP INDEX idx_orders_one_job_hire")
+            db.execute("DROP TRIGGER trg_orders_one_job_hire_insert")
+            db.execute("DROP TRIGGER trg_orders_one_job_hire_update")
+            db.execute("CREATE INDEX trg_orders_one_job_hire_insert ON orders(id)")
+            db.commit()
+
+        # A canonical trigger name occupied by the wrong schema object type also
+        # fails closed rather than satisfying fallback validation.
+        with self.assertRaisesRegex(
+            RuntimeError, "trg_orders_one_job_hire_insert exact SQL"
+        ):
+            self.api.init_db()
+
+        with self.api.get_db() as db:
+            db.execute("DROP INDEX trg_orders_one_job_hire_insert")
+
+        # Once poisoned objects are removed, startup installs exact fallback
+        # enforcement and future duplicates are rejected without deleting history.
+        self.api.init_db()
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM orders WHERE job_id=2 AND type='job_hire'"
+                ).fetchone()[0],
+                2,
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute(
+                    "INSERT INTO orders (id,type,job_id,worker_id,employer_id,status,total_amount) "
+                    "VALUES (102,'job_hire',2,1,2,'pending',10)"
+                )
+            db.rollback()
 
     def test_legacy_duplicate_job_hires_do_not_break_startup_or_lose_history(self):
         db = self.api.get_db()
@@ -293,6 +487,374 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT status FROM orders WHERE job_id=1").fetchone()[0], "in_progress")
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=(SELECT id FROM orders WHERE job_id=1)").fetchone()[0], "held")
 
+    def test_fixed_job_hire_retry_recovers_committed_hold_after_lifecycle_crash(self):
+        with mock.patch.object(
+            self.api, "audit", side_effect=RuntimeError("after fixed hire funding commit")
+        ):
+            first_status, _ = self.hire_job_one()
+        self.assertEqual(first_status, 500)
+
+        with self.api.get_db() as db:
+            durable = db.execute(
+                """SELECT o.status AS order_status,m.status AS milestone_status,
+                          f.status AS attempt_status,h.status AS hold_status
+                   FROM orders o
+                   JOIN milestones m ON m.order_id=o.id
+                   JOIN funding_attempts f ON f.order_id=o.id AND f.milestone_id=m.id
+                   JOIN escrow_holds h ON h.funding_attempt_id=f.id
+                   WHERE o.job_id=1"""
+            ).fetchone()
+            self.assertEqual(tuple(durable), ("in_progress", "pending", "committed", "held"))
+
+        # Lifecycle-only recovery must not depend on processor configuration or
+        # issue any second processor call once the exact hold is committed.
+        self.api.STRIPE_SECRET_KEY = ""
+        with mock.patch.object(
+            self.api, "audit", side_effect=RuntimeError("during fixed hire recovery")
+        ):
+            recovery_crash_status, recovery_crash_result = self.hire_job_one()
+        self.assertEqual(recovery_crash_status, 500, recovery_crash_result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            durable = db.execute(
+                """SELECT j.status, m.status, a.status, h.status
+                   FROM jobs j
+                   JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                   JOIN milestones m ON m.order_id=o.id AND m.sequence=1
+                   JOIN funding_attempts a ON a.id=(
+                       SELECT funding_attempt_id FROM escrow_holds WHERE order_id=o.id LIMIT 1
+                   )
+                   JOIN escrow_holds h ON h.order_id=o.id
+                   WHERE j.id=1"""
+            ).fetchone()
+            self.assertEqual(tuple(durable), ("open", "pending", "committed", "held"))
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE jobs SET updated_at=updated_at WHERE id=1")
+            db.commit()
+
+        conflict_status, conflict_result = self.request(
+            "POST",
+            "/jobs/1/hire",
+            payload={
+                "application_id": 14,
+                "milestones": [{"description": "Changed scope", "amount": 25}],
+            },
+        )
+        self.assertEqual(conflict_status, 409, conflict_result)
+        self.assertEqual(self.payment_create.call_count, 1)
+
+        retry_status, retry_result = self.hire_job_one()
+        self.assertEqual(retry_status, 200, retry_result)
+        self.assertTrue(retry_result["idempotent_replay"])
+        self.assertEqual(self.payment_create.call_count, 1)
+
+        with self.api.get_db() as db:
+            state = db.execute(
+                """SELECT o.status,m.status,j.status,a.status,m.escrow_payment_id
+                   FROM orders o
+                   JOIN milestones m ON m.order_id=o.id
+                   JOIN jobs j ON j.id=o.job_id
+                   JOIN applications a ON a.id=14
+                   WHERE o.job_id=1"""
+            ).fetchone()
+            hold_count = db.execute(
+                "SELECT COUNT(*) FROM escrow_holds WHERE order_id=(SELECT id FROM orders WHERE job_id=1)"
+            ).fetchone()[0]
+        self.assertEqual(tuple(state[:4]), ("in_progress", "in_progress", "hired", "accepted"))
+        self.assertEqual(state[4], "pi_mock_hire_1")
+        self.assertEqual(hold_count, 1)
+
+    def test_fixed_job_hire_revalidates_lifecycle_under_fresh_writer_after_hold_commit(self):
+        real_commit = self.api._commit_funding_attempt
+        injected = False
+
+        def commit_then_drift(db, attempt, processor_intent_id):
+            nonlocal injected
+            real_commit(db, attempt, processor_intent_id)
+            self.assertFalse(db.in_transaction)
+            writer = sqlite3.connect(self.api._get_db_path())
+            try:
+                writer.execute(
+                    "UPDATE milestones SET amount=24 WHERE order_id=?", [attempt["order_id"]]
+                )
+                writer.execute(
+                    "UPDATE orders SET creation_request_fingerprint=? WHERE id=?",
+                    ["0" * 64, attempt["order_id"]],
+                )
+                writer.execute("UPDATE applications SET status='rejected' WHERE id=14")
+                writer.commit()
+                injected = True
+            finally:
+                writer.close()
+
+        with mock.patch.object(
+            self.api, "_commit_funding_attempt", side_effect=commit_then_drift
+        ):
+            status, result = self.hire_job_one()
+
+        self.assertTrue(injected)
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            state = db.execute(
+                """SELECT j.status,a.status,o.status,o.creation_request_fingerprint,
+                          m.status,m.amount,h.status,COUNT(n.id)
+                   FROM jobs j
+                   JOIN applications a ON a.id=14
+                   JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                   JOIN milestones m ON m.order_id=o.id
+                   JOIN escrow_holds h ON h.order_id=o.id
+                   LEFT JOIN notifications n ON n.user_id=a.worker_id AND n.type='job_hired'
+                   WHERE j.id=1
+                   GROUP BY j.status,a.status,o.status,o.creation_request_fingerprint,
+                            m.status,m.amount,h.status"""
+            ).fetchone()
+        self.assertEqual(state[0], "open")
+        self.assertEqual(state[1], "rejected")
+        self.assertEqual(state[2], "in_progress")
+        self.assertEqual(state[3], "0" * 64)
+        self.assertEqual(state[4], "pending")
+        self.assertEqual(state[5], 24)
+        self.assertEqual(state[6], "held")
+        self.assertEqual(state[7], 0)
+
+    def test_fixed_job_hire_exact_retry_replays_after_post_commit_response_loss(self):
+        with mock.patch.object(
+            self.api,
+            "flush_transactional_notification_emails",
+            side_effect=RuntimeError("response lost after lifecycle commit"),
+        ):
+            first_status, _ = self.hire_job_one()
+        self.assertEqual(first_status, 500)
+        self.payment_create.assert_called_once()
+
+        with self.api.get_db() as db:
+            before = tuple(
+                db.execute(
+                    """SELECT j.status,a.status,o.status,m.status,m.escrow_payment_id,
+                              (SELECT COUNT(*) FROM escrow_holds h WHERE h.order_id=o.id),
+                              (SELECT COUNT(*) FROM funding_attempts f WHERE f.order_id=o.id)
+                       FROM jobs j
+                       JOIN applications a ON a.id=14
+                       JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                       JOIN milestones m ON m.order_id=o.id AND m.sequence=1
+                       WHERE j.id=1"""
+                ).fetchone()
+            )
+        self.assertEqual(
+            before,
+            ("hired", "accepted", "in_progress", "in_progress", "pi_mock_hire_1", 1, 1),
+        )
+
+        self.api.JOB_HIRING_ENABLED = False
+        self.api.STRIPE_SECRET_KEY = ""
+        with mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "retrieve",
+            side_effect=AssertionError("unexpected retrieve"),
+            create=True,
+        ), mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "search",
+            side_effect=AssertionError("unexpected search"),
+            create=True,
+        ):
+            retry_status, retry_result = self.hire_job_one()
+        self.assertEqual(retry_status, 200, retry_result)
+        self.assertTrue(retry_result["idempotent_replay"])
+        self.payment_create.assert_called_once()
+
+        changed_status, changed_result = self.request(
+            "POST",
+            "/jobs/1/hire",
+            payload={
+                "application_id": 14,
+                "milestones": [{"description": "Changed scope", "amount": 25}],
+            },
+        )
+        self.assertEqual(changed_status, 409, changed_result)
+        self.payment_create.assert_called_once()
+
+        with self.api.get_db() as db:
+            after = tuple(
+                db.execute(
+                    """SELECT j.status,a.status,o.status,m.status,m.escrow_payment_id,
+                              (SELECT COUNT(*) FROM escrow_holds h WHERE h.order_id=o.id),
+                              (SELECT COUNT(*) FROM funding_attempts f WHERE f.order_id=o.id)
+                       FROM jobs j
+                       JOIN applications a ON a.id=14
+                       JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                       JOIN milestones m ON m.order_id=o.id AND m.sequence=1
+                       WHERE j.id=1"""
+                ).fetchone()
+            )
+        self.assertEqual(after, before)
+
+    def test_fixed_job_hire_recovery_rejects_newer_conflict_attempt(self):
+        with mock.patch.object(
+            self.api, "audit", side_effect=RuntimeError("after fixed hire funding commit")
+        ):
+            first_status, _ = self.hire_job_one()
+        self.assertEqual(first_status, 500)
+
+        with self.api.get_db() as db:
+            committed = db.execute(
+                "SELECT * FROM funding_attempts WHERE status='committed'"
+            ).fetchone()
+            db.execute(
+                """INSERT INTO funding_attempts
+                   (operation_key,attempt_number,request_fingerprint,processor_idempotency_key,
+                    employer_id,order_id,milestone_id,base_amount_cents,platform_fee_cents,
+                    processing_fee_cents,charged_total_cents,currency,status,error_code,error_message)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unknown',
+                           'prior_attempt_success_conflict','newer contradictory attempt')""",
+                [
+                    committed["operation_key"],
+                    int(committed["attempt_number"]) + 1,
+                    committed["request_fingerprint"],
+                    committed["processor_idempotency_key"] + ":conflict-test",
+                    committed["employer_id"],
+                    committed["order_id"],
+                    committed["milestone_id"],
+                    committed["base_amount_cents"],
+                    committed["platform_fee_cents"],
+                    committed["processing_fee_cents"],
+                    committed["charged_total_cents"],
+                    committed["currency"],
+                ],
+            )
+            db.execute(
+                """INSERT INTO funding_attempts
+                   (operation_key,attempt_number,request_fingerprint,processor_idempotency_key,
+                    employer_id,order_id,milestone_id,base_amount_cents,platform_fee_cents,
+                    processing_fee_cents,charged_total_cents,currency,status,error_code,error_message)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'failed',
+                           'processor_card_declined','cross-operation failed attempt')""",
+                [
+                    "legacy-job-hire/1",
+                    1,
+                    committed["request_fingerprint"],
+                    committed["processor_idempotency_key"] + ":legacy-operation",
+                    committed["employer_id"],
+                    committed["order_id"],
+                    committed["milestone_id"],
+                    committed["base_amount_cents"],
+                    committed["platform_fee_cents"],
+                    committed["processing_fee_cents"],
+                    committed["charged_total_cents"],
+                    committed["currency"],
+                ],
+            )
+            db.commit()
+
+        self.api.STRIPE_SECRET_KEY = ""
+        with mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "retrieve",
+            side_effect=AssertionError("unexpected retrieve"),
+            create=True,
+        ), mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "search",
+            side_effect=AssertionError("unexpected search"),
+            create=True,
+        ):
+            retry_status, retry_result = self.hire_job_one()
+        self.assertEqual(retry_status, 409, retry_result)
+        self.payment_create.assert_called_once()
+
+        with self.api.get_db() as db:
+            state = tuple(
+                db.execute(
+                    """SELECT j.status,a.status,m.status,
+                              (SELECT COUNT(*) FROM escrow_holds h WHERE h.order_id=o.id)
+                       FROM jobs j
+                       JOIN applications a ON a.id=14
+                       JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                       JOIN milestones m ON m.order_id=o.id AND m.sequence=1
+                       WHERE j.id=1"""
+                ).fetchone()
+            )
+            attempts_before = [
+                tuple(row)
+                for row in db.execute(
+                    """SELECT operation_key,attempt_number,status,error_code
+                       FROM funding_attempts ORDER BY id"""
+                ).fetchall()
+            ]
+            db.execute(
+                """DELETE FROM funding_attempts
+                   WHERE operation_key=? AND attempt_number=?""",
+                [committed["operation_key"], int(committed["attempt_number"]) + 1],
+            )
+            db.commit()
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE jobs SET updated_at=updated_at WHERE id=1")
+            db.commit()
+        self.assertEqual(state, ("open", "pending", "pending", 1))
+        self.assertEqual(
+            attempts_before,
+            [
+                (committed["operation_key"], 1, "committed", None),
+                (
+                    committed["operation_key"],
+                    2,
+                    "unknown",
+                    "prior_attempt_success_conflict",
+                ),
+                (
+                    "legacy-job-hire/1",
+                    1,
+                    "failed",
+                    "processor_card_declined",
+                ),
+            ],
+        )
+
+        # Even after the newer unknown row is removed, an alternate operation
+        # identity for the same milestone remains contradictory and blocks replay.
+        with mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "retrieve",
+            side_effect=AssertionError("unexpected retrieve"),
+            create=True,
+        ), mock.patch.object(
+            self.api.stripe.PaymentIntent,
+            "search",
+            side_effect=AssertionError("unexpected search"),
+            create=True,
+        ):
+            second_retry_status, second_retry_result = self.hire_job_one()
+        self.assertEqual(second_retry_status, 409, second_retry_result)
+        self.payment_create.assert_called_once()
+
+        with self.api.get_db() as db:
+            self.assertEqual(
+                [
+                    tuple(row)
+                    for row in db.execute(
+                        "SELECT operation_key,attempt_number,status FROM funding_attempts ORDER BY id"
+                    ).fetchall()
+                ],
+                [
+                    (committed["operation_key"], 1, "committed"),
+                    ("legacy-job-hire/1", 1, "failed"),
+                ],
+            )
+            self.assertEqual(
+                tuple(
+                    db.execute(
+                        """SELECT j.status,a.status,m.status
+                           FROM jobs j
+                           JOIN applications a ON a.id=14
+                           JOIN orders o ON o.job_id=j.id AND o.type='job_hire'
+                           JOIN milestones m ON m.order_id=o.id AND m.sequence=1
+                           WHERE j.id=1"""
+                    ).fetchone()
+                ),
+                ("open", "pending", "pending"),
+            )
+
     def test_funding_retry_uses_stable_stripe_idempotency_key(self):
         with self.api.get_db() as db:
             db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (500,'service_order',1,2,'pending',25.55)")
@@ -344,30 +906,68 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
                 )
         self.payment_create.assert_not_called()
 
-    def test_service_order_retry_uses_client_operation_identity_across_full_rollback(self):
+    def test_service_order_retry_recovers_durable_processor_success_after_local_response_failure(self):
         payload = {"amount": "25.55", "idempotency_key": "service-order-retry-0001"}
         with mock.patch.object(self.api, "push_notification", side_effect=RuntimeError("after Stripe")):
             status, _ = self.request("POST", "/services/1/order", payload=payload)
         self.assertEqual(status, 500)
         first_kwargs = dict(self.payment_create.call_args.kwargs)
-        first_key = first_kwargs["idempotency_key"]
 
         with self.api.get_db() as db:
-            order_id = db.execute(
-                "INSERT INTO orders (type,service_id,worker_id,employer_id,status,total_amount) VALUES ('service_order',1,1,2,'canceled',1)"
-            ).lastrowid
-            db.execute(
-                "INSERT INTO milestones (order_id,title,amount,sequence,status) VALUES (?,'Canceled',1,1,'pending')",
-                [order_id],
-            )
-            db.commit()
+            order = db.execute(
+                "SELECT * FROM orders WHERE creation_idempotency_key=?", [payload["idempotency_key"]]
+            ).fetchone()
+            milestone = db.execute(
+                "SELECT id FROM milestones WHERE order_id=?", [order["id"]]
+            ).fetchone()
+            attempt = db.execute(
+                "SELECT * FROM funding_attempts WHERE operation_key=?",
+                [f"milestone:{milestone['id']}"],
+            ).fetchone()
+            hold_count = db.execute(
+                "SELECT COUNT(*) FROM escrow_holds WHERE order_id=?", [order["id"]]
+            ).fetchone()[0]
+            self.assertEqual(order["status"], "pending")
+            self.assertEqual(attempt["status"], "committed")
+            self.assertEqual(hold_count, 1)
 
         status, result = self.request("POST", "/services/1/order", payload=payload)
-        self.assertEqual(status, 201, result)
-        self.assertEqual(self.payment_create.call_count, 2)
-        second_kwargs = dict(self.payment_create.call_args.kwargs)
-        self.assertEqual(first_key, second_kwargs["idempotency_key"])
-        self.assertEqual(first_kwargs, second_kwargs)
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["idempotent_replay"])
+        self.assertEqual(result["status"], "in_progress")
+        self.assertEqual(self.payment_create.call_count, 1)
+        self.assertEqual(first_kwargs, dict(self.payment_create.call_args.kwargs))
+
+    def test_service_order_idempotency_key_rejects_conflicting_canonical_request(self):
+        key = "service-order-fingerprint-0001"
+        status, created = self.request("POST", "/services/1/order", payload={
+            "amount": "25.00",
+            "idempotency_key": key,
+            "notes": "same scope",
+        })
+        self.assertEqual(status, 201, created)
+        status, replay = self.request("POST", "/services/1/order", payload={
+            "amount": "25",
+            "idempotency_key": key,
+            "notes": "same scope",
+        })
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["idempotent_replay"])
+        status, conflict = self.request("POST", "/services/1/order", payload={
+            "amount": "99.00",
+            "idempotency_key": key,
+            "notes": "same scope",
+        })
+        self.assertEqual(status, 409, conflict)
+        self.assertIn("different service-order inputs", conflict["error"])
+        self.payment_create.assert_called_once()
+        with self.api.get_db() as db:
+            order = db.execute(
+                "SELECT total_amount,creation_request_fingerprint FROM orders WHERE creation_idempotency_key=?",
+                [key],
+            ).fetchone()
+        self.assertEqual(order["total_amount"], 25)
+        self.assertTrue(order["creation_request_fingerprint"])
 
     def test_service_order_response_loss_replay_returns_existing_order_without_recharging(self):
         payload = {"amount": "25.55", "idempotency_key": "service-checkout-replay123"}
@@ -378,6 +978,92 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(replay["id"], first["id"])
         self.assertTrue(replay["idempotent_replay"])
         self.payment_create.assert_called_once()
+
+    def test_manual_route_cannot_create_second_intent_after_ambiguous_service_checkout(self):
+        key = "ambiguous-service-checkout-0001"
+        self.payment_create.side_effect = self.api.STRIPE_ERROR("response lost after send")
+        status, result = self.request("POST", "/services/1/order", payload={
+            "amount": "25.00",
+            "idempotency_key": key,
+        })
+        self.assertEqual(status, 409, result)
+        self.assertIn("reconciliation", result["error"].lower())
+        with self.api.get_db() as db:
+            order = db.execute(
+                "SELECT * FROM orders WHERE creation_idempotency_key=?", [key]
+            ).fetchone()
+            milestone = db.execute(
+                "SELECT * FROM milestones WHERE order_id=?", [order["id"]]
+            ).fetchone()
+            first_attempt = db.execute(
+                "SELECT * FROM funding_attempts WHERE milestone_id=?", [milestone["id"]]
+            ).fetchone()
+        self.assertEqual(first_attempt["operation_key"], f"milestone:{milestone['id']}")
+        self.assertEqual(first_attempt["status"], "unknown")
+
+        status, retry = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": order["id"],
+            "milestone_id": milestone["id"],
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 409, retry)
+        self.assertIn("reconciliation", retry["error"].lower())
+        self.payment_create.assert_called_once()
+        with self.api.get_db() as db:
+            attempts = db.execute(
+                "SELECT operation_key,status FROM funding_attempts WHERE milestone_id=?",
+                [milestone["id"]],
+            ).fetchall()
+            hold_count = db.execute(
+                "SELECT COUNT(*) FROM escrow_holds WHERE milestone_id=?", [milestone["id"]]
+            ).fetchone()[0]
+        self.assertEqual(
+            [tuple(row) for row in attempts],
+            [(f"milestone:{milestone['id']}", "unknown")],
+        )
+        self.assertEqual(hold_count, 0)
+
+    def test_manual_aggregate_route_rejects_hourly_contract_obligations(self):
+        order_id = self.seed_hourly_order(order_id=89, status="pending")
+        self.payment_create.reset_mock()
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": order_id,
+            "amount": "1000.00",
+        })
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
+        self.payment_create.assert_not_called()
+
+    def test_manual_milestone_route_rejects_historical_hourly_contract_obligations(self):
+        order_id = self.seed_hourly_order(order_id=891, status="pending")
+        with self.api.get_db() as db:
+            db.execute("DELETE FROM escrow_holds WHERE order_id=?", [order_id])
+            db.execute(
+                """INSERT INTO milestones
+                   (id,order_id,title,amount,sequence,status)
+                   VALUES (991,891,'Historical hybrid milestone',25,1,'pending')"""
+            )
+            db.commit()
+
+        self.payment_create.reset_mock()
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": order_id,
+            "milestone_id": 991,
+            "amount": "25.00",
+        })
+
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM funding_attempts WHERE order_id=?", [order_id]).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=?", [order_id]).fetchone()[0],
+                0,
+            )
 
     def test_manual_funding_cannot_overlap_normal_service_checkout_or_regress_status(self):
         status, order = self.request("POST", "/services/1/order", payload={
@@ -398,14 +1084,22 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             )
 
         self.payment_create.reset_mock()
-        for payload in (
-            {"order_id": order_id, "milestone_id": milestone["id"], "amount": "25.00"},
-            {"order_id": order_id, "amount": "25.00"},
-        ):
-            with self.subTest(payload=payload):
-                status, result = self.request("POST", "/payments/fund-escrow", payload=payload)
-                self.assertEqual(status, 409, result)
-                self.payment_create.assert_not_called()
+        status, replay = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": order_id,
+            "milestone_id": milestone["id"],
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(replay["mode"], "replayed")
+        self.payment_create.assert_not_called()
+
+        status, result = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": order_id,
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 409, result)
+        self.payment_create.assert_not_called()
 
         with self.api.get_db() as db:
             self.assertEqual(
@@ -585,6 +1279,278 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         with self.api.get_db() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=542").fetchone()[0], 1)
 
+    def test_manual_funding_rejects_post_commit_milestone_drift(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (546,'service_order',1,2,'pending',25)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (646,546,'Manual delivery',25,1,'pending')"
+            )
+            db.commit()
+
+        real_commit = self.api._commit_funding_attempt
+        drifted = False
+
+        def commit_then_drift(db, attempt, processor_intent_id):
+            nonlocal drifted
+            real_commit(db, attempt, processor_intent_id)
+            self.assertFalse(db.in_transaction)
+            writer = sqlite3.connect(self.api._get_db_path())
+            try:
+                writer.execute("UPDATE milestones SET amount=99 WHERE id=646")
+                writer.commit()
+                drifted = True
+            finally:
+                writer.close()
+
+        with mock.patch.object(
+            self.api, "_commit_funding_attempt", side_effect=commit_then_drift
+        ):
+            status, result = self.request("POST", "/payments/fund-escrow", payload={
+                "order_id": 546,
+                "milestone_id": 646,
+                "amount": "25.00",
+            })
+
+        self.assertTrue(drifted, result)
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            state = db.execute(
+                """SELECT o.status,m.status,m.amount,h.amount,a.base_amount_cents
+                   FROM orders o
+                   JOIN milestones m ON m.order_id=o.id
+                   JOIN escrow_holds h ON h.order_id=o.id AND h.milestone_id=m.id
+                   JOIN funding_attempts a ON a.id=h.funding_attempt_id
+                   WHERE o.id=546"""
+            ).fetchone()
+        self.assertEqual(tuple(state), ("pending", "pending", 99, 25, 2500))
+
+    def test_manual_aggregate_funding_rejects_post_commit_order_total_drift(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (547,'service_order',1,2,'pending',25)"
+            )
+            db.commit()
+
+        real_commit = self.api._commit_funding_attempt
+        drifted = False
+
+        def commit_then_drift(db, attempt, processor_intent_id):
+            nonlocal drifted
+            real_commit(db, attempt, processor_intent_id)
+            self.assertFalse(db.in_transaction)
+            writer = sqlite3.connect(self.api._get_db_path())
+            try:
+                writer.execute("UPDATE orders SET total_amount=99 WHERE id=547")
+                writer.commit()
+                drifted = True
+            finally:
+                writer.close()
+
+        with mock.patch.object(
+            self.api, "_commit_funding_attempt", side_effect=commit_then_drift
+        ):
+            status, result = self.request("POST", "/payments/fund-escrow", payload={
+                "order_id": 547,
+                "amount": "25.00",
+            })
+
+        self.assertTrue(drifted, result)
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            state = db.execute(
+                """SELECT o.status,o.total_amount,h.amount,a.base_amount_cents
+                   FROM orders o
+                   JOIN escrow_holds h ON h.order_id=o.id AND h.milestone_id IS NULL
+                   JOIN funding_attempts a ON a.id=h.funding_attempt_id
+                   WHERE o.id=547"""
+            ).fetchone()
+        self.assertEqual(tuple(state), ("pending", 99, 25, 2500))
+
+    def test_multi_hold_release_keeps_writer_lock_off_processor_io(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (548,'service_order',1,2,'submitted',25)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (648,548,'Release one',10,1,'submitted')"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (649,548,'Release two',15,2,'submitted')"
+            )
+            db.execute(
+                """INSERT INTO escrow_holds
+                   (order_id,milestone_id,amount,stripe_payment_intent_id,
+                    funding_identity,status)
+                   VALUES (548,648,10,'pi_release_1','milestone:648','held')"""
+            )
+            db.execute(
+                """INSERT INTO escrow_holds
+                   (order_id,milestone_id,amount,stripe_payment_intent_id,
+                    funding_identity,status)
+                   VALUES (548,649,15,'pi_release_2','milestone:649','held')"""
+            )
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1"
+            )
+            self._bind_verified_funding(db, 548, 648, 10, "pi_release_1")
+            self._bind_verified_funding(db, 548, 649, 15, "pi_release_2")
+            db.commit()
+
+        transfer_calls = []
+
+        def transfer_create(**kwargs):
+            writer = sqlite3.connect(self.api._get_db_path(), timeout=0.1)
+            try:
+                writer.execute("UPDATE users SET name=name WHERE id=2")
+                writer.commit()
+            finally:
+                writer.close()
+            transfer_calls.append(kwargs)
+            return exact_transfer(f"tr_release_{len(transfer_calls)}", kwargs)
+
+        transfer_api = type("Transfer", (), {"create": staticmethod(transfer_create)})
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        with mock.patch.object(
+            self.api.stripe, "Transfer", transfer_api, create=True
+        ), mock.patch.object(
+            self.api, "retrieve_live_connect_account", return_value=account
+        ):
+            with self.api.get_db() as db:
+                self.api.release_escrow_to_worker(db, 548, 648, 10, 1)
+                self.api.release_escrow_to_worker(db, 548, 649, 15, 1)
+
+        self.assertEqual(len(transfer_calls), 2)
+        with self.api.get_db() as db:
+            states = [tuple(row) for row in db.execute(
+                "SELECT milestone_id,status,stripe_transfer_id FROM escrow_holds "
+                "WHERE order_id=548 ORDER BY milestone_id"
+            )]
+        self.assertEqual(states, [
+            (648, "released", "tr_release_1"),
+            (649, "released", "tr_release_2"),
+        ])
+
+    def test_release_normalizes_modern_stripe_error_without_legacy_namespace(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (549,'service_order',1,2,'submitted',10)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (650,549,'Modern error',10,1,'submitted')"
+            )
+            db.execute(
+                """INSERT INTO escrow_holds
+                   (order_id,milestone_id,amount,stripe_payment_intent_id,
+                    funding_identity,status)
+                   VALUES (549,650,10,'pi_modern_error','milestone:650','held')"""
+            )
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1"
+            )
+            self._bind_verified_funding(db, 549, 650, 10, "pi_modern_error")
+            db.commit()
+
+        class ModernStripeError(Exception):
+            pass
+
+        transfer = type("Transfer", (), {
+            "create": staticmethod(lambda **kwargs: (_ for _ in ()).throw(
+                ModernStripeError("processor unavailable")
+            ))
+        })
+        modern_stripe = type("ModernStripe", (), {"Transfer": transfer})()
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        with mock.patch.object(self.api, "stripe", modern_stripe), mock.patch.object(
+            self.api, "STRIPE_ERROR", ModernStripeError
+        ), mock.patch.object(
+            self.api, "stripe_configured", return_value=True
+        ), mock.patch.object(
+            self.api, "retrieve_live_connect_account", return_value=account
+        ):
+            with self.api.get_db() as db:
+                with self.assertRaisesRegex(
+                    self.api.FundingReconciliationRequired, "outcome is ambiguous"
+                ):
+                    self.api.release_escrow_to_worker(db, 549, 650, 10, 1)
+
+        with self.api.get_db() as db:
+            self.assertEqual(
+                tuple(db.execute(
+                    "SELECT status,stripe_transfer_id FROM escrow_holds WHERE milestone_id=650"
+                ).fetchone()),
+                ("held", None),
+            )
+
+    def test_release_fails_closed_when_exact_hold_cas_updates_zero_rows(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (550,'service_order',1,2,'submitted',10)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (651,550,'Ignored CAS',10,1,'submitted')"
+            )
+            db.execute(
+                """INSERT INTO escrow_holds
+                   (order_id,milestone_id,amount,stripe_payment_intent_id,
+                    funding_identity,status)
+                   VALUES (550,651,10,'pi_ignored_cas','milestone:651','held')"""
+            )
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1"
+            )
+            self._bind_verified_funding(db, 550, 651, 10, "pi_ignored_cas")
+            db.execute(
+                """CREATE TRIGGER ignore_release_cas
+                   BEFORE UPDATE ON escrow_holds
+                   WHEN OLD.milestone_id=651 AND NEW.status='released'
+                   BEGIN SELECT RAISE(IGNORE); END"""
+            )
+            db.commit()
+
+        transfer_api = type("Transfer", (), {
+            "create": staticmethod(lambda **kwargs: exact_transfer("tr_ignored_cas", kwargs))
+        })
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        with mock.patch.object(
+            self.api.stripe, "Transfer", transfer_api, create=True
+        ), mock.patch.object(
+            self.api, "retrieve_live_connect_account", return_value=account
+        ):
+            with self.api.get_db() as db:
+                with self.assertRaisesRegex(
+                    self.api.FundingReconciliationRequired,
+                    "Escrow hold changed during exact payout settlement",
+                ):
+                    self.api.release_escrow_to_worker(db, 550, 651, 10, 1)
+
+        with self.api.get_db() as db:
+            hold = db.execute(
+                "SELECT status,stripe_transfer_id FROM escrow_holds WHERE milestone_id=651"
+            ).fetchone()
+            payout_count = db.execute(
+                "SELECT COUNT(*) FROM payout_transfers WHERE milestone_id=651"
+            ).fetchone()[0]
+            revenue_count = db.execute(
+                "SELECT COUNT(*) FROM platform_revenue WHERE order_id=550"
+            ).fetchone()[0]
+        self.assertEqual(tuple(hold), ("held", None))
+        self.assertEqual(payout_count, 0)
+        self.assertEqual(revenue_count, 0)
+
     def test_manual_funding_only_starts_first_milestone_and_lifecycle_funds_later_steps(self):
         with self.api.get_db() as db:
             db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (543,'service_order',1,2,'pending',45)")
@@ -609,9 +1575,16 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(status, 200, result)
         self.assertEqual(self.payment_create.call_count, 1)
 
-        transfer = type("TransferResult", (), {"id": "tr_mock_release"})()
-        self.api.stripe.Transfer = type("Transfer", (), {"create": mock.Mock(return_value=transfer)})
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True}
+        transfer_counter = {"value": 0}
+
+        def create_transfer(**kwargs):
+            transfer_counter["value"] += 1
+            return exact_transfer(f"tr_mock_release_{transfer_counter['value']}", kwargs)
+
+        self.api.stripe.Transfer = type(
+            "Transfer", (), {"create": mock.Mock(side_effect=create_transfer)}
+        )
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
         with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
             for current_id, next_id in ((643, 644), (644, 645)):
                 status, submitted = self.request(
@@ -636,6 +1609,265 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
                 [row[0] for row in db.execute("SELECT status FROM milestones WHERE order_id=543 ORDER BY sequence")],
                 ["approved", "approved", "in_progress"],
             )
+
+    def test_approve_rejects_next_milestone_drift_after_funding_commit(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) "
+                "VALUES (593,'service_order',1,2,'pending',25)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (694,593,'First',10,1,'pending')"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) "
+                "VALUES (695,593,'Second',15,2,'pending')"
+            )
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1"
+            )
+            db.commit()
+
+        status, funded = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 593,
+            "milestone_id": 694,
+            "amount": "10.00",
+        })
+        self.assertEqual(status, 200, funded)
+        status, submitted = self.request(
+            "POST", "/orders/593/submit", token="tok-worker", payload={"notes": "done"}
+        )
+        self.assertEqual(status, 200, submitted)
+
+        real_commit = self.api._commit_funding_attempt
+        drifted = False
+
+        def commit_then_drift(db, attempt, processor_intent_id):
+            nonlocal drifted
+            real_commit(db, attempt, processor_intent_id)
+            if attempt["milestone_id"] == 695:
+                self.assertFalse(db.in_transaction)
+                writer = sqlite3.connect(self.api._get_db_path())
+                try:
+                    writer.execute("UPDATE milestones SET amount=99 WHERE id=695")
+                    writer.commit()
+                    drifted = True
+                finally:
+                    writer.close()
+
+        transfer_api = type("Transfer", (), {
+            "create": staticmethod(lambda **kwargs: exact_transfer("tr_approve_drift", kwargs))
+        })
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        with mock.patch.object(
+            self.api, "_commit_funding_attempt", side_effect=commit_then_drift
+        ), mock.patch.object(
+            self.api.stripe, "Transfer", transfer_api, create=True
+        ), mock.patch.object(
+            self.api, "retrieve_live_connect_account", return_value=account
+        ):
+            status, result = self.request(
+                "POST", "/orders/593/approve", token="tok-employer"
+            )
+
+        self.assertTrue(drifted, result)
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            state = db.execute(
+                """SELECT o.status,first.status,second.status,second.amount,
+                          h.status,h.amount,a.status,a.base_amount_cents
+                   FROM orders o
+                   JOIN milestones first ON first.id=694
+                   JOIN milestones second ON second.id=695
+                   JOIN escrow_holds h ON h.milestone_id=695
+                   JOIN funding_attempts a ON a.id=h.funding_attempt_id
+                   WHERE o.id=593"""
+            ).fetchone()
+        self.assertEqual(
+            tuple(state),
+            ("submitted", "approved", "pending", 99, "held", 15, "committed", 1500),
+        )
+
+    def test_approve_retry_recovers_next_milestone_after_funding_commit_crash(self):
+        with self.api.get_db() as db:
+            db.execute(
+                "INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (592,'service_order',1,2,'pending',25)"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (692,592,'First',10,1,'pending')"
+            )
+            db.execute(
+                "INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (693,592,'Second',15,2,'pending')"
+            )
+            db.execute("UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1")
+            db.commit()
+
+        status, funded = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 592,
+            "milestone_id": 692,
+            "amount": "10.00",
+        })
+        self.assertEqual(status, 200, funded)
+        status, submitted = self.request(
+            "POST", "/orders/592/submit", token="tok-worker", payload={"notes": "First delivered"}
+        )
+        self.assertEqual(status, 200, submitted)
+
+        self.api.stripe.Transfer = type("Transfer", (), {
+            "create": mock.Mock(side_effect=lambda **kwargs: exact_transfer("tr_mock_release", kwargs))
+        })
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        real_audit = self.api.audit
+
+        def crash_after_next_funding(*args, **kwargs):
+            if len(args) > 2 and args[2] == "approve_order":
+                raise RuntimeError("injected after next funding commit")
+            return real_audit(*args, **kwargs)
+
+        with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account), mock.patch.object(
+            self.api, "audit", side_effect=crash_after_next_funding
+        ):
+            status, _ = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 500)
+        self.assertEqual(self.payment_create.call_count, 2)
+
+        with self.api.get_db() as db:
+            first = db.execute("SELECT status FROM milestones WHERE id=692").fetchone()[0]
+            second = db.execute(
+                "SELECT status,escrow_payment_id FROM milestones WHERE id=693"
+            ).fetchone()
+            attempt = db.execute(
+                "SELECT * FROM funding_attempts WHERE operation_key='milestone:693'"
+            ).fetchone()
+            hold = db.execute("SELECT * FROM escrow_holds WHERE milestone_id=693").fetchone()
+            order_status = db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0]
+        self.assertEqual(first, "approved")
+        self.assertEqual(tuple(second), ("pending", None))
+        self.assertEqual(attempt["status"], "committed")
+        self.assertEqual(hold["status"], "held")
+        self.assertEqual(order_status, "submitted")
+
+        with self.api.get_db() as db:
+            db.execute("UPDATE milestones SET amount=16 WHERE id=693")
+            db.commit()
+        status, amount_conflict = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 409, amount_conflict)
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0], "submitted")
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=693").fetchone()[0], "pending")
+            db.execute("UPDATE milestones SET amount=15 WHERE id=693")
+            db.execute("UPDATE funding_attempts SET currency='eur' WHERE operation_key='milestone:693'")
+            db.commit()
+        status, currency_conflict = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 409, currency_conflict)
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0], "submitted")
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=693").fetchone()[0], "pending")
+            db.execute("UPDATE funding_attempts SET currency='usd', error_code='processor_intent_conflict' WHERE operation_key='milestone:693'")
+            db.commit()
+        status, evidence_conflict = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 409, evidence_conflict)
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0], "submitted")
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=693").fetchone()[0], "pending")
+            db.execute("UPDATE funding_attempts SET error_code=NULL WHERE operation_key='milestone:693'")
+            db.commit()
+
+        with self.api.get_db() as db:
+            db.execute(
+                """INSERT INTO escrow_holds
+                   (order_id,milestone_id,amount,status,stripe_payment_intent_id)
+                   VALUES (592,693,15,'held','pi_conflicting_legacy_hold')"""
+            )
+            db.commit()
+        status, conflict = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 409, conflict)
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0], "submitted")
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=693").fetchone()[0], "pending")
+            db.execute(
+                "DELETE FROM escrow_holds WHERE stripe_payment_intent_id='pi_conflicting_legacy_hold'"
+            )
+            db.commit()
+
+        with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
+            status, replay = self.request("POST", "/orders/592/approve", token="tok-employer")
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["recovered_funding"])
+        self.assertEqual(self.payment_create.call_count, 2)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=592").fetchone()[0], "in_progress")
+            second = db.execute(
+                "SELECT status,escrow_payment_id FROM milestones WHERE id=693"
+            ).fetchone()
+            self.assertEqual(tuple(second), ("in_progress", hold["stripe_payment_intent_id"]))
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE milestone_id=693").fetchone()[0], 1)
+            self.assertEqual(
+                db.execute(
+                    """SELECT COUNT(*) FROM payout_release_attempts
+                       WHERE order_id=592 AND status='committed'
+                         AND lifecycle_status='pending'"""
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute(
+                    """SELECT COUNT(*) FROM payout_release_attempts
+                       WHERE order_id=592 AND lifecycle_status<>'completed'"""
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute(
+                    """SELECT COUNT(*) FROM funding_attempts
+                       WHERE order_id=592
+                         AND status IN ('prepared','unknown','processor_succeeded')"""
+                ).fetchone()[0],
+                0,
+            )
+
+    def test_manual_funding_replay_recovers_committed_hold_from_pending_lifecycle(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (588,'service_order',1,2,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (688,588,'First',25,1,'pending')")
+            db.commit()
+
+        with mock.patch.object(self.api, "audit", side_effect=RuntimeError("after funding commit")):
+            status, _ = self.request("POST", "/payments/fund-escrow", payload={
+                "order_id": 588,
+                "milestone_id": 688,
+                "amount": "25.00",
+            })
+        self.assertEqual(status, 500)
+        with self.api.get_db() as db:
+            attempt = db.execute("SELECT * FROM funding_attempts WHERE operation_key='milestone:688'").fetchone()
+            hold = db.execute("SELECT * FROM escrow_holds WHERE order_id=588").fetchone()
+            self.assertEqual(attempt["status"], "committed")
+            self.assertEqual(hold["status"], "held")
+            self.assertEqual(hold["funding_attempt_id"], attempt["id"])
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=588").fetchone()[0], "pending")
+            self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=688").fetchone()[0], "pending")
+
+        status, replay = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 588,
+            "milestone_id": 688,
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=588").fetchone()[0], "in_progress")
+            milestone = db.execute("SELECT status,escrow_payment_id,funded_at FROM milestones WHERE id=688").fetchone()
+            self.assertEqual(milestone["status"], "in_progress")
+            self.assertEqual(milestone["escrow_payment_id"], hold["stripe_payment_intent_id"])
+            self.assertTrue(milestone["funded_at"])
 
     def test_exact_legacy_first_milestone_replay_normalizes_lifecycle_without_recharging(self):
         with self.api.get_db() as db:
@@ -670,11 +1902,13 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO escrow_holds (order_id,milestone_id,amount,status,stripe_payment_intent_id) VALUES (590,690,10,'held','pi_current')")
             db.execute("INSERT INTO escrow_holds (order_id,milestone_id,amount,status,stripe_payment_intent_id) VALUES (590,691,15,'held','pi_legacy_prefunded')")
             db.execute("UPDATE worker_profiles SET payout_account_id='acct_live_worker' WHERE user_id=1")
+            self._bind_verified_funding(db, 590, 690, 10, "pi_current")
             db.commit()
 
-        transfer = type("TransferResult", (), {"id": "tr_mock_release"})()
-        self.api.stripe.Transfer = type("Transfer", (), {"create": mock.Mock(return_value=transfer)})
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True}
+        self.api.stripe.Transfer = type("Transfer", (), {
+            "create": mock.Mock(side_effect=lambda **kwargs: exact_transfer("tr_mock_release", kwargs))
+        })
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
         with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
             status, result = self.request("POST", "/orders/590/approve", token="tok-employer")
         self.assertEqual(status, 200, result)
@@ -759,11 +1993,20 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             processor_started.set()
             if not release_processor.wait(5):
                 raise TimeoutError("concurrency probe did not release processor")
-            return type("PaymentIntentResult", (), {"id": "pi_concurrent_once"})()
+            return type("PaymentIntentResult", (), {
+                "id": "pi_concurrent_once",
+                "status": "succeeded",
+                "amount": kwargs["amount"],
+                "amount_received": kwargs["amount"],
+                "currency": kwargs["currency"],
+                "metadata": kwargs["metadata"],
+            })()
 
         self.payment_create.side_effect = delayed_create
         original_json_response = self.api.json_response
+        original_error_response = self.api.error_response
         self.api.json_response = lambda data, status=200: (status, data)
+        self.api.error_response = lambda message, status=400: (status, {"error": message})
 
         def fund_once():
             requests_ready.wait(timeout=5)
@@ -794,10 +2037,22 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         finally:
             release_processor.set()
             self.api.json_response = original_json_response
+            self.api.error_response = original_error_response
 
-        self.assertEqual([status for status, _ in results], [200] * 8)
+        statuses = [status for status, _ in results]
+        self.assertTrue(all(status in {200, 409} for status in statuses), results)
+        self.assertIn(200, statuses)
         self.assertEqual(self.payment_create.call_count, 1)
-        self.assertEqual(sorted(result["mode"] for _, result in results), ["live", *(["replayed"] * 7)])
+        self.assertEqual(sum(result.get("mode") == "live" for _, result in results), 1)
+
+        status, replay = self.request("POST", "/payments/fund-escrow", payload={
+            "order_id": 580,
+            "milestone_id": 680,
+            "amount": "25.00",
+        })
+        self.assertEqual(status, 200, replay)
+        self.assertEqual(replay["mode"], "replayed")
+        self.assertEqual(self.payment_create.call_count, 1)
         with self.api.get_db() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds WHERE order_id=580").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=680").fetchone()[0], "in_progress")
@@ -990,8 +2245,8 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "application_id": 18,
             "weekly_hour_cap": 6.1,
         })
-        self.assertEqual(status, 400, result)
-        self.assertIn("whole number", result["error"])
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
         self.payment_create.assert_not_called()
 
     def test_hourly_hire_rejects_precision_hidden_fraction_before_stripe(self):
@@ -999,8 +2254,8 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "application_id": 18,
             "weekly_hour_cap": "6.0000000000000001",
         })
-        self.assertEqual(status, 400, result)
-        self.assertIn("whole number", result["error"])
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
         self.payment_create.assert_not_called()
 
     def test_order_detail_reports_authoritative_funded_charge_not_contract_total(self):
@@ -1057,13 +2312,74 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             (7, 21, {"milestones": [{"description": "Delivery", "amount": 0.01}]}, 3),
         ]
         for job_id, application_id, extra, expected_charge in scenarios:
+            calls_before = self.payment_create.call_count
             status, result = self.request(
                 "POST",
                 f"/jobs/{job_id}/hire",
                 payload={"application_id": application_id, **extra},
             )
-            self.assertEqual(status, 201, result)
-            self.assertEqual(self.payment_create.call_args.kwargs["amount"], expected_charge)
+            if job_id == 6:
+                self.assertEqual(status, 503, result)
+                self.assertIn("Task 4", result["error"])
+                self.assertEqual(self.payment_create.call_count, calls_before)
+            else:
+                self.assertEqual(status, 201, result)
+                self.assertEqual(self.payment_create.call_args.kwargs["amount"], expected_charge)
+
+    def test_removed_hourly_settlement_cannot_be_reenabled_or_mutate_lifecycle(self):
+        self.seed_hourly_order()
+        # A stale deployment/environment monkeypatch must not resurrect the removed
+        # Task-4 settlement implementation.
+        self.api.HOURLY_SETTLEMENT_ENABLED = True
+        self.api.PRODUCTION_MODE = True
+        self.api.STRIPE_SECRET_KEY = "configured-test-key"
+        transfer_create = mock.Mock(return_value=type("Transfer", (), {"id": "tr_forbidden"})())
+        retrieve_account = mock.Mock(return_value=type(
+            "Account", (), {"payouts_enabled": True, "details_submitted": True}
+        )())
+        renewal_funding = mock.Mock(return_value=("pi_forbidden", "live"))
+        self.api.stripe.Transfer = type("Transfer", (), {"create": transfer_create})
+        self.api.retrieve_live_connect_account = retrieve_account
+        self.api.fund_escrow_stripe = renewal_funding
+        with self.api.get_db() as db:
+            db.execute(
+                "UPDATE worker_profiles SET payout_account_id='acct_live_forbidden' WHERE user_id=1"
+            )
+            db.commit()
+            before = {
+                "order": tuple(db.execute("SELECT status,completed_at FROM orders WHERE id=88").fetchone()),
+                "job": tuple(db.execute("SELECT status FROM jobs WHERE id=4").fetchone()),
+                "contract": tuple(db.execute("SELECT status,current_week_escrow_payment_id FROM hourly_contracts WHERE order_id=88").fetchone()),
+                "entry": tuple(db.execute("SELECT status FROM time_entries").fetchone()),
+                "hold": tuple(db.execute("SELECT status,released_at,stripe_transfer_id FROM escrow_holds WHERE order_id=88").fetchone()),
+                "revenue": db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=88").fetchone()[0],
+                "payouts": db.execute("SELECT COUNT(*) FROM payout_transfers WHERE order_id=88").fetchone()[0],
+                "audits": db.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0],
+            }
+
+        for path, token, payload in (
+            ("/orders/88/approve-hours", "tok-employer", {"week_of": "2026-07-06"}),
+            ("/orders/88/end-contract", "tok-worker", {"reason": "done"}),
+        ):
+            status, result = self.request("POST", path, token=token, payload=payload)
+            self.assertEqual(status, 503, result)
+            self.assertIn("Task 4", result["error"])
+
+        transfer_create.assert_not_called()
+        retrieve_account.assert_not_called()
+        renewal_funding.assert_not_called()
+        with self.api.get_db() as db:
+            after = {
+                "order": tuple(db.execute("SELECT status,completed_at FROM orders WHERE id=88").fetchone()),
+                "job": tuple(db.execute("SELECT status FROM jobs WHERE id=4").fetchone()),
+                "contract": tuple(db.execute("SELECT status,current_week_escrow_payment_id FROM hourly_contracts WHERE order_id=88").fetchone()),
+                "entry": tuple(db.execute("SELECT status FROM time_entries").fetchone()),
+                "hold": tuple(db.execute("SELECT status,released_at,stripe_transfer_id FROM escrow_holds WHERE order_id=88").fetchone()),
+                "revenue": db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=88").fetchone()[0],
+                "payouts": db.execute("SELECT COUNT(*) FROM payout_transfers WHERE order_id=88").fetchone()[0],
+                "audits": db.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0],
+            }
+        self.assertEqual(after, before)
 
     def test_hourly_settlement_endpoints_fail_closed_by_default_without_mutation(self):
         self.seed_hourly_order()
@@ -1073,10 +2389,10 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "POST", "/orders/88/approve-hours", payload={"week_of": "2026-07-06"}
         )
         self.assertEqual(status, 503, result)
-        self.assertIn("temporarily paused", result["error"])
+        self.assertIn("Task 4", result["error"])
         status, result = self.request("POST", "/orders/88/end-contract", token="tok-worker", payload={"reason": "done"})
         self.assertEqual(status, 503, result)
-        self.assertIn("temporarily paused", result["error"])
+        self.assertIn("Task 4", result["error"])
 
         db = self.api.get_db()
         try:
@@ -1089,7 +2405,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         finally:
             db.close()
 
-    def test_enabled_hourly_approval_rounds_money_once_and_returns_json_safe_values(self):
+    def test_stale_enabled_hourly_approval_flag_cannot_release_rounded_money(self):
         order_id = self.seed_hourly_order()
         self.api.HOURLY_SETTLEMENT_ENABLED = True
         self.api.PRODUCTION_MODE = False
@@ -1105,10 +2421,14 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         status, result = self.request(
             "POST", f"/orders/{order_id}/approve-hours", payload={"week_of": "2026-07-06"}, token="tok-employer"
         )
-        self.assertEqual(status, 200, result)
-        self.assertEqual(result["hours_approved"], 1.5)
-        self.assertEqual(result["worker_pay"], 38.33)
-        self.assertEqual(result["platform_fee"], 0.38)
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM time_entries").fetchone()[0], "pending")
+            self.assertEqual(
+                db.execute("SELECT status FROM escrow_holds WHERE order_id=?", [order_id]).fetchone()[0],
+                "held",
+            )
 
     def test_order_list_exposes_hourly_contract_type_and_funding_summary(self):
         self.seed_hourly_order()
@@ -1119,17 +2439,18 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(row["hourly_rate"], 25)
         self.assertEqual(row["current_week_escrow_amount"], 1000)
 
-    def test_enabled_hourly_contract_completion_synchronizes_job_terminal_state(self):
+    def test_stale_enabled_hourly_end_flag_cannot_synchronize_terminal_state(self):
         self.seed_hourly_order()
         self.api.HOURLY_SETTLEMENT_ENABLED = True
         status, result = self.request("POST", "/orders/88/end-contract", token="tok-worker", payload={"reason": "done"})
-        self.assertEqual(status, 200, result)
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
 
         db = self.api.get_db()
         try:
-            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=88").fetchone()[0], "completed")
-            self.assertEqual(db.execute("SELECT status FROM jobs WHERE id=4").fetchone()[0], "completed")
-            self.assertEqual(db.execute("SELECT status FROM hourly_contracts WHERE order_id=88").fetchone()[0], "ended")
+            self.assertEqual(db.execute("SELECT status FROM orders WHERE id=88").fetchone()[0], "in_progress")
+            self.assertEqual(db.execute("SELECT status FROM jobs WHERE id=4").fetchone()[0], "hired")
+            self.assertEqual(db.execute("SELECT status FROM hourly_contracts WHERE order_id=88").fetchone()[0], "active")
         finally:
             db.close()
 
@@ -1165,6 +2486,15 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.close()
 
         status, result = self.hire_job_one()
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["idempotent_replay"])
+        self.assertEqual(result["worker_id"], 1)
+        self.assertEqual(self.payment_create.call_count, 1)
+
+        status, result = self.request("POST", "/jobs/1/hire", payload={
+            "application_id": 16,
+            "milestones": [{"description": "Delivery", "amount": 25}],
+        })
         self.assertEqual(status, 409, result)
         self.assertEqual(self.payment_create.call_count, 1)
 
@@ -1183,20 +2513,19 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "hourly_rate": 1,
             "weekly_hour_cap": 40,
         })
-        self.assertEqual(status, 201, result)
-        self.assertEqual(result["hourly_contract"]["hourly_rate"], 25)
-        self.assertEqual(result["hourly_contract"]["weekly_hour_cap"], 40)
-        self.assertEqual(result["hourly_contract"]["current_week_escrow_amount"], 1000)
-        self.api.stripe.PaymentIntent.create.assert_called_once()
-        self.assertEqual(self.api.stripe.PaymentIntent.create.call_args.kwargs["amount"], 104000)
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
+        self.api.stripe.PaymentIntent.create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders WHERE job_id=4").fetchone()[0], 0)
 
     def test_hourly_hire_rejects_out_of_range_weekly_cap_before_stripe(self):
         status, result = self.request("POST", "/jobs/4/hire", payload={
             "application_id": 18,
             "weekly_hour_cap": 169,
         })
-        self.assertEqual(status, 400, result)
-        self.assertIn("between 1 and 168", result["error"])
+        self.assertEqual(status, 503, result)
+        self.assertIn("Task 4", result["error"])
         self.api.stripe.PaymentIntent.create.assert_not_called()
         db = self.api.get_db()
         try:
@@ -1256,20 +2585,19 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         status, result = self.request("POST", f"/orders/{order_id}/submit", "tok-worker", {"notes": "  Revised evidence  "})
         self.assertEqual(status, 200, result)
 
-        def release_current(db, released_order_id, milestone_id, amount, worker_id):
-            db.execute(
-                "UPDATE escrow_holds SET status='released', released_at=datetime('now') WHERE order_id=? AND milestone_id=?",
-                [released_order_id, milestone_id],
-            )
-            return 25.0, 0.25
-
-        release = mock.Mock(side_effect=release_current)
-        with mock.patch.object(self.api, "release_escrow_to_worker", release), mock.patch.object(self.api, "flush_transactional_notification_emails"):
+        transfer = mock.Mock(side_effect=lambda **kwargs: exact_transfer("tr_revision_release", kwargs))
+        self.api.stripe.Transfer = type("Transfer", (), {"create": transfer})
+        with self.api.get_db() as db:
+            db.execute("UPDATE worker_profiles SET payout_account_id='acct_revision_worker' WHERE user_id=1")
+            db.commit()
+        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True,
+                   "capabilities": {"transfers": "active"}}
+        with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account), mock.patch.object(self.api, "flush_transactional_notification_emails"):
             status, result = self.request("POST", f"/orders/{order_id}/approve")
             self.assertEqual(status, 200, result)
             status, replay = self.request("POST", f"/orders/{order_id}/approve")
             self.assertEqual(status, 409, replay)
-        release.assert_called_once()
+        transfer.assert_called_once()
 
         db = self.api.get_db()
         try:
