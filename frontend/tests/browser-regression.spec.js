@@ -44,6 +44,34 @@ async function collectConsole(page) {
   return messages;
 }
 test.describe('GoHireHumans public/browser regression suite', () => {
+  test('relative dates treat SQLite-space timestamps as UTC in every browser timezone', async ({ browser }) => {
+    for (const timezoneId of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+      const context = await browser.newContext({
+        baseURL: 'http://127.0.0.1:4173',
+        timezoneId
+      });
+      const page = await context.newPage();
+      await page.addInitScript(fixedIso => {
+        const NativeDate = Date;
+        const fixedMs = NativeDate.parse(fixedIso);
+        window.Date = class extends NativeDate {
+          constructor(...args) {
+            super(...(args.length ? args : [fixedMs]));
+          }
+          static now() {
+            return fixedMs;
+          }
+        };
+      }, '2026-07-11T13:00:00Z');
+      await setupDeterministicLocalPage(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+      expect(await page.evaluate(() => relativeDate('2026-07-11 12:00:00'))).toBe('1h ago');
+      expect(await page.evaluate(() => relativeDate('2026-07-11T12:00:00Z'))).toBe('1h ago');
+      await context.close();
+    }
+  });
+
   test('localhost never requests Google Analytics or Tag Manager', async ({ page }) => {
     const analyticsRequests = [];
     page.on('request', request => {
