@@ -523,7 +523,9 @@ function providerBadge(service) {
 }
 function relativeDate(str) {
   if (!str) return '';
-  const d = new Date(str), now = new Date();
+  const d = utcDate(str);
+  if (!d) return '';
+  const now = new Date();
   const diff = Math.floor((now - d) / 1000);
   if (diff < 60) return 'just now';
   if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
