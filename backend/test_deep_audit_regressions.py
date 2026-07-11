@@ -50,6 +50,34 @@ class BackendRegressionTests(unittest.TestCase):
         os.environ.pop("DATABASE_PATH", None)
         os.environ.pop("DISABLE_AUTO_SEED", None)
 
+    def _bind_verified_funding(self, db, amount, intent_id="pi_live_like"):
+        charge = self.module.buyer_charge_breakdown_cents(amount)
+        fingerprint = self.module.funding_request_fingerprint(
+            "order:1", 2, 1, None, charge
+        )
+        attempt_id = db.execute(
+            """INSERT INTO funding_attempts
+               (operation_key,attempt_number,request_fingerprint,
+                processor_idempotency_key,employer_id,order_id,milestone_id,
+                base_amount_cents,platform_fee_cents,processing_fee_cents,
+                charged_total_cents,currency,status,stripe_payment_intent_id,
+                processor_status,evidence_source,processor_evidence_at,committed_at)
+               VALUES ('order:1',1,?,'escrow-fund:order:1:attempt:1',2,1,NULL,
+                       ?,?,?,?,'usd','committed',?,'succeeded','processor_create',
+                       datetime('now'),datetime('now'))""",
+            [fingerprint, charge["base_cents"], charge["platform_fee_cents"],
+             charge["processing_fee_cents"], charge["total_cents"], intent_id],
+        ).lastrowid
+        db.execute(
+            """UPDATE escrow_holds SET base_amount_cents=?,platform_fee_cents=?,
+                      processing_fee_cents=?,charged_total_cents=?,
+                      fee_policy_version='component-half-up-v1',
+                      funding_identity='order:1',funding_attempt_id=?
+               WHERE order_id=1 AND milestone_id IS NULL""",
+            [charge["base_cents"], charge["platform_fee_cents"],
+             charge["processing_fee_cents"], charge["total_cents"], attempt_id],
+        )
+
     def test_stripe_webhook_acknowledges_thin_events_without_data_object(self):
         class FakeWebhook:
             @staticmethod
@@ -109,6 +137,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
             db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
             db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            self._bind_verified_funding(db, 100)
             db.commit()
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
@@ -130,13 +159,14 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
             self.module.STRIPE_SECRET_KEY = "sk_test_configured"
-            fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=False, details_submitted=True)
+            fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=False, details_submitted=True, capabilities={})
             self.module.stripe = type("FakeStripe", (), {
                 "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
                 "error": type("Error", (), {"StripeError": Exception})
             })
             self.assertFalse(self.module.worker_has_payout_setup(db, 1))
             fake_account.charges_enabled = True
+            fake_account.capabilities = {'transfers': 'active'}
             self.assertTrue(self.module.worker_has_payout_setup(db, 1))
         finally:
             db.close()
@@ -151,6 +181,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
             db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
             db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            self._bind_verified_funding(db, 100)
             db.commit()
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
@@ -180,11 +211,15 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',0.29)")
             db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',0.29)")
             db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,0.29,'held','pi_live_like')")
+            self._bind_verified_funding(db, 0.29)
             db.commit()
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
             self.module.STRIPE_SECRET_KEY = "sk_test_configured"
-            fake_transfer = mock.Mock(return_value=type("TransferResult", (), {"id": "tr_test_123"})())
+            fake_transfer = mock.Mock(side_effect=lambda **kwargs: SimpleNamespace(
+                id="tr_test_123", amount=kwargs["amount"], currency=kwargs["currency"],
+                destination=kwargs["destination"], metadata=kwargs["metadata"],
+            ))
             fake_account = SimpleNamespace(payouts_enabled=True, charges_enabled=True, details_submitted=True, capabilities={'transfers': 'active'})
             self.module.stripe = type("FakeStripe", (), {
                 "Account": type("Account", (), {"retrieve": mock.Mock(return_value=fake_account)}),
@@ -196,13 +231,18 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(fee, 0.01)
             fake_transfer.assert_called_once()
             self.assertEqual(fake_transfer.call_args.kwargs.get("amount"), 29)
-            self.assertEqual(fake_transfer.call_args.kwargs.get("idempotency_key"), "escrow-release:1:full")
+            self.assertEqual(
+                fake_transfer.call_args.kwargs.get("idempotency_key"),
+                "escrow-release:hold:1:attempt:1",
+            )
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "released")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 1)
             transfer_row = db.execute("SELECT stripe_transfer_id, idempotency_key, status, transfer_type FROM payout_transfers WHERE order_id=1").fetchone()
             self.assertIsNotNone(transfer_row)
             self.assertEqual(transfer_row["stripe_transfer_id"], "tr_test_123")
-            self.assertEqual(transfer_row["idempotency_key"], "escrow-release:1:full")
+            self.assertEqual(
+                transfer_row["idempotency_key"], "escrow-release:hold:1:attempt:1"
+            )
             self.assertEqual(transfer_row["status"], "recorded")
             self.assertEqual(transfer_row["transfer_type"], "escrow_release")
         finally:
@@ -218,6 +258,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,price) VALUES (1,1,'Svc','Desc','writing','fixed',100)")
             db.execute("INSERT INTO orders (id,type,service_id,worker_id,employer_id,status,total_amount) VALUES (1,'service_order',1,1,2,'submitted',100)")
             db.execute("INSERT INTO escrow_holds (order_id,amount,status,stripe_payment_intent_id) VALUES (1,100,'held','pi_live_like')")
+            self._bind_verified_funding(db, 100)
             db.commit()
             self.module.PRODUCTION_MODE = True
             self.module.STRIPE_AVAILABLE = True
@@ -231,10 +272,18 @@ class BackendRegressionTests(unittest.TestCase):
                 "Transfer": type("Transfer", (), {"create": fake_transfer}),
                 "error": type("Error", (), {"StripeError": StripeBoom})
             })
-            with self.assertRaisesRegex(ValueError, "Stripe transfer failed"):
+            self.module.STRIPE_ERROR = StripeBoom
+            self.module.STRIPE_PAYOUT_DEFINITIVE_PREOP_ERRORS = ()
+            with self.assertRaisesRegex(
+                self.module.FundingReconciliationRequired, "outcome is ambiguous"
+            ):
                 self.module.release_escrow_to_worker(db, 1, None, 100, 1)
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "held")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 0)
+            attempt = db.execute(
+                "SELECT status,error_code FROM payout_release_attempts WHERE order_id=1"
+            ).fetchone()
+            self.assertEqual(tuple(attempt), ("unknown", "processor_outcome_ambiguous"))
         finally:
             db.close()
 
@@ -1166,47 +1215,23 @@ class BackendRegressionTests(unittest.TestCase):
                 self.module.handle_request()
             return parse_cgi_output(out.getvalue())
 
-        status, body = call({"order_id": 9, "resolution": "release_to_worker"})
-        self.assertEqual(status, 403, body)
-        self.assertIn("Admin password", body["error"])
-        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!"})
-        self.assertEqual(status, 409, body)
-        self.assertIn("Manual money movement confirmation required", body["error"])
-        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": "false", "processor_reference": "stripe-string-false"})
-        self.assertEqual(status, 409, body)
-        self.assertIn("Manual money movement confirmation required", body["error"])
-        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True})
-        self.assertEqual(status, 400, body)
-        self.assertIn("processor_reference", body["error"])
-        status, body = call({"order_id": 9, "resolution": "split", "worker_percent": 101, "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-split-bad"})
-        self.assertEqual(status, 400, body)
-        self.assertIn("worker_percent", body["error"])
-        status, body = call({"order_id": 9, "resolution": "split", "worker_percent": "nan", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-split-nan"})
-        self.assertEqual(status, 400, body)
-        self.assertIn("finite", body["error"])
+        payloads = [
+            {"order_id": 9, "resolution": "release_to_worker"},
+            {"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!"},
+            {"order_id": 9, "resolution": "split", "worker_percent": 50,
+             "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True,
+             "processor_reference": "stripe-tr-123"},
+        ]
+        for payload in payloads:
+            status, body = call(payload)
+            self.assertEqual(status, 503, body)
+            self.assertIn("Task 4", body["error"])
         db = self.module.get_db()
         try:
             self.assertEqual(db.execute("SELECT status FROM orders WHERE id=9").fetchone()[0], "disputed")
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=9").fetchone()[0], "held")
-        finally:
-            db.close()
-        status, body = call({"order_id": 9, "resolution": "release_to_worker", "admin_password": "AdminPassword123!", "manual_money_movement_confirmed": True, "processor_reference": "stripe-tr-123"})
-        self.assertEqual(status, 200, body)
-        self.assertEqual(body["mode"], "manual_settlement_recorded")
-        db = self.module.get_db()
-        try:
-            escrow_status = db.execute("SELECT status FROM escrow_holds WHERE order_id=9").fetchone()[0]
-            job_status = db.execute("SELECT status FROM jobs WHERE id=5").fetchone()[0]
-            audit = db.execute("SELECT action, details FROM audit_log WHERE action='resolve_dispute_manual_settlement'").fetchone()
-            notifications = [row[0] for row in db.execute("SELECT message FROM notifications WHERE type='dispute_resolved'").fetchall()]
-            self.assertEqual(escrow_status, "released")
-            self.assertEqual(job_status, "completed")
-            self.assertTrue(notifications)
-            self.assertTrue(all("stripe-tr-123" not in message for message in notifications))
-            self.assertTrue(all("manual settlement was verified" in message for message in notifications))
-            self.assertIsNotNone(audit)
-            self.assertIn("stripe-tr-123", audit["details"])
-            self.assertNotIn("AdminPassword123", audit["details"])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM audit_log WHERE action LIKE 'resolve_dispute%'").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM notifications WHERE type='dispute_resolved'").fetchone()[0], 0)
         finally:
             db.close()
 
@@ -2983,8 +3008,15 @@ class FrontendStaticRegressionTests(unittest.TestCase):
 
         class FakePaymentIntent:
             @staticmethod
-            def create(**_kwargs):
-                return type("PaymentIntentResult", (), {"id": "pi_mock_hire"})()
+            def create(**kwargs):
+                return type("PaymentIntentResult", (), {
+                    "id": "pi_mock_hire",
+                    "status": "succeeded",
+                    "amount": kwargs["amount"],
+                    "amount_received": kwargs["amount"],
+                    "currency": kwargs["currency"],
+                    "metadata": kwargs["metadata"],
+                })()
 
         module.stripe = type(
             "FakeStripe",
