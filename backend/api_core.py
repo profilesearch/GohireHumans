@@ -1022,6 +1022,21 @@ def validate_required_payout_schema(db):
         raise RuntimeError("Required payout schema missing: " + ", ".join(invalid))
 
 
+_ORDER_REMINDER_TABLE_SQL = """CREATE TABLE order_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL REFERENCES orders(id),
+        recipient_user_id INTEGER NOT NULL REFERENCES users(id),
+        reminder_kind TEXT NOT NULL CHECK(reminder_kind IN ('due_48h','due_24h','overdue')),
+        deadline_at TEXT NOT NULL,
+        notification_id INTEGER UNIQUE REFERENCES notifications(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )"""
+_ORDER_REMINDER_INDEX_SQL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_order_reminders_exact_once "
+    "ON order_reminders(order_id,recipient_user_id,reminder_kind,deadline_at)"
+)
+
+
 def validate_required_transaction_schema(db):
     required_columns = {
         "escrow_holds": {
@@ -1034,7 +1049,13 @@ def validate_required_transaction_schema(db):
             "funding_attempt_id",
             "stripe_transfer_id",
         },
-        "orders": {"creation_idempotency_key", "creation_request_fingerprint"},
+        "orders": {
+            "creation_idempotency_key",
+            "creation_request_fingerprint",
+            "deadline_at",
+            "submitted_at",
+            "revision_requested_at",
+        },
         "funding_attempts": {
             "operation_key",
             "attempt_number",
@@ -1092,6 +1113,10 @@ def validate_required_transaction_schema(db):
     for table_name, expected_sql in _REQUIRED_FUNDING_TABLE_SQL.items():
         if not _required_table_schema_is_valid(db, table_name, expected_sql):
             missing.append(f"{table_name} exact table schema")
+    if not _required_table_schema_is_valid(
+        db, "order_reminders", _ORDER_REMINDER_TABLE_SQL
+    ):
+        missing.append("order_reminders exact table schema")
 
     for index_name in (
         "idx_orders_creation_idempotency",
@@ -1111,6 +1136,13 @@ def validate_required_transaction_schema(db):
     ):
         if not _required_transaction_index_is_valid(db, index_name):
             missing.append(index_name)
+    if not _required_payout_schema_object_is_valid(
+        db,
+        "idx_order_reminders_exact_once",
+        _ORDER_REMINDER_INDEX_SQL,
+        "index",
+    ):
+        missing.append("idx_order_reminders_exact_once exact index schema")
 
     for trigger_name in _FUNDING_CONFLICT_EVIDENCE_TRIGGER_SQL:
         if not _required_funding_conflict_trigger_is_valid(db, trigger_name):
@@ -1494,6 +1526,9 @@ def _init_db_connection_steps(db):
         creation_request_fingerprint TEXT,
         worker_notes TEXT DEFAULT '',
         employer_notes TEXT DEFAULT '',
+        deadline_at TEXT,
+        submitted_at TEXT,
+        revision_requested_at TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now')),
         completed_at TEXT
@@ -1629,6 +1664,16 @@ def _init_db_connection_steps(db):
         created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS order_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL REFERENCES orders(id),
+        recipient_user_id INTEGER NOT NULL REFERENCES users(id),
+        reminder_kind TEXT NOT NULL CHECK(reminder_kind IN ('due_48h','due_24h','overdue')),
+        deadline_at TEXT NOT NULL,
+        notification_id INTEGER UNIQUE REFERENCES notifications(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -1674,6 +1719,8 @@ def _init_db_connection_steps(db):
     CREATE INDEX IF NOT EXISTS idx_applications_worker ON applications(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_worker ON orders(worker_id);
     CREATE INDEX IF NOT EXISTS idx_orders_employer ON orders(employer_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_order_reminders_exact_once
+        ON order_reminders(order_id,recipient_user_id,reminder_kind,deadline_at);
     CREATE INDEX IF NOT EXISTS idx_milestones_order ON milestones(order_id);
     CREATE INDEX IF NOT EXISTS idx_time_entries_contract ON time_entries(contract_id);
     CREATE INDEX IF NOT EXISTS idx_reviews_order ON reviews(order_id);
@@ -1746,6 +1793,9 @@ def _init_db_connection_steps(db):
         ("payout_transfers", "release_attempt_id", "ALTER TABLE payout_transfers ADD COLUMN release_attempt_id INTEGER REFERENCES payout_release_attempts(id)"),
         ("orders", "creation_idempotency_key", "ALTER TABLE orders ADD COLUMN creation_idempotency_key TEXT"),
         ("orders", "creation_request_fingerprint", "ALTER TABLE orders ADD COLUMN creation_request_fingerprint TEXT"),
+        ("orders", "deadline_at", "ALTER TABLE orders ADD COLUMN deadline_at TEXT"),
+        ("orders", "submitted_at", "ALTER TABLE orders ADD COLUMN submitted_at TEXT"),
+        ("orders", "revision_requested_at", "ALTER TABLE orders ADD COLUMN revision_requested_at TEXT"),
     ]:
         ensure_column(db, table_name, column_name, col_sql)
     db.execute(
@@ -1779,6 +1829,12 @@ def _init_db_connection_steps(db):
     validate_required_payout_schema(db)
     validate_required_payment_setup_schema(db)
     validate_required_refund_schema(db)
+
+    # ── Account-state migrations ─────────────────────────────────────
+    ensure_column(
+        db, "users", "is_suspended",
+        "ALTER TABLE users ADD COLUMN is_suspended INTEGER DEFAULT 0",
+    )
 
     # ── AI marketplace migrations ─────────────────────────────────────
     for column_name, col_sql in [
@@ -2527,6 +2583,53 @@ def validated_order_notes(value, field_name="notes"):
     return notes
 
 
+def validated_order_deadline(value, now=None):
+    """Validate an aware ISO-8601 deadline and persist it in canonical UTC."""
+    if not isinstance(value, str) or value != value.strip() or not value:
+        raise ValueError("deadline_at must be an ISO-8601 timestamp with a timezone")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("deadline_at must be an ISO-8601 timestamp with a timezone") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("deadline_at must include a timezone")
+    parsed = parsed.astimezone(timezone.utc).replace(microsecond=0)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    if parsed < current + timedelta(hours=1):
+        raise ValueError("deadline_at must be at least one hour in the future")
+    if parsed > current + timedelta(days=365):
+        raise ValueError("deadline_at must be no more than 365 days in the future")
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def service_order_deadline(delivery_time_days, now=None):
+    """Derive a fixed-service deadline from the seller's published delivery promise."""
+    if isinstance(delivery_time_days, bool) or not isinstance(delivery_time_days, int):
+        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
+    if not 1 <= delivery_time_days <= 365:
+        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    return (current + timedelta(days=delivery_time_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+FIXED_ORDER_OVERDUE_SQL = """(
+    o.deadline_at IS NOT NULL
+    AND datetime(o.deadline_at) IS NOT NULL
+    AND datetime(o.deadline_at) <= datetime('now')
+    AND o.status IN ('in_progress','revision_requested')
+    AND NOT EXISTS (SELECT 1 FROM hourly_contracts ohc WHERE ohc.order_id=o.id)
+    AND (
+        (o.type='service_order' AND EXISTS (
+            SELECT 1 FROM services os WHERE os.id=o.service_id AND os.pricing_type='fixed'
+        ))
+        OR
+        (o.type='job_hire' AND EXISTS (
+            SELECT 1 FROM jobs oj WHERE oj.id=o.job_id AND oj.budget_type='fixed'
+        ))
+    )
+)"""
+
+
 def validated_idempotency_key(value):
     if not isinstance(value, str) or value != value.strip():
         raise ValueError("idempotency_key must be a 16-128 character operation identity")
@@ -2645,7 +2748,7 @@ def authenticate_session(db):
     ).fetchone()
     if row:
         user = db.execute("SELECT * FROM users WHERE id = ?", [row['user_id']]).fetchone()
-        if user and user['is_active'] and not user['is_banned']:
+        if user and user['is_active'] and not user['is_banned'] and not user['is_suspended']:
             return row_to_dict(user)
     return None
 
@@ -3071,6 +3174,87 @@ def push_notification(db, user_id, notif_type, title, message=None, link=None, e
                  email_message if email_message is not None else (message or ""),
                  link or "", str(dedupe_context), dedupe_key],
             )
+    return cursor.lastrowid
+
+
+def generate_order_reminders(db, user_id, now=None):
+    """Materialize current fixed-order reminders exactly once for one participant."""
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    created = 0
+    try:
+        rows = db.execute(
+            """SELECT o.id,o.worker_id,o.employer_id,o.status,o.deadline_at,o.type,
+                      s.pricing_type,j.budget_type,hc.id AS hourly_contract_id
+               FROM orders o
+               LEFT JOIN services s ON s.id=o.service_id
+               LEFT JOIN jobs j ON j.id=o.job_id
+               LEFT JOIN hourly_contracts hc ON hc.order_id=o.id
+               WHERE (o.worker_id=? OR o.employer_id=?)
+                 AND o.status IN ('in_progress','revision_requested')
+                 AND o.deadline_at IS NOT NULL""",
+            [user_id, user_id],
+        ).fetchall()
+        for order in rows:
+            is_fixed = (
+                order['hourly_contract_id'] is None
+                and (
+                    (order['type'] == 'service_order' and order['pricing_type'] == 'fixed')
+                    or (order['type'] == 'job_hire' and order['budget_type'] == 'fixed')
+                )
+            )
+            if not is_fixed:
+                continue
+            try:
+                deadline = datetime.fromisoformat(
+                    str(order['deadline_at']).replace("Z", "+00:00")
+                )
+                if deadline.tzinfo is None or deadline.utcoffset() is None:
+                    continue
+                deadline = deadline.astimezone(timezone.utc).replace(microsecond=0)
+            except (TypeError, ValueError):
+                continue
+            remaining = deadline - current
+            if remaining.total_seconds() <= 0:
+                reminder_kind = "overdue"
+                title = "Order overdue"
+                message = f"Order #{order['id']} passed its deadline {order['deadline_at']}."
+            elif user_id == order['worker_id'] and remaining <= timedelta(hours=24):
+                reminder_kind = "due_24h"
+                title = "Order due within 24 hours"
+                message = f"Order #{order['id']} is due {order['deadline_at']}."
+            elif user_id == order['worker_id'] and remaining <= timedelta(hours=48):
+                reminder_kind = "due_48h"
+                title = "Order due within 48 hours"
+                message = f"Order #{order['id']} is due {order['deadline_at']}."
+            else:
+                continue
+            claim = db.execute(
+                """INSERT OR IGNORE INTO order_reminders
+                   (order_id,recipient_user_id,reminder_kind,deadline_at)
+                   VALUES(?,?,?,?)""",
+                [order['id'], user_id, reminder_kind, order['deadline_at']],
+            )
+            if claim.rowcount != 1:
+                continue
+            notification_id = push_notification(
+                db, user_id, f"order_{reminder_kind}", title, message,
+                f"/orders/{order['id']}",
+            )
+            linked = db.execute(
+                "UPDATE order_reminders SET notification_id=? WHERE id=? AND notification_id IS NULL",
+                [notification_id, claim.lastrowid],
+            )
+            if linked.rowcount != 1:
+                raise RuntimeError("Order reminder notification binding changed")
+            created += 1
+        db.commit()
+        return created
+    except Exception:
+        db.rollback()
+        raise
 
 
 def fake_payment_intent_id():
@@ -8553,16 +8737,27 @@ def _handle_routes(db):
             return error_response(str(e), 400)
         total_amount = total_amount_cents / 100
 
+        deadline_at = None
+        if pricing_type == 'fixed':
+            try:
+                # Legacy fixed listings predate required delivery promises. Preserve
+                # checkout with a conservative bounded default; current listings use
+                # the seller's published delivery_time_days.
+                delivery_days = svc['delivery_time_days'] if svc['delivery_time_days'] is not None else 7
+                deadline_at = service_order_deadline(delivery_days)
+            except ValueError as e:
+                return error_response(str(e), 409)
+
         # Create order. The unique operation key closes the concurrent replay race.
         try:
             cursor = db.execute(
                 """INSERT INTO orders
                    (type, service_id, worker_id, employer_id, status, total_amount,
-                    creation_idempotency_key, creation_request_fingerprint)
-                   VALUES ('service_order', ?, ?, ?, 'pending', ?, ?, ?)""",
+                    creation_idempotency_key, creation_request_fingerprint, deadline_at)
+                   VALUES ('service_order', ?, ?, ?, 'pending', ?, ?, ?, ?)""",
                 [
                     service_id, svc['worker_id'], user['id'], total_amount,
-                    creation_idempotency_key, creation_request_fingerprint,
+                    creation_idempotency_key, creation_request_fingerprint, deadline_at,
                 ]
             )
         except sqlite3.IntegrityError:
@@ -8639,6 +8834,7 @@ def _handle_routes(db):
 
         role_filter = params.get("role")  # "worker" or "employer"
         status_filter = params.get("status")
+        overdue_only = params.get("overdue", "").lower() in ('true', '1')
         page = max(1, int(params.get("page", 1)))
         per_page = min(int(params.get("per_page", 20)), 100)
         offset = (page - 1) * per_page
@@ -8656,6 +8852,8 @@ def _handle_routes(db):
         if status_filter:
             conditions.append("o.status = ?")
             values.append(status_filter)
+        if overdue_only:
+            conditions.append(FIXED_ORDER_OVERDUE_SQL)
 
         where = " AND ".join(conditions)
         count = db.execute(f"SELECT COUNT(*) as c FROM orders o WHERE {where}", values).fetchone()['c']
@@ -8668,7 +8866,8 @@ def _handle_routes(db):
                 CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
                 COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
                 hc.weekly_hour_cap,
-                hc.current_week_escrow_amount
+                hc.current_week_escrow_amount,
+                CASE WHEN {FIXED_ORDER_OVERDUE_SQL} THEN 1 ELSE 0 END as is_overdue
                 FROM orders o
                 JOIN users wu ON o.worker_id = wu.id
                 JOIN users eu ON o.employer_id = eu.id
@@ -8766,6 +8965,71 @@ def _handle_routes(db):
         result['reviews'] = [row_to_dict(r) for r in reviews]
         return json_response(result)
 
+    elif re.match(r"^/orders/(\d+)/deadline$", path) and method == "PUT":
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        order_id = int(re.match(r"^/orders/(\d+)/deadline$", path).group(1))
+        order = db.execute(
+            """SELECT o.*,s.pricing_type,j.budget_type,hc.id AS hourly_contract_id
+               FROM orders o
+               LEFT JOIN services s ON s.id=o.service_id
+               LEFT JOIN jobs j ON j.id=o.job_id
+               LEFT JOIN hourly_contracts hc ON hc.order_id=o.id
+               WHERE o.id=?""",
+            [order_id],
+        ).fetchone()
+        if not order:
+            return error_response("Order not found", 404)
+        if order['employer_id'] != user['id']:
+            return error_response("Only the employer can set the deadline", 403)
+        is_fixed = (
+            order['hourly_contract_id'] is None
+            and (
+                (order['type'] == 'service_order' and order['pricing_type'] == 'fixed')
+                or (order['type'] == 'job_hire' and order['budget_type'] == 'fixed')
+            )
+        )
+        if not is_fixed:
+            return error_response("Deadlines are available only for fixed-price orders", 409)
+        try:
+            deadline_at = validated_order_deadline(get_body().get("deadline_at"))
+        except ValueError as e:
+            return error_response(str(e), 400)
+
+        if db.in_transaction:
+            db.commit()
+        db.execute("BEGIN IMMEDIATE")
+        current = db.execute(
+            "SELECT employer_id,worker_id,status,deadline_at FROM orders WHERE id=?",
+            [order_id],
+        ).fetchone()
+        if not current or current['employer_id'] != user['id']:
+            db.rollback()
+            return error_response("Order deadline ownership changed", 409)
+        if current['deadline_at'] is not None:
+            db.rollback()
+            return error_response("Order deadline is already set", 409)
+        if current['status'] not in ('pending', 'in_progress'):
+            db.rollback()
+            return error_response("Deadline can be set only before the order is submitted", 409)
+        updated = db.execute(
+            """UPDATE orders SET deadline_at=?,updated_at=datetime('now')
+               WHERE id=? AND employer_id=? AND deadline_at IS NULL
+                 AND status IN ('pending','in_progress')""",
+            [deadline_at, order_id, user['id']],
+        )
+        if updated.rowcount != 1:
+            db.rollback()
+            return error_response("Order deadline lifecycle changed", 409)
+        push_notification(
+            db, current['worker_id'], "order_deadline_set", "Order deadline set",
+            f"Order #{order_id} is due {deadline_at}.", f"/orders/{order_id}",
+        )
+        audit(db, user['id'], "set_order_deadline", "order", order_id)
+        db.commit()
+        return json_response({"ok": True, "deadline_at": deadline_at})
+
     elif re.match(r"^/orders/(\d+)/submit$", path) and method == "POST":
         user = authenticate(db)
         if not user:
@@ -8815,7 +9079,9 @@ def _handle_routes(db):
             )
 
         updated_order = db.execute(
-            """UPDATE orders SET status='submitted', worker_notes=?, updated_at=datetime('now')
+            """UPDATE orders SET status='submitted', worker_notes=?,
+                      submitted_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                      updated_at=datetime('now')
                WHERE id=? AND status IN ('in_progress','revision_requested')""",
             [notes, order_id]
         )
@@ -9316,17 +9582,47 @@ def _handle_routes(db):
         if order['status'] != 'submitted':
             db.rollback()
             return error_response("Order must be submitted to request revision", 409)
-
+        order_terms = db.execute(
+            """SELECT o.type,s.pricing_type,j.budget_type,hc.id AS hourly_contract_id
+               FROM orders o
+               LEFT JOIN services s ON s.id=o.service_id
+               LEFT JOIN jobs j ON j.id=o.job_id
+               LEFT JOIN hourly_contracts hc ON hc.order_id=o.id
+               WHERE o.id=?""",
+            [order_id],
+        ).fetchone()
+        is_fixed = (
+            order_terms
+            and order_terms['hourly_contract_id'] is None
+            and (
+                (order_terms['type'] == 'service_order' and order_terms['pricing_type'] == 'fixed')
+                or (order_terms['type'] == 'job_hire' and order_terms['budget_type'] == 'fixed')
+            )
+        )
         body = get_body()
+        raw_deadline = body.get("deadline_at")
+        if not is_fixed and raw_deadline not in (None, ""):
+            db.rollback()
+            return error_response("Revision deadlines are available only for fixed-price orders", 409)
+
         try:
             notes = validated_order_notes(body.get("notes"))
+            deadline_at = (
+                validated_order_deadline(raw_deadline)
+                if is_fixed and raw_deadline is not None
+                else service_order_deadline(3) if is_fixed else None
+            )
         except ValueError as e:
             db.rollback()
             return error_response(str(e), 400)
 
         db.execute(
-            "UPDATE orders SET status='revision_requested', employer_notes=?, updated_at=datetime('now') WHERE id=?",
-            [notes, order_id]
+            """UPDATE orders
+               SET status='revision_requested',employer_notes=?,deadline_at=?,
+                   revision_requested_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+                   updated_at=datetime('now')
+               WHERE id=?""",
+            [notes, deadline_at, order_id]
         )
         # Revert milestone to in_progress
         db.execute(
@@ -9335,9 +9631,15 @@ def _handle_routes(db):
             [order_id, order_id]
         )
 
+        revision_message = f"The employer requested a revision on order #{order_id}. Notes: {notes}"
+        if deadline_at:
+            revision_message = (
+                f"The employer requested a revision on order #{order_id}, "
+                f"due {deadline_at}. Notes: {notes}"
+            )
         push_notification(db, order['worker_id'], "revision_requested",
             "Revision requested",
-            f"The employer has requested a revision on order #{order_id}. Notes: {notes}",
+            revision_message,
             f"/orders/{order_id}",
             email=True,
             email_message=f"A revision has been requested on order #{order_id}. Open GoHireHumans to review the details.",
@@ -9346,7 +9648,11 @@ def _handle_routes(db):
         audit(db, user['id'], "request_revision", "order", order_id)
         db.commit()
         flush_transactional_notification_emails(db)
-        return json_response({"ok": True, "status": "revision_requested"})
+        return json_response({
+            "ok": True,
+            "status": "revision_requested",
+            "deadline_at": deadline_at,
+        })
 
     elif re.match(r"^/orders/(\d+)/dispute$", path) and method == "POST":
         user = authenticate(db)
@@ -10518,6 +10824,13 @@ def _handle_routes(db):
         unread_only = params.get("unread_only", "").lower() in ('true', '1')
         limit = min(int(params.get("limit", 50)), 100)
 
+        # The interactive notification feed is the existing in-app polling surface.
+        # Materialize durable reminders before reading it so no external scheduler or
+        # outbound delivery channel is required. Read-scoped API keys stay strictly
+        # read-only; their GET must never create notification or ledger rows.
+        if user.get("auth_principal_type") != "api_key":
+            generate_order_reminders(db, user['id'])
+
         q = "SELECT * FROM notifications WHERE user_id=?"
         qv = [user['id']]
         if unread_only:
@@ -10899,12 +11212,15 @@ def _handle_routes(db):
         per_page = min(int(params.get("per_page", 50)), 200)
         offset = (page - 1) * per_page
         status_filter = params.get("status")
+        overdue_only = params.get("overdue", "").lower() in ('true', '1')
 
         conditions = []
         values = []
         if status_filter:
             conditions.append("o.status=?")
             values.append(status_filter)
+        if overdue_only:
+            conditions.append(FIXED_ORDER_OVERDUE_SQL)
 
         where = " AND ".join(conditions) if conditions else "1=1"
         count = db.execute(f"SELECT COUNT(*) as c FROM orders o WHERE {where}", values).fetchone()['c']
@@ -10915,7 +11231,8 @@ def _handle_routes(db):
                s.title as service_title, j.title as job_title,
                CASE WHEN hc.id IS NOT NULL OR j.budget_type='hourly' THEN 'hourly' ELSE 'fixed' END as contract_type,
                COALESCE(hc.hourly_rate, CASE WHEN j.budget_type='hourly' THEN j.budget_amount END) as hourly_rate,
-               hc.weekly_hour_cap, hc.current_week_escrow_amount
+               hc.weekly_hour_cap, hc.current_week_escrow_amount,
+               CASE WHEN {FIXED_ORDER_OVERDUE_SQL} THEN 1 ELSE 0 END as is_overdue
                FROM orders o
                JOIN users wu ON o.worker_id = wu.id
                JOIN users eu ON o.employer_id = eu.id

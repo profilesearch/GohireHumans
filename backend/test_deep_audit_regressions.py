@@ -50,6 +50,50 @@ class BackendRegressionTests(unittest.TestCase):
         os.environ.pop("DATABASE_PATH", None)
         os.environ.pop("DISABLE_AUTO_SEED", None)
 
+    def test_existing_session_is_rejected_immediately_after_user_suspension(self):
+        token = "tok-suspended-session"
+        db = self.module.get_db()
+        try:
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (1,'user@example.com','x','User')"
+            )
+            db.execute(
+                "INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))",
+                [token],
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        def get_notifications():
+            self.module._request_ctx.request_method = "GET"
+            self.module._request_ctx.path_info = "/notifications"
+            self.module._request_ctx.query_string = ""
+            self.module._request_ctx.http_authorization = f"Bearer {token}"
+            self.module._request_ctx.http_x_api_key = ""
+            self.module._request_ctx.stdin_data = ""
+            self.module._request_ctx.stdin_data_raw = b""
+            self.module._request_ctx.content_type = "application/json"
+            self.module._request_ctx.content_length = "0"
+            self.module._request_ctx.remote_addr = "127.0.0.1"
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.module.handle_request()
+            return parse_cgi_output(out.getvalue())
+
+        status, body = get_notifications()
+        self.assertEqual(status, 200, body)
+
+        db = self.module.get_db()
+        try:
+            db.execute("UPDATE users SET is_suspended=1 WHERE id=1")
+            db.commit()
+        finally:
+            db.close()
+
+        status, body = get_notifications()
+        self.assertEqual(status, 401, body)
+        self.assertEqual(body.get("error"), "Unauthorized")
+
     def _bind_verified_funding(self, db, amount, intent_id="pi_live_like"):
         charge = self.module.buyer_charge_breakdown_cents(amount)
         fingerprint = self.module.funding_request_fingerprint(
@@ -3044,7 +3088,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "body: { application_id: applicationId, weekly_hour_cap: weeklyCap }",
             "body: { application_id: applicationId, milestones:",
             "body: { notes: fd.get('note') }",
-            "body: { notes: message }",
+            "body: { notes: form.get('message'), deadline_at: deadlineAt }",
             "['in_progress','revision_requested'].includes(order.status)",
             "order.worker_notes",
             "order.employer_notes",
