@@ -272,12 +272,18 @@ class BackendRegressionTests(unittest.TestCase):
                 "Transfer": type("Transfer", (), {"create": fake_transfer}),
                 "error": type("Error", (), {"StripeError": StripeBoom})
             })
+            self.module.STRIPE_ERROR = StripeBoom
+            self.module.STRIPE_PAYOUT_DEFINITIVE_PREOP_ERRORS = ()
             with self.assertRaisesRegex(
-                self.module.FundingReconciliationRequired, "outcome is unclassified"
+                self.module.FundingReconciliationRequired, "outcome is ambiguous"
             ):
                 self.module.release_escrow_to_worker(db, 1, None, 100, 1)
             self.assertEqual(db.execute("SELECT status FROM escrow_holds WHERE order_id=1").fetchone()[0], "held")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue WHERE order_id=1").fetchone()[0], 0)
+            attempt = db.execute(
+                "SELECT status,error_code FROM payout_release_attempts WHERE order_id=1"
+            ).fetchone()
+            self.assertEqual(tuple(attempt), ("unknown", "processor_outcome_ambiguous"))
         finally:
             db.close()
 

@@ -2058,6 +2058,59 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT status FROM milestones WHERE id=680").fetchone()[0], "in_progress")
             self.assertEqual(db.execute("SELECT status FROM orders WHERE id=580").fetchone()[0], "in_progress")
 
+    def test_replay_accepts_normalization_completed_during_processor_lock_gap(self):
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (581,'service_order',1,2,'pending',25)")
+            db.execute("INSERT INTO milestones (id,order_id,title,amount,sequence,status) VALUES (681,581,'First',25,1,'pending')")
+            db.commit()
+
+        payload = {"order_id": 581, "milestone_id": 681, "amount": "25.00"}
+        status, funded = self.request("POST", "/payments/fund-escrow", payload=payload)
+        self.assertEqual(status, 200, funded)
+        self.assertEqual(self.payment_create.call_count, 1)
+
+        with self.api.get_db() as db:
+            db.execute("UPDATE orders SET status='pending' WHERE id=581")
+            db.execute("UPDATE milestones SET status='pending' WHERE id=681")
+            db.commit()
+
+        original_fund = self.api.fund_escrow_stripe
+
+        def replay_then_competing_normalization(*args, **kwargs):
+            result = original_fund(*args, **kwargs)
+            with self.api.get_db() as racing_db:
+                racing_db.execute("BEGIN IMMEDIATE")
+                racing_db.execute(
+                    "UPDATE milestones SET status='in_progress' WHERE id=681 AND status='pending'"
+                )
+                racing_db.execute(
+                    "UPDATE orders SET status='in_progress' WHERE id=581 AND status='pending'"
+                )
+                racing_db.commit()
+            return result
+
+        with mock.patch.object(
+            self.api,
+            "fund_escrow_stripe",
+            side_effect=replay_then_competing_normalization,
+        ):
+            status, replay = self.request(
+                "POST", "/payments/fund-escrow", payload=payload
+            )
+
+        self.assertEqual(status, 200, replay)
+        self.assertEqual(replay["mode"], "replayed")
+        self.assertEqual(self.payment_create.call_count, 1)
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT status FROM milestones WHERE id=681").fetchone()[0],
+                "in_progress",
+            )
+            self.assertEqual(
+                db.execute("SELECT status FROM orders WHERE id=581").fetchone()[0],
+                "in_progress",
+            )
+
     def test_mcp_checkout_requires_and_forwards_stable_operation_identity(self):
         backend_dir = pathlib.Path(__file__).resolve().parent
         root_source = (backend_dir / "mcp_server.py").read_text()

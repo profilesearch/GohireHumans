@@ -9817,8 +9817,58 @@ def _handle_routes(db):
                     )
                 except (FundingPaymentFailed, FundingConflict, FundingReconciliationRequired) as exc:
                     return funding_error_response(exc)
-                if replay_pi_id != exact_replay["stripe_payment_intent_id"]:
-                    return error_response("Existing funding conflicts with processor provenance", 409)
+                # fund_escrow_stripe deliberately releases the route's writer
+                # lock before processor I/O/reconciliation. Another valid replay
+                # may normalize the lifecycle during that gap, so stale pre-call
+                # rows cannot drive conditional updates.
+                if not db.in_transaction:
+                    db.execute("BEGIN IMMEDIATE")
+                order = db.execute(
+                    "SELECT * FROM orders WHERE id=?", [order_id]
+                ).fetchone()
+                milestone = None
+                if milestone_id is not None:
+                    milestone = db.execute(
+                        "SELECT * FROM milestones WHERE id=? AND order_id=?",
+                        [milestone_id, order_id],
+                    ).fetchone()
+                exact_replay = db.execute(
+                    "SELECT * FROM escrow_holds WHERE order_id=? AND funding_identity=? LIMIT 1",
+                    [order_id, funding_identity],
+                ).fetchone()
+                if (
+                    not order
+                    or (milestone_id is not None and not milestone)
+                    or not exact_replay
+                ):
+                    return error_response(
+                        "Funding lifecycle changed during replay reconciliation", 409
+                    )
+                if order["employer_id"] != user["id"]:
+                    return error_response("Unauthorized", 403)
+                try:
+                    refreshed_amount_cents = money_to_cents(
+                        milestone["amount"] if milestone is not None else order["total_amount"],
+                        "milestone amount" if milestone is not None else "order total amount",
+                    )
+                    replay_base_cents = exact_replay["base_amount_cents"]
+                    if replay_base_cents is None:
+                        replay_base_cents = money_to_cents(
+                            exact_replay["amount"], "funded amount"
+                        )
+                except ValueError:
+                    return error_response(
+                        "Funding amount changed during replay reconciliation", 409
+                    )
+                if (
+                    refreshed_amount_cents != amount_cents
+                    or replay_base_cents != amount_cents
+                    or exact_replay["milestone_id"] != milestone_id
+                    or exact_replay["stripe_payment_intent_id"] != replay_pi_id
+                ):
+                    return error_response(
+                        "Existing funding conflicts with processor provenance", 409
+                    )
 
             hold_status = exact_replay["status"]
             replay_is_valid = False
