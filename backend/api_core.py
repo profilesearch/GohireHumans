@@ -6870,6 +6870,470 @@ def _refund_json(payload):
     return encoded, hashlib.sha256(encoded.encode()).hexdigest()
 
 
+LEGACY_REFUND_ONLY_ERROR_CODE = "legacy_refund_only"
+LEGACY_REFUND_FEE_POLICY = "legacy-combined-four-percent-v1"
+LEGACY_REFUND_ERROR_MESSAGE = (
+    "Processor-reconciled legacy funding; employer refund only; payout prohibited."
+)
+
+
+def _legacy_refund_order_ids(body):
+    raw = body.get("order_ids") if isinstance(body, Mapping) else None
+    if not isinstance(raw, list) or not raw or len(raw) > 10:
+        raise ValueError("order_ids must be a non-empty list of at most 10 unique order IDs")
+    try:
+        order_ids = [int(value) for value in raw]
+    except (TypeError, ValueError):
+        raise ValueError("order_ids must contain only positive integers") from None
+    if any(value <= 0 for value in order_ids) or len(set(order_ids)) != len(order_ids):
+        raise ValueError("order_ids must contain only unique positive integers")
+    return order_ids
+
+
+def _legacy_refund_charge(base_amount_cents, processor_charged_cents):
+    """Materialize the July 2026 1% + 3% combined legacy charge without using today's policy."""
+    base_amount_cents = int(base_amount_cents)
+    processor_charged_cents = int(processor_charged_cents)
+    expected_total = int(Decimal(base_amount_cents) * Decimal("1.04"))
+    if processor_charged_cents != expected_total:
+        raise FundingReconciliationRequired(
+            "Processor charge total does not match the historical legacy funding policy."
+        )
+    platform_fee_cents = int(
+        (Decimal(base_amount_cents) * Decimal("0.01")).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    processing_fee_cents = processor_charged_cents - base_amount_cents - platform_fee_cents
+    if processing_fee_cents < 0:
+        raise FundingReconciliationRequired("Processor charge components are invalid.")
+    return {
+        "base_cents": base_amount_cents,
+        "platform_fee_cents": platform_fee_cents,
+        "processing_fee_cents": processing_fee_cents,
+        "total_cents": processor_charged_cents,
+    }
+
+
+def _legacy_refund_operation_key(order_id, hold_id):
+    return f"legacy-refund-reconcile:order:{int(order_id)}:hold:{int(hold_id)}"
+
+
+def _legacy_refund_funding_fingerprint(operation_key, employer_id, order_id, milestone_id, charge):
+    payload = {
+        "base_amount_cents": int(charge["base_cents"]),
+        "charged_total_cents": int(charge["total_cents"]),
+        "currency": "usd",
+        "employer_id": int(employer_id),
+        "fee_policy_version": LEGACY_REFUND_FEE_POLICY,
+        "milestone_id": None if milestone_id is None else int(milestone_id),
+        "operation_key": str(operation_key),
+        "order_id": int(order_id),
+        "platform_fee_cents": int(charge["platform_fee_cents"]),
+        "processing_fee_cents": int(charge["processing_fee_cents"]),
+    }
+    return _refund_json(payload)[1]
+
+
+def _legacy_refund_local_snapshot(db, order_id, allow_reconciled=True):
+    order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
+    if order is None:
+        raise FundingReconciliationRequired("Legacy refund order was not found.")
+    if order["status"] != "in_progress":
+        raise FundingReconciliationRequired("Order status changed; legacy refund processing was aborted.")
+    employer_profile = db.execute(
+        "SELECT stripe_customer_id FROM employer_profiles WHERE user_id=?", [order["employer_id"]]
+    ).fetchone()
+    employer_customer_id = str(employer_profile["stripe_customer_id"] or "") if employer_profile else ""
+    if not employer_customer_id:
+        raise FundingReconciliationRequired("Employer processor customer binding is unavailable.")
+    if order["submitted_at"] is not None or order["revision_requested_at"] is not None or order["completed_at"] is not None:
+        raise FundingReconciliationRequired("Order submission or review state changed; legacy refund processing was aborted.")
+    if str(order["worker_notes"] or "").strip():
+        raise FundingReconciliationRequired("Worker delivery notes are present; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM reviews WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("An order review is present; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM hourly_contracts WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("Hourly orders are not eligible for legacy fixed-task refund reconciliation.")
+    if db.execute("SELECT 1 FROM disputes WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("A dispute already exists; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM refund_attempts WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("A refund attempt already exists; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM payout_release_attempts WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("A payout release attempt exists; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM payout_transfers WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("A worker payout exists; legacy refund processing was aborted.")
+    if db.execute("SELECT 1 FROM order_completion_operations WHERE order_id=? LIMIT 1", [order_id]).fetchone():
+        raise FundingReconciliationRequired("An order completion operation exists; legacy refund processing was aborted.")
+
+    milestones = db.execute(
+        "SELECT * FROM milestones WHERE order_id=? ORDER BY sequence,id", [order_id]
+    ).fetchall()
+    holds = db.execute("SELECT * FROM escrow_holds WHERE order_id=? ORDER BY id", [order_id]).fetchall()
+    if len(milestones) != 1 or len(holds) != 1:
+        raise FundingReconciliationRequired(
+            "Exactly one fixed milestone and one authoritative escrow hold are required."
+        )
+    milestone, hold = milestones[0], holds[0]
+    if milestone["status"] != "in_progress" or milestone["released_at"] is not None:
+        raise FundingReconciliationRequired("Milestone state changed; legacy refund processing was aborted.")
+    if hold["milestone_id"] != milestone["id"]:
+        raise FundingReconciliationRequired("Escrow milestone binding is invalid.")
+    if (
+        hold["status"] != "held"
+        or hold["released_at"] is not None
+        or hold["stripe_transfer_id"] is not None
+        or hold["release_attempt_id"] is not None
+    ):
+        raise FundingReconciliationRequired("Escrow state changed; legacy refund processing was aborted.")
+    intent_id = str(hold["stripe_payment_intent_id"] or "")
+    if not intent_id or intent_id.startswith("pi_sim"):
+        raise FundingReconciliationRequired("A live processor PaymentIntent is required.")
+    base_amount_cents = money_to_cents(hold["amount"], "escrow amount")
+    if base_amount_cents != money_to_cents(order["total_amount"], "order total"):
+        raise FundingReconciliationRequired("Order and escrow amounts do not match.")
+    if base_amount_cents != money_to_cents(milestone["amount"], "milestone amount"):
+        raise FundingReconciliationRequired("Milestone and escrow amounts do not match.")
+
+    linked_attempt = None
+    if hold["funding_attempt_id"] is not None:
+        linked_attempt = db.execute(
+            "SELECT * FROM funding_attempts WHERE id=?", [hold["funding_attempt_id"]]
+        ).fetchone()
+        if not allow_reconciled or linked_attempt is None or linked_attempt["error_code"] != LEGACY_REFUND_ONLY_ERROR_CODE:
+            raise FundingReconciliationRequired("Escrow funding provenance changed; legacy refund processing was aborted.")
+    elif db.execute(
+        "SELECT 1 FROM funding_attempts WHERE stripe_payment_intent_id=? LIMIT 1", [intent_id]
+    ).fetchone():
+        raise FundingReconciliationRequired("Unlinked funding evidence already exists; manual review is required.")
+
+    payload = {
+        "order": {key: order[key] for key in (
+            "id", "type", "job_id", "service_id", "worker_id", "employer_id", "status",
+            "total_amount", "worker_notes", "deadline_at", "submitted_at",
+            "revision_requested_at", "updated_at", "completed_at",
+        )},
+        "employer_customer_id": employer_customer_id,
+        "milestone": {key: milestone[key] for key in (
+            "id", "order_id", "amount", "sequence", "status", "escrow_payment_id",
+            "funded_at", "released_at",
+        )},
+        "hold": {key: hold[key] for key in (
+            "id", "order_id", "milestone_id", "amount", "base_amount_cents",
+            "platform_fee_cents", "processing_fee_cents", "charged_total_cents",
+            "fee_policy_version", "funding_identity", "funding_attempt_id", "status",
+            "stripe_payment_intent_id", "stripe_transfer_id", "release_attempt_id",
+            "created_at", "released_at",
+        )},
+        "review_count": 0,
+        "dispute_count": 0,
+        "refund_attempt_count": 0,
+        "payout_attempt_count": 0,
+        "payout_transfer_count": 0,
+    }
+    snapshot_json, snapshot_sha256 = _refund_json(payload)
+    return {
+        "order": order,
+        "milestone": milestone,
+        "hold": hold,
+        "linked_attempt": linked_attempt,
+        "employer_customer_id": employer_customer_id,
+        "base_amount_cents": base_amount_cents,
+        "snapshot_json": snapshot_json,
+        "snapshot_sha256": snapshot_sha256,
+    }
+
+
+def _list_all_processor_refunds(payment_intent_id):
+    items = []
+    starting_after = None
+    while True:
+        kwargs = {"payment_intent": payment_intent_id, "limit": 100}
+        if starting_after:
+            kwargs["starting_after"] = starting_after
+        page = stripe.Refund.list(**kwargs)
+        data = _refund_value(page, "data", []) or []
+        items.extend(data)
+        if not _refund_value(page, "has_more", False):
+            return items
+        if not data or not _refund_value(data[-1], "id"):
+            raise FundingReconciliationRequired("Processor refund pagination was incomplete.")
+        starting_after = _refund_value(data[-1], "id")
+
+
+def inspect_legacy_refund_eligibility(db, order_id):
+    local = _legacy_refund_local_snapshot(db, order_id, allow_reconciled=True)
+    hold, order, milestone = local["hold"], local["order"], local["milestone"]
+    intent_id = hold["stripe_payment_intent_id"]
+    try:
+        intent = stripe.PaymentIntent.retrieve(intent_id, expand=["latest_charge"])
+        refunds = _list_all_processor_refunds(intent_id)
+    except STRIPE_ERROR as exc:
+        raise FundingReconciliationRequired(
+            "Processor refund eligibility could not be verified."
+        ) from exc
+
+    metadata_raw = _refund_value(intent, "metadata", {})
+    metadata = dict(metadata_raw) if isinstance(metadata_raw, Mapping) else {}
+    latest_charge = _refund_value(intent, "latest_charge")
+    if not isinstance(latest_charge, Mapping):
+        raise FundingReconciliationRequired("Expanded processor charge evidence is required.")
+    amount = _refund_value(intent, "amount")
+    amount_received = _refund_value(intent, "amount_received")
+    exact_intent = (
+        _refund_value(intent, "id") == intent_id
+        and _refund_value(intent, "status") == "succeeded"
+        and _refund_value(intent, "currency") == "usd"
+        and _refund_value(intent, "customer") == local["employer_customer_id"]
+        and (not PRODUCTION_MODE or _refund_value(intent, "livemode") is True)
+        and type(amount) is int
+        and type(amount_received) is int
+        and amount == amount_received
+        and metadata.get("order_id") == str(order["id"])
+        and metadata.get("milestone_id") == str(milestone["id"])
+        and metadata.get("employer_id") == str(order["employer_id"])
+    )
+    exact_charge = (
+        isinstance(_refund_value(latest_charge, "id"), str)
+        and bool(_refund_value(latest_charge, "id"))
+        and _refund_value(latest_charge, "status") == "succeeded"
+        and _refund_value(latest_charge, "captured") is True
+        and _refund_value(latest_charge, "paid") is True
+        and _refund_value(latest_charge, "disputed") is False
+        and _refund_value(latest_charge, "refunded") is False
+        and _refund_value(latest_charge, "currency") == "usd"
+        and _refund_value(latest_charge, "amount") == amount_received
+        and _refund_value(latest_charge, "amount_refunded") == 0
+    )
+    if not exact_intent or not exact_charge:
+        raise FundingReconciliationRequired("Processor PaymentIntent evidence did not match the legacy escrow obligation.")
+    if refunds:
+        raise FundingReconciliationRequired("Existing processor refund evidence requires manual review.")
+    charge = _legacy_refund_charge(local["base_amount_cents"], amount_received)
+
+    if local["linked_attempt"] is not None:
+        _validate_refund_hold_funding_provenance(db, hold)
+    return {
+        **local,
+        "charge": charge,
+        "processor_status": "succeeded",
+        "existing_refund_count": 0,
+    }
+
+
+def _validate_refund_hold_funding_provenance(db, hold):
+    attempt_id = hold["funding_attempt_id"]
+    attempt = db.execute("SELECT * FROM funding_attempts WHERE id=?", [attempt_id]).fetchone() if attempt_id else None
+    if attempt is None or attempt["error_code"] != LEGACY_REFUND_ONLY_ERROR_CODE:
+        return _validate_live_hold_funding_provenance(db, hold)
+    order = db.execute("SELECT employer_id FROM orders WHERE id=?", [hold["order_id"]]).fetchone()
+    charge = {
+        "base_cents": attempt["base_amount_cents"],
+        "platform_fee_cents": attempt["platform_fee_cents"],
+        "processing_fee_cents": attempt["processing_fee_cents"],
+        "total_cents": attempt["charged_total_cents"],
+    }
+    operation_key = _legacy_refund_operation_key(hold["order_id"], hold["id"])
+    expected_fingerprint = _legacy_refund_funding_fingerprint(
+        operation_key,
+        attempt["employer_id"],
+        attempt["order_id"],
+        attempt["milestone_id"],
+        charge,
+    )
+    exact = (
+        order is not None
+        and attempt["employer_id"] == order["employer_id"]
+        and attempt["status"] == "committed"
+        and attempt["error_message"] == LEGACY_REFUND_ERROR_MESSAGE
+        and attempt["currency"] == "usd"
+        and attempt["processor_status"] == "succeeded"
+        and attempt["evidence_source"] == "processor_retrieve"
+        and attempt["processor_evidence_at"] is not None
+        and attempt["committed_at"] is not None
+        and attempt["last_reconciled_at"] is not None
+        and attempt["stripe_payment_intent_id"] == hold["stripe_payment_intent_id"]
+        and not str(attempt["stripe_payment_intent_id"] or "").startswith("pi_sim")
+        and attempt["operation_key"] == operation_key
+        and attempt["processor_idempotency_key"] == f"{operation_key}:record"
+        and attempt["request_fingerprint"] == expected_fingerprint
+        and attempt["order_id"] == hold["order_id"]
+        and attempt["milestone_id"] == hold["milestone_id"]
+        and attempt["base_amount_cents"] == hold["base_amount_cents"]
+        and attempt["platform_fee_cents"] == hold["platform_fee_cents"]
+        and attempt["processing_fee_cents"] == hold["processing_fee_cents"]
+        and attempt["charged_total_cents"] == hold["charged_total_cents"]
+        and hold["fee_policy_version"] == LEGACY_REFUND_FEE_POLICY
+        and hold["funding_identity"] == operation_key
+        and hold["status"] == "held"
+        and hold["released_at"] is None
+        and hold["stripe_transfer_id"] is None
+        and hold["release_attempt_id"] is None
+    )
+    if not exact:
+        raise FundingReconciliationRequired(
+            "Escrow does not have exact processor-backed refund-only funding provenance."
+        )
+    return attempt
+
+
+def reconcile_legacy_refund_funding_batch(db, order_ids, admin_id):
+    inspections = [inspect_legacy_refund_eligibility(db, order_id) for order_id in order_ids]
+    if db.in_transaction:
+        db.rollback()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        results = []
+        for inspected in inspections:
+            order_id = inspected["order"]["id"]
+            current = _legacy_refund_local_snapshot(db, order_id, allow_reconciled=True)
+            if current["snapshot_sha256"] != inspected["snapshot_sha256"]:
+                raise FundingReconciliationRequired(
+                    "Order, milestone, or escrow state changed during processor verification; all reconciliation was aborted."
+                )
+            hold, order, milestone = current["hold"], current["order"], current["milestone"]
+            if current["linked_attempt"] is not None:
+                attempt = _validate_refund_hold_funding_provenance(db, hold)
+                results.append({"order_id": order_id, "funding_attempt_id": attempt["id"], "idempotent_replay": True})
+                continue
+            charge = inspected["charge"]
+            operation_key = _legacy_refund_operation_key(order_id, hold["id"])
+            fingerprint = _legacy_refund_funding_fingerprint(
+                operation_key, order["employer_id"], order_id, milestone["id"], charge
+            )
+            attempt_id = db.execute(
+                """INSERT INTO funding_attempts(
+                    operation_key,attempt_number,request_fingerprint,processor_idempotency_key,
+                    employer_id,order_id,milestone_id,base_amount_cents,platform_fee_cents,
+                    processing_fee_cents,charged_total_cents,currency,status,
+                    stripe_payment_intent_id,processor_status,evidence_source,
+                    processor_evidence_at,error_code,error_message,last_reconciled_at,committed_at
+                ) VALUES(?,1,?,?, ?,?,?,?,?,?,?, 'usd','committed',?,
+                    'succeeded','processor_retrieve',datetime('now'),?,?,datetime('now'),datetime('now'))""",
+                [
+                    operation_key, fingerprint, f"{operation_key}:record",
+                    order["employer_id"], order_id, milestone["id"], charge["base_cents"],
+                    charge["platform_fee_cents"], charge["processing_fee_cents"], charge["total_cents"],
+                    hold["stripe_payment_intent_id"], LEGACY_REFUND_ONLY_ERROR_CODE,
+                    LEGACY_REFUND_ERROR_MESSAGE,
+                ],
+            ).lastrowid
+            changed = db.execute(
+                """UPDATE escrow_holds SET
+                    base_amount_cents=?,platform_fee_cents=?,processing_fee_cents=?,
+                    charged_total_cents=?,fee_policy_version=?,funding_identity=?,funding_attempt_id=?
+                   WHERE id=? AND order_id=? AND milestone_id=? AND status='held'
+                     AND funding_attempt_id IS NULL AND base_amount_cents IS NULL
+                     AND platform_fee_cents IS NULL AND processing_fee_cents IS NULL
+                     AND charged_total_cents IS NULL AND fee_policy_version IS NULL
+                     AND funding_identity IS NULL AND released_at IS NULL
+                     AND stripe_transfer_id IS NULL AND release_attempt_id IS NULL""",
+                [
+                    charge["base_cents"], charge["platform_fee_cents"], charge["processing_fee_cents"],
+                    charge["total_cents"], LEGACY_REFUND_FEE_POLICY, operation_key, attempt_id,
+                    hold["id"], order_id, milestone["id"],
+                ],
+            )
+            if changed.rowcount != 1:
+                raise FundingReconciliationRequired("Escrow changed before refund-only provenance could be committed.")
+            fresh_hold = db.execute("SELECT * FROM escrow_holds WHERE id=?", [hold["id"]]).fetchone()
+            _validate_refund_hold_funding_provenance(db, fresh_hold)
+            audit(
+                db,
+                admin_id,
+                "reconcile_legacy_refund_funding",
+                "funding_attempt",
+                attempt_id,
+                {
+                    "order_id": order_id,
+                    "hold_id": hold["id"],
+                    "milestone_id": milestone["id"],
+                    "base_amount_cents": charge["base_cents"],
+                    "processor_charged_cents": charge["total_cents"],
+                    "purpose": "employer_refund_only",
+                },
+            )
+            results.append({"order_id": order_id, "funding_attempt_id": attempt_id, "idempotent_replay": False})
+        db.commit()
+        return results
+    except Exception:
+        if db.in_transaction:
+            db.rollback()
+        raise
+
+
+def open_legacy_refund_disputes_batch(db, order_ids, admin_id):
+    """Atomically re-read and freeze an approved legacy-refund batch against new work."""
+    if db.in_transaction:
+        db.rollback()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        candidates = []
+        for order_id in order_ids:
+            current = _legacy_refund_local_snapshot(db, order_id, allow_reconciled=True)
+            hold = current["hold"]
+            if current["linked_attempt"] is None:
+                raise FundingReconciliationRequired(
+                    "Refund-only processor funding reconciliation must be committed before dispute freeze."
+                )
+            _assert_escrow_funding_conflict_free(db, order_id, hold["milestone_id"])
+            _validate_refund_hold_funding_provenance(db, hold)
+            candidates.append(current)
+
+        results = []
+        empty_reason_sha256 = hashlib.sha256(b"").hexdigest()
+        for current in candidates:
+            order, hold = current["order"], current["hold"]
+            dispute_id = db.execute(
+                """INSERT INTO disputes(
+                    order_id,opened_by,reason,reason_sha256,reason_length,source,status
+                ) VALUES(?,NULL,NULL,?,0,'legacy','open')""",
+                [order["id"], empty_reason_sha256],
+            ).lastrowid
+            changed = db.execute(
+                """UPDATE orders SET status='disputed',updated_at=datetime('now')
+                   WHERE id=? AND status='in_progress' AND submitted_at IS NULL
+                     AND revision_requested_at IS NULL AND completed_at IS NULL
+                     AND TRIM(COALESCE(worker_notes,''))=''""",
+                [order["id"]],
+            )
+            if changed.rowcount != 1:
+                raise FundingReconciliationRequired(
+                    "Order changed during the atomic refund freeze; all dispute transitions were aborted."
+                )
+            audit(
+                db,
+                admin_id,
+                "open_legacy_refund_dispute",
+                "dispute",
+                dispute_id,
+                {
+                    "order_id": order["id"],
+                    "hold_id": hold["id"],
+                    "purpose": "approved_employer_refund",
+                    "batch_size": len(candidates),
+                },
+            )
+            results.append({"order_id": order["id"], "dispute_id": dispute_id, "status": "open"})
+        db.commit()
+        return results
+    except Exception:
+        if db.in_transaction:
+            db.rollback()
+        raise
+
+
+def _legacy_refund_preflight_response(inspection):
+    return {
+        "order_id": inspection["order"]["id"],
+        "eligible": True,
+        "base_amount_cents": inspection["base_amount_cents"],
+        "processor_charged_cents": inspection["charge"]["total_cents"],
+        "existing_refund_count": inspection["existing_refund_count"],
+        "processor_status": inspection["processor_status"],
+    }
+
+
 def _refund_metadata(attempt):
     return {"attempt_id": str(attempt["id"]), "operation_key": attempt["operation_key"],
             "attempt_number": str(attempt["attempt_number"]), "request_fingerprint": attempt["request_fingerprint"],
@@ -7083,7 +7547,7 @@ def issue_dispute_refund(db, order_id, admin_id):
         if len(matches)>1:return _freeze_refund_attempt(db,attempt,"duplicate_processor_evidence",{"match_count":len(matches)})
     else:
         if dispute["status"]!="open" or order["status"]!="disputed" or hold["status"]!="held":db.rollback();raise ValueError("Refund lifecycle is not eligible")
-        _assert_escrow_funding_conflict_free(db,order_id,hold["milestone_id"]);funding=_validate_live_hold_funding_provenance(db,hold)
+        _assert_escrow_funding_conflict_free(db,order_id,hold["milestone_id"]);funding=_validate_refund_hold_funding_provenance(db,hold)
         hs,hh,ls,lh=_refund_snapshots(db,hold,dispute,order,funding);n=active["attempt_number"]+1 if active else 1;op=f'dispute-refund:dispute:{dispute["id"]}:hold:{hold["id"]}';key=f'{op}:attempt:{n}'
         values=[op,n,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],hold["base_amount_cents"],hold["stripe_payment_intent_id"],hs,hh,ls,lh]
         fingerprint=hashlib.sha256(json.dumps(values,sort_keys=True,separators=(",",":")).encode()).hexdigest()
@@ -11283,6 +11747,61 @@ def _handle_routes(db):
             "by_fee_type": [row_to_dict(r) for r in by_type],
             "stripe_mode": "live" if stripe_configured() else "simulated"
         })
+
+    elif path == "/admin/legacy-refund-preflight" and method == "POST":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+        body = get_body()
+        step_error, step_status = require_admin_step_up(
+            db, user, body, "admin_legacy_refund_preflight"
+        )
+        if step_error:
+            return error_response(step_error, step_status)
+        try:
+            order_ids = _legacy_refund_order_ids(body)
+            inspections = [inspect_legacy_refund_eligibility(db, order_id) for order_id in order_ids]
+        except (TypeError, ValueError) as exc:
+            return error_response(str(exc), 409)
+        return json_response({
+            "ok": True,
+            "read_only": True,
+            "orders": [_legacy_refund_preflight_response(item) for item in inspections],
+        })
+
+    elif path == "/admin/reconcile-legacy-refund-funding" and method == "POST":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+        body = get_body()
+        step_error, step_status = require_admin_step_up(
+            db, user, body, "admin_reconcile_legacy_refund_funding"
+        )
+        if step_error:
+            return error_response(step_error, step_status)
+        try:
+            order_ids = _legacy_refund_order_ids(body)
+            results = reconcile_legacy_refund_funding_batch(db, order_ids, user['id'])
+        except (TypeError, ValueError) as exc:
+            return error_response(str(exc), 409)
+        return json_response({"ok": True, "purpose": "employer_refund_only", "orders": results})
+
+    elif path == "/admin/open-legacy-refund-disputes" and method == "POST":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+        body = get_body()
+        step_error, step_status = require_admin_step_up(
+            db, user, body, "admin_open_legacy_refund_disputes"
+        )
+        if step_error:
+            return error_response(step_error, step_status)
+        try:
+            order_ids = _legacy_refund_order_ids(body)
+            results = open_legacy_refund_disputes_batch(db, order_ids, user['id'])
+        except (TypeError, ValueError) as exc:
+            return error_response(str(exc), 409)
+        return json_response({"ok": True, "atomic": True, "orders": results})
 
     elif path == "/admin/resolve-dispute" and method == "POST":
         user = authenticate(db)
