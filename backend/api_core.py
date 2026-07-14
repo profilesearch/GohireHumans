@@ -3649,6 +3649,7 @@ def _validate_live_hold_funding_provenance(db, hold):
         attempt["status"] == "committed"
         and attempt["error_code"] is None
         and attempt["currency"] == "usd"
+        and attempt["processor_status"] == "succeeded"
         and attempt["evidence_source"] in LIVE_FUNDING_EVIDENCE_SOURCES
         and attempt["processor_evidence_at"] is not None
         and attempt["stripe_payment_intent_id"] == payment_intent_id
@@ -6872,6 +6873,7 @@ def _refund_json(payload):
 
 LEGACY_REFUND_ONLY_ERROR_CODE = "legacy_refund_only"
 LEGACY_REFUND_FEE_POLICY = "legacy-combined-four-percent-v1"
+LEGACY_REFUND_RECOVERY_ENABLED = False
 LEGACY_REFUND_ERROR_MESSAGE = (
     "Processor-reconciled legacy funding; employer refund only; payout prohibited."
 )
@@ -7080,6 +7082,8 @@ def inspect_legacy_refund_eligibility(db, order_id):
         raise FundingReconciliationRequired("Expanded processor charge evidence is required.")
     amount = _refund_value(intent, "amount")
     amount_received = _refund_value(intent, "amount_received")
+    charge_amount = _refund_value(latest_charge, "amount")
+    charge_amount_refunded = _refund_value(latest_charge, "amount_refunded")
     exact_intent = (
         _refund_value(intent, "id") == intent_id
         and _refund_value(intent, "status") == "succeeded"
@@ -7101,9 +7105,12 @@ def inspect_legacy_refund_eligibility(db, order_id):
         and _refund_value(latest_charge, "paid") is True
         and _refund_value(latest_charge, "disputed") is False
         and _refund_value(latest_charge, "refunded") is False
+        and _refund_value(latest_charge, "payment_intent") == intent_id
         and _refund_value(latest_charge, "currency") == "usd"
-        and _refund_value(latest_charge, "amount") == amount_received
-        and _refund_value(latest_charge, "amount_refunded") == 0
+        and type(charge_amount) is int
+        and charge_amount == amount_received
+        and type(charge_amount_refunded) is int
+        and charge_amount_refunded == 0
     )
     if not exact_intent or not exact_charge:
         raise FundingReconciliationRequired("Processor PaymentIntent evidence did not match the legacy escrow obligation.")
@@ -11752,6 +11759,8 @@ def _handle_routes(db):
         user = authenticate(db)
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
+        if not LEGACY_REFUND_RECOVERY_ENABLED:
+            return error_response("The one-time legacy refund recovery endpoint is retired.", 410)
         body = get_body()
         step_error, step_status = require_admin_step_up(
             db, user, body, "admin_legacy_refund_preflight"
@@ -11773,6 +11782,8 @@ def _handle_routes(db):
         user = authenticate(db)
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
+        if not LEGACY_REFUND_RECOVERY_ENABLED:
+            return error_response("The one-time legacy refund recovery endpoint is retired.", 410)
         body = get_body()
         step_error, step_status = require_admin_step_up(
             db, user, body, "admin_reconcile_legacy_refund_funding"
@@ -11790,6 +11801,8 @@ def _handle_routes(db):
         user = authenticate(db)
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
+        if not LEGACY_REFUND_RECOVERY_ENABLED:
+            return error_response("The one-time legacy refund recovery endpoint is retired.", 410)
         body = get_body()
         step_error, step_status = require_admin_step_up(
             db, user, body, "admin_open_legacy_refund_disputes"
