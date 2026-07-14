@@ -194,6 +194,37 @@ class PayoutAttemptLedgerTests(unittest.TestCase):
                 len(vectors),
             )
 
+    def test_live_release_rejects_committed_attempt_without_succeeded_processor_status(self):
+        self._seed_release(
+            105,
+            205,
+            intent_id="pi_live_processor_pending",
+            evidence_source="processor_retrieve",
+            linked=True,
+        )
+        with self.api.get_db() as db:
+            db.execute(
+                "UPDATE funding_attempts SET processor_status='pending' WHERE order_id=105"
+            )
+            db.commit()
+        with self.assertRaisesRegex(
+            self.api.FundingReconciliationRequired,
+            "live funding provenance",
+        ):
+            with self.api.get_db() as db:
+                self.api.release_escrow_to_worker(db, 105, 205, 10, 1)
+        self.account_retrieve.assert_not_called()
+        self.transfer_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM payout_release_attempts WHERE order_id=105").fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute("SELECT status FROM escrow_holds WHERE order_id=105").fetchone()[0],
+                "held",
+            )
+
     def test_live_release_persists_exact_attempt_before_processor_without_writer_lock(self):
         self._seed_release(
             110,

@@ -23,6 +23,8 @@ class LegacyRefundReconciliationTests(unittest.TestCase):
         self.api.PRODUCTION_MODE = True
         self.api.STRIPE_AVAILABLE = True
         self.api.STRIPE_SECRET_KEY = "test"
+        self.default_legacy_refund_recovery_enabled = self.api.LEGACY_REFUND_RECOVERY_ENABLED
+        self.api.LEGACY_REFUND_RECOVERY_ENABLED = True
         self.payment_retrieve = mock.Mock(side_effect=self._payment_intent)
         self.refund_list = mock.Mock(return_value={"data": [], "has_more": False})
         self.refund_retrieve = mock.Mock()
@@ -94,6 +96,7 @@ class LegacyRefundReconciliationTests(unittest.TestCase):
                 "paid": True,
                 "disputed": False,
                 "refunded": False,
+                "payment_intent": intent_id,
                 "amount": 4160,
                 "amount_refunded": 0,
                 "currency": "usd",
@@ -141,6 +144,27 @@ class LegacyRefundReconciliationTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM audit_log WHERE action='reconcile_legacy_refund_funding'"
                 ).fetchone()[0],
             }
+
+    def test_one_time_legacy_recovery_routes_are_retired_by_default(self):
+        self.assertFalse(self.default_legacy_refund_recovery_enabled)
+        self.api.LEGACY_REFUND_RECOVERY_ENABLED = False
+        for path in (
+            "/admin/legacy-refund-preflight",
+            "/admin/reconcile-legacy-refund-funding",
+            "/admin/open-legacy-refund-disputes",
+        ):
+            with self.subTest(path=path):
+                status, body = self.request(
+                    "POST",
+                    path,
+                    "admin",
+                    {"order_ids": [10], "admin_password": "correct horse"},
+                )
+                self.assertEqual(status, 410, body)
+        self.assertEqual(self._row_counts(), {"funding": 0, "refund": 0, "audit": 0})
+        self.payment_retrieve.assert_not_called()
+        self.refund_list.assert_not_called()
+        self.refund_create.assert_not_called()
 
     def test_preflight_is_read_only_and_reports_exact_refund_eligibility(self):
         before = self._row_counts()
@@ -214,6 +238,7 @@ class LegacyRefundReconciliationTests(unittest.TestCase):
             order = db.execute("SELECT * FROM orders WHERE id=10").fetchone()
             self.assertFalse(str(order["worker_notes"] or "").strip())
             self.assertIsNone(order["submitted_at"])
+        self.api.LEGACY_REFUND_RECOVERY_ENABLED = False
         status, body = self.request(
             "POST",
             "/admin/resolve-dispute",
@@ -253,7 +278,12 @@ class LegacyRefundReconciliationTests(unittest.TestCase):
             "charge_status": {**baseline, "latest_charge": {**baseline["latest_charge"], "status": "failed"}},
             "charge_capture": {**baseline, "latest_charge": {**baseline["latest_charge"], "captured": False}},
             "charge_disputed": {**baseline, "latest_charge": {**baseline["latest_charge"], "disputed": True}},
+            "charge_payment_intent": {**baseline, "latest_charge": {**baseline["latest_charge"], "payment_intent": "pi_other"}},
+            "charge_amount_bool": {**baseline, "latest_charge": {**baseline["latest_charge"], "amount": True}},
+            "charge_amount_float": {**baseline, "latest_charge": {**baseline["latest_charge"], "amount": 4160.0}},
             "charge_refunded": {**baseline, "latest_charge": {**baseline["latest_charge"], "amount_refunded": 1}},
+            "charge_refunded_bool": {**baseline, "latest_charge": {**baseline["latest_charge"], "amount_refunded": False}},
+            "charge_refunded_float": {**baseline, "latest_charge": {**baseline["latest_charge"], "amount_refunded": 0.0}},
         }
         for label, evidence in variants.items():
             with self.subTest(label=label):
