@@ -1088,8 +1088,8 @@ class BackendRegressionTests(unittest.TestCase):
             "function markFirstTaskWizardStarted(params = {})",
             "first_task_blank_form_opened",
             "const hasMeaningfulDraft = Boolean(task || deliverable)",
-            "trackRecommendedEvent('generate_lead', { lead_type: 'first_task_draft_completed'",
-            "trackConfiguredKeyEvent('qualify_lead', { lead_type: 'first_task_draft_completed'",
+            "function getStoredGuidedTaskDraft()",
+            "function clearStoredGuidedTaskDraft()",
             "function getStoredAttribution()",
             "sessionStorage.setItem('ghh_attribution'",
             "utm_source",
@@ -1097,6 +1097,100 @@ class BackendRegressionTests(unittest.TestCase):
         ]
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
+
+    def test_executive_conversion_events_exclude_upper_funnel_intent(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        excluded_key_event_leads = [
+            "lead_type: 'contact_click'",
+            "lead_type: 'first_task_draft_completed'",
+            "lead_type:'starter_offer_router'",
+            "lead_type: 'service_order_submit'",
+            "lead_type: 'service_post_completed'",
+        ]
+        for lead_type in excluded_key_event_leads:
+            matching_lines = [
+                line for line in text.splitlines()
+                if "trackConfiguredKeyEvent" in line and lead_type in line
+            ]
+            self.assertEqual(matching_lines, [], lead_type)
+        recommended_lead_lines = [
+            line for line in text.splitlines()
+            if "trackRecommendedEvent('generate_lead'" in line
+        ]
+        completed_lead_types = {
+            "job_application_completed",
+            "job_post_completed",
+            "service_order_completed",
+        }
+        self.assertEqual(len(recommended_lead_lines), len(completed_lead_types))
+        for line in recommended_lead_lines:
+            self.assertTrue(any(lead_type in line for lead_type in completed_lead_types), line)
+        self.assertIn(
+            "trackRecommendedEvent('generate_lead', { lead_type: 'job_application_completed'",
+            text,
+        )
+        self.assertIn(
+            "trackConfiguredKeyEvent('qualify_lead', { lead_type: 'job_application_completed'",
+            text,
+        )
+        self.assertIn(
+            "trackConfiguredKeyEvent('qualify_lead', { lead_type: 'job_post_completed'",
+            text,
+        )
+        self.assertIn(
+            "trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed'",
+            text,
+        )
+
+    def test_conversion_forms_expose_retryable_inline_failure_states(self):
+        text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        required = [
+            'id="jobApplicationError"',
+            'id="jobApplicationSubmitBtn"',
+            "job_application_failed",
+            'id="postJobFormError"',
+            'id="postJobSubmitBtn"',
+            "Posting...",
+            "payment_setup_failed",
+            "confirm_request_error",
+            "setup_request_error",
+        ]
+        missing = [snippet for snippet in required if snippet not in text]
+        self.assertEqual(missing, [])
+
+    def test_priority_search_pages_have_query_aligned_metadata(self):
+        expected = {
+            "frontend/blog/alternatives-to-freelancer.html": (
+                "7 Best Freelancer.com Alternatives (2026) | GoHireHumans",
+                "Compare seven Freelancer.com alternatives by fees, payment workflow, trust signals, and fit—including GoHireHumans, Upwork, Fiverr, Contra, and more.",
+            ),
+            "frontend/blog/verified-freelancer-marketplace.html": (
+                "How to Verify a Freelancer: 4 Trust Signals | GoHireHumans",
+                "Check four practical trust signals before hiring a freelancer: profile evidence, relevant work samples, issue-review clarity, and transparent content policies.",
+            ),
+            "frontend/blog/where-to-list-services-online.html": (
+                "Where to List Services Online: 8 Platforms | GoHireHumans",
+                "Compare eight places to list freelance services by audience, fees, payment support, and fit—including GoHireHumans, Fiverr, Upwork, Contra, and LinkedIn.",
+            ),
+            "frontend/hire/hire-ai-agent.html": (
+                "Hire an AI Agent or Human Reviewer | GoHireHumans",
+                "Browse AI-agent and human provider profiles for automation, research, content, QA, data, and scoped work. Review profiles and workflow details before hiring.",
+            ),
+        }
+        for relative_path, (title, description) in expected.items():
+            text = (REPO_ROOT / relative_path).read_text(encoding="utf-8", errors="ignore")
+            self.assertIn(f'<title>{title}</title>', text, relative_path)
+            self.assertIn(f'<meta name="description" content="{description}">', text, relative_path)
+            self.assertLessEqual(len(title), 60, relative_path)
+            self.assertLessEqual(len(description), 160, relative_path)
+            self.assertEqual(text.count('<meta property="og:title"'), 1, relative_path)
+            self.assertEqual(text.count('<meta property="og:description"'), 1, relative_path)
+            self.assertIn(f'<meta property="og:title" content="{title}">', text, relative_path)
+            self.assertIn(f'<meta property="og:description" content="{description}">', text, relative_path)
+            self.assertEqual(text.count('<meta name="twitter:title"'), 1, relative_path)
+            self.assertEqual(text.count('<meta name="twitter:description"'), 1, relative_path)
+            self.assertIn(f'<meta name="twitter:title" content="{title}">', text, relative_path)
+            self.assertIn(f'<meta name="twitter:description" content="{description}">', text, relative_path)
 
     def test_phase2_ui_flow_polish_invariants(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
@@ -2619,7 +2713,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         required_snippets = [
             "function trackEvent(eventName, params = {})",
             "function getStoredAttribution()",
-            "const eventParams = { ...attribution, ...params }",
+            "function normalizeAnalyticsParams(params = {})",
+            "const eventParams = { ...attribution, ...normalizeAnalyticsParams(params) }",
             "gtag('event', eventName, eventParams)",
             "function trackRecommendedEvent(eventName, params = {})",
             "function trackConfiguredKeyEvent(eventName, params = {})",
@@ -2736,7 +2831,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "query.get('draft_title')",
             "query.get('draft_description')",
             "sessionStorage.setItem('ghh_guided_task_draft'",
-            "consumeStoredGuidedTaskDraft()",
+            "getStoredGuidedTaskDraft()",
             "For workers and agents",
             "Find work or offer a service after the buyer path is clear.",
             "How to earn from human tasks",
