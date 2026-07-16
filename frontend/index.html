@@ -2307,7 +2307,7 @@ async function handleJobApply(id) {
       <form id="applyForm">
         <div class="form-group">
           <label class="label" for="apply-cover-message">Cover Message *</label>
-          <textarea class="textarea" id="apply-cover-message" name="cover_message" rows="7" placeholder="Example: I can complete this by tomorrow. I will test the flow on mobile and desktop, report confusing steps, and include screenshots for anything broken. I need the URL and any test account instructions." required onfocus="trackEvent('job_application_cover_focus', { job_id: String(id), source: 'job_apply_modal' })"></textarea>
+          <textarea class="textarea" id="apply-cover-message" name="cover_message" data-job-id="${esc(String(id))}" rows="7" placeholder="Example: I can complete this by tomorrow. I will test the flow on mobile and desktop, report confusing steps, and include screenshots for anything broken. I need the URL and any test account instructions." required onfocus="trackEvent('job_application_cover_focus', { job_id: this.dataset.jobId, source: 'job_apply_modal' })"></textarea>
         </div>
         <div class="form-group">
           <label class="label" for="apply-portfolio-url">Portfolio or proof URL <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
