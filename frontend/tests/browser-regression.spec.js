@@ -245,8 +245,11 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('#jobApplicationError')).toContainText('Application service unavailable');
     await expect(page.locator('#jobApplicationSubmitBtn')).toBeEnabled();
     await expect(page.locator('#jobApplicationSubmitBtn')).toHaveText('Submit Application');
-    const events = await page.evaluate(() => window.__testAnalyticsEvents.map(args => args[1]));
-    expect(events).toContain('job_application_failed');
+    const events = await page.evaluate(() => window.__testAnalyticsEvents
+      .filter(args => args[0] === 'event')
+      .map(args => ({ name: args[1], params: args[2] })));
+    expect(events.map(event => event.name)).toContain('job_application_failed');
+    expect(events.find(event => event.name === 'job_application_cover_focus')?.params?.job_id).toBe('24');
   });
 
   test('guided job draft persists until explicitly cleared', async ({ page }) => {
