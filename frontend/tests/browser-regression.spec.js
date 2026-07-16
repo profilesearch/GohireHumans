@@ -203,6 +203,120 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     ]);
   });
 
+  test('internal analytics context cannot overwrite acquisition dimensions', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const call = await page.evaluate(() => {
+      const calls = [];
+      window.gtag = (...args) => calls.push(args);
+      trackEvent('job_application_cover_focus', {
+        source: 'job_apply_modal',
+        medium: 'internal',
+        campaign: 'application_flow',
+        job_id: '24'
+      });
+      return calls.at(-1);
+    });
+    expect(call.slice(0, 2)).toEqual(['event', 'job_application_cover_focus']);
+    expect(call[2]).toMatchObject({
+      ui_source: 'job_apply_modal',
+      ui_medium: 'internal',
+      ui_campaign: 'application_flow',
+      job_id: '24'
+    });
+    expect(call[2]).not.toHaveProperty('source');
+    expect(call[2]).not.toHaveProperty('medium');
+    expect(call[2]).not.toHaveProperty('campaign');
+  });
+
+  test('application submission failure stays visible and retryable', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(async () => {
+      state.user = { id: 63, name: 'Test Worker' };
+      state.token = 'test-token';
+      window.__testAnalyticsEvents = [];
+      window.gtag = (...args) => window.__testAnalyticsEvents.push(args);
+      window.api = async () => { throw new Error('Application service unavailable'); };
+      await handleJobApply(24);
+    });
+    await page.locator('#apply-cover-message').fill('I can test the requested flow and return a proof-backed report tomorrow.');
+    await page.locator('#jobApplicationSubmitBtn').click();
+    await expect(page.locator('#jobApplicationError')).toContainText('Application service unavailable');
+    await expect(page.locator('#jobApplicationSubmitBtn')).toBeEnabled();
+    await expect(page.locator('#jobApplicationSubmitBtn')).toHaveText('Submit Application');
+    const events = await page.evaluate(() => window.__testAnalyticsEvents.map(args => args[1]));
+    expect(events).toContain('job_application_failed');
+  });
+
+  test('guided job draft persists until explicitly cleared', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const result = await page.evaluate(() => {
+      const draft = { title: 'Check ten AI claims', description: 'Return a sourced issue table.' };
+      sessionStorage.setItem('ghh_guided_task_draft', JSON.stringify(draft));
+      const firstRead = getStoredGuidedTaskDraft();
+      const stillStored = JSON.parse(sessionStorage.getItem('ghh_guided_task_draft'));
+      clearStoredGuidedTaskDraft();
+      return { firstRead, stillStored, afterClear: sessionStorage.getItem('ghh_guided_task_draft') };
+    });
+    expect(result.firstRead.title).toBe('Check ten AI claims');
+    expect(result.stillStored.title).toBe('Check ten AI claims');
+    expect(result.afterClear).toBeNull();
+  });
+
+  test('job posting failure stays visible and retryable', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(async () => {
+      state.user = { id: 7, role: 'employer', name: 'Test Employer' };
+      state.token = 'test-token';
+      window.__testAnalyticsEvents = [];
+      window.gtag = (...args) => window.__testAnalyticsEvents.push(args);
+      window.loadCategories = async () => [{ slug: 'research', name: 'Research' }];
+      window.api = async (path, options = {}) => {
+        if (path === '/jobs' && options.method === 'POST') throw new Error('Job service unavailable');
+        return {};
+      };
+      await renderPostJob();
+    });
+    await page.locator('input[name="title"]').fill('Check ten AI claims');
+    await page.locator('textarea[name="description"]').fill('Return a sourced issue table with one row per claim.');
+    await page.locator('select[name="category"]').selectOption('research');
+    await page.locator('input[name="budget_amount"]').fill('25');
+    await page.locator('#postJobSubmitBtn').click();
+    await expect(page.locator('#postJobFormError')).toContainText('Job service unavailable');
+    await expect(page.locator('#postJobSubmitBtn')).toBeEnabled();
+    await expect(page.locator('#postJobSubmitBtn')).toHaveText('Post Job');
+    const failed = await page.evaluate(() => window.__testAnalyticsEvents.some(args =>
+      args[1] === 'job_post_failed' && args[2]?.reason === 'request_error'
+    ));
+    expect(failed).toBe(true);
+  });
+
+  test('payment confirmation failure restores the modal for retry', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(async () => {
+      window.__testAnalyticsEvents = [];
+      window.gtag = (...args) => window.__testAnalyticsEvents.push(args);
+      window.Stripe = () => ({
+        elements: () => ({ create: () => ({ mount: () => {}, on: () => {} }) }),
+        confirmCardSetup: async () => ({ setupIntent: { payment_method: 'pm_test' } })
+      });
+      window.api = async () => { throw new Error('Confirmation service unavailable'); };
+      await showEmployerSetupIntentModal({ client_secret: 'seti_test_secret', publishable_key: 'pk_test' });
+    });
+    await page.locator('#confirmEmployerPaymentBtn').click();
+    await expect(page.locator('#employer-card-error')).toContainText('Confirmation service unavailable');
+    await expect(page.locator('#confirmEmployerPaymentBtn')).toBeEnabled();
+    await expect(page.locator('#confirmEmployerPaymentBtn')).toHaveText('Save payment method');
+    const failed = await page.evaluate(() => window.__testAnalyticsEvents.some(args =>
+      args[1] === 'payment_setup_failed' && args[2]?.reason === 'confirm_request_error'
+    ));
+    expect(failed).toBe(true);
+  });
+
   for (const route of routes) {
     test(`${route.path} renders, has no serious axe violations, and is console-clean`, async ({ page }) => {
       const messages = await collectConsole(page);
