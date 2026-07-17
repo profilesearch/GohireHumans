@@ -174,7 +174,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(await page.evaluate(() => typeof window.gtag)).toBe('function');
   });
 
-  test('canonical HTTPS production host requests the configured Google tag once', async ({ page }) => {
+  test('canonical HTTPS production host loads once and normalizes static event context', async ({ page }) => {
     const analyticsRequests = [];
     page.on('request', request => {
       if (/google-analytics\.com|googletagmanager\.com/i.test(request.url())) analyticsRequests.push(request.url());
@@ -187,7 +187,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       return route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');</script>'
+        body: '<script src="/analytics-bootstrap.js"></script><script>gtag(\'config\', \'G-KM69M3NES8\');gtag(\'event\', \'static_cta_click\', {source:\'pricing\', medium:\'internal\', campaign:\'proof_first\', placement:\'hero\'});</script>'
       });
     });
     await page.goto('https://www.gohirehumans.com/');
@@ -195,12 +195,22 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(analyticsRequests).toEqual(['https://www.googletagmanager.com/gtag/js?id=G-KM69M3NES8']);
     const commands = await page.evaluate(() => window.dataLayer.map(args => {
       const values = Array.from(args);
-      return [values[0], values[1] instanceof Date ? 'DATE' : values[1]];
+      return [values[0], values[1] instanceof Date ? 'DATE' : values[1], values[2]];
     }));
-    expect(commands.slice(0, 2)).toEqual([
+    expect(commands.slice(0, 2).map(command => command.slice(0, 2))).toEqual([
       ['js', 'DATE'],
       ['config', 'G-KM69M3NES8']
     ]);
+    const staticEvent = commands.find(command => command[0] === 'event' && command[1] === 'static_cta_click');
+    expect(staticEvent?.[2]).toMatchObject({
+      ui_source: 'pricing',
+      ui_medium: 'internal',
+      ui_campaign: 'proof_first',
+      placement: 'hero'
+    });
+    expect(staticEvent?.[2]).not.toHaveProperty('source');
+    expect(staticEvent?.[2]).not.toHaveProperty('medium');
+    expect(staticEvent?.[2]).not.toHaveProperty('campaign');
   });
 
   test('internal analytics context cannot overwrite acquisition dimensions', async ({ page }) => {
