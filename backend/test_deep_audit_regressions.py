@@ -2677,6 +2677,13 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 bootstrap_count += 1
             if "%24%7B" in text:
                 failures.append(f"{rel}: encoded JavaScript template interpolation")
+            if rel != "frontend/index.html":
+                for event_name in ("generate_lead", "qualify_lead", "close_convert_lead"):
+                    if re.search(
+                        rf"(?:window\.)?gtag\(\s*['\"]event['\"]\s*,\s*['\"]{event_name}['\"]",
+                        text,
+                    ):
+                        failures.append(f"{rel}: static upper-funnel key-event proxy {event_name}")
             for match in re.finditer(r'(?:href|src|action)=["\']([^"\']+)["\']', text, re.IGNORECASE):
                 url = match.group(1)
                 internal = url.startswith(("/", "#")) or "gohirehumans.com" in url
@@ -2689,6 +2696,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         for snippet in [
             "window.dataLayer = window.dataLayer || []",
             "window.gtag = window.gtag || function",
+            "function normalizeEventParams(params)",
             "window.location.origin",
             "https://www.gohirehumans.com",
             "https://gohirehumans.com",
