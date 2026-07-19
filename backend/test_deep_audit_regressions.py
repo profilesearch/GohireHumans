@@ -6,11 +6,13 @@ import os
 import re
 import sqlite3
 import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 from unittest import mock
-import unittest
 
 MODULE_PATH = Path(__file__).with_name("api_core.py")
 REPO_ROOT = MODULE_PATH.parents[1]
@@ -2059,6 +2061,83 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             if "lp-nav-logo" in text and 'aria-label="GoHireHumans"' in text:
                 offenders.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(offenders, [])
+
+    @staticmethod
+    def _sitemap_urls():
+        root = ET.parse(REPO_ROOT / "frontend/sitemap.xml").getroot()
+        return [
+            element.text.strip()
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "loc" and element.text
+        ]
+
+    @staticmethod
+    def _html_declares_noindex(text):
+        class RobotsMetaParser(HTMLParser):
+            has_noindex = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag.lower() != "meta":
+                    return
+                attributes = {
+                    key.lower(): (value or "").lower()
+                    for key, value in attrs
+                    if key
+                }
+                if attributes.get("name") not in {"robots", "googlebot"}:
+                    return
+                directives = attributes.get("content", "").replace(",", " ").replace(";", " ").split()
+                if "noindex" in directives:
+                    self.has_noindex = True
+
+        parser = RobotsMetaParser()
+        parser.feed(text)
+        return parser.has_noindex
+
+    def test_sitemap_urls_are_unique(self):
+        urls = self._sitemap_urls()
+        self.assertGreater(len(urls), 0)
+        self.assertIn("https://www.gohirehumans.com/", urls)
+        seen = set()
+        duplicates = set()
+        for url in urls:
+            if url in seen:
+                duplicates.add(url)
+            seen.add(url)
+        self.assertEqual(sorted(duplicates), [])
+
+    def test_sitemapped_html_pages_do_not_opt_out_of_indexing(self):
+        urls = self._sitemap_urls()
+        self.assertGreater(len(urls), 0)
+        offenders = []
+        public_origin = "https://www.gohirehumans.com"
+        for url in urls:
+            self.assertTrue(url.startswith(public_origin), url)
+            loc = url.removeprefix(public_origin)
+            if loc in ("", "/"):
+                page = REPO_ROOT / "frontend/index.html"
+            elif loc.endswith("/"):
+                page = REPO_ROOT / f"frontend{loc}index.html"
+            elif loc.endswith(".html"):
+                page = REPO_ROOT / f"frontend{loc}"
+            else:
+                continue
+            if not page.exists():
+                continue
+            text = page.read_text(encoding="utf-8", errors="ignore")
+            if self._html_declares_noindex(text):
+                offenders.append(str(page.relative_to(REPO_ROOT)))
+        self.assertEqual(offenders, [])
+
+    def test_sitemap_noindex_guard_recognizes_attribute_order_and_directive_tokens(self):
+        samples = [
+            '<meta name="robots" content="noindex, nofollow">',
+            '<meta content="follow, NOINDEX" name="robots">',
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertTrue(self._html_declares_noindex(sample))
+        self.assertFalse(self._html_declares_noindex('<meta name="robots" content="index, follow">'))
 
     def test_sitemapped_html_pages_use_single_canonical_public_nav(self):
         expected_labels = [
