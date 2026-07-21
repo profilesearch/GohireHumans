@@ -278,6 +278,23 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(result.afterClear).toBeNull();
   });
 
+  test('saved job draft context survives switching between login and registration', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    const redirect = 'post-job?draft_title=Check+ten+AI+claims&draft_description=Return+a+sourced+issue+table';
+    await page.goto(`/#/login?redirect=${encodeURIComponent(redirect)}`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('.auth2-title')).toHaveText('Your job draft is saved');
+    await expect(page.locator('.auth2-sub')).toHaveText('Sign in or create a free account to review it. Nothing has been posted or charged.');
+
+    await page.locator('.auth2-toggle a').click();
+    await expect(page).toHaveURL(new RegExp(`#\\/register\\?redirect=${encodeURIComponent(redirect).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}$`));
+    await expect(page.locator('.auth2-title')).toHaveText('Your job draft is saved');
+    await expect(page.locator('.auth2-sub')).toHaveText('Sign in or create a free account to review it. Nothing has been posted or charged.');
+
+    await page.locator('.auth2-toggle a').click();
+    await expect(page).toHaveURL(new RegExp(`#\\/login\\?redirect=${encodeURIComponent(redirect).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}$`));
+  });
+
   test('job posting failure stays visible and retryable', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
