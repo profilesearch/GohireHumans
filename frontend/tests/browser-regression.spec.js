@@ -293,6 +293,10 @@ test.describe('GoHireHumans public/browser regression suite', () => {
 
     await page.locator('.auth2-toggle a').click();
     await expect(page).toHaveURL(new RegExp(`#\\/login\\?redirect=${encodeURIComponent(redirect).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}$`));
+
+    await page.goto('/#/login?redirect=post-job', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.auth2-title')).toHaveText('Your job draft is saved');
+    await expect(page.locator('.auth2-sub')).toHaveText('Sign in or create a free account to review it. Nothing has been posted or charged.');
   });
 
   test('job posting failure stays visible and retryable', async ({ page }) => {
