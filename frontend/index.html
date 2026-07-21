@@ -2368,13 +2368,18 @@ const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.go
 function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
+  const hasSavedJobDraft = redirect === 'post-job' || redirect.startsWith('post-job?');
+  const authTitle = hasSavedJobDraft ? 'Your job draft is saved' : (isLogin ? 'Welcome back' : 'Join GoHireHumans');
+  const authSubtitle = hasSavedJobDraft
+    ? 'Sign in or create a free account to review it. Nothing has been posted or charged.'
+    : (isLogin ? 'Sign in to your account' : (redirect ? 'Create an account to continue your selected task or application.' : 'Request QA, browse services, or offer your skills — free to join.'));
   document.getElementById('app').innerHTML = `
     <div class="auth2-page">
       <div class="auth2-wrap">
         <a class="auth2-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
         <div class="auth2-card">
-          <h1 class="auth2-title">${isLogin ? 'Welcome back' : 'Join GoHireHumans'}</h1>
-          <div class="auth2-sub">${isLogin ? 'Sign in to your account' : (redirect ? 'Create an account to continue your selected task or application.' : 'Request QA, browse services, or offer your skills — free to join.')}</div>
+          <h1 class="auth2-title">${authTitle}</h1>
+          <div class="auth2-sub">${authSubtitle}</div>
           ${GOOGLE_CLIENT_ID ? `
           <div class="auth2-google-wrap" id="google-signin-wrap" hidden>
             <div id="google-signin-btn" style="display:flex;justify-content:center"></div>
