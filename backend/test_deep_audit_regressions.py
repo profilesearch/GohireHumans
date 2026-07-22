@@ -1737,6 +1737,8 @@ class BackendRegressionTests(unittest.TestCase):
         pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
         starter = (REPO_ROOT / "frontend/starter-offers.html").read_text(encoding="utf-8", errors="ignore")
         app = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        website_qa = (REPO_ROOT / "frontend/use-cases/website-qa-task.html").read_text(encoding="utf-8", errors="ignore")
+        lead_research = (REPO_ROOT / "frontend/use-cases/lead-research-microtask.html").read_text(encoding="utf-8", errors="ignore")
         canonical_offers = {
             "AI Output Verification": ("ai_review", "99"),
             "Automation QA Sprint": ("automation_verification", "199"),
@@ -1756,6 +1758,10 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(match.group(1), amount, template)
         self.assertNotIn("<h3>Website QA Sprint</h3>", pricing)
         self.assertNotIn("<h3>Lead List Verification</h3>", pricing)
+        self.assertIn("template=automation_verification", website_qa)
+        self.assertNotIn("template=website_qa", website_qa)
+        self.assertIn("template=clay_gtm_qa", lead_research)
+        self.assertNotIn("template=lead_qualification", lead_research)
 
     def test_pricing_avoids_unsourced_competitor_rate_claims(self):
         pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
@@ -1789,8 +1795,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "clay_gtm_qa",
             ],
             "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "post_task_cta_click"],
-            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "post_task_cta_click"],
-            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_qualification", "post_task_cta_click"],
+            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=automation_verification", "post_task_cta_click"],
+            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=clay_gtm_qa", "post_task_cta_click"],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
                 "Sample AI-output review scorecard",

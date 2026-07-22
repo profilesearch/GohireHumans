@@ -1102,9 +1102,40 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByRole('heading', { name: 'Evidence review' })).toBeVisible();
     await expect(page.locator('.badge-human, .badge-ai')).toHaveCount(0);
     await expect(page.locator('.stars-row')).toHaveCount(0);
-    await expect(page.locator('.svc-worker-row')).toContainText('New listing');
+    await expect(page.locator('.svc-worker-row')).toContainText('Review history unavailable');
+    await expect(page.locator('.svc-worker-row')).not.toContainText('New listing');
     await expect(page.locator('.svc-order-meta')).not.toContainText('Delivery:');
     await expect(page.locator('body')).not.toContainText('? days');
+
+    await page.route('https://gohirehumans-production.up.railway.app/services/92', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 92,
+        title: 'Same-day verification',
+        description: 'Review one bounded artifact today.',
+        category: 'expert_review',
+        pricing_type: 'fixed',
+        price: 125,
+        worker_id: 15,
+        worker_name: 'Known provider',
+        provider_type: 'human',
+        worker_rating: 5,
+        worker_review_count: 1,
+        delivery_time_days: 0
+      })
+    }));
+    await page.route('https://gohirehumans-production.up.railway.app/users/15/reviews', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ reviews: [] })
+    }));
+    await page.goto('/#/services/92', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Same-day verification' })).toBeVisible();
+    await expect(page.locator('.badge-human')).toContainText('Human service');
+    await expect(page.locator('.stars-row')).toHaveAttribute('aria-label', '5.0 out of 5 stars, 1 review');
+    await expect(page.locator('.svc-order-meta')).toContainText('Same-day delivery');
+    await expect(page.locator('body')).not.toContainText('0 days');
   });
 
   test('empty jobs route has one truthful state and no contradictory inventory claims', async ({ page }) => {
