@@ -2602,12 +2602,62 @@ def validated_order_deadline(value, now=None):
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+DEFAULT_FIXED_SERVICE_DELIVERY_DAYS = 7
+
+
+def validated_service_delivery_time(delivery_time_days, required=False):
+    """Validate seller-published delivery metadata; fixed checkout requires a bounded value."""
+    if delivery_time_days is None:
+        if required:
+            raise ValueError("delivery_time_days is required for fixed pricing")
+        return None
+    if isinstance(delivery_time_days, bool) or not isinstance(delivery_time_days, int):
+        raise ValueError("delivery_time_days must be an integer between 1 and 365")
+    if not 1 <= delivery_time_days <= 365:
+        raise ValueError("delivery_time_days must be an integer between 1 and 365")
+    return delivery_time_days
+
+
+def validate_service_pricing_state(pricing_type, price, hourly_rate):
+    """Reject active service states that cannot produce a positive checkout amount."""
+    if pricing_type not in ('fixed', 'hourly', 'custom'):
+        raise ValueError("pricing_type must be fixed, hourly, or custom")
+
+    if pricing_type == 'fixed':
+        field_name, value, required_message = (
+            "price", price, "price required for fixed pricing"
+        )
+    elif pricing_type == 'hourly':
+        field_name, value, required_message = (
+            "hourly_rate", hourly_rate, "hourly_rate required for hourly pricing"
+        )
+    else:
+        return
+
+    if value is None or value == "":
+        raise ValueError(required_message)
+    try:
+        amount_cents = money_to_cents(value, f"service {field_name}")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{field_name} must be a positive amount with no more than two decimal places"
+        ) from exc
+    if amount_cents <= 0:
+        raise ValueError(f"{field_name} must be greater than zero")
+
+
+def validate_ai_api_endpoint(provider_type, fulfillment_type, api_endpoint):
+    """Keep AI/API fulfillment listings executable across create and update paths."""
+    if provider_type == 'ai' and fulfillment_type == 'api':
+        if not isinstance(api_endpoint, str) or not api_endpoint.strip():
+            raise ValueError("api_endpoint required for AI API services")
+
+
 def service_order_deadline(delivery_time_days, now=None):
     """Derive a fixed-service deadline from the seller's published delivery promise."""
-    if isinstance(delivery_time_days, bool) or not isinstance(delivery_time_days, int):
-        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
-    if not 1 <= delivery_time_days <= 365:
-        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
+    delivery_time_days = validated_service_delivery_time(delivery_time_days, required=True)
+    if delivery_time_days is None:  # Required validation above narrows the runtime contract.
+        raise ValueError("delivery_time_days is required for fixed pricing")
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     return (current + timedelta(days=delivery_time_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -8342,20 +8392,35 @@ def _handle_routes(db):
         if not safe:
             return error_response(f"Service rejected: {msg}", 422)
 
-        # Ensure worker profile exists (payout can be set up later)
-        ensure_worker_profile(db, user['id'])
-
         pricing_type = body.get("pricing_type", "fixed")
-        if pricing_type not in ('fixed', 'hourly', 'custom'):
-            return error_response("pricing_type must be fixed, hourly, or custom")
+        delivery_input = body.get("delivery_time_days")
+        if pricing_type == 'fixed' and delivery_input is None:
+            # Preserve the pre-existing direct-API contract while making new rows
+            # explicit: legacy checkout already used this bounded seven-day default.
+            delivery_input = DEFAULT_FIXED_SERVICE_DELIVERY_DAYS
+        try:
+            delivery_time_days = validated_service_delivery_time(
+                delivery_input, required=pricing_type == 'fixed'
+            )
+        except ValueError as exc:
+            return error_response(str(exc))
 
         price = body.get("price")
         hourly_rate = body.get("hourly_rate")
+        try:
+            validate_service_pricing_state(pricing_type, price, hourly_rate)
+        except ValueError as exc:
+            return error_response(str(exc))
 
-        if pricing_type == 'fixed' and not price:
-            return error_response("price required for fixed pricing")
-        if pricing_type == 'hourly' and not hourly_rate:
-            return error_response("hourly_rate required for hourly pricing")
+        # Keep only the amount family used by checkout; custom prices are supplied
+        # by the employer when a custom service is ordered.
+        if pricing_type == 'fixed':
+            hourly_rate = None
+        elif pricing_type == 'hourly':
+            price = None
+        else:
+            price = None
+            hourly_rate = None
 
         tags = body.get("tags", [])
         images = body.get("images", [])
@@ -8372,8 +8437,13 @@ def _handle_routes(db):
         ai_model = body.get("ai_model", "")
         avg_response_time = body.get("avg_response_time", "")
 
-        if provider_type == 'ai' and fulfillment_type == 'api' and not api_endpoint:
-            return error_response("api_endpoint required for API-fulfilled AI services")
+        try:
+            validate_ai_api_endpoint(provider_type, fulfillment_type, api_endpoint)
+        except ValueError as exc:
+            return error_response(str(exc))
+
+        # Ensure the worker profile only after the complete request is valid.
+        ensure_worker_profile(db, user['id'])
 
         cursor = db.execute(
             """INSERT INTO services
@@ -8383,7 +8453,7 @@ def _handle_routes(db):
                VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?)""",
             [user['id'], body['title'], body['description'], body['category'],
              pricing_type, price, hourly_rate,
-             body.get("delivery_time_days"),
+             delivery_time_days,
              body.get("includes", ""),
              json.dumps(tags) if isinstance(tags, list) else tags,
              json.dumps(images) if isinstance(images, list) else images,
@@ -8422,6 +8492,55 @@ def _handle_routes(db):
         if not safe:
             return error_response(f"Service update rejected: {msg}", 422)
 
+        pricing_fields_changed = any(
+            field in body for field in ('pricing_type', 'price', 'hourly_rate')
+        )
+        if pricing_fields_changed:
+            effective_pricing_type = body.get('pricing_type', svc['pricing_type'])
+            effective_price = body.get('price', svc['price'])
+            effective_hourly_rate = body.get('hourly_rate', svc['hourly_rate'])
+            try:
+                validate_service_pricing_state(
+                    effective_pricing_type, effective_price, effective_hourly_rate
+                )
+            except ValueError as exc:
+                return error_response(str(exc))
+
+            # Remove stale amounts from the inactive pricing family so later
+            # transitions cannot silently reuse obsolete checkout terms.
+            if effective_pricing_type == 'fixed':
+                body['hourly_rate'] = None
+            elif effective_pricing_type == 'hourly':
+                body['price'] = None
+            else:
+                body['price'] = None
+                body['hourly_rate'] = None
+
+        if 'delivery_time_days' in body or 'pricing_type' in body:
+            effective_pricing_type = body.get('pricing_type', svc['pricing_type'])
+            effective_delivery_time = body.get('delivery_time_days', svc['delivery_time_days'])
+            if effective_pricing_type not in ('fixed', 'hourly', 'custom'):
+                return error_response("pricing_type must be fixed, hourly, or custom")
+            try:
+                validated_service_delivery_time(
+                    effective_delivery_time, required=effective_pricing_type == 'fixed'
+                )
+            except ValueError as exc:
+                return error_response(str(exc))
+
+        if any(field in body for field in ('provider_type', 'fulfillment_type', 'api_endpoint')):
+            effective_provider_type = body.get('provider_type', svc['provider_type'])
+            effective_fulfillment_type = body.get('fulfillment_type', svc['fulfillment_type'])
+            effective_api_endpoint = body.get('api_endpoint', svc['api_endpoint'])
+            try:
+                validate_ai_api_endpoint(
+                    effective_provider_type,
+                    effective_fulfillment_type,
+                    effective_api_endpoint,
+                )
+            except ValueError as exc:
+                return error_response(str(exc))
+
         updates = []
         vals = []
         for field in ['title', 'description', 'category', 'pricing_type', 'price', 'hourly_rate',
@@ -8432,6 +8551,10 @@ def _handle_routes(db):
                     return error_response("Invalid category")
                 if field == 'status' and body[field] not in ('active', 'paused', 'removed'):
                     return error_response("Invalid status")
+                if field == 'provider_type' and body[field] not in ('human', 'ai'):
+                    return error_response("provider_type must be 'human' or 'ai'")
+                if field == 'fulfillment_type' and body[field] not in ('manual', 'api'):
+                    return error_response("fulfillment_type must be 'manual' or 'api'")
                 updates.append(f"{field} = ?")
                 vals.append(body[field])
         for field in ['tags', 'images']:
@@ -9214,7 +9337,11 @@ def _handle_routes(db):
                 # Legacy fixed listings predate required delivery promises. Preserve
                 # checkout with a conservative bounded default; current listings use
                 # the seller's published delivery_time_days.
-                delivery_days = svc['delivery_time_days'] if svc['delivery_time_days'] is not None else 7
+                delivery_days = (
+                    svc['delivery_time_days']
+                    if svc['delivery_time_days'] is not None
+                    else DEFAULT_FIXED_SERVICE_DELIVERY_DAYS
+                )
                 deadline_at = service_order_deadline(delivery_days)
             except ValueError as e:
                 return error_response(str(e), 409)

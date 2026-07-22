@@ -52,6 +52,216 @@ class BackendRegressionTests(unittest.TestCase):
         os.environ.pop("DATABASE_PATH", None)
         os.environ.pop("DISABLE_AUTO_SEED", None)
 
+    def _request_api(self, method, path, payload=None, token=""):
+        body = json.dumps(payload or {})
+        for cached in ("body_cache", "raw_body"):
+            if hasattr(self.module._request_ctx, cached):
+                delattr(self.module._request_ctx, cached)
+        self.module._request_ctx.request_method = method
+        self.module._request_ctx.path_info = path
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}" if token else ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.stdin_data_raw = body.encode("utf-8")
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data_raw))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        return parse_cgi_output(out.getvalue())
+
+    def test_service_mutations_enforce_checkout_compatible_delivery_days(self):
+        token = "tok-service-delivery"
+        db = self.module.get_db()
+        try:
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')"
+            )
+            db.execute(
+                "INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))",
+                [token],
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        fixed = {
+            "title": "Bounded review",
+            "description": "Review one bounded artifact and return evidence.",
+            "category": "testing",
+            "pricing_type": "fixed",
+            "price": 99,
+        }
+        status, compatible_fixed = self._request_api("POST", "/services", fixed, token)
+        self.assertEqual(status, 201, compatible_fixed)
+        self.assertEqual(compatible_fixed["delivery_time_days"], 7)
+
+        for invalid in (0, -1, 366, "1", True):
+            status, result = self._request_api(
+                "POST", "/services", {**fixed, "delivery_time_days": invalid}, token
+            )
+            with self.subTest(invalid_delivery=invalid):
+                self.assertEqual(status, 400, result)
+                self.assertIn("delivery_time_days", result.get("error", ""))
+
+        for invalid_price in (None, 0, -1, "1.001", "invalid", True):
+            payload = {**fixed, "delivery_time_days": 1, "price": invalid_price}
+            status, result = self._request_api("POST", "/services", payload, token)
+            with self.subTest(invalid_fixed_price=invalid_price):
+                self.assertEqual(status, 400, result)
+                self.assertIn("price", result.get("error", "").lower())
+
+        status, created = self._request_api(
+            "POST", "/services", {**fixed, "delivery_time_days": 1}, token
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["delivery_time_days"], 1)
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"delivery_time_days": 0}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("delivery_time_days", result.get("error", ""))
+
+        status, updated = self._request_api(
+            "PUT", f"/services/{created['id']}", {"delivery_time_days": 365}, token
+        )
+        self.assertEqual(status, 200, updated)
+        self.assertEqual(updated["delivery_time_days"], 365)
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"provider_type": "unknown"}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("provider_type", result.get("error", ""))
+
+        status, result = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"provider_type": "ai", "fulfillment_type": "api"},
+            token,
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("api_endpoint", result.get("error", ""))
+
+        status, updated_ai = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {
+                "provider_type": "ai",
+                "fulfillment_type": "api",
+                "api_endpoint": "https://provider.example/process",
+            },
+            token,
+        )
+        self.assertEqual(status, 200, updated_ai)
+        self.assertEqual(updated_ai["api_endpoint"], "https://provider.example/process")
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"api_endpoint": ""}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("api_endpoint", result.get("error", ""))
+
+        def pricing_state(service_id):
+            db = self.module.get_db()
+            try:
+                row = db.execute(
+                    "SELECT pricing_type,price,hourly_rate,delivery_time_days FROM services WHERE id=?",
+                    [service_id],
+                ).fetchone()
+                return tuple(row)
+            finally:
+                db.close()
+
+        fixed_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"pricing_type": "hourly"}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("hourly_rate", result.get("error", ""))
+        self.assertEqual(pricing_state(created["id"]), fixed_state)
+
+        status, hourly_transition = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "hourly", "hourly_rate": 50},
+            token,
+        )
+        self.assertEqual(status, 200, hourly_transition)
+        self.assertEqual(hourly_transition["pricing_type"], "hourly")
+        self.assertEqual(hourly_transition["hourly_rate"], 50)
+        self.assertIsNone(hourly_transition["price"])
+
+        hourly_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "fixed", "delivery_time_days": 3},
+            token,
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("price", result.get("error", "").lower())
+        self.assertEqual(pricing_state(created["id"]), hourly_state)
+
+        status, fixed_transition = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "fixed", "price": 125, "delivery_time_days": 3},
+            token,
+        )
+        self.assertEqual(status, 200, fixed_transition)
+        self.assertEqual(fixed_transition["pricing_type"], "fixed")
+        self.assertEqual(fixed_transition["price"], 125)
+        self.assertIsNone(fixed_transition["hourly_rate"])
+
+        valid_fixed_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"price": 0}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("price", result.get("error", "").lower())
+        self.assertEqual(pricing_state(created["id"]), valid_fixed_state)
+
+        status, custom_transition = self._request_api(
+            "PUT", f"/services/{created['id']}", {"pricing_type": "custom"}, token
+        )
+        self.assertEqual(status, 200, custom_transition)
+        self.assertEqual(custom_transition["pricing_type"], "custom")
+        self.assertIsNone(custom_transition["price"])
+        self.assertIsNone(custom_transition["hourly_rate"])
+
+        hourly = {**fixed, "pricing_type": "hourly", "price": None, "hourly_rate": 50}
+        status, created_hourly = self._request_api("POST", "/services", hourly, token)
+        self.assertEqual(status, 201, created_hourly)
+        self.assertIsNone(created_hourly["delivery_time_days"])
+        self.assertIsNone(created_hourly["price"])
+
+        status, explicit_hourly = self._request_api(
+            "POST", "/services", {**hourly, "delivery_time_days": 2}, token
+        )
+        self.assertEqual(status, 201, explicit_hourly)
+        self.assertEqual(explicit_hourly["delivery_time_days"], 2)
+
+        custom = {
+            "title": "Scoped custom service",
+            "description": "Agree a custom scope before checkout.",
+            "category": "testing",
+            "pricing_type": "custom",
+        }
+        status, created_custom = self._request_api("POST", "/services", custom, token)
+        self.assertEqual(status, 201, created_custom)
+        self.assertIsNone(created_custom["price"])
+        self.assertIsNone(created_custom["hourly_rate"])
+        self.assertIsNone(created_custom["delivery_time_days"])
+
+        status, explicit_custom = self._request_api(
+            "POST", "/services", {**custom, "delivery_time_days": 5}, token
+        )
+        self.assertEqual(status, 201, explicit_custom)
+        self.assertEqual(explicit_custom["delivery_time_days"], 5)
+
     def test_existing_session_is_rejected_immediately_after_user_suspension(self):
         token = "tok-suspended-session"
         db = self.module.get_db()
@@ -1699,6 +1909,106 @@ class BackendRegressionTests(unittest.TestCase):
                 missing[rel] = misses
         self.assertEqual(missing, {})
 
+    def test_public_intent_ctas_do_not_emit_executive_conversion_events(self):
+        executive_event_call = re.compile(
+            r"(?:trackGHH|trackBlogCTA|trackEvent|trackRecommendedEvent|trackConfiguredKeyEvent)\(\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
+            r"|gtag\(\s*['\"]event['\"]\s*,\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
+        )
+        executive_violations = {}
+        misrouted_post_task_ctas = {}
+        for page in sorted((REPO_ROOT / "frontend").rglob("*.html")):
+            text = page.read_text(encoding="utf-8", errors="ignore")
+            is_spa_root = page.name == "index.html" and page.parent == REPO_ROOT / "frontend"
+            inspected_text = "\n".join(
+                re.findall(r"<(?:a|button)\b[^>]*>", text, re.IGNORECASE)
+            ) if is_spa_root else text
+            matches = executive_event_call.findall(inspected_text)
+            if matches:
+                executive_violations[str(page.relative_to(REPO_ROOT))] = matches
+            bad_post_task_links = []
+            for anchor in re.findall(r"<a\b[^>]*>", text, re.IGNORECASE):
+                if "post_task_cta_click" not in anchor:
+                    continue
+                href = re.search(r"\bhref\s*=\s*['\"]([^'\"]+)['\"]", anchor, re.IGNORECASE)
+                if href is None or "post-job" not in href.group(1):
+                    bad_post_task_links.append(anchor[:240])
+            if bad_post_task_links:
+                misrouted_post_task_ctas[str(page.relative_to(REPO_ROOT))] = bad_post_task_links
+        self.assertEqual(executive_violations, {})
+        self.assertEqual(misrouted_post_task_ctas, {})
+
+    def test_faq_qualifies_checkout_and_privacy_sharing_claims(self):
+        faq = (REPO_ROOT / "frontend/faq.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertNotIn("All payments are processed through Stripe", faq)
+        self.assertNotIn("never shared with third parties", faq)
+        self.assertIn("Where GoHireHumans checkout is configured, Stripe processes payments", faq)
+        self.assertIn("published listings and task content may be public", faq)
+        self.assertNotIn("service providers and marketplace participants as described in the Privacy Policy", faq)
+        self.assertIn("with Stripe for configured payment processing, with other users as needed for marketplace transactions, and with law enforcement when required", faq)
+
+    def test_starter_offer_taxonomy_matches_pricing_and_draft_defaults(self):
+        pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
+        starter = (REPO_ROOT / "frontend/starter-offers.html").read_text(encoding="utf-8", errors="ignore")
+        app = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        first_tasks = (REPO_ROOT / "frontend/post-a-small-task.html").read_text(encoding="utf-8", errors="ignore")
+        website_qa = (REPO_ROOT / "frontend/use-cases/website-qa-task.html").read_text(encoding="utf-8", errors="ignore")
+        lead_research = (REPO_ROOT / "frontend/use-cases/lead-research-microtask.html").read_text(encoding="utf-8", errors="ignore")
+        canonical_offers = {
+            "AI Output Verification": ("ai_review", "99"),
+            "Automation QA Sprint": ("automation_verification", "199"),
+            "Clay/GTM QA Sprint": ("clay_gtm_qa", "199"),
+            "Real-World Check": ("phone_fact_check", "79"),
+        }
+        for offer, (template, amount) in canonical_offers.items():
+            self.assertIn(f"<h3>{offer}</h3>", pricing)
+            self.assertIn(f"<h3>{offer}</h3>", starter)
+            pricing_card = re.search(
+                rf"<div class=['\"]feature-item['\"]><h3>{re.escape(offer)}</h3>.*?</div>",
+                pricing,
+                re.DOTALL,
+            )
+            if pricing_card is None:
+                self.fail(f"Missing pricing card for {offer}")
+            self.assertIn(f'href="/#/post-job?template={template}"', pricing_card.group(0), offer)
+            match = re.search(
+                rf"\b{re.escape(template)}:\s*\{{.*?budget_amount:\s*['\"](\d+)['\"]",
+                app,
+                re.DOTALL,
+            )
+            if match is None:
+                self.fail(f"Missing draft template budget for {template}")
+            self.assertEqual(match.group(1), amount, template)
+        self.assertNotIn("<h3>Website QA Sprint</h3>", pricing)
+        self.assertNotIn("<h3>Lead List Verification</h3>", pricing)
+        self.assertIn("template=website_qa", website_qa)
+        self.assertNotIn("template=automation_verification", website_qa)
+        self.assertIn("template=lead_research", lead_research)
+        self.assertNotIn("template=clay_gtm_qa", lead_research)
+        self.assertIn("title: 'Verify AI agent or automation runs'", app)
+        self.assertIn("AI agent or automation outputs/runs", app)
+        self.assertIn("title: 'Human QA a Clay or GTM lead list'", app)
+        self.assertIn("Clay/GTM table or outbound list", app)
+        self.assertIn("Suggested: $49–$199", first_tasks)
+        self.assertIn("Suggested: $15–$79", first_tasks)
+        self.assertNotIn("Suggested: $49–$149", first_tasks)
+        self.assertNotIn("Suggested: $15–$75", first_tasks)
+
+    def test_pricing_avoids_unsourced_competitor_rate_claims(self):
+        pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
+        for name in ["Upwork", "Fiverr", "TaskRabbit"]:
+            self.assertNotIn(name, pricing)
+        self.assertIn("Other marketplaces", pricing)
+        self.assertIn("Varies; confirm current terms", pricing)
+        self.assertIn("1% + Stripe processing where checkout is configured", pricing)
+        structured_blocks = re.findall(
+            r'<script type="application/ld\+json">\s*(.*?)\s*</script>', pricing, re.DOTALL
+        )
+        structured = [json.loads(block) for block in structured_blocks]
+        product = next(item for item in structured if item.get("@type") == "Product")
+        self.assertIn("where checkout is configured", product["description"].lower())
+        service_fee = next(offer for offer in product["offers"] if offer["name"] == "Service Fee")
+        self.assertIn("where checkout is configured", service_fee["description"].lower())
+
     def test_first_orders_conversion_infrastructure_is_discoverable(self):
         required = {
             "frontend/index.html": [
@@ -1720,11 +2030,11 @@ class BackendRegressionTests(unittest.TestCase):
                 'data-pricing-order="fee-first"',
                 "Prefer a fixed starting point?",
                 "pricing_proof_first_cta_click",
-                "lead_research",
+                "clay_gtm_qa",
             ],
-            "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "qualify_lead"],
-            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "qualify_lead"],
-            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_qualification", "qualify_lead"],
+            "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "post_task_cta_click"],
+            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "post_task_cta_click"],
+            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_research", "post_task_cta_click"],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
                 "Sample AI-output review scorecard",
@@ -2868,7 +3178,6 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "Turn the data into one clear task",
             "Draft your first task",
             "first_task_blog_cta_click",
-            "trackBlogCTA('qualify_lead'",
             "/#/post-job?template=website_test",
         ]:
             self.assertIn(snippet, text)
