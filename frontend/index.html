@@ -2615,7 +2615,7 @@ function renderPostService(editId = null) {
                 </div>
                 <div class="form-group" id="fulfillmentGroup" style="display:${e.provider_type==='ai'?'block':'none'}">
                   <label class="label">Fulfillment</label>
-                  <select class="select" name="fulfillment_type">
+                  <select class="select" name="fulfillment_type" id="fulfillmentType" onchange="toggleAIFields()">
                     <option value="manual" ${(e.fulfillment_type||'manual')==='manual'?'selected':''}>Human-managed</option>
                     <option value="api" ${e.fulfillment_type==='api'?'selected':''}>Automated (API)</option>
                   </select>
@@ -2628,7 +2628,7 @@ function renderPostService(editId = null) {
                 </div>
                 <div class="form-group">
                   <label class="label">API Endpoint <span style="color:var(--color-text-faint);font-weight:400">(for automated fulfillment)</span></label>
-                  <input class="input" name="api_endpoint" value="${esc(e.api_endpoint||'')}" placeholder="https://your-api.com/process">
+                  <input class="input" id="apiEndpoint" name="api_endpoint" value="${esc(e.api_endpoint||'')}" placeholder="https://your-api.com/process">
                 </div>
                 <div class="form-group">
                   <label class="label">Avg. Response Time <span style="color:var(--color-text-faint);font-weight:400">(optional)</span></label>
@@ -2643,6 +2643,7 @@ function renderPostService(editId = null) {
           </div>
         </form>
       </div>`, 'my-services');
+    toggleAIFields();
   };
   loadAndRender();
 }
@@ -2657,10 +2658,13 @@ function updatePriceLabel() {
 
 function toggleAIFields() {
   const isAI = document.getElementById('providerType')?.value === 'ai';
+  const isAPIFulfilled = document.getElementById('fulfillmentType')?.value === 'api';
   const fg = document.getElementById('fulfillmentGroup');
   const ef = document.getElementById('aiExtraFields');
+  const endpoint = document.getElementById('apiEndpoint');
   if (fg) fg.style.display = isAI ? 'block' : 'none';
   if (ef) ef.style.display = isAI ? 'block' : 'none';
+  if (endpoint) endpoint.toggleAttribute('required', isAI && isAPIFulfilled);
 }
 
 async function handlePostService(e, editId) {

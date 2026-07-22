@@ -126,6 +126,34 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(status, 400, result)
         self.assertIn("provider_type", result.get("error", ""))
 
+        status, result = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"provider_type": "ai", "fulfillment_type": "api"},
+            token,
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("api_endpoint", result.get("error", ""))
+
+        status, updated_ai = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {
+                "provider_type": "ai",
+                "fulfillment_type": "api",
+                "api_endpoint": "https://provider.example/process",
+            },
+            token,
+        )
+        self.assertEqual(status, 200, updated_ai)
+        self.assertEqual(updated_ai["api_endpoint"], "https://provider.example/process")
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"api_endpoint": ""}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("api_endpoint", result.get("error", ""))
+
         hourly = {**fixed, "pricing_type": "hourly", "price": None, "hourly_rate": 50}
         status, created_hourly = self._request_api("POST", "/services", hourly, token)
         self.assertEqual(status, 201, created_hourly)
@@ -1831,6 +1859,14 @@ class BackendRegressionTests(unittest.TestCase):
         for offer, (template, amount) in canonical_offers.items():
             self.assertIn(f"<h3>{offer}</h3>", pricing)
             self.assertIn(f"<h3>{offer}</h3>", starter)
+            pricing_card = re.search(
+                rf"<div class=['\"]feature-item['\"]><h3>{re.escape(offer)}</h3>.*?</div>",
+                pricing,
+                re.DOTALL,
+            )
+            if pricing_card is None:
+                self.fail(f"Missing pricing card for {offer}")
+            self.assertIn(f'href="/#/post-job?template={template}"', pricing_card.group(0), offer)
             match = re.search(
                 rf"\b{re.escape(template)}:\s*\{{.*?budget_amount:\s*['\"](\d+)['\"]",
                 app,
@@ -1841,10 +1877,14 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(match.group(1), amount, template)
         self.assertNotIn("<h3>Website QA Sprint</h3>", pricing)
         self.assertNotIn("<h3>Lead List Verification</h3>", pricing)
-        self.assertIn("template=automation_verification", website_qa)
-        self.assertNotIn("template=website_qa", website_qa)
-        self.assertIn("template=clay_gtm_qa", lead_research)
-        self.assertNotIn("template=lead_qualification", lead_research)
+        self.assertIn("template=website_qa", website_qa)
+        self.assertNotIn("template=automation_verification", website_qa)
+        self.assertIn("template=lead_research", lead_research)
+        self.assertNotIn("template=clay_gtm_qa", lead_research)
+        self.assertIn("title: 'Verify AI agent or automation runs'", app)
+        self.assertIn("AI agent or automation outputs/runs", app)
+        self.assertIn("title: 'Human QA a Clay or GTM lead list'", app)
+        self.assertIn("Clay/GTM table or outbound list", app)
         self.assertIn("Suggested: $49–$199", first_tasks)
         self.assertIn("Suggested: $15–$79", first_tasks)
         self.assertNotIn("Suggested: $49–$149", first_tasks)
@@ -1857,6 +1897,14 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("Other marketplaces", pricing)
         self.assertIn("Varies; confirm current terms", pricing)
         self.assertIn("1% + Stripe processing where checkout is configured", pricing)
+        structured_blocks = re.findall(
+            r'<script type="application/ld\+json">\s*(.*?)\s*</script>', pricing, re.DOTALL
+        )
+        structured = [json.loads(block) for block in structured_blocks]
+        product = next(item for item in structured if item.get("@type") == "Product")
+        self.assertIn("where checkout is configured", product["description"].lower())
+        service_fee = next(offer for offer in product["offers"] if offer["name"] == "Service Fee")
+        self.assertIn("where checkout is configured", service_fee["description"].lower())
 
     def test_first_orders_conversion_infrastructure_is_discoverable(self):
         required = {
@@ -1882,8 +1930,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "clay_gtm_qa",
             ],
             "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "post_task_cta_click"],
-            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=automation_verification", "post_task_cta_click"],
-            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=clay_gtm_qa", "post_task_cta_click"],
+            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "post_task_cta_click"],
+            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_research", "post_task_cta_click"],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
                 "Sample AI-output review scorecard",

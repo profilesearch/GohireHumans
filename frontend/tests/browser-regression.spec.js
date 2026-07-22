@@ -369,12 +369,30 @@ test.describe('GoHireHumans public/browser regression suite', () => {
   test('homepage and pricing route high-intent visitors to proof-backed QA paths', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => saveSession('pricing-draft-test-token', {
+      id: 501,
+      name: 'Pricing Draft Tester',
+      email: 'pricing-draft@example.test'
+    }));
     await expect(page.locator('body')).toContainText('What do you need help with?');
     await expect(page.locator('.lp-start-card[href="/starter-offers.html"]')).toContainText('Start with QA');
     await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('Prefer a fixed starting point?');
-    await expect(page.locator('a[href="/use-cases/hire-human-to-review-ai-output.html"]').first()).toBeVisible();
-    await expect(page.locator('a[href="/use-cases/lead-research-microtask.html"]').first()).toBeVisible();
+    const offers = [
+      { heading: 'AI Output Verification', template: 'ai_review', title: 'Have a human QA AI-generated output', budget: '99' },
+      { heading: 'Automation QA Sprint', template: 'automation_verification', title: 'Verify AI agent or automation runs', budget: '199' },
+      { heading: 'Clay/GTM QA Sprint', template: 'clay_gtm_qa', title: 'Human QA a Clay or GTM lead list', budget: '199' },
+      { heading: 'Real-World Check', template: 'phone_fact_check', title: 'Make phone calls or verify a fact', budget: '79' }
+    ];
+    for (const offer of offers) {
+      await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
+      const card = page.locator('.feature-item').filter({ has: page.getByRole('heading', { name: offer.heading, exact: true }) });
+      await card.getByRole('link', { name: 'Start this draft' }).click();
+      await expect(page).toHaveURL(new RegExp(`\\?template=${offer.template}(?:#.*)?$`));
+      await expect(page.locator('input[name="title"]')).toHaveValue(offer.title);
+      await expect(page.locator('input[name="budget_amount"]')).toHaveValue(offer.budget);
+    }
+    await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('View starter offers');
     await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('Four proof-backed starter offers');
@@ -1211,6 +1229,86 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByRole('heading', { name: 'Legacy unknown provider' })).toBeVisible();
     await expect(page.locator('.badge-human, .badge-ai')).toHaveCount(0);
     await expect(page.getByText('About the Provider', { exact: true })).toBeVisible();
+  });
+
+  test('My Services preserves unknown versus zero review facts and omits invalid delivery', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'browser-my-services-token');
+      localStorage.setItem('ghh_user', JSON.stringify({
+        id: 42,
+        name: 'Service Owner',
+        email: 'owner@example.test'
+      }));
+    });
+    await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
+    await page.route('https://gohirehumans-production.up.railway.app/**', route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/services') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ services: [
+            {
+              id: 941,
+              worker_id: 42,
+              title: 'Unknown review history',
+              category: 'testing',
+              pricing_type: 'fixed',
+              price: 99,
+              delivery_time_days: 0,
+              worker_rating: null,
+              worker_review_count: null,
+              status: 'active'
+            },
+            {
+              id: 942,
+              worker_id: 42,
+              title: 'Known new listing',
+              category: 'testing',
+              pricing_type: 'fixed',
+              price: 79,
+              delivery_time_days: 1,
+              worker_rating: null,
+              worker_review_count: 0,
+              status: 'active'
+            },
+            {
+              id: 943,
+              worker_id: 99,
+              title: 'Another owner listing',
+              category: 'testing',
+              pricing_type: 'fixed',
+              price: 50,
+              delivery_time_days: 2,
+              worker_rating: 5,
+              worker_review_count: 2,
+              status: 'active'
+            }
+          ] })
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/my-services');
+    await expect(page.getByRole('heading', { name: 'My Services' })).toBeVisible();
+    const unknown = page.locator('.task-card').filter({ hasText: 'Unknown review history' });
+    await expect(unknown).toContainText('Review history unavailable');
+    await expect(unknown).not.toContainText('New listing');
+    await expect(unknown).not.toContainText('delivery');
+    const knownZero = page.locator('.task-card').filter({ hasText: 'Known new listing' });
+    await expect(knownZero).toContainText('New listing');
+    await expect(knownZero).toContainText('Delivery: 1 day');
+    await expect(page.getByText('Another owner listing')).toHaveCount(0);
+
+    await page.evaluate(() => renderPostService());
+    await expect(page.getByRole('heading', { name: 'Post a Service' })).toBeVisible();
+    await page.locator('.ai-service-toggle summary').click();
+    await page.locator('#providerType').selectOption('ai');
+    await page.locator('#fulfillmentType').selectOption('api');
+    await expect(page.locator('#apiEndpoint')).toHaveAttribute('required', '');
+    await page.locator('#fulfillmentType').selectOption('manual');
+    await expect(page.locator('#apiEndpoint')).not.toHaveAttribute('required', '');
   });
 
   test('empty jobs route has one truthful state and no contradictory inventory claims', async ({ page }) => {

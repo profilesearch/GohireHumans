@@ -2615,6 +2615,13 @@ def validated_service_delivery_time(delivery_time_days, required=False):
     return delivery_time_days
 
 
+def validate_ai_api_endpoint(provider_type, fulfillment_type, api_endpoint):
+    """Keep AI/API fulfillment listings executable across create and update paths."""
+    if provider_type == 'ai' and fulfillment_type == 'api':
+        if not isinstance(api_endpoint, str) or not api_endpoint.strip():
+            raise ValueError("api_endpoint required for AI API services")
+
+
 def service_order_deadline(delivery_time_days, now=None):
     """Derive a fixed-service deadline from the seller's published delivery promise."""
     delivery_time_days = validated_service_delivery_time(delivery_time_days, required=True)
@@ -8391,8 +8398,10 @@ def _handle_routes(db):
         ai_model = body.get("ai_model", "")
         avg_response_time = body.get("avg_response_time", "")
 
-        if provider_type == 'ai' and fulfillment_type == 'api' and not api_endpoint:
-            return error_response("api_endpoint required for API-fulfilled AI services")
+        try:
+            validate_ai_api_endpoint(provider_type, fulfillment_type, api_endpoint)
+        except ValueError as exc:
+            return error_response(str(exc))
 
         cursor = db.execute(
             """INSERT INTO services
@@ -8449,6 +8458,19 @@ def _handle_routes(db):
             try:
                 validated_service_delivery_time(
                     effective_delivery_time, required=effective_pricing_type == 'fixed'
+                )
+            except ValueError as exc:
+                return error_response(str(exc))
+
+        if any(field in body for field in ('provider_type', 'fulfillment_type', 'api_endpoint')):
+            effective_provider_type = body.get('provider_type', svc['provider_type'])
+            effective_fulfillment_type = body.get('fulfillment_type', svc['fulfillment_type'])
+            effective_api_endpoint = body.get('api_endpoint', svc['api_endpoint'])
+            try:
+                validate_ai_api_endpoint(
+                    effective_provider_type,
+                    effective_fulfillment_type,
+                    effective_api_endpoint,
                 )
             except ValueError as exc:
                 return error_response(str(exc))
