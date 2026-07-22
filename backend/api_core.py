@@ -1995,6 +1995,11 @@ SEEDED_SAMPLE_EMAILS = {
     "hire@techstartup.io",
     "ops@growthagency.com",
     "founder@bootstrapped.co",
+    # Legacy sample employers persisted in production before this exclusion
+    # list was consolidated. Their reviewing jobs must not enter public browse.
+    "hiring@cloudnative.dev",
+    "ops@scalefirst.io",
+    "founder@aitools.co",
 }
 
 
