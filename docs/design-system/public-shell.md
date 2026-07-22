@@ -7,14 +7,22 @@ Canonical public shell components live in `frontend/partials/`:
 
 Rules:
 
-1. Public pages should use the shared `lp-nav` navigation language.
-2. Primary buyer CTA remains `Request QA`; the first nav item is `Starter QA`.
-3. Worker route must be labeled `For Workers`, not generic `Open Jobs`.
-4. Footer text and links must use readable text tokens, not low-contrast inline rgba values.
-5. Navigation pages should include `style.css?v=20260526-nav-consistency`, and public nav hover/active states must not inherit page-local `a:hover` rules.
-6. High-visibility conversion/trust pages must not mix canonical `lp-footer` with old local `.footer` shells.
-7. Footer worker demand links should be explicit: `Open Jobs for Workers`, not ambiguous `Open Jobs`.
-8. Public conversion pages should avoid visible builder/generator attribution and generic CTAs such as `Get started` when a more specific action exists.
-9. Use-case pages are intentionally grouped under the broader `Marketplace` taxonomy unless/until `Use Cases` is promoted into the desktop top nav.
+1. Public pages use the shared `lp-nav` navigation language.
+2. Desktop navigation is marketplace-first: `Marketplace`, `Find Work`, `For Agents`, `Pricing`, `Trust`.
+3. Account and transaction controls remain separate: `Sign in` and the primary buyer action `Post a task`.
+4. Starter offers, use cases, and FAQ remain secondary resources in the mobile menu and/or footer rather than competing desktop tabs.
+5. Footer text and links use readable text tokens, not low-contrast inline rgba values.
+6. Navigation pages include `style.css?v=20260526-nav-consistency`; public nav hover and active states must not inherit page-local `a:hover` rules.
+7. High-visibility conversion and trust pages must not mix canonical `lp-footer` markup with old local `.footer` shells.
+8. The mobile footer is intentionally compact: broad marketplace, company, and legal routes only; `Find Work` is the canonical worker label.
+9. Public pages avoid visible builder/generator attribution and generic CTAs such as `Get started` when a specific action exists.
+10. Use-case pages remain grouped under `Marketplace`; starter QA remains an optional wedge, not the platform-wide identity.
 
-Regression coverage is in `backend/test_deep_audit_regressions.py`; the executable contract is `python3 scripts/check_public_shell.py`.
+Run both executable contracts after changing the shell:
+
+```bash
+python3 scripts/sync_public_shell.py --check
+python3 scripts/check_public_shell.py
+```
+
+Regression coverage is in `backend/test_deep_audit_regressions.py` and `frontend/tests/browser-regression.spec.js`.

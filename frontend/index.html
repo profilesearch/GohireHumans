@@ -518,8 +518,8 @@ function formatOrderAmount(order) {
   return isHourly ? `$${amount.toFixed(2)}/hr` : `$${amount.toFixed(2)} total`;
 }
 function providerBadge(service) {
-  if (service.provider_type === 'ai') return '<span class="badge badge-ai">AI-Powered</span>';
-  return '<span class="badge badge-human">Human</span>';
+  if (service.provider_type === 'ai') return '<span class="badge badge-ai">Agent service</span>';
+  return '<span class="badge badge-human">Human service</span>';
 }
 function relativeDate(str) {
   if (!str) return '';
@@ -717,12 +717,6 @@ function trackSocialAttribution() {
 }
 installAnalyticsIntentTracking();
 trackSocialAttribution();
-function searchHeroServices() {
-  const input = document.getElementById('hero-search');
-  const query = input ? input.value.trim() : '';
-  trackEvent('hero_search_submit', { search_term: query, source: 'homepage_hero' });
-  navigate('#/services?search=' + encodeURIComponent(query));
-}
 
 const taskDraftTemplates = {
   ai_review: {
@@ -905,11 +899,6 @@ function getStoredGuidedTaskDraft() {
 function clearStoredGuidedTaskDraft() {
   try { sessionStorage.removeItem('ghh_guided_task_draft'); } catch (_) {}
 }
-function selectWorkerRoute(routeKey, label, searchTerm) {
-  trackEvent('worker_route_select', { source: 'homepage_worker_agent_router', route: routeKey, label });
-  trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: searchTerm || label });
-  navigate('#/jobs?search=' + encodeURIComponent(searchTerm || label));
-}
 function postServiceIntent(source = 'homepage_worker_agent_router') {
   trackEvent('post_service_intent', { source });
   navigate('#/post-service');
@@ -1010,60 +999,18 @@ function toggleVideo() {
   }, { once: true });
 }
 
-// ─── Scroll Animations (Intersection Observer) ────────────────────
-function initScrollAnimations() {
-  // Honor prefers-reduced-motion: just show immediately.
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => el.classList.add('lp-visible'));
-    return;
-  }
-  if (!('IntersectionObserver' in window)) {
-    // Fallback for old browsers — show everything.
-    document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate').forEach(el => el.classList.add('lp-visible'));
-    return;
-  }
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const delay = parseInt(entry.target.dataset.delay || '0');
-        setTimeout(() => {
-          entry.target.classList.add('lp-visible');
-        }, delay);
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.15 });
-
-  const targets = document.querySelectorAll('.lp-hiw-animate, .lp-stat-animate');
-  targets.forEach(el => observer.observe(el));
-
-  // Failsafe: if any target is still hidden after 2s (e.g. Observer didn't
-  // fire because element was already in viewport but layout was settling),
-  // force-show it so the section is never blank.
-  setTimeout(() => {
-    targets.forEach(el => {
-      if (!el.classList.contains('lp-visible')) {
-        el.classList.add('lp-visible');
-        observer.unobserve(el);
-      }
-    });
-  }, 2000);
-}
-
 function renderPublicNav(activePage = '') {
   const navLinks = [
-    { label: 'Starter QA', href: '/starter-offers.html', key: 'starter-offers', external: true },
     { label: 'Marketplace', href: '#/services', key: 'services' },
-    { label: 'For Workers', href: '#/jobs', key: 'jobs' },
+    { label: 'Find Work', href: '#/jobs', key: 'jobs' },
     { label: 'For Agents', href: '#/ai-employers', key: 'ai-employers' },
     { label: 'Pricing', href: '/pricing.html', key: 'pricing', external: true },
     { label: 'Trust', href: '/trust-safety.html', key: 'trust', external: true },
   ];
   const resourceLinks = [
+    { label: 'Starter Offers', href: '/starter-offers.html' },
     { label: 'Use Cases', href: '/use-cases/' },
-    { label: 'Agent Guide', href: '/ai-integration.html' },
     { label: 'FAQ', href: '/faq.html' },
-    { label: 'About', href: '/about.html' },
   ];
   return `
     <div class="lp-nav-wrap">
@@ -1081,7 +1028,7 @@ function renderPublicNav(activePage = '') {
         </div>
         <div class="lp-nav-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
-          <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
+          <a class="btn btn-primary btn-sm" href="#/post-job" onclick="trackEvent('post_task_cta_click',{source:'public_nav'});event.preventDefault();navigate('#/post-job')">Post a task</a>
         </div>
         <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false">
           ${I.menu}
@@ -1097,7 +1044,7 @@ function renderPublicNav(activePage = '') {
         ${resourceLinks.map(l => `<a class="lp-mobile-link" href="${l.href}">${l.label}</a>`).join('')}
         <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)">
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>
-          <a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a>
+          <a class="btn btn-primary btn-sm" href="#/post-job" onclick="trackEvent('post_task_cta_click',{source:'public_nav'});event.preventDefault();navigate('#/post-job')">Post a task</a>
         </div>
       </div>
     </div>`;
@@ -1130,31 +1077,25 @@ function publicFooter() {
         <div class="lp-footer-top">
           <div class="lp-footer-brand">
             <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
-            <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+            <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
             <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
           </div>
           <div class="lp-footer-col">
             <h4>Marketplace</h4>
             <ul class="lp-footer-links">
               <li><a href="#/services" onclick="event.preventDefault();navigate('#/services')">Browse Services</a></li>
-              <li><a href="#/jobs" onclick="event.preventDefault();navigate('#/jobs')">Open Jobs for Workers</a></li>
-              <li><a href="#/register" onclick="event.preventDefault();navigate('#/register')">Post a Service</a></li>
-              <li><a href="#/register" onclick="event.preventDefault();navigate('#/register')">Post a Job</a></li>
-              <li><a href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers')">AI Marketplace</a></li>
-              <li><a href="/ai-human-qa/">AI Human QA</a></li>
-              <li><a href="/ai-qa-task-generator.html">AI QA Task Generator</a></li>
-              <li><a href="/ai-qa-reviewer.html">Become an AI QA Reviewer</a></li>
-              <li><a href="/use-cases/">Use Cases</a></li>
-              <li><a href="/task-ideas.html">50 Task Ideas</a></li>
+              <li><a href="#/jobs" onclick="event.preventDefault();navigate('#/jobs')">Find Work</a></li>
+              <li><a href="#/ai-employers" onclick="event.preventDefault();navigate('#/ai-employers')">For Agents</a></li>
+              <li><a href="/starter-offers.html">Starter Offers</a></li>
             </ul>
           </div>
           <div class="lp-footer-col">
             <h4>Company</h4>
             <ul class="lp-footer-links">
+              <li><a href="/pricing.html">Pricing</a></li>
+              <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
               <li><a href="/about.html">About</a></li>
               <li><a href="/faq.html">FAQ</a></li>
-              <li><a href="/blog/">Blog</a></li>
-              <li><a href="/trust-safety.html">Trust & Safety</a></li>
             </ul>
           </div>
           <div class="lp-footer-col">
@@ -1289,52 +1230,27 @@ function skeletonCards(count = 6) {
 // LANDING PAGE
 // ═══════════════════════════════════════════════════════════════
 async function renderLanding() {
-  // Fetch live data from API
-  let liveServices = [], liveJobs = [];
+  // Fetch only the live inventory needed for the three-card preview.
+  let liveServices = [];
   try {
-    const [sRes, jRes] = await Promise.all([
-      api('/services?per_page=6'),
-      api('/jobs?per_page=6')
-    ]);
+    const sRes = await api('/services?per_page=3');
     liveServices = (sRes.services || []).map(s => ({
       title: s.title, worker: s.worker_name || 'Professional',
       price: s.pricing_type === 'hourly' ? `$${s.hourly_rate}/hr` : s.price ? `$${s.price}` : 'Custom',
       delivery: s.delivery_time_days ? `${s.delivery_time_days} days` : 'Flexible',
-      rating: Math.round(s.avg_rating || 5), reviews: s.total_reviews || 0,
-      category: (s.category || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
+      rating: Math.round(Number(s.avg_rating ?? s.rating ?? 0)),
+      reviews: Number(s.total_reviews ?? s.review_count ?? s.reviews ?? 0),
+      category: (s.category || s.category_name || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
       id: s.id
     }));
-    liveJobs = (jRes.jobs || []).map(j => ({
-      title: j.title, employer: j.employer_name || j.company_name || 'Employer',
-      budget: j.budget_type === 'hourly' ? `$${j.budget_amount}/hr` : `$${j.budget_amount}`,
-      location: j.location_type === 'remote' ? 'Remote' : j.location_type || 'Remote',
-      posted: relativeDate(j.created_at), category: (j.category || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
-      id: j.id
-    }));
-  } catch(e) { console.log('Failed to load live data, using fallback'); }
+  } catch(e) {}
 
-  // Fallback sample data
-  const fallbackServices = [
-    { title: 'Human QA for AI-generated research', worker: 'Research Reviewer', price: '$45', delivery: '2 days', rating: 5, reviews: 18, category: 'AI Review' },
-    { title: 'Website flow test with screenshots', worker: 'UX Tester', price: '$30', delivery: '24hr', rating: 5, reviews: 24, category: 'Website QA' },
-    { title: 'Lead list cleanup and enrichment', worker: 'Data Operator', price: '$60', delivery: '3 days', rating: 5, reviews: 31, category: 'Data' },
-    { title: 'Local photo verification task', worker: 'Field Helper', price: '$40', delivery: '2 days', rating: 4, reviews: 12, category: 'Local Work' },
-    { title: 'Phone-call research sprint', worker: 'Call Specialist', price: '$35', delivery: '1 day', rating: 5, reviews: 22, category: 'Calls' },
-    { title: 'AI agent workflow setup', worker: 'Automation Builder', price: '$95', delivery: '5 days', rating: 5, reviews: 9, category: 'AI Services' },
-  ];
-  const fallbackJobs = [
-    { title: 'Verify 25 AI-sourced leads', employer: 'Agent Workflow', budget: '$75 fixed', location: 'Remote', posted: '2h ago', category: 'Research' },
-    { title: 'Test landing page signup and record blockers', employer: 'SaaS Founder', budget: '$30 fixed', location: 'Remote', posted: '5h ago', category: 'Website QA' },
-    { title: 'Call 10 vendors and collect quotes', employer: 'Operations Agent', budget: '$80 fixed', location: 'Remote', posted: '1d ago', category: 'Calls' },
-    { title: 'Clean CRM spreadsheet before import', employer: 'Sales Ops', budget: '$120 fixed', location: 'Remote', posted: '1d ago', category: 'Data' },
-    { title: 'Local photo check for property condition', employer: 'Real Estate Team', budget: '$50 fixed', location: 'Denver, CO', posted: '2d ago', category: 'Local Work' },
-    { title: 'Package a simple automation checklist', employer: 'AI Consultant', budget: '$65 fixed', location: 'Remote', posted: '3d ago', category: 'AI Services' },
-  ];
-  const sampleServices = liveServices.length > 0 ? liveServices : fallbackServices;
-  const sampleJobs = liveJobs.length > 0 ? liveJobs : fallbackJobs;
+  const sampleServices = liveServices.slice(0, 3);
 
-  const previewCards = sampleServices.map(s => `
-        <div class="lp-feed-card" onclick="navigate('${s.id ? '#/services/' + s.id : '#/services'}')">
+  const previewCards = sampleServices.map(s => {
+    const href = s.id ? `#/services/${s.id}` : '#/services';
+    return `
+        <a class="lp-feed-card" href="${href}" onclick="event.preventDefault();navigate('${href}')">
           <div class="lp-feed-card-cat">${esc(s.category)}</div>
           <div class="lp-feed-title">${esc(s.title)}</div>
           <div class="lp-feed-meta">
@@ -1342,271 +1258,144 @@ async function renderLanding() {
             <span>By ${esc(s.worker)}</span>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:var(--space-3)">
-            <div class="lp-card-stars">${stars(s.rating)} <span style="color:var(--color-text-faint);font-size:11px">(${s.reviews})</span></div>
+            <div class="lp-card-stars">${stars(s.rating, s.reviews)}</div>
             <strong style="color:var(--color-text);font-size:var(--text-base)">${esc(s.price)}</strong>
           </div>
-        </div>`).join('');
+          <span class="lp-card-details">View details →</span>
+        </a>`;
+  }).join('');
 
   document.getElementById('app').innerHTML = `
     <div class="landing">
       ${renderPublicNav()}
-      
-      <section class="lp-visual-hero">
-        <div class="lp-visual-hero-inner">
-          <div class="lp-hero-copy">
-            <div class="lp-hero-eyebrow">${I.bot} Human verification layer for AI work</div>
-            <h1 class="lp-hero-title">
-              <span class="lp-hero-line">Human verification</span>
-              <span class="lp-hero-line accent">for AI work.</span>
-            </h1>
-            <p class="lp-hero-short">Start with a fixed-scope QA sprint. A human checks your AI output, workflow, data, or real-world fact and returns a proof-backed report.</p>
-            <div class="lp-hero-ctas lp-hero-ctas-left">
-              <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
-              <a class="btn btn-outline btn-lg" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click', { source: 'homepage_hero_secondary' })">See sample deliverables</a>
-              <button class="btn btn-ghost btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_tertiary' });navigate('#/services')">Browse marketplace</button>
-            </div>
-            <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
-              <div class="lp-hero-trust-item">Draft before publishing or payment</div>
-              <div class="lp-hero-trust-item">Workers receive the listed payout</div>
-              <div class="lp-hero-trust-item">Employer pays Stripe processing + 1%</div>
-            </div>
-          </div>
-
-          <div class="lp-hero-visual-card" aria-label="Visual explanation of GoHireHumans">
-            <div class="lp-visual-card-topline">
-              <span>Proof-backed QA</span>
-              <strong>3-step flow</strong>
-            </div>
-            <div class="lp-flow-stack">
-              <div class="lp-flow-row">
-                <div class="lp-flow-number">1</div>
-                <div><strong>Scope one check</strong><span>AI output, workflow, lead list, or real-world fact</span></div>
+      <main data-simplified-home="true">
+        <section class="lp-visual-hero" data-home-section="hero">
+          <div class="lp-visual-hero-inner lp-home-hero-simple">
+            <div class="lp-hero-copy">
+              <div class="lp-hero-eyebrow">Small, scoped work with a clear result</div>
+              <h1 class="lp-hero-title">Describe the work. Hire the right human.</h1>
+              <p class="lp-hero-short">Post a task or choose a service for research, QA, calls, local checks, data cleanup, creative work, and other jobs that need human judgment.</p>
+              <div class="lp-hero-ctas lp-hero-ctas-left">
+                <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });trackEvent('first_order_trust_describe_task_click', { source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-intake')?.scrollIntoView({behavior:'smooth', block:'start'});">Describe your task</button>
+                <button class="btn btn-outline btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse services</button>
               </div>
-              <div class="lp-flow-arrow">↓</div>
-              <div class="lp-flow-row">
-                <div class="lp-flow-number">2</div>
-                <div><strong>Human reviews it</strong><span>Evidence, screenshots, source links, or issue notes</span></div>
-              </div>
-              <div class="lp-flow-arrow">↓</div>
-              <div class="lp-flow-row">
-                <div class="lp-flow-number">3</div>
-                <div><strong>You decide next</strong><span>Approve, revise, decline, or post the next task</span></div>
+              <div class="lp-hero-trust-strip lp-hero-trust-strip-left">
+                <div class="lp-hero-trust-item">Draft before publishing or paying</div>
+                <div class="lp-hero-trust-item">Workers receive the listed payout</div>
+                <div class="lp-hero-trust-item">Employer pays Stripe processing + 1% where configured</div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="lp-compact-section lp-light-band" aria-labelledby="proof-first-heading">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">Start with proof</div>
-            <h2 id="proof-first-heading" class="lp-section-head">Choose the fastest proof-backed check.</h2>
-            <p class="lp-section-sub">Not sure where to start? Pick one small task, review the draft, and keep the marketplace breadth available when you need it.</p>
-          </div>
-          <div class="lp-task-tile-grid">
-            <a class="lp-task-tile" href="/starter-offers.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'starter_offers',source:'proof_first_router'});"><span>✅</span><strong>Start a QA sprint</strong><small>Fixed-scope proof pack</small></a>
-            <a class="lp-task-tile" href="/use-cases/hire-human-to-review-ai-output.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'ai_output_review',source:'proof_first_router'});"><span>🔎</span><strong>AI output review</strong><small>Claims, sources, uncertainty</small></a>
-            <a class="lp-task-tile" href="/use-cases/website-qa-task.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'website_qa',source:'proof_first_router'});"><span>🖥️</span><strong>Website QA</strong><small>Flow checks and screenshots</small></a>
-            <a class="lp-task-tile" href="/use-cases/lead-research-microtask.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'lead_research',source:'proof_first_router'});"><span>📊</span><strong>Lead-list check</strong><small>Source and row-level review</small></a>
-          </div>
-        </div>
-      </section>
+        <section class="lp-compact-section lp-light-band" data-home-section="start" aria-labelledby="home-start-heading">
+          <div class="lp-section-inner">
+            <div class="lp-centered-head">
+              <div class="lp-section-label">Start here</div>
+              <h2 id="home-start-heading" class="lp-section-head">What do you need help with?</h2>
+              <p class="lp-section-sub">Choose one route. You can review every draft before anything is posted or charged.</p>
+            </div>
+            <div class="lp-start-grid">
+              <button type="button" class="lp-start-card" onclick="trackEvent('homepage_high_intent_route_click',{route:'describe_task',source:'homepage_start'});markGuidedTaskIntakeStart('start_card');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-intake')?.scrollIntoView({behavior:'smooth',block:'start'});">
+                <span>1</span><strong>Describe a task</strong><small>Turn an open-ended need into a reviewable job draft.</small>
+              </button>
+              <a class="lp-start-card" href="#/services" onclick="event.preventDefault();trackEvent('homepage_high_intent_route_click',{route:'services',source:'homepage_start'});navigate('#/services')">
+                <span>2</span><strong>Browse services</strong><small>Compare ready-to-order offers from people and authorized agents.</small>
+              </a>
+              <a class="lp-start-card" href="/starter-offers.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'starter_offers',source:'homepage_start'});trackEvent('homepage_starter_offers_click',{source:'proof_first_router'})">
+                <span>3</span><strong>Start with QA</strong><small>Use a fixed-scope proof pack for output, workflow, list, or fact checks.</small>
+              </a>
+              <a class="lp-start-card" href="/request-any-task.html" onclick="trackEvent('homepage_high_intent_route_click',{route:'real_world_help',source:'homepage_start'})">
+                <span>4</span><strong>Request real-world help</strong><small>Scope calls, local checks, manual research, or other human work.</small>
+              </a>
+            </div>
+            <div class="lp-market-discovery lp-start-resources">
+              <p><a href="/request-any-task.html" onclick="trackEvent('homepage_request_any_task_click',{source:'homepage_start_resources'})">Describe any task you need a human to do or check →</a> <a href="/ideas.html" onclick="trackEvent('homepage_task_ideas_click',{source:'homepage_start_resources'})">Browse task ideas →</a></p>
+              <p><a href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click',{source:'homepage_start_resources'})">Sample deliverables</a> · <a href="/proof-packs.html" onclick="trackEvent('homepage_proof_packs_click',{source:'homepage_start_resources'})">Proof-pack format</a></p>
+            </div>
 
-      <section class="lp-compact-section lp-first-orders-proof">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label">Starter QA offers</div>
-            <h2 class="lp-section-head" style="text-align:left">Four ways to start small.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Pick one founding offer: AI Output Verification, Automation QA Sprint, Clay/GTM QA Sprint, or Real-World Check. Each is fixed-scope, buyer-reviewed before payment, and designed to produce a clear evidence pack.</p>
-            <div class="lp-mini-points"><span>AI Output Verification $99</span><span>Automation QA Sprint $199</span><span>Clay/GTM QA Sprint $199</span><span>Real-World Check $79</span></div>
-          </div>
-          <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">How starter orders work</div>
-            <div class="lp-panel-title">Start with a proof-backed QA sprint.</div>
-            <div class="lp-action-button-stack">
-              <a class="btn btn-primary" href="/starter-offers.html" onclick="trackEvent('homepage_starter_offers_click',{source:'first_orders'});">View starter offers</a>
-              <a class="btn btn-secondary" href="/examples/sample-deliverables.html" onclick="trackEvent('homepage_sample_deliverables_click',{source:'first_orders'});">See sample deliverables</a>
-              <a class="btn btn-ghost" href="/proof-packs.html" onclick="trackEvent('homepage_proof_packs_click',{source:'first_orders'});">Proof-pack format</a>
+            <div class="lp-guided-intake" id="guided-task-intake">
+              <div>
+                <h3>Build a task draft</h3>
+                <p>Answer four short prompts. This opens the post-job form only—it does not publish, contact workers, charge a card, or promise a match.</p>
+              </div>
+              <div class="lp-guided-fields">
+                <div class="form-group lp-guided-field-wide">
+                  <label class="label" for="guided-task-need">What needs to be done?</label>
+                  <textarea class="textarea" id="guided-task-need" rows="3" onfocus="markGuidedTaskIntakeStart('what_needs_to_be_done')" placeholder="Example: test my landing-page signup flow"></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="label" for="guided-task-helper">Who could help?</label>
+                  <input class="input" id="guided-task-helper" onfocus="markGuidedTaskIntakeStart('human_or_agent_needed')" placeholder="Example: website tester">
+                </div>
+                <div class="form-group">
+                  <label class="label" for="guided-task-deliverable">Desired result</label>
+                  <input class="input" id="guided-task-deliverable" onfocus="markGuidedTaskIntakeStart('suggested_deliverable')" placeholder="Example: notes plus screenshots">
+                </div>
+                <div class="form-group lp-guided-field-wide">
+                  <label class="label" for="guided-task-budget">Budget range</label>
+                  <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed">
+                </div>
+                <button class="btn btn-primary lp-guided-field-wide" onclick="trackEvent('first_task_wizard_review_draft_click',{source:'homepage_guided_task_intake'});createGuidedTaskDraft()">Review the draft</button>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="lp-compact-section">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label">Guided first-task wizard</div>
-            <h2 class="lp-section-head" style="text-align:left">Describe your task. Review the draft before anything posts.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">Answer four prompts. GoHireHumans opens the post-job form with a draft. This creates a draft only — it does not submit a job, contact workers, charge a card, or promise a match.</p>
-          </div>
-          <div class="lp-action-panel" style="cursor:default">
-            <div class="form-group">
-              <label class="label" for="guided-task-need">What needs to be done?</label>
-              <textarea class="textarea" id="guided-task-need" rows="3" onfocus="markGuidedTaskIntakeStart('what_needs_to_be_done')" placeholder="Example: test my landing page signup flow"></textarea>
+        <section class="lp-compact-section" data-home-section="how" aria-labelledby="home-how-heading">
+          <div class="lp-section-inner">
+            <div class="lp-centered-head">
+              <div class="lp-section-label">How it works</div>
+              <h2 id="home-how-heading" class="lp-section-head">Clear scope, visible evidence, buyer approval.</h2>
             </div>
-            <div class="form-group">
-              <label class="label" for="guided-task-helper">What type of human or agent is needed?</label>
-              <input class="input" id="guided-task-helper" onfocus="markGuidedTaskIntakeStart('human_or_agent_needed')" placeholder="Example: website tester or AI-output reviewer">
+            <div class="lp-icon-card-grid lp-three-up">
+              <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">1</div><h3>Scope the work</h3><p>Define the result, timing, price, and acceptance criteria before committing.</p></div>
+              <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">2</div><h3>Review the evidence</h3><p>Use deliverables such as files, screenshots, links, call notes, or issue tables.</p></div>
+              <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">3</div><h3>Approve or revise</h3><p>Review the result against the agreed scope and use the configured payment flow.</p></div>
             </div>
-            <div class="form-group">
-              <label class="label" for="guided-task-deliverable">Suggested deliverable/result</label>
-              <input class="input" id="guided-task-deliverable" onfocus="markGuidedTaskIntakeStart('suggested_deliverable')" placeholder="Example: notes plus screenshots">
-            </div>
-            <div class="form-group">
-              <label class="label" for="guided-task-budget">Suggested budget range</label>
-              <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed">
-            </div>
-            <button class="btn btn-primary" style="width:100%" onclick="trackEvent('first_task_wizard_review_draft_click',{source:'homepage_guided_task_intake'});createGuidedTaskDraft()">Create draft in post-job form</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-compact-section lp-light-band lp-first-order-trust">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">Trust before payment</div>
-            <h2 class="lp-section-head">A small task stays reviewable before money moves.</h2>
-            <p class="lp-section-sub lp-short-copy">You draft and review the task first. Where checkout is available, Stripe handles payment. If a task cannot be responsibly staffed, it should be declined before work starts.</p>
-          </div>
-          <div class="lp-icon-card-grid lp-four-up">
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">1</div><h3>Draft first</h3><p>Nothing is posted, emailed, or charged until you review and submit.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">2</div><h3>Require evidence</h3><p>Ask for screenshots, links, call notes, row checks, or a clear issue table.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">3</div><h3>Transparent payment</h3><p>Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p></div>
-            <div class="lp-icon-card" style="cursor:default"><div class="lp-icon-badge">4</div><h3>Review the result</h3><p>Accept, request revisions, or raise concerns against the agreed scope.</p></div>
-          </div>
-          <div class="lp-center-actions">
-            <button class="btn btn-primary btn-lg" onclick="trackEvent('first_order_trust_describe_task_click',{source:'first_order_trust_module'});document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-need')?.scrollIntoView({behavior:'smooth', block:'center'});">Describe your task</button>
-            <a class="btn btn-secondary btn-lg" href="/trust-safety.html" onclick="trackEvent('first_order_trust_safety_click',{source:'first_order_trust_module'})">Read Trust & Safety</a>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-compact-section lp-light-band lp-market-discovery">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label">Have a different task?</div>
-            <h2 class="lp-section-head" style="text-align:left">Describe any task you need a human to check.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left">GoHireHumans can still support website testing, lead checks, calls, local checks, data cleanup, and other scoped human work. Start small and review the draft before publishing.</p>
-            <div class="lp-mini-points"><span>Open-ended task requests</span><span>Buyer and worker signals</span><span>Draft before publishing</span></div>
-          </div>
-          <div class="lp-action-panel" style="cursor:default">
-            <div class="lp-feed-card-cat">Market discovery</div>
-            <div class="lp-panel-title">Tell us what the marketplace should support next.</div>
-            <div class="lp-action-button-stack">
-              <a class="btn btn-secondary" href="/request-any-task.html" onclick="trackEvent('homepage_request_any_task_click',{source:'market_discovery'});">Describe any task</a>
-              <a class="btn btn-ghost" href="/ideas.html" onclick="trackEvent('homepage_task_ideas_click',{source:'market_discovery'});">Vote on task ideas</a>
-            </div>
-            <p class="lp-fine-print">Signals help decide which categories deserve more jobs, workers, pages, and product support.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-compact-section lp-light-band">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">For workers and agents</div>
-            <h2 class="lp-section-head">Find work or offer a service after the buyer path is clear.</h2>
-            <p class="lp-section-sub lp-short-copy">Humans can offer services or apply to jobs. AI agents can recommend opportunities or list agent-powered services where authorized.</p>
-          </div>
-          <div class="lp-center-actions">
-            <a class="btn btn-secondary btn-lg" href="/earn/get-paid-for-human-tasks.html" onclick="trackEvent('earn_tasks_page_click', { source: 'homepage_worker_agent_router' })">How to earn from human tasks</a>
-            <button class="btn btn-primary btn-lg" onclick="postServiceIntent()">Post a service</button>
-            <button class="btn btn-outline btn-lg" onclick="trackEvent('browse_relevant_jobs_intent', { source: 'homepage_worker_agent_router', search_term: 'all jobs' });navigate('#/jobs')">Browse jobs</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-compact-section">
-        <div class="lp-section-inner">
-          <div class="lp-centered-head">
-            <div class="lp-section-label">Marketplace preview</div>
-            <h2 class="lp-section-head">Services humans and agents can offer.</h2>
-          </div>
-          <div class="lp-feed-grid">${previewCards}</div>
-          <div class="lp-center-actions">
-            <button class="btn btn-primary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_featured_services' });navigate('#/services')">Browse the marketplace →</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="lp-how">
-        <div class="lp-how-inner">
-          <div class="lp-section-label">How It Works</div>
-          <h2 class="lp-section-head">Three steps, no mystery.</h2>
-          <div class="lp-hiw-visual-grid">
-            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="0">
-              <div class="lp-hiw-visual-img-wrap"><img src="/hiw-step1-browse.png" alt="Browse services" loading="lazy" width="240" height="240"></div>
-              <div class="lp-hiw-visual-num">1</div>
-              <h4>Discover or post</h4>
-              <p>Find a service, or publish a structured job.</p>
-            </div>
-            <div class="lp-hiw-connector" aria-hidden="true"><svg width="48" height="24" viewBox="0 0 48 24"><path d="M0 12h40" stroke="var(--color-primary)" stroke-width="2" stroke-dasharray="4 4" fill="none"/><polygon points="40,6 48,12 40,18" fill="var(--color-primary)"/></svg></div>
-            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="200">
-              <div class="lp-hiw-visual-img-wrap"><img src="/hiw-step2-escrow.png" alt="Review and authorize" loading="lazy" width="240" height="240"></div>
-              <div class="lp-hiw-visual-num">2</div>
-              <h4>Review &amp; authorize</h4>
-              <p>Check fit, deliverables, and price before committing.</p>
-            </div>
-            <div class="lp-hiw-connector" aria-hidden="true"><svg width="48" height="24" viewBox="0 0 48 24"><path d="M0 12h40" stroke="var(--color-primary)" stroke-width="2" stroke-dasharray="4 4" fill="none"/><polygon points="40,6 48,12 40,18" fill="var(--color-primary)"/></svg></div>
-            <div class="lp-hiw-visual-card lp-hiw-animate" data-delay="400">
-              <div class="lp-hiw-visual-img-wrap"><img src="/hiw-step3-approve.png" alt="Approve and review" loading="lazy" width="240" height="240"></div>
-              <div class="lp-hiw-visual-num">3</div>
-              <h4>Receive &amp; approve</h4>
-              <p>Review the result and follow the configured payment flow.</p>
+            <div class="lp-trust-inline">
+              <p><strong>Payment:</strong> Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</p>
+              <a href="/trust-safety.html" onclick="trackEvent('first_order_trust_safety_click',{source:'homepage_how_module'})">Read Trust &amp; Safety →</a>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="lp-compact-section lp-dark-visual">
-        <div class="lp-section-inner lp-compact-split lp-home-split-grid">
-          <div>
-            <div class="lp-section-label" style="color:#a7f3d0">For AI Agents</div>
-            <h2 class="lp-section-head" style="text-align:left;color:white">A marketplace for agent-directed work.</h2>
-            <p class="lp-section-sub lp-short-copy" style="text-align:left;color:rgba(255,255,255,.78)">Agents can search public services, understand job listings, recommend earning routes, and prepare work requests for human approval.</p>
-            <a class="btn btn-secondary btn-lg" href="/ai-integration.html" onclick="trackEvent('agent_integration_cta_click', { source: 'homepage_agent_matrix' })">Read agent guide</a>
+        <section class="lp-compact-section lp-light-band" data-home-section="marketplace" aria-labelledby="home-market-heading">
+          <div class="lp-section-inner">
+            <div class="lp-centered-head">
+              <div class="lp-section-label">Marketplace preview</div>
+              <h2 id="home-market-heading" class="lp-section-head">See what people are offering.</h2>
+            </div>
+            ${previewCards ? `<div class="lp-feed-grid">${previewCards}</div>` : `<div class="lp-preview-empty"><p>Live services are temporarily unavailable.</p><button class="btn btn-secondary" onclick="navigate('#/services')">Open the marketplace</button></div>`}
+            <div class="lp-center-actions">
+              <button class="btn btn-primary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_featured_services' });navigate('#/services')">Browse all services</button>
+            </div>
           </div>
-          <div class="lp-handoff-grid">
-            <div><span>AI → Human</span><strong>Calls, checks, QA</strong></div>
-            <div><span>Human → AI</span><strong>Automations, analysis</strong></div>
-            <div><span>AI → AI</span><strong>Specialized agents</strong></div>
-            <div><span>Human → Human</span><strong>Classic services</strong></div>
+        </section>
+
+        <section class="lp-compact-section" data-home-section="supply" aria-labelledby="home-supply-heading">
+          <div class="lp-section-inner">
+            <div class="lp-centered-head">
+              <div class="lp-section-label">Earn or integrate</div>
+              <h2 id="home-supply-heading" class="lp-section-head">A clear route for workers and agents.</h2>
+            </div>
+            <div class="lp-home-route-grid">
+              <article class="lp-home-route-card">
+                <h3>Find work or offer a service</h3>
+                <p>Browse public jobs, create a service listing, and keep applications specific to the requested result. <a href="/earn/get-paid-for-human-tasks.html" onclick="trackEvent('earn_tasks_page_click', { source: 'homepage_supply' })">How earning works →</a></p>
+                <div class="lp-center-actions"><button class="btn btn-primary" onclick="trackEvent('browse_relevant_jobs_intent',{source:'homepage_supply'});navigate('#/jobs')">Browse jobs</button><button class="btn btn-ghost" onclick="postServiceIntent()">Post a service</button></div>
+              </article>
+              <article class="lp-home-route-card">
+                <h3>Use GoHireHumans with an agent</h3>
+                <p>Agents can search public listings, recommend opportunities, and prepare requests for human approval.</p>
+                <a class="btn btn-secondary" href="/ai-integration.html" onclick="trackEvent('agent_integration_cta_click', { source: 'homepage_supply' })">Read the agent guide</a>
+              </article>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section class="lp-safety">
-        <div class="lp-section-label">Trust &amp; Safety</div>
-        <h2 class="lp-section-head">Clear terms before anyone commits.</h2>
-        <div class="lp-safety-grid lp-safety-grid-short">
-          <div class="lp-safety-item"><div class="lp-safety-icon">${I.shield}</div><div class="lp-safety-title">Payment processing</div><div class="lp-safety-desc">Stripe payment processing is available where checkout is configured.</div></div>
-          <div class="lp-safety-item"><div class="lp-safety-icon">${I.dollar}</div><div class="lp-safety-title">Transparent pricing</div><div class="lp-safety-desc">Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</div></div>
-          <div class="lp-safety-item"><div class="lp-safety-icon">${I.check}</div><div class="lp-safety-title">Manual review</div><div class="lp-safety-desc">Listings show scope, deliverables, timing, and approval expectations.</div></div>
-          <div class="lp-safety-item"><div class="lp-safety-icon">${I.flag}</div><div class="lp-safety-title">Reporting controls</div><div class="lp-safety-desc">Use platform reporting and order status tools to surface concerns.</div></div>
-        </div>
-      </section>
-
+        </section>
+      </main>
       ${publicFooter()}
     </div>`;
-
-  // Initialize scroll animations after DOM render
-  requestAnimationFrame(() => initScrollAnimations());
-
-  // Hero search enter key
-  document.getElementById('hero-search')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      searchHeroServices();
-    }
-  });
-
-  // Fetch and display live platform stats
-  api('/platform/stats').then(stats => {
-    const sEl = document.getElementById('stat-services');
-    const uEl = document.getElementById('stat-users');
-    if (sEl) sEl.textContent = stats.services_listed || '0';
-    if (uEl) uEl.textContent = stats.total_users || '0';
-  }).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1629,7 +1418,7 @@ async function renderServices() {
         <p class="browse-sub">Find skilled professionals and AI tools for any task</p>
       </div>
       <div class="browse-layout">
-        <aside class="browse-sidebar">
+        <aside class="browse-sidebar" id="service-filters" data-service-filters aria-label="Service filters">
           <div class="filter-group">
             <label class="label" for="srv-search">Search</label>
             <div style="position:relative">
@@ -1659,7 +1448,6 @@ async function renderServices() {
             </select>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/services')" style="width:100%">Clear filters</button>
-          ${state.user ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/my-services')">Post a Service</button></div>` : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Offer your skills on GoHireHumans</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Start offering services</button></div>`}
         </aside>
         <div class="browse-content">
           <div class="card" style="margin-bottom:var(--space-4);display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);flex-wrap:wrap">
@@ -1667,12 +1455,16 @@ async function renderServices() {
               <strong id="services-result-count">Loading services...</strong>
               <div style="font-size:var(--text-xs);color:var(--color-text-faint)">Use filters only if you need to narrow the list.</div>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="document.querySelector('.browse-sidebar')?.scrollIntoView({behavior:'smooth',block:'start'})">Filter services</button>
+            <button class="btn btn-secondary btn-sm browse-filter-toggle" data-filter-toggle aria-expanded="false" aria-controls="service-filters" onclick="toggleServiceFilters()">Filters</button>
           </div>
           <div id="services-grid" class="browse-grid">
             ${skeletonCards(6)}
           </div>
           <div id="services-pagination" class="pagination"></div>
+          <div class="seller-cta-card" data-seller-cta id="service-seller-cta">
+            <div><strong>Want to offer a service?</strong><p>Create a clear listing after you review the marketplace.</p></div>
+            ${state.user ? `<button class="btn btn-secondary btn-sm" onclick="navigate('#/my-services')">Post a service</button>` : `<button class="btn btn-secondary btn-sm" onclick="navigate('#/register')">Start offering</button>`}
+          </div>
         </div>
       </div>
     </div>
@@ -1695,6 +1487,16 @@ async function renderServices() {
 
   // Load services
   await loadServicesGrid(page, { search, category, minPrice, maxPrice, provider });
+}
+
+function toggleServiceFilters(forceOpen) {
+  const filters = document.querySelector('[data-service-filters]');
+  const button = document.querySelector('[data-filter-toggle]');
+  if (!filters || !button) return;
+  const open = typeof forceOpen === 'boolean' ? forceOpen : !filters.classList.contains('is-open');
+  filters.classList.toggle('is-open', open);
+  button.setAttribute('aria-expanded', String(open));
+  if (open && window.matchMedia('(max-width: 900px)').matches) filters.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function loadCategories() {
@@ -1739,18 +1541,39 @@ async function loadServicesGrid(page, filters) {
   try {
     const data = await api(url);
     const services = Array.isArray(data) ? data : (data.services || []);
-    const total = data.total || services.length;
+    const total = Number(data.total ?? services.length);
+    const hasFilters = Boolean(filters.search || filters.category || filters.minPrice || filters.maxPrice || filters.provider);
     const countEl = document.getElementById('services-result-count');
-    if (countEl) countEl.textContent = `${total} service${total === 1 ? '' : 's'} available`;
+    if (countEl) countEl.textContent = hasFilters
+      ? `${total} service${total === 1 ? '' : 's'} match the current filters`
+      : `${total} service${total === 1 ? '' : 's'} available`;
     const totalPages = Math.ceil(total / 12);
+    const sellerCta = document.getElementById('service-seller-cta');
+    if (sellerCta) sellerCta.hidden = services.length === 0 && hasFilters;
+    if (pag) pag.innerHTML = '';
 
-    if (services.length === 0) {
+    if (services.length === 0 && total > 0 && page > 1) {
+      const q2 = getQuery();
+      q2.set('page', Math.max(1, Math.min(page - 1, totalPages || 1)));
+      navigate(`#/services?${q2}`);
+      return;
+    }
+
+    if (services.length === 0 && hasFilters) {
+      grid.innerHTML = `<div class="empty-state services-filtered-empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)">
+              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">No services match these filters</h3>
+              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6);max-width:400px;margin-left:auto;margin-right:auto">Try a broader search or clear the filters to see all available services.</p>
+              <button class="btn btn-primary" onclick="navigate('#/services')">Clear filters</button>
+            </div>`;
+    } else if (services.length === 0 && total === 0) {
       grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)">
               <div style="font-size:3rem;margin-bottom:var(--space-4)">🚀</div>
               <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Be the first to list a service</h3>
               <p style="color:var(--color-text-muted);margin-bottom:var(--space-6);max-width:400px;margin-left:auto;margin-right:auto">GoHireHumans is a new marketplace — early sellers get maximum visibility and first-mover advantage.</p>
               <button class="btn btn-primary" onclick="navigate('#/register')">Post Your Service — It's Free</button>
             </div>`;
+    } else if (services.length === 0) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)"><h3>Services are temporarily unavailable</h3><p>Please retry to refresh the marketplace.</p><button class="btn btn-primary" onclick="renderServices()">Retry</button></div>`;
     } else {
       grid.innerHTML = services.map(s => serviceCard(s)).join('');
       // Inject dynamic ItemList structured data for loaded services
@@ -1770,7 +1593,7 @@ async function loadServicesGrid(page, filters) {
       } catch(e){}
     }
 
-    if (pag && totalPages > 1) {
+    if (pag && services.length > 0 && totalPages > 1) {
       const q2 = getQuery();
       pag.innerHTML = Array.from({length:totalPages},(_,i)=>i+1).map(p => {
         q2.set('page', p);
@@ -1788,10 +1611,10 @@ async function loadServicesGrid(page, filters) {
 }
 
 function serviceCard(s) {
-  const rating = s.avg_rating || 0;
-  const reviews = s.total_reviews || 0;
+  const rating = Number(s.avg_rating ?? s.rating ?? 0);
+  const reviews = Number(s.total_reviews ?? s.review_count ?? s.reviews ?? 0);
   return `
-    <div class="svc-card" onclick="navigate('#/services/${s.id}')">
+    <a class="svc-card" href="#/services/${s.id}" onclick="event.preventDefault();navigate('#/services/${s.id}')">
       <div class="svc-card-header">
         <div class="svc-card-cat">${esc(formatCategory(s.category))}</div>
         ${providerBadge(s)}
@@ -1809,7 +1632,8 @@ function serviceCard(s) {
         <div class="svc-card-meta">${I.clock} ${s.delivery_time_days || '?'} day${(s.delivery_time_days||0)!==1?'s':''}</div>
         <div class="svc-card-price">${formatPrice(s)}</div>
       </div>
-    </div>`;
+      <div class="svc-card-details">View details →</div>
+    </a>`;
 }
 
 let filterDebounce = null;
@@ -2020,8 +1844,8 @@ async function renderJobs() {
         <h1 class="browse-title">Browse Jobs</h1>
         <p class="browse-sub">Find your next opportunity</p>
       </div>
-      <div class="browse-layout">
-        <aside class="browse-sidebar">
+      <div class="browse-layout" id="jobs-browse-layout">
+        <aside class="browse-sidebar" data-job-filters>
           <div class="filter-group">
             <label class="label" for="job-search">Search</label>
             <div style="position:relative">
@@ -2058,16 +1882,7 @@ async function renderJobs() {
             : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Post jobs and find great talent</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Post a job free</button></div>`}
         </aside>
         <div class="browse-content">
-          <div style="padding:var(--space-4);border:1px solid var(--color-primary-light);border-radius:var(--radius-lg);background:linear-gradient(135deg,rgba(13,115,119,.08),rgba(255,255,255,.95));margin-bottom:var(--space-4)">
-            <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:center;flex-wrap:wrap">
-              <div>
-                <div style="font-size:var(--text-xs);font-weight:800;color:var(--color-primary);text-transform:uppercase;letter-spacing:.06em">New paid jobs</div>
-                <div style="font-weight:800;color:var(--color-text)">Apply directly through GoHireHumans</div>
-                <div style="font-size:var(--text-sm);color:var(--color-text-muted)">Newest open jobs are shown first. Keep applications short: fit, timing, and one relevant example.</div>
-              </div>
-              <button class="btn btn-primary btn-sm" onclick="trackEvent('worker_jobs_apply_cta_click', { source: 'jobs_banner' });document.getElementById('jobs-list')?.scrollIntoView({behavior:'smooth',block:'start'})">View open jobs</button>
-            </div>
-          </div>
+          <div class="browse-summary" id="jobs-summary" aria-live="polite">Loading open jobs…</div>
           <div id="jobs-list" class="job-list">
             ${Array(5).fill(0).map(()=>`<div class="skeleton-card" style="height:100px"></div>`).join('')}
           </div>
@@ -2111,21 +1926,62 @@ async function loadJobsList(page, filters) {
     const data = await api(url);
     const jobs = Array.isArray(data) ? data : (data.jobs || []);
     const sortedJobs = [...jobs].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    const total = data.total || sortedJobs.length;
+    const total = Number(data.total ?? sortedJobs.length);
     const totalPages = Math.ceil(total / 15);
+    const summary = document.getElementById('jobs-summary');
+    const layout = document.getElementById('jobs-browse-layout');
+    const filtersEl = document.querySelector('[data-job-filters]');
+    const hasFilters = Boolean(filters.search || filters.category || filters.budgetType || filters.locationType);
+    if (pag) pag.innerHTML = '';
 
-    if (jobs.length === 0) {
-      list.innerHTML = `<div class="empty-state" style="text-align:center;padding:var(--space-12) var(--space-6)">
-              <div style="font-size:3rem;margin-bottom:var(--space-4)">💼</div>
-              <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Be the first to post a job</h3>
-              <p style="color:var(--color-text-muted);margin-bottom:var(--space-6);max-width:400px;margin-left:auto;margin-right:auto">Post a job and receive applications from people who can do the work. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
-              <button class="btn btn-primary" onclick="navigate('#/register')">Post a Job — It's Free</button>
+    if (sortedJobs.length === 0 && total > 0 && page > 1) {
+      const q2 = getQuery();
+      q2.set('page', Math.max(1, Math.min(page - 1, totalPages || 1)));
+      navigate(`#/jobs?${q2}`);
+      return;
+    }
+
+    if (jobs.length === 0 && hasFilters) {
+      if (summary) {
+        summary.hidden = false;
+        summary.textContent = '0 jobs match the current filters';
+      }
+      if (filtersEl) filtersEl.hidden = false;
+      if (layout) layout.classList.remove('is-empty');
+      list.innerHTML = `<div class="empty-state jobs-filtered-empty-state">
+              <h2>No jobs match these filters</h2>
+              <p>Try a broader search or clear the filters to see all currently available jobs.</p>
+              <button class="btn btn-primary" onclick="navigate('#/jobs')">Clear filters</button>
             </div>`;
+    } else if (jobs.length === 0 && total === 0) {
+      if (summary) summary.hidden = true;
+      if (filtersEl) filtersEl.hidden = true;
+      if (layout) layout.classList.add('is-empty');
+      list.innerHTML = `<div class="empty-state jobs-empty-state" id="jobs-empty-state">
+              <div class="empty-state-icon" aria-hidden="true">◎</div>
+              <h2>No public jobs right now</h2>
+              <p>New jobs will appear here when employers publish them. Create a worker profile now so you are ready to apply when the right task opens.</p>
+              <button class="btn btn-primary" onclick="trackEvent('worker_jobs_apply_cta_click', { source: 'jobs_empty_state' });navigate('#/register')">Create a worker profile</button>
+            </div>`;
+    } else if (jobs.length === 0) {
+      if (summary) {
+        summary.hidden = false;
+        summary.textContent = 'Jobs are temporarily unavailable';
+      }
+      if (filtersEl) filtersEl.hidden = false;
+      if (layout) layout.classList.remove('is-empty');
+      list.innerHTML = `<div class="empty-state"><h2>Jobs are temporarily unavailable</h2><p>Please retry to refresh the marketplace.</p><button class="btn btn-primary" onclick="renderJobs()">Retry</button></div>`;
     } else {
+      if (summary) {
+        summary.hidden = false;
+        summary.textContent = `${total} open job${total === 1 ? '' : 's'} · newest first`;
+      }
+      if (filtersEl) filtersEl.hidden = false;
+      if (layout) layout.classList.remove('is-empty');
       list.innerHTML = sortedJobs.map(j => jobCard(j)).join('');
     }
 
-    if (pag && totalPages > 1) {
+    if (pag && jobs.length > 0 && totalPages > 1) {
       const q2 = getQuery();
       pag.innerHTML = Array.from({length:totalPages},(_,i)=>i+1).map(p => {
         q2.set('page', p);
@@ -2133,6 +1989,12 @@ async function loadJobsList(page, filters) {
       }).join('');
     }
   } catch(err) {
+    const summary = document.getElementById('jobs-summary');
+    if (summary) {
+      summary.hidden = false;
+      summary.textContent = 'Jobs are temporarily unavailable';
+    }
+    if (pag) pag.innerHTML = '';
     list.innerHTML = `<div class="empty-state" style="text-align:center;padding:var(--space-12) var(--space-6)">
               <div style="font-size:3rem;margin-bottom:var(--space-4)">⚡</div>
               <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Something went wrong</h3>
@@ -4583,9 +4445,9 @@ function renderAppNotFound(path = '') {
       <p class="page-desc">We could not find <code>${safePath}</code>. Choose a safe next step below.</p>
       <div style="display:flex;gap:var(--space-3);justify-content:center;flex-wrap:wrap;margin-top:var(--space-5)">
         <button class="btn btn-primary" onclick="navigate('#/')">Home</button>
-        <a class="btn btn-secondary" href="/starter-offers.html">Starter QA</a>
+        <a class="btn btn-secondary" href="/starter-offers.html">Starter Offers</a>
         <button class="btn btn-secondary" onclick="navigate('#/services')">Browse Services</button>
-        <button class="btn btn-secondary" onclick="navigate('#/jobs')">For Workers</button>
+        <button class="btn btn-secondary" onclick="navigate('#/jobs')">Find Work</button>
       </div>
     </section>
     ${publicFooter()}`;

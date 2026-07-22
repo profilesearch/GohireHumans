@@ -24,11 +24,11 @@
   <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
-      <div class="lp-nav-links"><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
-      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div>
       <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
   <script>
     function toggleMobileMenu(forceOpen) {
@@ -51,121 +51,85 @@
       });
     }
   </script>
-  <div class="wrap">
-
-    <section class="hero">
-      <div class="eyebrow">Founding customer QA sprints</div>
-      <h1>Human verification for AI work before you trust it.</h1>
-      <p>Start with one small, fixed-scope review. A real human checks the output, workflow, data, or real-world fact pattern and returns a proof-backed report you can approve, revise, or turn into the next task.</p>
-      <p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('starter_offer_draft_click',{offer:'ai_output_verification',source:'starter_hero'});trackGHH('generate_lead',{lead_type:'founding_qa_sprint',offer:'ai_output_verification'})">Draft an AI verification task</a> <a class="cta secondary" href="/examples/sample-deliverables.html" onclick="trackGHH('starter_offer_sample_click',{source:'starter_hero'})">See sample deliverables</a> <a class="cta secondary" href="/proof-packs.html">View proof-pack format</a></p>
-    </section>
-
-    <p class="fine"><strong>Founder-managed while early:</strong> first customer tasks stay small, evidence-backed, and reviewed where feasible. You draft before publishing or paying; if we cannot responsibly staff a task, we should decline before starting.</p>
-
-
-    <section class="section" aria-labelledby="choose-by-risk-heading">
-      <h2 id="choose-by-risk-heading">Choose by the risk you need checked</h2>
-      <p class="muted">If you arrived from pricing, search, or an AI assistant, start here. Each path creates a small task draft and tracks a comparable intent signal.</p>
-      <div class="grid">
-        <article class="card"><h3>“Can we trust this AI output?”</h3><p>Use this for AI-written business copy, AI research, source checking, support drafts, and hallucination risk.</p><p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('starter_problem_route_click',{problem:'trust_ai_output',template:'ai_review'});trackGHH('post_task_cta_click',{source:'starter_problem_ai_review'});trackGHH('qualify_lead',{lead_type:'starter_problem_ai_review'})">Draft AI-output review</a></p></article>
-        <article class="card"><h3>“Will this flow break for users?”</h3><p>Use this for signup, onboarding, website QA, agent-run verification, automation handoffs, and screenshot evidence.</p><p><a class="cta" href="/#/post-job?template=website_qa" onclick="trackGHH('starter_problem_route_click',{problem:'flow_risk',template:'website_qa'});trackGHH('post_task_cta_click',{source:'starter_problem_website_qa'});trackGHH('qualify_lead',{lead_type:'starter_problem_website_qa'})">Draft website QA task</a></p></article>
-        <article class="card"><h3>“Is this list safe to use?”</h3><p>Use this for Clay/GTM enrichment, buyer lists, CRM cleanup, duplicates, broken links, and unverifiable claims.</p><p><a class="cta" href="/#/post-job?template=lead_qualification" onclick="trackGHH('starter_problem_route_click',{problem:'lead_list_risk',template:'lead_qualification'});trackGHH('post_task_cta_click',{source:'starter_problem_lead_research'});trackGHH('qualify_lead',{lead_type:'starter_problem_lead_research'})">Draft lead-list verification</a></p></article>
+  <main class="wrap" data-starter-simplified="true">
+    <section class="hero starter-hero">
+      <div class="eyebrow">Optional fixed-scope starting points</div>
+      <h1>Start small when the work needs proof.</h1>
+      <p>Choose one bounded human check for an output, workflow, list, or real-world fact. You review the draft before it is published or paid.</p>
+      <div class="starter-hero-actions">
+        <a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('starter_offer_draft_click',{offer:'ai_output_verification',source:'starter_hero'})">Draft a verification task</a>
+        <a class="cta secondary" href="/#/services" onclick="trackGHH('browse_humans_cta_click',{source:'starter_hero'})">Browse all services</a>
       </div>
     </section>
 
-    <section class="section">
-      <h2>Choose a founding offer</h2>
-      <p class="muted">Four fixed-scope ways to get evidence before you trust an output, workflow, list, or real-world fact.</p>
-      <div class="grid">
-        <article class="card featured">
+    <p class="fine"><strong>Founder-managed while early:</strong> first customer tasks stay small, evidence-backed, and reviewed where feasible. If a task cannot be responsibly staffed, it should be declined before work starts.</p>
+
+    <section class="section" aria-labelledby="starter-offers-heading">
+      <h2 id="starter-offers-heading">Four proof-backed starter offers</h2>
+      <p class="muted">Each option defines a bounded input, evidence-based result, and clear review point.</p>
+      <div class="grid starter-offer-grid">
+        <article class="card featured starter-offer-card">
           <span class="pill">Recommended first order</span>
           <h3>AI Output Verification</h3>
           <div class="price">$99</div>
-          <p>Human review of one AI-generated output, research brief, article, response set, claim list, or workflow result.</p>
-          <ul class="checklist">
-            <li>Claim/source check where applicable.</li>
-            <li>Error, uncertainty, and trust-risk table.</li>
-            <li>Suggested corrections or next-step recommendation.</li>
-          </ul>
-          <p><a class="cta" href="/#/post-job?template=ai_review" onclick="trackGHH('starter_offer_draft_click',{offer:'ai_output_verification'});trackGHH('generate_lead',{lead_type:'founding_offer',offer:'ai_output_verification'})">Draft AI-output trust review</a></p>
+          <p>Review one AI-generated output, research brief, article, response set, claim list, or workflow result.</p>
+          <ul class="checklist"><li>Claim and source checks where applicable.</li><li>Error, uncertainty, and trust-risk table.</li><li>Suggested corrections or next step.</li></ul>
+          <a class="offer-link" href="/#/post-job?template=ai_review" onclick="trackGHH('starter_offer_draft_click',{offer:'ai_output_verification'})">Draft this task →</a>
         </article>
-        <article class="card">
-          <span class="pill">For agencies/operators</span>
+        <article class="card starter-offer-card">
+          <span class="pill">Workflow checks</span>
           <h3>Automation QA Sprint</h3>
           <div class="price">$199</div>
-          <p>Human testing pass for one website/app flow, AI-agent run, Zapier/Make/n8n workflow, or automation handoff.</p>
-          <ul class="checklist">
-            <li>Checklist-based run-through.</li>
-            <li>Screenshots, reproduction notes, and issue severity.</li>
-            <li>Pass/fail/uncertain summary.</li>
-          </ul>
-          <p><a class="cta" href="/#/post-job?template=automation_verification" onclick="trackGHH('starter_offer_draft_click',{offer:'automation_qa_sprint'});trackGHH('generate_lead',{lead_type:'founding_offer',offer:'automation_qa_sprint'})">Draft automation QA sprint</a></p>
+          <p>Test one website or app flow, agent run, automation, or handoff.</p>
+          <ul class="checklist"><li>Checklist-based run-through.</li><li>Screenshots and reproduction notes.</li><li>Pass, fail, and uncertain summary.</li></ul>
+          <a class="offer-link" href="/#/post-job?template=automation_verification" onclick="trackGHH('starter_offer_draft_click',{offer:'automation_qa_sprint'})">Draft this task →</a>
         </article>
-        <article class="card">
-          <span class="pill">For Clay/GTM teams</span>
+        <article class="card starter-offer-card">
+          <span class="pill">Data checks</span>
           <h3>Clay/GTM QA Sprint</h3>
           <div class="price">$199</div>
-          <p>Human spot-checking for AI-enriched account rows, source accuracy, personalization claims, broken links, duplicates, and risky outbound copy before campaigns go live.</p>
-          <ul class="checklist">
-            <li>Review 25–50 rows or a similarly bounded sample.</li>
-            <li>Flag hallucinated claims, unverifiable sources, stale/broken links, duplicates, and ICP-fit risks.</li>
-            <li>Row-level issue table with severity, evidence, and recommendation.</li>
-          </ul>
-          <p><a class="cta" href="/#/post-job?template=clay_gtm_qa" onclick="trackGHH('starter_offer_draft_click',{offer:'clay_gtm_qa_sprint'});trackGHH('generate_lead',{lead_type:'founding_offer',offer:'clay_gtm_qa_sprint'})">Draft Clay/GTM QA sprint</a></p>
+          <p>Spot-check a bounded sample of enriched rows, sources, links, duplicates, and outbound claims.</p>
+          <ul class="checklist"><li>Review 25–50 rows or a similar sample.</li><li>Flag unverifiable or stale data.</li><li>Return a row-level issue table.</li></ul>
+          <a class="offer-link" href="/#/post-job?template=clay_gtm_qa" onclick="trackGHH('starter_offer_draft_click',{offer:'clay_gtm_qa_sprint'})">Draft this task →</a>
         </article>
-        <article class="card">
-          <span class="pill">For offline/manual facts</span>
+        <article class="card starter-offer-card">
+          <span class="pill">Manual facts</span>
           <h3>Real-World Check</h3>
           <div class="price">$79</div>
-          <p>Human verification for one small real-world fact pattern: calls, local checks, availability, pricing, contact details, or public-source confirmation.</p>
-          <ul class="checklist">
-            <li>Short call/local/source log.</li>
-            <li>What was confirmed, contradicted, or unreachable.</li>
-            <li>Evidence links/screenshots where possible.</li>
-          </ul>
-          <p><a class="cta" href="/#/post-job?template=phone_fact_check" onclick="trackGHH('starter_offer_draft_click',{offer:'real_world_check'});trackGHH('generate_lead',{lead_type:'founding_offer',offer:'real_world_check'})">Draft real-world check</a></p>
+          <p>Verify one small real-world fact pattern through calls, local checks, or public sources.</p>
+          <ul class="checklist"><li>Short call, local, or source log.</li><li>Confirmed, contradicted, or unreachable items.</li><li>Evidence and caveats where possible.</li></ul>
+          <a class="offer-link" href="/#/post-job?template=phone_fact_check" onclick="trackGHH('starter_offer_draft_click',{offer:'real_world_check'})">Draft this task →</a>
         </article>
       </div>
     </section>
 
-    <section class="section">
-      <h2>What every proof pack includes</h2>
-      <div class="grid">
-        <div class="card"><h3>Scope card</h3><p>Inputs, what will be checked, what is out of scope, deadline, and acceptance criteria.</p></div>
-        <div class="card"><h3>Evidence report</h3><p>Issue table, screenshots, source links, call notes, or cleaned data artifacts depending on the task.</p></div>
-        <div class="card"><h3>Founder review</h3><p>For early orders, GoHireHumans reviews the deliverable before buyer delivery where operationally feasible.</p></div>
+    <section class="section starter-terms" aria-labelledby="starter-terms-heading">
+      <div>
+        <h2 id="starter-terms-heading">What the result includes</h2>
+        <ul class="checklist"><li>A scope card with inputs, exclusions, timing, and acceptance criteria.</li><li>An evidence report using issue tables, screenshots, links, call notes, or cleaned data as appropriate.</li><li>Founder review before buyer delivery where operationally feasible.</li></ul>
+        <p><a href="/examples/sample-deliverables.html" onclick="trackGHH('starter_offer_sample_click',{source:'starter_terms'})">See sample deliverables →</a> · <a href="/proof-packs.html">View proof-pack format →</a></p>
+      </div>
+      <div>
+        <h2>Important limits</h2>
+        <ul class="checklist"><li>Use a small, checkable task rather than a vague role.</li><li>Do not put passwords, credentials, or sensitive customer data in public task text.</li><li>Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</li><li>If the task cannot be responsibly staffed, it should be declined before starting.</li></ul>
       </div>
     </section>
-
-    <section class="section">
-      <h2>Important limits</h2>
-      <div class="card">
-        <ul class="checklist">
-          <li>Start with a small, checkable task rather than a vague role.</li>
-          <li>Do not share passwords, private credentials, or sensitive customer data in public task text.</li>
-          <li>Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans platform fee where checkout is configured.</li>
-          <li>If we cannot staff the task responsibly, the right answer is to decline before starting rather than promise a result we cannot verify.</li>
-        </ul>
-      </div>
-    </section>
-
-  </div>
+  </main>
 <footer class="lp-footer">
   <div class="lp-footer-inner">
     <div class="lp-footer-top">
       <div class="lp-footer-brand">
         <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
-        <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
       </div>
       <div class="lp-footer-col">
         <h4>Marketplace</h4>
         <ul class="lp-footer-links">
-          <li><a href="/starter-offers.html">Starter QA</a></li>
           <li><a href="/#/services">Browse Services</a></li>
-          <li><a href="/#/jobs">Open Jobs for Workers</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
           <li><a href="/#/ai-employers">For Agents</a></li>
-          <li><a href="/use-cases/">Use Cases</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
         </ul>
       </div>
       <div class="lp-footer-col">
@@ -175,7 +139,6 @@
           <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
           <li><a href="/about.html">About</a></li>
           <li><a href="/faq.html">FAQ</a></li>
-          <li><a href="/blog/">Blog</a></li>
         </ul>
       </div>
       <div class="lp-footer-col">
