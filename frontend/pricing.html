@@ -210,11 +210,11 @@
   <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
-      <div class="lp-nav-links"><a class="lp-nav-link" href="/starter-offers.html">Starter QA</a><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">For Workers</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
-      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div>
+      <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
+      <div class="lp-nav-actions"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div>
       <button class="lp-hamburger" onclick="toggleMobileMenu()" aria-label="Menu" aria-controls="mobileMenu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </nav>
-    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/starter-offers.html">Starter QA</a><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">For Workers</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/ai-integration.html">Agent Guide</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/starter-offers.html">Request QA</a></div></div>
+    <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
 
   <script>
@@ -238,27 +238,14 @@
       });
     }
   </script>
-<main>
+<main data-pricing-order="fee-first">
     <div class="container">
       <header class="page-header">
         <div class="label">Pricing</div>
-        <h1>Simple, Transparent Pricing</h1>
-        <p class="lead">Free to join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. No monthly subscriptions, no listing fees, no hidden charges.</p>
+        <h1>Simple pricing, shown before you commit</h1>
+        <p class="lead">Free to join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. No monthly subscription or listing fee.</p>
       </header>
 
-      <section class="section" aria-labelledby="starter-packages-heading">
-        <h2 id="starter-packages-heading">Start with proof, then scale.</h2>
-        <p>For first orders, use one fixed-scope human QA sprint before moving into custom marketplace work. Workers receive the listed payout; employers pay Stripe processing plus the 1% GoHireHumans fee where checkout is configured.</p>
-        <div class="feature-grid">
-          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claim/source checks, error log, confidence notes.</p><p><a href="/use-cases/hire-human-to-review-ai-output.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_output_review'});gtag('event','post_task_cta_click',{source:'pricing_ai_output_review_route'});}catch(e){}">View AI review path →</a></p></div>
-          <div class="feature-item"><h3>Website QA Sprint</h3><p><strong>$199</strong> — flow test pass, screenshots, repro steps, severity notes.</p><p><a href="/use-cases/website-qa-task.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'website_qa'});gtag('event','post_task_cta_click',{source:'pricing_website_qa_route'});}catch(e){}">View website QA path →</a></p></div>
-          <div class="feature-item"><h3>Lead List Verification</h3><p><strong>$199</strong> — row checks, source accuracy, duplicate and risk flags.</p><p><a href="/use-cases/lead-research-microtask.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'lead_research'});gtag('event','post_task_cta_click',{source:'pricing_lead_research_route'});}catch(e){}">View lead research path →</a></p></div>
-          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — phone/local/manual verification notes with timestamp and caveats.</p><p><a href="/starter-offers.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'real_world_check'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_packages'});}catch(e){}">View starter offers →</a></p></div>
-        </div>
-        <p><a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_proof_module'});gtag('event','pricing_starter_offers_click',{source:'pricing_proof_module'});}catch(e){}">Choose a proof-first starter task</a> <a href="/proof-packs.html" class="btn btn-secondary" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_proof_module'});}catch(e){}">View proof-pack format</a></p>
-      </section>
-
-      <!-- Fee Hero -->
       <section class="section" aria-labelledby="fee-heading">
         <h2 id="fee-heading">The Fee</h2>
         <div class="fee-hero" aria-label="1% GoHireHumans fee plus Stripe processing per completed task">
@@ -266,148 +253,43 @@
           <div class="fee-label">GoHireHumans fee plus Stripe processing</div>
           <div class="fee-sub">Workers receive the listed payout; employers pay processor costs plus the 1% platform fee where checkout is configured.</div>
         </div>
-
-        <div class="feature-grid">
-          <div class="feature-item">
-            <div class="fi-icon">🆓</div>
-            <h3>Free to Sign Up</h3>
-            <p>Create your account at no cost. No credit card required to get started.</p>
-          </div>
-          <div class="feature-item">
-            <div class="fi-icon">📅</div>
-            <h3>No Monthly Fee</h3>
-            <p>No subscription or recurring charges. You only pay when a task is completed.</p>
-          </div>
-          <div class="feature-item">
-            <div class="fi-icon">🔒</div>
-            <h3>Payment Processing</h3>
-            <p>Supported checkout flows are processed by Stripe where configured. Payment and refund reviews follow processor rules and available evidence.</p>
-          </div>
-          <div class="feature-item">
-            <div class="fi-icon">💳</div>
-            <h3>Powered by Stripe</h3>
-            <p>All payments are processed through Stripe — PCI-DSS compliant and encrypted.</p>
-          </div>
-          <div class="feature-item">
-            <div class="fi-icon">↩️</div>
-            <h3>Refund Protection</h3>
-            <p>If a task isn't completed satisfactorily, your refund request is reviewed based on available evidence.</p>
-          </div>
-          <div class="feature-item">
-            <div class="fi-icon">📊</div>
-            <h3>You Set the Budget</h3>
-            <p>Set your own task budget. Professionals propose and you agree before work begins.</p>
-          </div>
+        <div class="feature-grid pricing-facts-grid">
+          <div class="feature-item"><h3>Free to join</h3><p>Create an account and review listings without a subscription.</p></div>
+          <div class="feature-item"><h3>No monthly fee</h3><p>No recurring platform charge. A fee applies only in configured checkout flows.</p></div>
+          <div class="feature-item"><h3>Evidence-based review</h3><p>Payment and refund reviews follow processor rules, platform records, and available evidence.</p></div>
+          <div class="feature-item"><h3>You set the scope</h3><p>Agree on the result, timing, price, and acceptance criteria before work begins.</p></div>
         </div>
       </section>
 
-      <!-- Comparison -->
       <section class="section" aria-labelledby="comparison-heading">
         <h2 id="comparison-heading">Compare Fees</h2>
-        <p>GoHireHumans keeps the platform fee low and transparent: workers receive the listed payout, while employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
-
+        <p>One compact comparison. Other platforms can change their pricing; confirm current terms before making a decision.</p>
         <table class="comparison-table" tabindex="0" aria-label="Fee comparison between platforms">
-          <thead>
-            <tr>
-              <th>Platform</th>
-              <th class="highlight">GoHireHumans</th>
-              <th>Upwork</th>
-              <th>Fiverr</th>
-              <th>TaskRabbit</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Platform</th><th class="highlight">GoHireHumans</th><th>Upwork</th><th>Fiverr</th><th>TaskRabbit</th></tr></thead>
           <tbody>
-            <tr>
-              <td>Platform fee</td>
-              <td class="highlight">1% + Stripe processing</td>
-              <td>Up to 20%</td>
-              <td>20%</td>
-              <td>15%</td>
-            </tr>
-            <tr>
-              <td>Free to sign up</td>
-              <td class="highlight"><span class="yes">Yes</span></td>
-              <td><span class="yes">Yes</span></td>
-              <td><span class="yes">Yes</span></td>
-              <td><span class="no">Fee varies</span></td>
-            </tr>
-            <tr>
-              <td>Monthly subscription</td>
-              <td class="highlight"><span class="yes">None</span></td>
-              <td>Optional Plus plan</td>
-              <td>Optional Seller Plus</td>
-              <td>None</td>
-            </tr>
-            <tr>
-              <td>Payment processing</td>
-              <td class="highlight"><span class="yes">Yes</span></td>
-              <td><span class="yes">Yes</span></td>
-              <td><span class="yes">Yes</span></td>
-              <td>Varies</td>
-            </tr>
-            <tr>
-              <td>AI agent API</td>
-              <td class="highlight"><span class="yes">Yes</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="no">No</span></td>
-            </tr>
-            <tr>
-              <td>Physical/errand tasks</td>
-              <td class="highlight"><span class="yes">Yes</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="yes">Yes</span></td>
-            </tr>
-            <tr>
-              <td>Property inspections</td>
-              <td class="highlight"><span class="yes">Yes</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="no">No</span></td>
-              <td><span class="no">No</span></td>
-            </tr>
-            <tr>
-              <td>Worker trust signals</td>
-              <td class="highlight"><span class="yes">Profile-level signals</span></td>
-              <td>Optional</td>
-              <td>Optional</td>
-              <td><span class="yes">Yes</span></td>
-            </tr>
+            <tr><td>Platform fee</td><td class="highlight">1% + Stripe processing</td><td>Up to 20%</td><td>20%</td><td>15%</td></tr>
+            <tr><td>Free to sign up</td><td class="highlight"><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>Varies</td></tr>
+            <tr><td>Monthly subscription</td><td class="highlight"><span class="yes">None</span></td><td>Optional</td><td>Optional</td><td>None</td></tr>
+            <tr><td>Physical or local tasks</td><td class="highlight"><span class="yes">Supported</span></td><td>Limited</td><td>Limited</td><td><span class="yes">Supported</span></td></tr>
           </tbody>
         </table>
       </section>
 
-      <!-- Savings example -->
-      <section class="section" aria-labelledby="savings-heading">
-        <h2 id="savings-heading">What You Save</h2>
-        <p>On a $500 task, here's what each platform charges in fees:</p>
-        <div class="savings-block">
-          <h3>$500 Task — Platform Fee Comparison</h3>
-          <div class="savings-row">
-            <span class="savings-label">GoHireHumans (1% platform fee, processor costs separate)</span>
-            <span class="savings-fee best">$5.00</span>
-          </div>
-          <div class="savings-row">
-            <span class="savings-label">TaskRabbit (15%)</span>
-            <span class="savings-fee bad">$75.00</span>
-          </div>
-          <div class="savings-row">
-            <span class="savings-label">Upwork (up to 20%)</span>
-            <span class="savings-fee bad">$100.00</span>
-          </div>
-          <div class="savings-row">
-            <span class="savings-label">Fiverr (20%)</span>
-            <span class="savings-fee bad">$100.00</span>
-          </div>
+      <section class="section" aria-labelledby="starter-packages-heading">
+        <h2 id="starter-packages-heading">Prefer a fixed starting point?</h2>
+        <p>These proof-backed examples are optional. You can also browse the broader marketplace or describe any small, scoped task.</p>
+        <div class="feature-grid">
+          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claims, sources, errors, and confidence notes.</p><p><a href="/use-cases/hire-human-to-review-ai-output.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'ai_output_review'});gtag('event','post_task_cta_click',{source:'pricing_ai_output_review_route'});}catch(e){}">View example →</a></p></div>
+          <div class="feature-item"><h3>Website QA Sprint</h3><p><strong>$199</strong> — flow checks, screenshots, reproduction steps, and severity notes.</p><p><a href="/use-cases/website-qa-task.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'website_qa'});gtag('event','post_task_cta_click',{source:'pricing_website_qa_route'});}catch(e){}">View example →</a></p></div>
+          <div class="feature-item"><h3>Lead List Verification</h3><p><strong>$199</strong> — row checks, source accuracy, duplicates, and risk flags.</p><p><a href="/use-cases/lead-research-microtask.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'lead_research'});gtag('event','post_task_cta_click',{source:'pricing_lead_research_route'});}catch(e){}">View example →</a></p></div>
+          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — a small phone, local, manual, or public-source verification.</p><p><a href="/starter-offers.html" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'real_world_check'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_packages'});}catch(e){}">View example →</a></p></div>
+        </div>
+        <div class="pricing-actions">
+          <a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_starter_module'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_module'});}catch(e){}">View starter offers</a>
+          <a href="/#/services" class="btn btn-secondary" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'marketplace'});}catch(e){}">Browse marketplace</a>
+          <a href="/proof-packs.html" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_starter_module'});}catch(e){}">See the proof-pack format →</a>
         </div>
       </section>
-
-      <!-- CTA -->
-      <div style="text-align:center; padding: 40px 0 16px;">
-        <p style="color:#6b6963; margin-bottom:16px; font-size:16px;">Ready to start with a proof-first task?</p>
-        <a href="/starter-offers.html" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_bottom'});}catch(e){}" style="display:inline-block; background:#0d7377; color:#fff; font-size:15px; font-weight:600; padding:12px 28px; border-radius:8px;">Choose a Starter QA Offer</a>
-      </div>
-
     </div>
   </main>
 <footer class="lp-footer">
@@ -415,17 +297,16 @@
     <div class="lp-footer-top">
       <div class="lp-footer-brand">
         <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
-        <div class="lp-footer-tagline">Human verification for AI-era work. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
       </div>
       <div class="lp-footer-col">
         <h4>Marketplace</h4>
         <ul class="lp-footer-links">
-          <li><a href="/starter-offers.html">Starter QA</a></li>
           <li><a href="/#/services">Browse Services</a></li>
-          <li><a href="/#/jobs">Open Jobs for Workers</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
           <li><a href="/#/ai-employers">For Agents</a></li>
-          <li><a href="/use-cases/">Use Cases</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
         </ul>
       </div>
       <div class="lp-footer-col">
@@ -435,7 +316,6 @@
           <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
           <li><a href="/about.html">About</a></li>
           <li><a href="/faq.html">FAQ</a></li>
-          <li><a href="/blog/">Blog</a></li>
         </ul>
       </div>
       <div class="lp-footer-col">

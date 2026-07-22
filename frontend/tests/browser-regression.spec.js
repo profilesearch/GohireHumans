@@ -6,9 +6,9 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const analyticsBootstrap = fs.readFileSync(path.join(__dirname, '..', 'analytics-bootstrap.js'), 'utf8');
 const routes = [
-  { path: '/', mustContain: 'Human verification for AI work.' },
-  { path: '/starter-offers.html', mustContain: 'Human verification for AI work before you trust it.' },
-  { path: '/pricing.html', mustContain: 'Start with proof, then scale.' },
+  { path: '/', mustContain: 'Describe the work. Hire the right human.' },
+  { path: '/starter-offers.html', mustContain: 'Start small when the work needs proof.' },
+  { path: '/pricing.html', mustContain: 'Simple pricing, shown before you commit' },
   { path: '/proof-packs.html', mustContain: 'Proof packs for human verification work' },
   { path: '/ai-assistant-human-checks.html', mustContain: 'When an AI assistant should ask a human to check the work.' },
   { path: '/#/login', mustContain: 'Welcome back' },
@@ -369,15 +369,15 @@ test.describe('GoHireHumans public/browser regression suite', () => {
   test('homepage and pricing route high-intent visitors to proof-backed QA paths', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('Choose the fastest proof-backed check.');
-    await expect(page.locator('body')).toContainText('Start a QA sprint');
+    await expect(page.locator('body')).toContainText('What do you need help with?');
+    await expect(page.locator('.lp-start-card[href="/starter-offers.html"]')).toContainText('Start with QA');
     await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('Start with proof, then scale.');
+    await expect(page.locator('body')).toContainText('Prefer a fixed starting point?');
     await expect(page.locator('a[href="/use-cases/hire-human-to-review-ai-output.html"]').first()).toBeVisible();
     await expect(page.locator('a[href="/use-cases/lead-research-microtask.html"]').first()).toBeVisible();
-    await expect(page.locator('body')).toContainText('Choose a proof-first starter task');
+    await expect(page.locator('body')).toContainText('View starter offers');
     await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('Choose by the risk you need checked');
+    await expect(page.locator('body')).toContainText('Four proof-backed starter offers');
   });
 
   test('public nav hover and active states are consistent across static and SPA pages', async ({ page, isMobile }) => {
@@ -385,14 +385,14 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await setupDeterministicLocalPage(page);
     const cases = [
       { path: '/', active: null },
-      { path: '/starter-offers.html', active: 'Starter QA' },
+      { path: '/starter-offers.html', active: null },
       { path: '/pricing.html', active: 'Pricing' },
       { path: '/trust-safety.html', active: 'Trust' },
       { path: '/ai-integration.html', active: 'For Agents' },
-      { path: '/earn/get-paid-for-human-tasks.html', active: 'For Workers' },
+      { path: '/earn/get-paid-for-human-tasks.html', active: 'Find Work' },
       { path: '/use-cases/hire-human-to-review-ai-output.html', active: 'Marketplace' },
       { path: '/#/services', active: 'Marketplace' },
-      { path: '/#/jobs', active: 'For Workers' },
+      { path: '/#/jobs', active: 'Find Work' },
       { path: '/#/ai-employers', active: 'For Agents' }
     ];
     let canonicalHover = null;
@@ -532,14 +532,14 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     for (const path of shellPages) {
       await page.goto(path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator('.lp-footer').first(), `${path} canonical footer`).toBeVisible();
-      await expect(page.locator('.lp-footer').first(), `${path} worker jobs label`).toContainText('Open Jobs for Workers');
+      await expect(page.locator('.lp-footer').first(), `${path} worker jobs label`).toContainText('Find Work');
       await expect(page.locator('body'), `${path} no legacy builder attribution`).not.toContainText('Created with Perplexity Computer');
     }
     await page.goto('/stats.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('a.btn-primary[href="/#/register"]')).toContainText('Create a free account');
     await page.goto('/trust-safety.html', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#trust-next-step-heading')).toContainText('Start with a scoped review');
-    await expect(page.locator('.trust-next-step a[href="/starter-offers.html"]')).toContainText('Request QA');
+    await expect(page.locator('#trust-next-step-heading')).toContainText('Start with a small, reviewable task');
+    await expect(page.locator('.trust-next-step a[href="/#/post-job"]')).toContainText('Post a task');
     await page.goto('/use-cases/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('main')).toContainText('Human AI Output Verification');
   });
@@ -996,6 +996,213 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     await expect(page.locator('#services-result-count')).toBeVisible();
-    await expect(page.locator('text=Filter services')).toBeVisible();
+    await expect(page.locator('[data-filter-toggle]')).toHaveText('Filters');
+  });
+
+  test('simplified homepage presents one broad buyer path without repeated modules', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await expect(page.locator('main[data-simplified-home="true"]')).toBeVisible();
+    await expect(page.locator('h1')).toContainText('Describe the work. Hire the right human.');
+    await expect(page.locator('[data-home-section]')).toHaveCount(5);
+    await expect(page.locator('.lp-start-card')).toHaveCount(4);
+    expect(await page.locator('.lp-feed-card').count()).toBeLessThanOrEqual(3);
+    await expect(page.locator('body')).not.toContainText('Four ways to start small.');
+    await expect(page.locator('body')).not.toContainText('Guided first-task wizard');
+    await expect(page.locator('a,button').filter({ hasText: 'Describe your task' }).first()).toBeVisible();
+    const describeCard = page.getByRole('button', { name: /Describe a task/ });
+    await describeCard.click();
+    await expect(page.locator('#guided-task-need')).toBeFocused();
+    expect(new URL(page.url()).hash).toBe('');
+    const previewCard = page.locator('.lp-feed-card').first();
+    await expect(previewCard).toHaveAttribute('href', /#\/services\//);
+    await previewCard.focus();
+    await expect(previewCard).toBeFocused();
+  });
+
+  test('simplified public shell uses broad marketplace labels and a compact mobile footer', async ({ page, isMobile }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
+    const labels = await page.locator('.lp-nav-links .lp-nav-link').allTextContents();
+    expect(labels.map(label => label.trim())).toEqual(['Marketplace', 'Find Work', 'For Agents', 'Pricing', 'Trust']);
+    await expect(page.locator('.lp-nav-actions .btn-primary')).toContainText('Post a task');
+    if (isMobile) {
+      await page.locator('.lp-hamburger').click();
+      const mobileLabels = (await page.locator('#mobileMenu a').allTextContents()).map(label => label.trim());
+      expect(mobileLabels).toEqual(['Marketplace', 'Find Work', 'For Agents', 'Pricing', 'Trust', 'Starter Offers', 'Use Cases', 'FAQ', 'Sign in', 'Post a task']);
+      const footer = page.locator('.lp-footer').first();
+      const height = await footer.evaluate(el => el.getBoundingClientRect().height);
+      expect(height).toBeLessThanOrEqual(700);
+      expect(await footer.locator('a').count()).toBeLessThanOrEqual(13);
+    }
+  });
+
+  test('mobile marketplace shows inventory before optional filters and truthful zero-review cards', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'mobile information hierarchy regression');
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/services?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ services: [
+        { id: 'svc-new', title: 'New service', description: 'No reviews yet.', pricing_type: 'fixed', price: 50, avg_rating: 0, total_reviews: 0, provider_type: 'human', worker_name: 'New provider', delivery_time_days: 2 },
+        { id: 'svc-reviewed', title: 'Reviewed service', description: 'Has verified review history.', pricing_type: 'fixed', price: 75, avg_rating: 4.8, total_reviews: 8, provider_type: 'human', worker_name: 'Reviewed provider', delivery_time_days: 3 }
+      ], total: 2 })
+    }));
+    await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    const filters = page.locator('[data-service-filters]').first();
+    await expect(page.locator('[data-filter-toggle]')).toBeVisible();
+    await expect(filters).toBeHidden();
+    const firstCard = page.locator('.svc-card').first();
+    await expect(firstCard).toBeVisible();
+    const top = await firstCard.evaluate(el => el.getBoundingClientRect().top);
+    expect(top).toBeLessThan(760);
+    await expect(firstCard).toContainText('View details');
+    await expect(firstCard).toHaveAttribute('href', /#\/services\/svc-new/);
+    await firstCard.focus();
+    await expect(firstCard).toBeFocused();
+    await expect(firstCard.locator('.stars-row')).toHaveCount(0);
+    await expect(firstCard).toContainText('New listing');
+    const reviewedCard = page.locator('.svc-card').nth(1);
+    await expect(reviewedCard.locator('.stars-row')).toBeVisible();
+    await expect(reviewedCard).not.toContainText('New listing');
+    const sellerCta = page.locator('[data-seller-cta]').first();
+    await expect(sellerCta).toBeVisible();
+    const sellerTop = await sellerCta.evaluate(el => el.getBoundingClientRect().top);
+    expect(sellerTop).toBeGreaterThan(top);
+  });
+
+  test('empty jobs route has one truthful state and no contradictory inventory claims', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobs: [], total: 0 })
+    }));
+    await page.goto('/#/jobs', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await expect(page.locator('#jobs-empty-state')).toBeVisible();
+    await expect(page.locator('#jobs-empty-state')).toContainText('No public jobs right now');
+    await expect(page.locator('[data-job-filters]')).toBeHidden();
+    await expect(page.locator('body')).not.toContainText('New paid jobs');
+    await expect(page.getByText('View open jobs', { exact: true })).toHaveCount(0);
+  });
+
+  test('filtered-empty marketplace states preserve truthful recovery paths', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobs: [], total: 0 })
+    }));
+    await page.goto('/#/jobs?search=no-match', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'No jobs match these filters' })).toBeVisible();
+    await expect(page.locator('[data-job-filters]')).toBeVisible();
+    await expect(page.locator('.jobs-filtered-empty-state').getByRole('button', { name: 'Clear filters' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('No public jobs right now');
+
+    await page.route('https://gohirehumans-production.up.railway.app/services?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ services: [], total: 0 })
+    }));
+    await page.goto('/#/services?category=writing', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#services-result-count')).toHaveText('0 services match the current filters');
+    await expect(page.getByRole('heading', { name: 'No services match these filters' })).toBeVisible();
+    await expect(page.locator('.services-filtered-empty-state').getByRole('button', { name: 'Clear filters' })).toBeVisible();
+    await expect(page.locator('#service-seller-cta')).toBeHidden();
+    await expect(page.locator('body')).not.toContainText('Be the first to list a service');
+  });
+
+  test('out-of-range jobs pagination recovers to the last available page', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => {
+      const pageNumber = new URL(route.request().url()).searchParams.get('page');
+      const jobs = pageNumber === '3' ? [] : [{ id: 16, title: 'Recovered job', category: 'research', status: 'open', created_at: '2026-07-20T00:00:00Z' }];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobs, total: 16 }) });
+    });
+    await page.goto('/#/jobs?page=3', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/#\/jobs\?page=2$/);
+    await expect(page.getByText('Recovered job')).toBeVisible();
+
+    await page.goto('/#/jobs?search=qa&page=3', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/#\/jobs\?search=qa&page=2$/);
+    await expect(page.getByText('Recovered job')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('No jobs match these filters');
+  });
+
+  test('out-of-range filtered services pagination recovers before showing an empty state', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/services?**', route => {
+      const pageNumber = new URL(route.request().url()).searchParams.get('page');
+      const services = pageNumber === '3' ? [] : [{
+        id: 16,
+        title: 'Recovered service',
+        description: 'Recovered from the last available filtered page.',
+        price: 40,
+        category: 'writing',
+        worker_name: 'Recovery worker',
+        delivery_time_days: 1,
+        review_count: 0
+      }];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ services, total: 16 }) });
+    });
+    await page.goto('/#/services?category=writing&page=3', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/#\/services\?category=writing&page=2$/);
+    await expect(page.getByText('Recovered service')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('No services match these filters');
+  });
+
+  test('jobs API failure replaces the loading summary with an honest error state', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'unavailable' })
+    }));
+    await page.goto('/#/jobs', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#jobs-summary')).toHaveText('Jobs are temporarily unavailable');
+    await expect(page.locator('#jobs-summary')).not.toContainText('Loading');
+    await expect(page.getByRole('heading', { name: 'Something went wrong' })).toBeVisible();
+  });
+
+  test('starter-offer draft clicks stay diagnostic until a persisted lead exists', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
+    const events = await page.evaluate(() => {
+      const names = [];
+      window.trackGHH = name => names.push(name);
+      document.querySelector('.starter-offer-card .offer-link').onclick(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return names;
+    });
+    expect(events).toContain('starter_offer_draft_click');
+    expect(events).not.toContain('generate_lead');
+    expect(events).not.toContain('qualify_lead');
+  });
+
+  test('pricing, starter offers, and trust use the approved simplified hierarchy', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+
+    await page.goto('/pricing.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('main[data-pricing-order="fee-first"]')).toBeVisible();
+    const feeTop = await page.locator('#fee-heading').evaluate(el => el.getBoundingClientRect().top);
+    const starterTop = await page.locator('#starter-packages-heading').evaluate(el => el.getBoundingClientRect().top);
+    expect(feeTop).toBeLessThan(starterTop);
+    await expect(page.locator('main')).toContainText('Workers receive the listed payout');
+    await expect(page.locator('main')).toContainText('Stripe processing plus a 1% GoHireHumans fee');
+
+    await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('main[data-starter-simplified="true"]')).toBeVisible();
+    await expect(page.locator('.starter-offer-card')).toHaveCount(4);
+    await expect(page.locator('body')).not.toContainText('Choose by the risk you need checked');
+    for (const value of ['$99', '$199', '$79']) await expect(page.locator('main')).toContainText(value);
+
+    await page.goto('/trust-safety.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('main[data-trust-simplified="true"]')).toBeVisible();
+    expect(await page.locator('.trust-summary .trust-badge').count()).toBeLessThanOrEqual(4);
+    await expect(page.locator('body')).not.toContainText('✓ Privacy protected');
+    await expect(page.locator('main')).toContainText('where available');
+    await expect(page.locator('main')).toContainText('available evidence');
   });
 });

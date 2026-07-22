@@ -14,18 +14,18 @@ if missing:
 
 nav = (ROOT / 'frontend/partials/public-nav.html').read_text(encoding='utf-8', errors='ignore')
 footer = (ROOT / 'frontend/partials/public-footer.html').read_text(encoding='utf-8', errors='ignore')
-for token in ['Starter QA', 'Marketplace', 'For Workers', 'For Agents', 'Pricing', 'Trust', 'Request QA', 'lp-nav']:
+for token in ['Marketplace', 'Find Work', 'For Agents', 'Pricing', 'Trust', 'Post a task', 'lp-nav']:
     if token not in nav:
         print('Missing nav token', token)
         raise SystemExit(1)
-for token in ['lp-footer', 'Open Jobs for Workers', 'contact@gohirehumans.com', 'Direct-payment instructions are not allowed']:
+for token in ['lp-footer', 'Find Work', 'Starter Offers', 'contact@gohirehumans.com', 'Direct-payment instructions are not allowed']:
     if token not in footer:
         print('Missing footer token', token)
         raise SystemExit(1)
 
 # Guard high-visibility public shell pages. This is intentionally scoped: the repo still
-# contains older SEO/support pages with local one-off shells; new conversion/trust pages
-# should not regress to mixed footers, generic CTAs, or builder attribution.
+# contains older SEO/support pages with local one-off shells; conversion/trust pages
+# must keep the simplified marketplace-first shell and owned attribution.
 critical_pages = [
     'frontend/index.html',
     'frontend/starter-offers.html',
@@ -44,6 +44,8 @@ for rel in critical_pages:
         issues.append('missing canonical lp nav wrapper')
     if '<footer class="lp-footer"' not in text:
         issues.append('missing canonical lp footer')
+    if 'Find Work' not in text or 'Post a task' not in text:
+        issues.append('missing marketplace-first shell labels')
     if 'Created with Perplexity Computer' in text or 'Perplexity Computer' in text:
         issues.append('builder attribution leaked')
     if '<div class="footer">' in text or '<footer class="footer"' in text:
