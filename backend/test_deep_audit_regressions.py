@@ -1823,7 +1823,7 @@ class BackendRegressionTests(unittest.TestCase):
         for snippet in [
             "No public jobs right now",
             "Create a worker profile",
-            "open job${total === 1 ? '' : 's'} · newest first",
+            "job${total === 1 ? '' : 's'} accepting applications · newest first",
             "worker_jobs_apply_cta_click",
             "worker_job_card_apply_click",
             "Apply now",
@@ -1832,6 +1832,53 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertIn(snippet, text)
         for contradictory in ["New paid jobs", "View open jobs"]:
             self.assertNotIn(contradictory, text)
+
+    def test_public_jobs_default_includes_every_application_accepting_status(self):
+        db = self.module.get_db()
+        try:
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (1,'buyer@real-company.example','x','Real Buyer')"
+            )
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (2,'sarah.chen@example.com','x','Seeded Buyer')"
+            )
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (3,'worker@real-company.example','x','Real Worker')"
+            )
+            db.execute(
+                "INSERT INTO sessions (user_id,token,expires_at) VALUES (3,'tok-reviewing-discovery',datetime('now','+1 day'))"
+            )
+            for job_id, employer_id, title, status in [
+                (1, 1, "Fresh public job", "open"),
+                (2, 1, "Public job under review", "open"),
+                (3, 1, "Already hired job", "hired"),
+                (4, 2, "Seeded sample job", "open"),
+            ]:
+                db.execute(
+                    """INSERT INTO jobs
+                       (id,employer_id,title,description,category,budget_type,budget_amount,status)
+                       VALUES (?,?,?,?,?,'fixed',25,?)""",
+                    [job_id, employer_id, title, "Bounded work", "testing", status],
+                )
+            db.commit()
+        finally:
+            db.close()
+
+        status, application = self._request_api(
+            "POST",
+            "/jobs/2/apply",
+            {"cover_message": "I can complete this bounded review."},
+            "tok-reviewing-discovery",
+        )
+        self.assertEqual(status, 201, application)
+
+        status, response = self._request_api("GET", "/jobs")
+        self.assertEqual(status, 200, response)
+        self.assertEqual(response["total"], 2)
+        self.assertEqual(
+            {job["id"]: job["status"] for job in response["jobs"]},
+            {1: "open", 2: "reviewing"},
+        )
 
 
     def test_public_homepage_visual_cleanup_invariants(self):

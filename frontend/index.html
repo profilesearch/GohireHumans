@@ -2004,7 +2004,7 @@ async function loadJobsList(page, filters) {
     } else {
       if (summary) {
         summary.hidden = false;
-        summary.textContent = `${total} open job${total === 1 ? '' : 's'} · newest first`;
+        summary.textContent = `${total} job${total === 1 ? '' : 's'} accepting applications · newest first`;
       }
       if (filtersEl) filtersEl.hidden = false;
       if (layout) layout.classList.remove('is-empty');
@@ -2061,6 +2061,10 @@ function jobCard(j) {
     </div>`;
 }
 
+function jobAcceptsApplications(job) {
+  return ['open', 'reviewing'].includes(job?.status);
+}
+
 let jobFilterDebounce = null;
 function debounceJobFilter() {
   clearTimeout(jobFilterDebounce);
@@ -2093,7 +2097,8 @@ async function renderJobDetail(id) {
     const job = await api(`/jobs/${id}`);
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = state.user && String(state.user.id) === String(job.employer_id);
-    const shouldAutoApply = getQuery().get('apply') === '1' && state.user && job.status === 'open' && !isOwner;
+    const acceptsApplications = jobAcceptsApplications(job);
+    const shouldAutoApply = getQuery().get('apply') === '1' && state.user && acceptsApplications && !isOwner;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2141,10 +2146,10 @@ async function renderJobDetail(id) {
                 ${job.due_by ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${new Date(job.due_by).toLocaleDateString()}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
-              ${job.status === 'open' && !isOwner
+              ${acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" style="width:100%" onclick="handleJobApply(${id})">${state.user ? 'Apply to This Job' : 'Sign in to Apply'}</button>
                    <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${state.user ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
-                : job.status !== 'open'
+                : !acceptsApplications
                   ? `<p style="font-size:var(--text-sm);color:var(--color-text-faint);text-align:center">This job is no longer accepting applications.</p>`
                   : ''}
             </div>
