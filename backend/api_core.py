@@ -7871,6 +7871,10 @@ def _handle_routes(db):
             f"SELECT COUNT(*) as c FROM jobs WHERE status='open' AND employer_id NOT IN ({seeded_user_subquery})",
             seeded_values
         ).fetchone()['c']
+        accepting_jobs_count = db.execute(
+            f"SELECT COUNT(*) as c FROM jobs WHERE status IN ('open','reviewing') AND employer_id NOT IN ({seeded_user_subquery})",
+            seeded_values
+        ).fetchone()['c']
         completed_orders = db.execute(
             f"""SELECT COUNT(*) as c FROM orders
                 WHERE status='completed'
@@ -7891,6 +7895,7 @@ def _handle_routes(db):
             "workers_registered": workers_count,
             "employers_registered": employers_count,
             "open_jobs": jobs_count,
+            "accepting_jobs": accepting_jobs_count,
             "completed_orders": completed_orders,
             "total_users": total_users,
             "categories": categories_count
@@ -11594,7 +11599,7 @@ def _handle_routes(db):
                       j.title as job_title, j.category as job_category, j.status as job_status,
                       j.budget_amount, j.budget_type, j.employer_id,
                       wu.name as worker_name, wu.email as worker_email,
-                      eu.name as employer_name
+                      eu.name as employer_name, eu.email as employer_email
                FROM applications a
                JOIN jobs j ON j.id = a.job_id
                JOIN users wu ON wu.id = a.worker_id
@@ -11623,13 +11628,31 @@ def _handle_routes(db):
                 "needs_manual_review" if quality_flags else
                 "weak_or_incomplete"
             )
+            employer_email = item.pop("employer_email", "")
+            if is_seeded_sample_email(employer_email):
+                item["operational_class"] = "sample"
+                item["actionability_reason"] = "seed_or_sample_employer"
+            elif item.get("status") == "pending" and item.get("job_status") in ("open", "reviewing"):
+                item["operational_class"] = "actionable"
+                item["actionability_reason"] = "pending_on_accepting_job"
+            else:
+                item["operational_class"] = "historical"
+                item["actionability_reason"] = (
+                    "application_not_pending"
+                    if item.get("status") != "pending"
+                    else "job_not_accepting_applications"
+                )
             applications.append(item)
+        actionable = [a for a in applications if a["operational_class"] == "actionable"]
         summary = {
             "total_recent_applications": len(applications),
-            "strong_candidates": sum(1 for a in applications if a["triage_status"] == "strong_candidate"),
-            "needs_manual_review": sum(1 for a in applications if a["triage_status"] == "needs_manual_review"),
-            "weak_or_incomplete": sum(1 for a in applications if a["triage_status"] == "weak_or_incomplete"),
+            "strong_candidates": sum(1 for a in actionable if a["triage_status"] == "strong_candidate"),
+            "needs_manual_review": sum(1 for a in actionable if a["triage_status"] == "needs_manual_review"),
+            "weak_or_incomplete": sum(1 for a in actionable if a["triage_status"] == "weak_or_incomplete"),
             "pending_applications": sum(1 for a in applications if a.get("status") == "pending"),
+            "actionable_applications": len(actionable),
+            "sample_applications": sum(1 for a in applications if a["operational_class"] == "sample"),
+            "historical_applications": sum(1 for a in applications if a["operational_class"] == "historical"),
         }
         return json_response({"summary": summary, "applications": applications, "limit": limit})
 

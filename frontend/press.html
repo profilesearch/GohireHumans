@@ -129,7 +129,7 @@ The platform is built for the human + AI hybrid future of work. AI agents can pa
       <div class="stats-grid" id="stats-grid">
         <div class="stat-card"><div class="stat-num" id="ps-services">—</div><div class="stat-label">Services</div></div>
         <div class="stat-card"><div class="stat-num" id="ps-users">—</div><div class="stat-label">Users</div></div>
-        <div class="stat-card"><div class="stat-num" id="ps-jobs">—</div><div class="stat-label">Open Jobs</div></div>
+        <div class="stat-card"><div class="stat-num" id="ps-jobs">—</div><div class="stat-label">Jobs Accepting Applications</div></div>
         <div class="stat-card"><div class="stat-num" id="ps-cats">—</div><div class="stat-label">Categories</div></div>
         <div class="stat-card"><div class="stat-num">1%</div><div class="stat-label">GoHireHumans Fee</div></div>
         <div class="stat-card"><div class="stat-num">0%</div><div class="stat-label">Seller Commission</div></div>
@@ -189,7 +189,13 @@ The platform is built for the human + AI hybrid future of work. AI agents can pa
         const m = (id,v)=>{const e=document.getElementById(id); if(e) e.textContent=fmt(v);};
         m('ps-services', s.services_listed);
         m('ps-users', s.total_users);
-        m('ps-jobs', s.open_jobs);
+        const acceptingJobs = s.accepting_jobs;
+        if (typeof acceptingJobs === 'number' && Number.isInteger(acceptingJobs) && acceptingJobs >= 0) {
+          m('ps-jobs', acceptingJobs);
+        } else {
+          const jobsElement = document.getElementById('ps-jobs');
+          if (jobsElement) jobsElement.textContent = '—';
+        }
         m('ps-cats', s.categories);
       })
       .catch(()=>{});
