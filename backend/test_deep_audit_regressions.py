@@ -1845,6 +1845,15 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO users (id,email,password_hash,name) VALUES (3,'worker@real-company.example','x','Real Worker')"
             )
+            for user_id, email, name in [
+                (4, "hiring@cloudnative.dev", "Legacy Seed Employer One"),
+                (5, "ops@scalefirst.io", "Legacy Seed Employer Two"),
+                (6, "founder@aitools.co", "Legacy Seed Employer Three"),
+            ]:
+                db.execute(
+                    "INSERT INTO users (id,email,password_hash,name) VALUES (?,?,\'x\',?)",
+                    [user_id, email, name],
+                )
             db.execute(
                 "INSERT INTO sessions (user_id,token,expires_at) VALUES (3,'tok-reviewing-discovery',datetime('now','+1 day'))"
             )
@@ -1853,6 +1862,9 @@ class BackendRegressionTests(unittest.TestCase):
                 (2, 1, "Public job under review", "open"),
                 (3, 1, "Already hired job", "hired"),
                 (4, 2, "Seeded sample job", "open"),
+                (5, 4, "Legacy seeded reviewing job one", "reviewing"),
+                (6, 5, "Legacy seeded reviewing job two", "reviewing"),
+                (7, 6, "Legacy seeded reviewing job three", "reviewing"),
             ]:
                 db.execute(
                     """INSERT INTO jobs
