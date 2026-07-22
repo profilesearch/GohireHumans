@@ -93,14 +93,24 @@ class BackendRegressionTests(unittest.TestCase):
             "pricing_type": "fixed",
             "price": 99,
         }
-        for invalid in (None, 0, -1, 366, "1", True):
-            payload = dict(fixed)
-            if invalid is not None:
-                payload["delivery_time_days"] = invalid
-            status, result = self._request_api("POST", "/services", payload, token)
-            with self.subTest(invalid=invalid):
+        status, compatible_fixed = self._request_api("POST", "/services", fixed, token)
+        self.assertEqual(status, 201, compatible_fixed)
+        self.assertEqual(compatible_fixed["delivery_time_days"], 7)
+
+        for invalid in (0, -1, 366, "1", True):
+            status, result = self._request_api(
+                "POST", "/services", {**fixed, "delivery_time_days": invalid}, token
+            )
+            with self.subTest(invalid_delivery=invalid):
                 self.assertEqual(status, 400, result)
                 self.assertIn("delivery_time_days", result.get("error", ""))
+
+        for invalid_price in (None, 0, -1, "1.001", "invalid", True):
+            payload = {**fixed, "delivery_time_days": 1, "price": invalid_price}
+            status, result = self._request_api("POST", "/services", payload, token)
+            with self.subTest(invalid_fixed_price=invalid_price):
+                self.assertEqual(status, 400, result)
+                self.assertIn("price", result.get("error", "").lower())
 
         status, created = self._request_api(
             "POST", "/services", {**fixed, "delivery_time_days": 1}, token
@@ -154,10 +164,103 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(status, 400, result)
         self.assertIn("api_endpoint", result.get("error", ""))
 
+        def pricing_state(service_id):
+            db = self.module.get_db()
+            try:
+                row = db.execute(
+                    "SELECT pricing_type,price,hourly_rate,delivery_time_days FROM services WHERE id=?",
+                    [service_id],
+                ).fetchone()
+                return tuple(row)
+            finally:
+                db.close()
+
+        fixed_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"pricing_type": "hourly"}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("hourly_rate", result.get("error", ""))
+        self.assertEqual(pricing_state(created["id"]), fixed_state)
+
+        status, hourly_transition = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "hourly", "hourly_rate": 50},
+            token,
+        )
+        self.assertEqual(status, 200, hourly_transition)
+        self.assertEqual(hourly_transition["pricing_type"], "hourly")
+        self.assertEqual(hourly_transition["hourly_rate"], 50)
+        self.assertIsNone(hourly_transition["price"])
+
+        hourly_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "fixed", "delivery_time_days": 3},
+            token,
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("price", result.get("error", "").lower())
+        self.assertEqual(pricing_state(created["id"]), hourly_state)
+
+        status, fixed_transition = self._request_api(
+            "PUT",
+            f"/services/{created['id']}",
+            {"pricing_type": "fixed", "price": 125, "delivery_time_days": 3},
+            token,
+        )
+        self.assertEqual(status, 200, fixed_transition)
+        self.assertEqual(fixed_transition["pricing_type"], "fixed")
+        self.assertEqual(fixed_transition["price"], 125)
+        self.assertIsNone(fixed_transition["hourly_rate"])
+
+        valid_fixed_state = pricing_state(created["id"])
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"price": 0}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("price", result.get("error", "").lower())
+        self.assertEqual(pricing_state(created["id"]), valid_fixed_state)
+
+        status, custom_transition = self._request_api(
+            "PUT", f"/services/{created['id']}", {"pricing_type": "custom"}, token
+        )
+        self.assertEqual(status, 200, custom_transition)
+        self.assertEqual(custom_transition["pricing_type"], "custom")
+        self.assertIsNone(custom_transition["price"])
+        self.assertIsNone(custom_transition["hourly_rate"])
+
         hourly = {**fixed, "pricing_type": "hourly", "price": None, "hourly_rate": 50}
         status, created_hourly = self._request_api("POST", "/services", hourly, token)
         self.assertEqual(status, 201, created_hourly)
         self.assertIsNone(created_hourly["delivery_time_days"])
+        self.assertIsNone(created_hourly["price"])
+
+        status, explicit_hourly = self._request_api(
+            "POST", "/services", {**hourly, "delivery_time_days": 2}, token
+        )
+        self.assertEqual(status, 201, explicit_hourly)
+        self.assertEqual(explicit_hourly["delivery_time_days"], 2)
+
+        custom = {
+            "title": "Scoped custom service",
+            "description": "Agree a custom scope before checkout.",
+            "category": "testing",
+            "pricing_type": "custom",
+        }
+        status, created_custom = self._request_api("POST", "/services", custom, token)
+        self.assertEqual(status, 201, created_custom)
+        self.assertIsNone(created_custom["price"])
+        self.assertIsNone(created_custom["hourly_rate"])
+        self.assertIsNone(created_custom["delivery_time_days"])
+
+        status, explicit_custom = self._request_api(
+            "POST", "/services", {**custom, "delivery_time_days": 5}, token
+        )
+        self.assertEqual(status, 201, explicit_custom)
+        self.assertEqual(explicit_custom["delivery_time_days"], 5)
 
     def test_existing_session_is_rejected_immediately_after_user_suspension(self):
         token = "tok-suspended-session"

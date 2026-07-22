@@ -1164,6 +1164,81 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(status, 400, result)
         self.payment_create.assert_not_called()
 
+    def test_service_pricing_transitions_remain_checkout_compatible(self):
+        with self.api.get_db() as db:
+            db.executemany(
+                """INSERT INTO services
+                   (id,worker_id,title,description,category,pricing_type,price,hourly_rate,
+                    delivery_time_days,status)
+                   VALUES (?,?,?,?,?,?,?,?,?,'active')""",
+                [
+                    (10, 1, 'Fixed unchanged', 'Fixed scope', 'testing', 'fixed', 10, None, 3),
+                    (11, 1, 'Fixed to hourly', 'Hourly scope', 'testing', 'fixed', 10, None, 3),
+                    (12, 1, 'Hourly to fixed', 'Fixed scope', 'testing', 'hourly', None, 15, 4),
+                    (13, 1, 'Fixed to custom', 'Custom scope', 'testing', 'fixed', 12, None, 5),
+                ],
+            )
+            db.commit()
+
+        status, rejected = self.request(
+            "PUT", "/services/10", token="tok-worker", payload={"pricing_type": "hourly"}
+        )
+        self.assertEqual(status, 400, rejected)
+        status, fixed_order = self.request(
+            "POST",
+            "/services/10/order",
+            payload={"idempotency_key": "pricing-transition-fixed-0001"},
+        )
+        self.assertEqual(status, 201, fixed_order)
+        self.assertEqual(fixed_order["total_amount"], 10)
+
+        status, hourly_listing = self.request(
+            "PUT",
+            "/services/11",
+            token="tok-worker",
+            payload={"pricing_type": "hourly", "hourly_rate": 20},
+        )
+        self.assertEqual(status, 200, hourly_listing)
+        self.assertIsNone(hourly_listing["price"])
+        status, hourly_order = self.request(
+            "POST",
+            "/services/11/order",
+            payload={"hours": 2, "idempotency_key": "pricing-transition-hourly-001"},
+        )
+        self.assertEqual(status, 201, hourly_order)
+        self.assertEqual(hourly_order["total_amount"], 40)
+
+        status, fixed_listing = self.request(
+            "PUT",
+            "/services/12",
+            token="tok-worker",
+            payload={"pricing_type": "fixed", "price": 30},
+        )
+        self.assertEqual(status, 200, fixed_listing)
+        self.assertIsNone(fixed_listing["hourly_rate"])
+        status, transitioned_fixed_order = self.request(
+            "POST",
+            "/services/12/order",
+            payload={"idempotency_key": "pricing-transition-fixed-0002"},
+        )
+        self.assertEqual(status, 201, transitioned_fixed_order)
+        self.assertEqual(transitioned_fixed_order["total_amount"], 30)
+        self.assertIsNotNone(transitioned_fixed_order["deadline_at"])
+
+        status, custom_listing = self.request(
+            "PUT", "/services/13", token="tok-worker", payload={"pricing_type": "custom"}
+        )
+        self.assertEqual(status, 200, custom_listing)
+        self.assertIsNone(custom_listing["price"])
+        self.assertIsNone(custom_listing["hourly_rate"])
+        status, custom_order = self.request(
+            "POST",
+            "/services/13/order",
+            payload={"amount": "22.00", "idempotency_key": "pricing-transition-custom-001"},
+        )
+        self.assertEqual(status, 201, custom_order)
+        self.assertEqual(custom_order["total_amount"], 22)
+
     def test_hourly_service_product_rounds_from_exact_decimal_coefficients(self):
         with self.api.get_db() as db:
             db.execute(

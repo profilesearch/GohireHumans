@@ -1107,8 +1107,9 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       contentType: 'application/json',
       body: JSON.stringify({ services: [
         { id: 'svc-new', title: 'New service', description: 'No reviews yet.', pricing_type: 'fixed', price: 50, worker_rating: 0, worker_review_count: 0, provider_type: 'human', worker_name: 'New provider', delivery_time_days: 2 },
-        { id: 'svc-reviewed', title: 'Reviewed service', description: 'Has verified review history.', pricing_type: 'fixed', price: 75, worker_rating: 4.8, worker_review_count: 8, provider_type: 'human', worker_name: 'Reviewed provider', delivery_time_days: 3 }
-      ], total: 2 })
+        { id: 'svc-reviewed', title: 'Reviewed service', description: 'Has verified review history.', pricing_type: 'fixed', price: 75, worker_rating: 4.8, worker_review_count: 8, provider_type: 'human', worker_name: 'Reviewed provider', delivery_time_days: 3 },
+        { id: 'svc-unknown', title: 'Unknown review history', description: 'Review facts unavailable.', pricing_type: 'fixed', price: 65, worker_rating: null, worker_review_count: null, provider_type: 'human', worker_name: 'Unverified provider', delivery_time_days: 4 }
+      ], total: 3 })
     }));
     await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -1128,6 +1129,10 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     const reviewedCard = page.locator('.svc-card').nth(1);
     await expect(reviewedCard.locator('.stars-row')).toBeVisible();
     await expect(reviewedCard).not.toContainText('New listing');
+    const unknownCard = page.locator('.svc-card').nth(2);
+    await expect(unknownCard.locator('.stars-row')).toHaveCount(0);
+    await expect(unknownCard).toContainText('Review history unavailable');
+    await expect(unknownCard).not.toContainText('New listing');
     const sellerCta = page.locator('[data-seller-cta]').first();
     await expect(sellerCta).toBeVisible();
     const sellerTop = await sellerCta.evaluate(el => el.getBoundingClientRect().top);
