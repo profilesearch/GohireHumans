@@ -1732,10 +1732,17 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (1,'admin@example.com','x','Admin',1)")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
+            db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (4,'hiring@cloudnative.dev','x','Sample Employer')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))", [token])
             db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,3,'QA Job','Desc','testing','fixed',25,'open')")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (8,3,'Closed QA Job','Desc','testing','fixed',25,'hired')")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (9,4,'Sample QA Job','Desc','testing','fixed',25,'reviewing')")
+            db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (10,3,'Reviewed QA Job','Desc','testing','fixed',25,'reviewing')")
             cover = "I can deliver this today with screenshots, a short issue list, and prioritized notes based on testing the signup flow on desktop and mobile."
             db.execute("INSERT INTO applications (job_id,worker_id,cover_message,portfolio_url,status) VALUES (7,2,?,'https://example.com/proof','pending')", [cover])
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,status) VALUES (8,2,'Historical pending application','pending')")
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,status) VALUES (9,2,'Sample application','pending')")
+            db.execute("INSERT INTO applications (job_id,worker_id,cover_message,status) VALUES (10,2,'Accepted application','accepted')")
             db.commit()
         finally:
             db.close()
@@ -1753,13 +1760,28 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.handle_request()
         status, body = parse_cgi_output(out.getvalue())
         self.assertEqual(status, 200, body)
-        self.assertEqual(body["summary"]["total_recent_applications"], 1)
+        self.assertEqual(body["summary"]["total_recent_applications"], 4)
         self.assertEqual(body["summary"]["strong_candidates"], 1)
-        app = body["applications"][0]
+        self.assertEqual(body["summary"]["pending_applications"], 3)
+        self.assertEqual(body["summary"]["actionable_applications"], 1)
+        self.assertEqual(body["summary"]["sample_applications"], 1)
+        self.assertEqual(body["summary"]["historical_applications"], 2)
+        apps_by_job = {app["job_id"]: app for app in body["applications"]}
+        app = apps_by_job[7]
         self.assertEqual(app["triage_status"], "strong_candidate")
+        self.assertEqual(app["operational_class"], "actionable")
+        self.assertEqual(app["actionability_reason"], "pending_on_accepting_job")
         self.assertIn("specific_cover_message", app["quality_flags"])
         self.assertIn("portfolio_or_proof_url", app["quality_flags"])
         self.assertIn("deliverable_or_timing_signal", app["quality_flags"])
+        self.assertEqual(apps_by_job[8]["operational_class"], "historical")
+        self.assertEqual(apps_by_job[8]["actionability_reason"], "job_not_accepting_applications")
+        self.assertEqual(apps_by_job[9]["operational_class"], "sample")
+        self.assertEqual(apps_by_job[9]["actionability_reason"], "seed_or_sample_employer")
+        for returned_app in apps_by_job.values():
+            self.assertNotIn("employer_email", returned_app)
+        self.assertEqual(apps_by_job[10]["operational_class"], "historical")
+        self.assertEqual(apps_by_job[10]["actionability_reason"], "application_not_pending")
 
     def test_admin_worker_activation_notifications_requires_admin(self):
         self.module._request_ctx.request_method = "POST"
@@ -1891,6 +1913,51 @@ class BackendRegressionTests(unittest.TestCase):
             {job["id"]: job["status"] for job in response["jobs"]},
             {1: "open", 2: "reviewing"},
         )
+
+    def test_public_platform_stats_distinguish_open_from_application_accepting_jobs(self):
+        db = self.module.get_db()
+        try:
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (1,'buyer@real-company.example','x','Real Buyer')"
+            )
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (2,'hiring@cloudnative.dev','x','Sample Employer')"
+            )
+            for job_id, employer_id, title, status in [
+                (1, 1, "Fresh public job", "open"),
+                (2, 1, "Public job under review", "reviewing"),
+                (3, 1, "Already hired job", "hired"),
+                (4, 2, "Sample reviewing job", "reviewing"),
+            ]:
+                db.execute(
+                    """INSERT INTO jobs
+                       (id,employer_id,title,description,category,budget_type,budget_amount,status)
+                       VALUES (?,?,?,?,?,'fixed',25,?)""",
+                    [job_id, employer_id, title, "Bounded work", "testing", status],
+                )
+            db.commit()
+        finally:
+            db.close()
+
+        status, response = self._request_api("GET", "/platform/stats")
+        self.assertEqual(status, 200, response)
+        self.assertEqual(response["open_jobs"], 1)
+        self.assertEqual(response["accepting_jobs"], 2)
+
+        generator = (REPO_ROOT / "scripts/generate-marketplace-pulse.py").read_text(encoding="utf-8")
+        self.assertIn("stats.get('accepting_jobs', len(jobs))", generator)
+        self.assertIn("Jobs Accepting Applications", generator)
+        self.assertNotIn("stats.get('open_jobs', len(jobs))", generator)
+
+        stats_page = (REPO_ROOT / "frontend/stats.html").read_text(encoding="utf-8")
+        self.assertIn("jobs accepting applications, registered users", stats_page)
+        self.assertNotIn("services listed, jobs open, registered users", stats_page)
+
+        homepage = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8")
+        self.assertIn("Browse jobs accepting applications", homepage)
+        self.assertIn("Discover public services, jobs accepting applications", homepage)
+        self.assertNotIn("Loading open jobs", homepage)
+        self.assertNotIn("Discover public services, open jobs", homepage)
 
 
     def test_public_homepage_visual_cleanup_invariants(self):
@@ -2137,7 +2204,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "href=\"/#/post-job?template=lead_qualification\"",
             ],
             "frontend/earn/open-paid-tasks.html": [
-                "Find open paid tasks you can apply to today",
+                "Find paid tasks you can apply to today",
+                "Jobs accepting applications",
                 "worker_open_tasks_click",
                 "What a strong application says",
             ],

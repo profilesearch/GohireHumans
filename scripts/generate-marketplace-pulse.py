@@ -96,7 +96,7 @@ top3_services = service_hist[:3]
 top3_jobs = job_hist[:3]
 
 s_total = stats.get('services_listed', len(services))
-j_total = stats.get('open_jobs', len(jobs))
+j_total = stats.get('accepting_jobs', len(jobs))
 u_total = stats.get('total_users', 0)
 
 intro_lines = [
@@ -130,7 +130,7 @@ def price_rows():
 
 # ── Render HTML ────────────────────────────────────────────────────────────
 title = f"Marketplace Pulse — Week {week}, 2026"
-description = f"Weekly snapshot of the GoHireHumans marketplace: {fmt(s_total)} services across {len(service_hist)} categories, {fmt(j_total)} open jobs, {fmt(u_total)} registered users."
+description = f"Weekly snapshot of the GoHireHumans marketplace: {fmt(s_total)} services across {len(service_hist)} categories, {fmt(j_total)} jobs accepting applications, {fmt(u_total)} registered users."
 canonical = f"{SITE}/blog/{SLUG}.html"
 
 html = f'''<!DOCTYPE html>
@@ -213,7 +213,7 @@ html = f'''<!DOCTYPE html>
 
     <div class="stat-strip">
       <div class="stat"><div class="stat-num">{fmt(s_total)}</div><div class="stat-label">Services</div></div>
-      <div class="stat"><div class="stat-num">{fmt(j_total)}</div><div class="stat-label">Open Jobs</div></div>
+      <div class="stat"><div class="stat-num">{fmt(j_total)}</div><div class="stat-label">Jobs Accepting Applications</div></div>
       <div class="stat"><div class="stat-num">{fmt(u_total)}</div><div class="stat-label">Users</div></div>
       <div class="stat"><div class="stat-num">{fmt(len(service_hist))}</div><div class="stat-label">Categories</div></div>
     </div>
@@ -225,11 +225,11 @@ html = f'''<!DOCTYPE html>
       <tbody>{table_rows(service_hist)}</tbody>
     </table>
 
-    <h2>Top job categories (active)</h2>
+    <h2>Top application-accepting job categories</h2>
     {f"<p>{intro_lines[2]}</p>" if len(intro_lines) > 2 else ""}
     <table>
-      <thead><tr><th>Category</th><th style="text-align:right">Open</th></tr></thead>
-      <tbody>{table_rows(job_hist, 'Open')}</tbody>
+      <thead><tr><th>Category</th><th style="text-align:right">Accepting</th></tr></thead>
+      <tbody>{table_rows(job_hist, 'Accepting')}</tbody>
     </table>
 
     <h2>Average fixed price by category</h2>

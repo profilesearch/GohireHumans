@@ -573,6 +573,64 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(cdnRequests).toEqual([]);
   });
 
+  test('public inventory surfaces use the application-accepting count contract', async ({ page }) => {
+    let statsPayload = { services_listed: 57, open_jobs: 0, accepting_jobs: 4, total_users: 62, categories: 20, completed_orders: 0 };
+    await page.route('https://gohirehumans-production.up.railway.app/**', route => {
+      const pathname = new URL(route.request().url()).pathname;
+      const body = pathname === '/platform/stats'
+        ? statsPayload
+        : pathname === '/jobs'
+          ? { jobs: [{ id: 24, title: 'Bounded QA task', category: 'testing', budget_type: 'fixed', budget_amount: 99, status: 'reviewing' }], total: 1 }
+          : { services: [{ id: 1, title: 'QA service', category: 'testing', pricing_type: 'fixed', price: 99 }], total: 1 };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/stats.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#s-jobs')).toHaveText('4');
+    await expect(page.locator('#s-jobs + .stat-label')).toHaveText('Jobs Accepting Applications');
+    await expect(page.getByRole('heading', { name: 'Jobs accepting applications by category' })).toBeVisible();
+
+    await page.goto('/press.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#ps-jobs')).toHaveText('4');
+    await expect(page.locator('#ps-jobs + .stat-label')).toHaveText('Jobs Accepting Applications');
+
+    await page.goto('/earn/open-paid-tasks.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#accepting-jobs-count')).toHaveText('4');
+    await expect(page.getByRole('heading', { name: 'Jobs accepting applications' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('3 Open public jobs');
+
+    statsPayload = { ...statsPayload, accepting_jobs: null };
+    for (const [path, selector] of [
+      ['/stats.html', '#s-jobs'],
+      ['/press.html', '#ps-jobs'],
+      ['/earn/open-paid-tasks.html', '#accepting-jobs-count'],
+    ]) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator(selector), `${path} must preserve unknown rather than invent zero`).toHaveText('—');
+    }
+
+    statsPayload = { ...statsPayload, accepting_jobs: 0 };
+    for (const [path, selector] of [
+      ['/stats.html', '#s-jobs'],
+      ['/press.html', '#ps-jobs'],
+      ['/earn/open-paid-tasks.html', '#accepting-jobs-count'],
+    ]) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator(selector), `${path} must preserve an authoritative numeric zero`).toHaveText('0');
+    }
+
+    const { accepting_jobs: _omitted, ...statsWithoutAcceptingJobs } = statsPayload;
+    statsPayload = statsWithoutAcceptingJobs;
+    for (const [path, selector] of [
+      ['/stats.html', '#s-jobs'],
+      ['/press.html', '#ps-jobs'],
+      ['/earn/open-paid-tasks.html', '#accepting-jobs-count'],
+    ]) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator(selector), `${path} must preserve a missing field as unknown`).toHaveText('—');
+    }
+  });
+
   test('auth page only shows OR divider with rendered Google button and exposes inline login errors', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'mobile auth polish regression');
     await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));

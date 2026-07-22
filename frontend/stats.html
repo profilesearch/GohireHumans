@@ -6,7 +6,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live Marketplace Stats — GoHireHumans</title>
-  <meta name="description" content="Real-time stats from the GoHireHumans marketplace: services listed, jobs open, registered users, categories, average price by category. Updated every load.">
+  <meta name="description" content="Real-time stats from the GoHireHumans marketplace: services listed, jobs accepting applications, registered users, categories, average price by category. Updated every load.">
   <meta name="keywords" content="freelance marketplace stats, gig economy data, freelance platform statistics, gohirehumans data">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Live Marketplace Stats — GoHireHumans">
@@ -123,7 +123,7 @@
 
     <section class="stat-grid" id="stats" aria-live="polite">
       <div class="stat-card"><div class="stat-num" id="s-services">—</div><div class="stat-label">Services Listed</div></div>
-      <div class="stat-card"><div class="stat-num" id="s-jobs">—</div><div class="stat-label">Open Jobs</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-jobs">—</div><div class="stat-label">Jobs Accepting Applications</div></div>
       <div class="stat-card"><div class="stat-num" id="s-users">—</div><div class="stat-label">Registered Users</div></div>
       <div class="stat-card"><div class="stat-num" id="s-cats">—</div><div class="stat-label">Categories</div></div>
       <div class="stat-card"><div class="stat-num" id="s-completed">—</div><div class="stat-label">Completed Orders</div></div>
@@ -135,7 +135,7 @@
         <div class="chart-canvas"><canvas id="cat-chart"></canvas></div>
       </div>
       <div class="chart-card">
-        <h2>Open jobs by category</h2>
+        <h2>Jobs accepting applications by category</h2>
         <div class="chart-canvas"><canvas id="job-chart"></canvas></div>
       </div>
     </section>
@@ -175,7 +175,8 @@
       // Top numbers
       if (stats) {
         setText('s-services', fmt(stats.services_listed));
-        setText('s-jobs', fmt(stats.open_jobs));
+        const acceptingJobs = stats.accepting_jobs;
+        setText('s-jobs', typeof acceptingJobs === 'number' && Number.isInteger(acceptingJobs) && acceptingJobs >= 0 ? fmt(acceptingJobs) : '—');
         setText('s-users', fmt(stats.total_users));
         setText('s-cats', fmt(stats.categories));
         setText('s-completed', fmt(stats.completed_orders));
@@ -191,7 +192,7 @@
           return;
         }
         const max = Math.max(...data.map(Number), 1);
-        holder.innerHTML = `<div class="chart-fallback" role="img" aria-label="${canvasId === 'cat-chart' ? 'Services' : 'Open jobs'} by category">${labels.map((label, index) => {
+        holder.innerHTML = `<div class="chart-fallback" role="img" aria-label="${canvasId === 'cat-chart' ? 'Services' : 'Jobs accepting applications'} by category">${labels.map((label, index) => {
           const value = Number(data[index] || 0);
           const width = Math.max(6, Math.round((value / max) * 100));
           return `<div class="chart-row"><div class="chart-label">${escHtml(label)}</div><div class="chart-track"><div class="chart-fill" style="width:${width}%;background:${color}"></div></div><div class="chart-value">${fmt(value)}</div></div>`;
