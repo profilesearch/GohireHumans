@@ -1332,6 +1332,55 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByText('View open jobs', { exact: true })).toHaveCount(0);
   });
 
+  test('reviewing jobs remain discoverable and applicable while applications are accepted', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    const reviewingJob = {
+      id: 42,
+      employer_id: 8,
+      employer_name: 'GoHireHumans Operations',
+      title: 'Review a live workflow',
+      description: 'Return screenshots and a prioritized issue list.',
+      category: 'testing',
+      status: 'reviewing',
+      budget_type: 'fixed',
+      budget_amount: 35,
+      location_type: 'remote',
+      created_at: '2026-07-21T00:00:00Z',
+      application_count: 1
+    };
+    await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/jobs/42')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reviewingJob) });
+      }
+      if (url.pathname.endsWith('/jobs/43')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...reviewingJob, id: 43, title: 'Already hired workflow', status: 'hired' })
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [reviewingJob], total: 1 })
+      });
+    });
+
+    await page.goto('/#/jobs', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Review a live workflow')).toBeVisible();
+    await expect(page.locator('#jobs-summary')).toHaveText('1 job accepting applications · newest first');
+    await page.getByRole('button', { name: 'Apply now' }).click();
+    await expect(page).toHaveURL(/#\/jobs\/42$/);
+    await expect(page.getByRole('button', { name: 'Sign in to Apply' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('This job is no longer accepting applications.');
+
+    await page.goto('/#/jobs/43', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Already hired workflow')).toBeVisible();
+    await expect(page.getByText('This job is no longer accepting applications.')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Apply/ })).toHaveCount(0);
+  });
+
   test('filtered-empty marketplace states preserve truthful recovery paths', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.route('https://gohirehumans-production.up.railway.app/jobs**', route => route.fulfill({

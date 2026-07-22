@@ -8602,10 +8602,16 @@ def _handle_routes(db):
         budget_type = params.get("budget_type")
         min_budget = params.get("min_budget")
         max_budget = params.get("max_budget")
-        status_filter = params.get("status", "open")
+        status_filter = params.get("status")
+        if status_filter:
+            status_condition = "j.status = ?"
+            status_values = [status_filter]
+        else:
+            status_condition = "j.status IN (?, ?)"
+            status_values = ["open", "reviewing"]
 
-        conditions = ["j.status = ?", f"j.employer_id NOT IN ({public_non_seeded_user_subquery()})"]
-        values = [status_filter] + seeded_sample_email_values()
+        conditions = [status_condition, f"j.employer_id NOT IN ({public_non_seeded_user_subquery()})"]
+        values = status_values + seeded_sample_email_values()
 
         if category:
             conditions.append("j.category = ?")
