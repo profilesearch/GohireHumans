@@ -992,7 +992,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     test.skip(!isMobile, 'mobile-only smoke');
     await setupDeterministicLocalPage(page);
     await page.goto('/pricing.html');
-    await expect(page.locator('body')).toContainText('Compare Fees');
+    await expect(page.locator('body')).toContainText('Compare Fee Structures');
     await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     await expect(page.locator('#services-result-count')).toBeVisible();
@@ -1045,8 +1045,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ services: [
-        { id: 'svc-new', title: 'New service', description: 'No reviews yet.', pricing_type: 'fixed', price: 50, avg_rating: 0, total_reviews: 0, provider_type: 'human', worker_name: 'New provider', delivery_time_days: 2 },
-        { id: 'svc-reviewed', title: 'Reviewed service', description: 'Has verified review history.', pricing_type: 'fixed', price: 75, avg_rating: 4.8, total_reviews: 8, provider_type: 'human', worker_name: 'Reviewed provider', delivery_time_days: 3 }
+        { id: 'svc-new', title: 'New service', description: 'No reviews yet.', pricing_type: 'fixed', price: 50, worker_rating: 0, worker_review_count: 0, provider_type: 'human', worker_name: 'New provider', delivery_time_days: 2 },
+        { id: 'svc-reviewed', title: 'Reviewed service', description: 'Has verified review history.', pricing_type: 'fixed', price: 75, worker_rating: 4.8, worker_review_count: 8, provider_type: 'human', worker_name: 'Reviewed provider', delivery_time_days: 3 }
       ], total: 2 })
     }));
     await page.goto('/#/services', { waitUntil: 'domcontentloaded' });
@@ -1071,6 +1071,40 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(sellerCta).toBeVisible();
     const sellerTop = await sellerCta.evaluate(el => el.getBoundingClientRect().top);
     expect(sellerTop).toBeGreaterThan(top);
+  });
+
+  test('service detail uses canonical provider, review, and delivery facts', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/services/91', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 91,
+        title: 'Evidence review',
+        description: 'Review one bounded artifact.',
+        category: 'expert_review',
+        pricing_type: 'fixed',
+        price: 99,
+        worker_id: 14,
+        worker_name: 'Early provider',
+        provider_type: null,
+        worker_rating: null,
+        worker_review_count: null,
+        delivery_time_days: null
+      })
+    }));
+    await page.route('https://gohirehumans-production.up.railway.app/users/14/reviews', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ reviews: [] })
+    }));
+    await page.goto('/#/services/91', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Evidence review' })).toBeVisible();
+    await expect(page.locator('.badge-human, .badge-ai')).toHaveCount(0);
+    await expect(page.locator('.stars-row')).toHaveCount(0);
+    await expect(page.locator('.svc-worker-row')).toContainText('New listing');
+    await expect(page.locator('.svc-order-meta')).not.toContainText('Delivery:');
+    await expect(page.locator('body')).not.toContainText('? days');
   });
 
   test('empty jobs route has one truthful state and no contradictory inventory claims', async ({ page }) => {

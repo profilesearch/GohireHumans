@@ -1699,6 +1699,72 @@ class BackendRegressionTests(unittest.TestCase):
                 missing[rel] = misses
         self.assertEqual(missing, {})
 
+    def test_public_intent_ctas_do_not_emit_executive_conversion_events(self):
+        executive_event_call = re.compile(
+            r"(?:trackGHH|trackBlogCTA)\(\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
+            r"|gtag\(\s*['\"]event['\"]\s*,\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
+        )
+        executive_violations = {}
+        misrouted_post_task_ctas = {}
+        for page in sorted((REPO_ROOT / "frontend").rglob("*.html")):
+            if page.name == "index.html" and page.parent == REPO_ROOT / "frontend":
+                continue
+            text = page.read_text(encoding="utf-8", errors="ignore")
+            matches = executive_event_call.findall(text)
+            if matches:
+                executive_violations[str(page.relative_to(REPO_ROOT))] = matches
+            bad_post_task_links = []
+            for anchor in re.findall(r"<a\b[^>]*>", text, re.IGNORECASE):
+                if "post_task_cta_click" not in anchor:
+                    continue
+                href = re.search(r"\bhref\s*=\s*['\"]([^'\"]+)['\"]", anchor, re.IGNORECASE)
+                if href is None or "post-job" not in href.group(1):
+                    bad_post_task_links.append(anchor[:240])
+            if bad_post_task_links:
+                misrouted_post_task_ctas[str(page.relative_to(REPO_ROOT))] = bad_post_task_links
+        self.assertEqual(executive_violations, {})
+        self.assertEqual(misrouted_post_task_ctas, {})
+
+    def test_faq_qualifies_checkout_and_privacy_sharing_claims(self):
+        faq = (REPO_ROOT / "frontend/faq.html").read_text(encoding="utf-8", errors="ignore")
+        self.assertNotIn("All payments are processed through Stripe", faq)
+        self.assertNotIn("never shared with third parties", faq)
+        self.assertIn("Where GoHireHumans checkout is configured, Stripe processes payments", faq)
+        self.assertIn("published listings and task content may be public", faq)
+        self.assertIn("service providers and marketplace participants as described in the Privacy Policy", faq)
+
+    def test_starter_offer_taxonomy_matches_pricing_and_draft_defaults(self):
+        pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
+        starter = (REPO_ROOT / "frontend/starter-offers.html").read_text(encoding="utf-8", errors="ignore")
+        app = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        canonical_offers = {
+            "AI Output Verification": ("ai_review", "99"),
+            "Automation QA Sprint": ("automation_verification", "199"),
+            "Clay/GTM QA Sprint": ("clay_gtm_qa", "199"),
+            "Real-World Check": ("phone_fact_check", "79"),
+        }
+        for offer, (template, amount) in canonical_offers.items():
+            self.assertIn(f"<h3>{offer}</h3>", pricing)
+            self.assertIn(f"<h3>{offer}</h3>", starter)
+            match = re.search(
+                rf"\b{re.escape(template)}:\s*\{{.*?budget_amount:\s*['\"](\d+)['\"]",
+                app,
+                re.DOTALL,
+            )
+            if match is None:
+                self.fail(f"Missing draft template budget for {template}")
+            self.assertEqual(match.group(1), amount, template)
+        self.assertNotIn("<h3>Website QA Sprint</h3>", pricing)
+        self.assertNotIn("<h3>Lead List Verification</h3>", pricing)
+
+    def test_pricing_avoids_unsourced_competitor_rate_claims(self):
+        pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
+        for name in ["Upwork", "Fiverr", "TaskRabbit"]:
+            self.assertNotIn(name, pricing)
+        self.assertIn("Other marketplaces", pricing)
+        self.assertIn("Varies; confirm current terms", pricing)
+        self.assertIn("1% + Stripe processing where checkout is configured", pricing)
+
     def test_first_orders_conversion_infrastructure_is_discoverable(self):
         required = {
             "frontend/index.html": [
@@ -1720,11 +1786,11 @@ class BackendRegressionTests(unittest.TestCase):
                 'data-pricing-order="fee-first"',
                 "Prefer a fixed starting point?",
                 "pricing_proof_first_cta_click",
-                "lead_research",
+                "clay_gtm_qa",
             ],
-            "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "qualify_lead"],
-            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "qualify_lead"],
-            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_qualification", "qualify_lead"],
+            "frontend/use-cases/hire-human-to-review-ai-output.html": ["AI-output review proof pack", "template=ai_review", "post_task_cta_click"],
+            "frontend/use-cases/website-qa-task.html": ["Website QA proof pack", "template=website_qa", "post_task_cta_click"],
+            "frontend/use-cases/lead-research-microtask.html": ["Lead research proof pack", "template=lead_qualification", "post_task_cta_click"],
             "frontend/examples/sample-deliverables.html": [
                 "Sample website QA report",
                 "Sample AI-output review scorecard",
@@ -2868,7 +2934,6 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "Turn the data into one clear task",
             "Draft your first task",
             "first_task_blog_cta_click",
-            "trackBlogCTA('qualify_lead'",
             "/#/post-job?template=website_test",
         ]:
             self.assertIn(snippet, text)
