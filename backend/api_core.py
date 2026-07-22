@@ -2602,12 +2602,24 @@ def validated_order_deadline(value, now=None):
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def validated_service_delivery_time(delivery_time_days, required=False):
+    """Validate service delivery metadata against fixed-service checkout semantics."""
+    if delivery_time_days is None:
+        if required:
+            raise ValueError("delivery_time_days is required for fixed pricing")
+        return None
+    if isinstance(delivery_time_days, bool) or not isinstance(delivery_time_days, int):
+        raise ValueError("delivery_time_days must be an integer between 1 and 365")
+    if not 1 <= delivery_time_days <= 365:
+        raise ValueError("delivery_time_days must be an integer between 1 and 365")
+    return delivery_time_days
+
+
 def service_order_deadline(delivery_time_days, now=None):
     """Derive a fixed-service deadline from the seller's published delivery promise."""
-    if isinstance(delivery_time_days, bool) or not isinstance(delivery_time_days, int):
-        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
-    if not 1 <= delivery_time_days <= 365:
-        raise ValueError("Fixed services require delivery_time_days between 1 and 365")
+    delivery_time_days = validated_service_delivery_time(delivery_time_days, required=True)
+    if delivery_time_days is None:  # Required validation above narrows the runtime contract.
+        raise ValueError("delivery_time_days is required for fixed pricing")
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     return (current + timedelta(days=delivery_time_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -8349,6 +8361,13 @@ def _handle_routes(db):
         if pricing_type not in ('fixed', 'hourly', 'custom'):
             return error_response("pricing_type must be fixed, hourly, or custom")
 
+        try:
+            delivery_time_days = validated_service_delivery_time(
+                body.get("delivery_time_days"), required=pricing_type == 'fixed'
+            )
+        except ValueError as exc:
+            return error_response(str(exc))
+
         price = body.get("price")
         hourly_rate = body.get("hourly_rate")
 
@@ -8383,7 +8402,7 @@ def _handle_routes(db):
                VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?)""",
             [user['id'], body['title'], body['description'], body['category'],
              pricing_type, price, hourly_rate,
-             body.get("delivery_time_days"),
+             delivery_time_days,
              body.get("includes", ""),
              json.dumps(tags) if isinstance(tags, list) else tags,
              json.dumps(images) if isinstance(images, list) else images,
@@ -8422,6 +8441,18 @@ def _handle_routes(db):
         if not safe:
             return error_response(f"Service update rejected: {msg}", 422)
 
+        if 'delivery_time_days' in body or 'pricing_type' in body:
+            effective_pricing_type = body.get('pricing_type', svc['pricing_type'])
+            effective_delivery_time = body.get('delivery_time_days', svc['delivery_time_days'])
+            if effective_pricing_type not in ('fixed', 'hourly', 'custom'):
+                return error_response("pricing_type must be fixed, hourly, or custom")
+            try:
+                validated_service_delivery_time(
+                    effective_delivery_time, required=effective_pricing_type == 'fixed'
+                )
+            except ValueError as exc:
+                return error_response(str(exc))
+
         updates = []
         vals = []
         for field in ['title', 'description', 'category', 'pricing_type', 'price', 'hourly_rate',
@@ -8432,6 +8463,10 @@ def _handle_routes(db):
                     return error_response("Invalid category")
                 if field == 'status' and body[field] not in ('active', 'paused', 'removed'):
                     return error_response("Invalid status")
+                if field == 'provider_type' and body[field] not in ('human', 'ai'):
+                    return error_response("provider_type must be 'human' or 'ai'")
+                if field == 'fulfillment_type' and body[field] not in ('manual', 'api'):
+                    return error_response("fulfillment_type must be 'manual' or 'api'")
                 updates.append(f"{field} = ?")
                 vals.append(body[field])
         for field in ['tags', 'images']:

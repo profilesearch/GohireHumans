@@ -52,6 +52,85 @@ class BackendRegressionTests(unittest.TestCase):
         os.environ.pop("DATABASE_PATH", None)
         os.environ.pop("DISABLE_AUTO_SEED", None)
 
+    def _request_api(self, method, path, payload=None, token=""):
+        body = json.dumps(payload or {})
+        for cached in ("body_cache", "raw_body"):
+            if hasattr(self.module._request_ctx, cached):
+                delattr(self.module._request_ctx, cached)
+        self.module._request_ctx.request_method = method
+        self.module._request_ctx.path_info = path
+        self.module._request_ctx.query_string = ""
+        self.module._request_ctx.http_authorization = f"Bearer {token}" if token else ""
+        self.module._request_ctx.http_x_api_key = ""
+        self.module._request_ctx.stdin_data = body
+        self.module._request_ctx.stdin_data_raw = body.encode("utf-8")
+        self.module._request_ctx.content_type = "application/json"
+        self.module._request_ctx.content_length = str(len(self.module._request_ctx.stdin_data_raw))
+        self.module._request_ctx.remote_addr = "127.0.0.1"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.module.handle_request()
+        return parse_cgi_output(out.getvalue())
+
+    def test_service_mutations_enforce_checkout_compatible_delivery_days(self):
+        token = "tok-service-delivery"
+        db = self.module.get_db()
+        try:
+            db.execute(
+                "INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')"
+            )
+            db.execute(
+                "INSERT INTO sessions (user_id,token,expires_at) VALUES (1,?,datetime('now','+1 day'))",
+                [token],
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        fixed = {
+            "title": "Bounded review",
+            "description": "Review one bounded artifact and return evidence.",
+            "category": "testing",
+            "pricing_type": "fixed",
+            "price": 99,
+        }
+        for invalid in (None, 0, -1, 366, "1", True):
+            payload = dict(fixed)
+            if invalid is not None:
+                payload["delivery_time_days"] = invalid
+            status, result = self._request_api("POST", "/services", payload, token)
+            with self.subTest(invalid=invalid):
+                self.assertEqual(status, 400, result)
+                self.assertIn("delivery_time_days", result.get("error", ""))
+
+        status, created = self._request_api(
+            "POST", "/services", {**fixed, "delivery_time_days": 1}, token
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["delivery_time_days"], 1)
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"delivery_time_days": 0}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("delivery_time_days", result.get("error", ""))
+
+        status, updated = self._request_api(
+            "PUT", f"/services/{created['id']}", {"delivery_time_days": 365}, token
+        )
+        self.assertEqual(status, 200, updated)
+        self.assertEqual(updated["delivery_time_days"], 365)
+
+        status, result = self._request_api(
+            "PUT", f"/services/{created['id']}", {"provider_type": "unknown"}, token
+        )
+        self.assertEqual(status, 400, result)
+        self.assertIn("provider_type", result.get("error", ""))
+
+        hourly = {**fixed, "pricing_type": "hourly", "price": None, "hourly_rate": 50}
+        status, created_hourly = self._request_api("POST", "/services", hourly, token)
+        self.assertEqual(status, 201, created_hourly)
+        self.assertIsNone(created_hourly["delivery_time_days"])
+
     def test_existing_session_is_rejected_immediately_after_user_suspension(self):
         token = "tok-suspended-session"
         db = self.module.get_db()
@@ -1701,16 +1780,18 @@ class BackendRegressionTests(unittest.TestCase):
 
     def test_public_intent_ctas_do_not_emit_executive_conversion_events(self):
         executive_event_call = re.compile(
-            r"(?:trackGHH|trackBlogCTA)\(\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
+            r"(?:trackGHH|trackBlogCTA|trackEvent|trackRecommendedEvent|trackConfiguredKeyEvent)\(\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
             r"|gtag\(\s*['\"]event['\"]\s*,\s*['\"](?:generate_lead|qualify_lead|close_convert_lead|purchase)['\"]"
         )
         executive_violations = {}
         misrouted_post_task_ctas = {}
         for page in sorted((REPO_ROOT / "frontend").rglob("*.html")):
-            if page.name == "index.html" and page.parent == REPO_ROOT / "frontend":
-                continue
             text = page.read_text(encoding="utf-8", errors="ignore")
-            matches = executive_event_call.findall(text)
+            is_spa_root = page.name == "index.html" and page.parent == REPO_ROOT / "frontend"
+            inspected_text = "\n".join(
+                re.findall(r"<(?:a|button)\b[^>]*>", text, re.IGNORECASE)
+            ) if is_spa_root else text
+            matches = executive_event_call.findall(inspected_text)
             if matches:
                 executive_violations[str(page.relative_to(REPO_ROOT))] = matches
             bad_post_task_links = []
@@ -1731,12 +1812,14 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertNotIn("never shared with third parties", faq)
         self.assertIn("Where GoHireHumans checkout is configured, Stripe processes payments", faq)
         self.assertIn("published listings and task content may be public", faq)
-        self.assertIn("service providers and marketplace participants as described in the Privacy Policy", faq)
+        self.assertNotIn("service providers and marketplace participants as described in the Privacy Policy", faq)
+        self.assertIn("with Stripe for configured payment processing, with other users as needed for marketplace transactions, and with law enforcement when required", faq)
 
     def test_starter_offer_taxonomy_matches_pricing_and_draft_defaults(self):
         pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
         starter = (REPO_ROOT / "frontend/starter-offers.html").read_text(encoding="utf-8", errors="ignore")
         app = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        first_tasks = (REPO_ROOT / "frontend/post-a-small-task.html").read_text(encoding="utf-8", errors="ignore")
         website_qa = (REPO_ROOT / "frontend/use-cases/website-qa-task.html").read_text(encoding="utf-8", errors="ignore")
         lead_research = (REPO_ROOT / "frontend/use-cases/lead-research-microtask.html").read_text(encoding="utf-8", errors="ignore")
         canonical_offers = {
@@ -1762,6 +1845,10 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertNotIn("template=website_qa", website_qa)
         self.assertIn("template=clay_gtm_qa", lead_research)
         self.assertNotIn("template=lead_qualification", lead_research)
+        self.assertIn("Suggested: $49–$199", first_tasks)
+        self.assertIn("Suggested: $15–$79", first_tasks)
+        self.assertNotIn("Suggested: $49–$149", first_tasks)
+        self.assertNotIn("Suggested: $15–$75", first_tasks)
 
     def test_pricing_avoids_unsourced_competitor_rate_claims(self):
         pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")

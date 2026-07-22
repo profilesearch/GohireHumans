@@ -546,8 +546,7 @@ function workerReviewSummary(service) {
 function serviceDeliveryLabel(value) {
   if (value === null || value === undefined || value === '') return '';
   const days = Number(value);
-  if (!Number.isFinite(days) || days < 0) return '';
-  if (days === 0) return 'Same-day delivery';
+  if (!Number.isInteger(days) || days < 1 || days > 365) return '';
   return `Delivery: ${days} day${days !== 1 ? 's' : ''}`;
 }
 function relativeDate(str) {
@@ -1264,11 +1263,10 @@ async function renderLanding() {
   try {
     const sRes = await api('/services?per_page=3');
     liveServices = (sRes.services || []).map(s => ({
-      title: s.title, worker: s.worker_name || 'Professional',
+      title: s.title, worker: s.worker_name || '',
       price: s.pricing_type === 'hourly' ? `$${s.hourly_rate}/hr` : s.price ? `$${s.price}` : 'Custom',
-      delivery: s.delivery_time_days ? `${s.delivery_time_days} days` : 'Flexible',
-      rating: Math.round(Number(s.avg_rating ?? s.rating ?? 0)),
-      reviews: Number(s.total_reviews ?? s.review_count ?? s.reviews ?? 0),
+      delivery: serviceDeliveryLabel(s.delivery_time_days),
+      reviewMarkup: workerReviewSummary(s),
       category: (s.category || s.category_name || '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()),
       id: s.id
     }));
@@ -1283,11 +1281,11 @@ async function renderLanding() {
           <div class="lp-feed-card-cat">${esc(s.category)}</div>
           <div class="lp-feed-title">${esc(s.title)}</div>
           <div class="lp-feed-meta">
-            <span>${I.clock} ${esc(s.delivery)}</span>
-            <span>By ${esc(s.worker)}</span>
+            ${s.delivery ? `<span>${I.clock} ${esc(s.delivery)}</span>` : ''}
+            ${s.worker ? `<span>By ${esc(s.worker)}</span>` : ''}
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:var(--space-3)">
-            <div class="lp-card-stars">${stars(s.rating, s.reviews)}</div>
+            <div class="lp-card-stars">${s.reviewMarkup}</div>
             <strong style="color:var(--color-text);font-size:var(--text-base)">${esc(s.price)}</strong>
           </div>
           <span class="lp-card-details">View details →</span>
@@ -1779,7 +1777,7 @@ async function renderServiceDetail(id) {
             </div>
 
             <div class="card">
-              <div class="card-title" style="margin-bottom:var(--space-3)">${svc.provider_type === 'ai' ? 'About This AI Service' : 'About the Seller'}</div>
+              <div class="card-title" style="margin-bottom:var(--space-3)">${svc.provider_type === 'ai' ? 'About This AI Service' : svc.provider_type === 'human' ? 'About the Seller' : 'About the Provider'}</div>
               ${svc.provider_type === 'ai' ? `
               <div style="margin-bottom:var(--space-3)">
                 ${svc.ai_model ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)"><strong>Model:</strong> ${esc(svc.ai_model)}</div>` : ''}
@@ -2501,8 +2499,8 @@ async function renderMyServices() {
               </div>
               <div class="task-card-meta">
                 <span>${I.dollar} ${formatPrice(s)}</span>
-                <span>${I.clock} ${s.delivery_time_days||'?'} days delivery</span>
-                <span>★ ${s.avg_rating ? Number(s.avg_rating).toFixed(1) : 'No ratings'} (${s.total_reviews||0} reviews)</span>
+                ${serviceDeliveryLabel(s.delivery_time_days) ? `<span>${I.clock} ${serviceDeliveryLabel(s.delivery_time_days)}</span>` : ''}
+                <span>${workerReviewSummary(s)}</span>
               </div>
               <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
                 <button class="btn btn-secondary btn-sm" onclick="navigate('#/services/${s.id}')">${I.eye} View</button>
@@ -2596,7 +2594,7 @@ function renderPostService(editId = null) {
             </div>
             <div class="form-group">
               <label class="label">Delivery Time (days) *</label>
-              <input class="input" type="number" name="delivery_time_days" value="${esc(e.delivery_time_days||'')}" min="1" placeholder="3" required>
+              <input class="input" type="number" name="delivery_time_days" value="${esc(e.delivery_time_days||'')}" min="1" max="365" placeholder="3" required>
             </div>
           </div>
           <div class="form-group">

@@ -999,6 +999,49 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('[data-filter-toggle]')).toHaveText('Filters');
   });
 
+  test('homepage service previews preserve unknown, zero, and canonical worker facts', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.route('https://gohirehumans-production.up.railway.app/services?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ services: [
+        {
+          id: 31,
+          title: 'Unknown review history',
+          worker_name: null,
+          category: 'testing',
+          pricing_type: 'fixed',
+          price: 99,
+          delivery_time_days: null,
+          worker_rating: null,
+          worker_review_count: null,
+        },
+        {
+          id: 32,
+          title: 'Legacy zero-day listing',
+          worker_name: 'Fast verifier',
+          category: 'testing',
+          pricing_type: 'fixed',
+          price: 79,
+          delivery_time_days: 0,
+          worker_rating: 0,
+          worker_review_count: 0,
+        },
+      ], total: 2, page: 1, per_page: 3 }),
+    }));
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const cards = page.locator('.lp-feed-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('Review history unavailable');
+    await expect(cards.nth(0)).not.toContainText('New listing');
+    await expect(cards.nth(0)).not.toContainText('Flexible');
+    await expect(cards.nth(0)).not.toContainText('By Professional');
+    await expect(cards.nth(1)).toContainText('New listing');
+    await expect(cards.nth(1)).not.toContainText('Same-day delivery');
+    await expect(cards.nth(1)).not.toContainText('0 days');
+  });
+
   test('simplified homepage presents one broad buyer path without repeated modules', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -1105,6 +1148,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('.svc-worker-row')).toContainText('Review history unavailable');
     await expect(page.locator('.svc-worker-row')).not.toContainText('New listing');
     await expect(page.locator('.svc-order-meta')).not.toContainText('Delivery:');
+    await expect(page.getByText('About the Provider', { exact: true })).toBeVisible();
+    await expect(page.getByText('About the Seller', { exact: true })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('? days');
 
     await page.route('https://gohirehumans-production.up.railway.app/services/92', route => route.fulfill({
@@ -1112,8 +1157,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       contentType: 'application/json',
       body: JSON.stringify({
         id: 92,
-        title: 'Same-day verification',
-        description: 'Review one bounded artifact today.',
+        title: 'Legacy zero-day verification',
+        description: 'Legacy invalid delivery metadata.',
         category: 'expert_review',
         pricing_type: 'fixed',
         price: 125,
@@ -1131,11 +1176,41 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       body: JSON.stringify({ reviews: [] })
     }));
     await page.goto('/#/services/92', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Same-day verification' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Legacy zero-day verification' })).toBeVisible();
     await expect(page.locator('.badge-human')).toContainText('Human service');
     await expect(page.locator('.stars-row')).toHaveAttribute('aria-label', '5.0 out of 5 stars, 1 review');
-    await expect(page.locator('.svc-order-meta')).toContainText('Same-day delivery');
+    await expect(page.locator('.svc-order-meta')).not.toContainText('Delivery:');
+    await expect(page.getByText('About the Seller', { exact: true })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('Same-day delivery');
     await expect(page.locator('body')).not.toContainText('0 days');
+
+    await page.route('https://gohirehumans-production.up.railway.app/services/93', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 93,
+        title: 'Legacy unknown provider',
+        description: 'Legacy provider metadata must fail closed.',
+        category: 'expert_review',
+        pricing_type: 'fixed',
+        price: 80,
+        worker_id: 16,
+        worker_name: 'Legacy provider',
+        provider_type: 'unknown',
+        worker_rating: 0,
+        worker_review_count: 0,
+        delivery_time_days: 2
+      })
+    }));
+    await page.route('https://gohirehumans-production.up.railway.app/users/16/reviews', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ reviews: [] })
+    }));
+    await page.goto('/#/services/93', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Legacy unknown provider' })).toBeVisible();
+    await expect(page.locator('.badge-human, .badge-ai')).toHaveCount(0);
+    await expect(page.getByText('About the Provider', { exact: true })).toBeVisible();
   });
 
   test('empty jobs route has one truthful state and no contradictory inventory claims', async ({ page }) => {
