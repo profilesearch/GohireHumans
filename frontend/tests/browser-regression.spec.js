@@ -239,6 +239,50 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(call[2]).not.toHaveProperty('campaign');
   });
 
+  test('Google auth distinguishes completed signup from returning login', async ({ page }) => {
+    await setupDeterministicLocalPage(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    const eventsFor = async isNewUser => page.evaluate(async newAccount => {
+      const events = [];
+      window.gtag = (...args) => events.push(args);
+      window.api = async path => {
+        if (path !== '/auth/google') throw new Error(`Unexpected API path: ${path}`);
+        return {
+          id: newAccount ? 701 : 702,
+          email: newAccount ? 'new-google@example.test' : 'returning-google@example.test',
+          name: newAccount ? 'New Google User' : 'Returning Google User',
+          token: 'google-auth-test-token',
+          is_new_user: newAccount,
+        };
+      };
+      window.saveSession = () => {};
+      window.toast = () => {};
+      window.navigate = () => {};
+      handleGoogleCredential({ credential: 'google-credential-under-test' });
+      for (let attempt = 0; attempt < 20 && events.length === 0; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      return events
+        .filter(args => args[0] === 'event')
+        .map(args => ({ name: args[1], params: args[2] }));
+    }, isNewUser);
+
+    const newAccountEvents = await eventsFor(true);
+    expect(newAccountEvents.map(event => event.name)).toEqual(['signup_completed', 'sign_up']);
+    expect(newAccountEvents.find(event => event.name === 'signup_completed')?.params).toMatchObject({
+      ui_source: 'google_auth',
+      method: 'google',
+    });
+    expect(newAccountEvents.map(event => event.name)).not.toContain('login');
+
+    const returningEvents = await eventsFor(false);
+    expect(returningEvents.map(event => event.name)).toEqual(['login']);
+    expect(returningEvents[0]?.params).toMatchObject({ method: 'google' });
+    expect(returningEvents.map(event => event.name)).not.toContain('sign_up');
+    expect(returningEvents.map(event => event.name)).not.toContain('signup_completed');
+  });
+
   test('application submission failure stays visible and retryable', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });

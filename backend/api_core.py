@@ -8108,6 +8108,7 @@ def _handle_routes(db):
         ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user_id]).fetchone()
         user_data['worker_profile'] = row_to_dict(wp)
         user_data['employer_profile'] = row_to_dict(ep)
+        user_data['is_new_user'] = is_new_google_user
 
         return json_response(user_data, 200 if existing else 201)
 

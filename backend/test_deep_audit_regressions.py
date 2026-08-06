@@ -71,6 +71,35 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.handle_request()
         return parse_cgi_output(out.getvalue())
 
+    def test_google_auth_reports_whether_the_account_was_created(self):
+        os.environ["GOOGLE_CLIENT_ID"] = "google-client-under-test"
+        verified_identity = {
+            "aud": "google-client-under-test",
+            "iss": "https://accounts.google.com",
+            "email": "new-google-user@example.com",
+            "email_verified": "true",
+            "name": "New Google User",
+            "sub": "google-sub-under-test",
+        }
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(verified_identity).encode("utf-8")
+
+        with (
+            mock.patch.object(self.module.urllib.request, "urlopen", return_value=response),
+            mock.patch.object(self.module, "send_welcome_email"),
+        ):
+            created_status, created = self._request_api(
+                "POST", "/auth/google", {"credential": "new-google-credential"}
+            )
+            existing_status, existing = self._request_api(
+                "POST", "/auth/google", {"credential": "returning-google-credential"}
+            )
+
+        self.assertEqual(created_status, 201, created)
+        self.assertIs(created["is_new_user"], True)
+        self.assertEqual(existing_status, 200, existing)
+        self.assertIs(existing["is_new_user"], False)
+
     def test_service_mutations_enforce_checkout_compatible_delivery_days(self):
         token = "tok-service-delivery"
         db = self.module.get_db()
