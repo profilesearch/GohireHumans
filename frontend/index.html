@@ -362,10 +362,16 @@ async function shareGHH(path = '/', source = 'site_share') {
 function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
     .then(data => {
-      const { token, ...user } = data;
+      const { token, is_new_user: isNewUser, ...user } = data;
       saveSession(token, user);
-      toast('Welcome to GoHireHumans!', 'success');
-      trackRecommendedEvent('login', { method: 'google' });
+      if (isNewUser) {
+        trackEvent('signup_completed', { source: 'google_auth', method: 'google' });
+        trackRecommendedEvent('sign_up', { method: 'google', source: 'google_auth' });
+        toast('Account created! Welcome to GoHireHumans.', 'success');
+      } else {
+        trackRecommendedEvent('login', { method: 'google' });
+        toast('Welcome back!', 'success');
+      }
       navigate('#/');
     })
     .catch(err => toast(err.message || 'Google sign-in failed', 'error'));
