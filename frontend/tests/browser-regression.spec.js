@@ -1599,4 +1599,53 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('main')).toContainText('where available');
     await expect(page.locator('main')).toContainText('available evidence');
   });
+
+  test('admin dashboard exposes aggregate notification delivery health without message PII', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'admin-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 54, name: 'Admin', is_admin: true }));
+    });
+    await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
+    await page.route('https://gohirehumans-production.up.railway.app/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      const body = path === '/admin/notification-health'
+        ? {
+            configuration: { provider_configured: true, sender_configured: true, webhook_configured: false, worker_enabled: true },
+            outbox: {
+              states: { pending: 2, sending: 0, sent: 7, failed: 1 },
+              eligible_pending: 1,
+              stale_pending: 1,
+              manual_review: 1,
+              oldest_pending_age_seconds: 7200,
+              by_type: { new_application: { pending: 1, sent: 4 } }
+            },
+            delivery_events_24h: { 'email.delivered': 5, 'email.bounced': 1 },
+            application_reminders: { '24h': 3, '72h': 1 }
+          }
+        : path === '/profile'
+          ? { id: 54, name: 'Admin', is_admin: true }
+          : path === '/admin/users'
+            ? { users: [] }
+            : path === '/admin/orders'
+              ? { orders: [] }
+              : path === '/notifications'
+                ? { notifications: [], unread_count: 0 }
+                : {};
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await page.goto('/#/dashboard', { waitUntil: 'domcontentloaded' });
+    const health = page.locator('#notification-delivery-health');
+    await expect(health).toBeVisible();
+    await expect(health).toContainText('Notification Delivery');
+    await expect(health).toContainText('Provider configured');
+    await expect(health).toContainText('Webhook not configured');
+    await expect(health).toContainText('2 pending');
+    await expect(health).toContainText('1 stale');
+    await expect(health).toContainText('1 manual review');
+    await expect(health).toContainText('5 delivered');
+    await expect(health).toContainText('1 bounced');
+    await expect(health).toContainText('3 × 24h');
+    await expect(health).toContainText('1 × 72h');
+    await expect(health).not.toContainText('private-owner@example.com');
+  });
 });

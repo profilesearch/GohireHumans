@@ -619,10 +619,17 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(state[7], 0)
 
     def test_fixed_job_hire_exact_retry_replays_after_post_commit_response_loss(self):
+        real_json_response = self.api.json_response
+
+        def lose_created_response(payload, status=200):
+            if status == 201:
+                raise RuntimeError("response lost after lifecycle commit")
+            return real_json_response(payload, status)
+
         with mock.patch.object(
             self.api,
-            "flush_transactional_notification_emails",
-            side_effect=RuntimeError("response lost after lifecycle commit"),
+            "json_response",
+            side_effect=lose_created_response,
         ):
             first_status, _ = self.hire_job_one()
         self.assertEqual(first_status, 500)
