@@ -49,6 +49,9 @@ sys.stdout = _ThreadLocalStdout()
 
 # ─── Flask App ──────────────────────────────────────────────────────────────
 app = Flask(__name__)
+# Bound unauthenticated webhook/API buffering before request.get_data(). The
+# marketplace API accepts structured JSON and URL references, not file bodies.
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 
 # SECURITY: Default to production origins only — never wildcard with credentials.
 _default_origins = "https://www.gohirehumans.com,https://gohirehumans.com"
@@ -128,6 +131,75 @@ def _init_db_once():
 # complete required schema has been established.
 _init_db_once()
 
+# ─── Bounded notification maintenance worker ────────────────────────────────
+# Railway currently launches this module through start.sh -> python server.py.
+# A durable database lease and per-row claim token keep delivery safe if a
+# second process, replica, or future Gunicorn worker starts concurrently.
+_NOTIFICATION_WORKER_STOP = threading.Event()
+_NOTIFICATION_WORKER_THREAD = None
+
+
+def _run_notification_worker_tick(owner_token, lease_seconds=600):
+    lease_db = api_module.get_db()
+    try:
+        if not api_module.acquire_notification_worker_lease(
+            lease_db, owner_token, lease_seconds=lease_seconds,
+        ):
+            return None
+    finally:
+        lease_db.close()
+    return api_module.run_notification_maintenance_once(
+        owner_token=owner_token, lease_seconds=lease_seconds,
+    )
+
+
+def _notification_worker_loop():
+    try:
+        interval = int(os.environ.get("EMAIL_OUTBOX_WORKER_INTERVAL_SECONDS", "60"))
+    except ValueError:
+        interval = 60
+    interval = max(15, min(interval, 3600))
+    owner_token = uuid.uuid4().hex
+    lease_seconds = 600
+    if _NOTIFICATION_WORKER_STOP.wait(5):
+        return
+    while not _NOTIFICATION_WORKER_STOP.is_set():
+        try:
+            result = _run_notification_worker_tick(owner_token, lease_seconds)
+            if result is None:
+                _NOTIFICATION_WORKER_STOP.wait(interval)
+                continue
+            delivery = result["email_delivery"]
+            if result["application_reminders_created"] or any(
+                delivery.get(key, 0) for key in (
+                    "sent", "deferred", "failed", "claimed_recovered",
+                    "suppressed", "claim_lost", "lease_lost",
+                )
+            ):
+                log.info(json.dumps({"event": "notification_maintenance", **result}))
+        except Exception:
+            log.exception(json.dumps({"event": "notification_maintenance_failed"}))
+        _NOTIFICATION_WORKER_STOP.wait(interval)
+
+
+def _start_notification_worker():
+    global _NOTIFICATION_WORKER_THREAD
+    if not api_module.notification_worker_enabled():
+        log.warning(json.dumps({"event": "notification_worker_disabled"}))
+        return
+    if _NOTIFICATION_WORKER_THREAD and _NOTIFICATION_WORKER_THREAD.is_alive():
+        return
+    _NOTIFICATION_WORKER_THREAD = threading.Thread(
+        target=_notification_worker_loop,
+        name="notification-maintenance",
+        daemon=True,
+    )
+    _NOTIFICATION_WORKER_THREAD.start()
+    log.info(json.dumps({"event": "notification_worker_started"}))
+
+
+_start_notification_worker()
+
 # ─── Routes ─────────────────────────────────────────────────────────────────
 @app.route("/health", methods=["GET"])
 def health():
@@ -182,6 +254,9 @@ def proxy(path):
     ctx.http_authorization = request.headers.get("Authorization", "")
     ctx.http_x_api_key = request.headers.get("X-API-Key", "")
     ctx.http_stripe_signature = request.headers.get("Stripe-Signature", "")
+    ctx.http_svix_id = request.headers.get("svix-id", "")
+    ctx.http_svix_timestamp = request.headers.get("svix-timestamp", "")
+    ctx.http_svix_signature = request.headers.get("svix-signature", "")
     ctx.http_x_diagnostic_secret = request.headers.get("X-Diagnostic-Secret", "")
     ctx.http_x_backup_secret = request.headers.get("X-Backup-Secret", "")
     ctx.stdin_data = body

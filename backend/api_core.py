@@ -6,6 +6,7 @@ Routes via PATH_INFO. Called by server.py handle_request().
 """
 
 import base64
+import binascii
 import gzip
 import json
 import math
@@ -21,6 +22,7 @@ import time
 import re
 import threading
 import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
@@ -102,6 +104,7 @@ PROCESSING_FEE_RATE = 0.03  # ~3% payment processing fee passed to buyer (covers
 MAX_ORDER_NOTES_LENGTH = 5000
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "GoHireHumans <hello@gohirehumans.com>")
+RESEND_WEBHOOK_SECRET = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://www.gohirehumans.com").rstrip("/")
 
 # Railway volume mount: store DB in /data (the volume mount point).
@@ -330,7 +333,8 @@ def _table_columns(db, table_name):
         "funding_attempt_conflict_evidence", "payout_release_attempts",
         "payout_release_conflict_evidence", "services", "users",
         "api_key_usage", "disputes", "refund_attempts",
-        "refund_attempt_conflict_evidence",
+        "refund_attempt_conflict_evidence", "transactional_email_outbox",
+        "job_application_reminders",
     }
     if table_name not in supported_tables:
         raise ValueError("Unsupported migration table")
@@ -1937,13 +1941,609 @@ def _init_db_connection_steps(db):
             CHECK(state IN ('pending','sending','sent','failed')),
         attempts INTEGER NOT NULL DEFAULT 0,
         claimed_at TEXT,
+        claim_token TEXT,
         last_error TEXT,
+        next_attempt_at TEXT,
+        expires_at TEXT,
+        reminder_job_id INTEGER,
+        reminder_first_application_id INTEGER,
+        reminder_last_application_id INTEGER,
+        reminder_cohort_started_at TEXT,
+        reminder_stage TEXT,
+        provider_email_id TEXT,
+        delivery_status TEXT,
+        delivered_at TEXT,
+        bounced_at TEXT,
+        complained_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         sent_at TEXT
     )""")
+    for column_name, col_sql in [
+        ("next_attempt_at", "ALTER TABLE transactional_email_outbox ADD COLUMN next_attempt_at TEXT"),
+        ("claim_token", "ALTER TABLE transactional_email_outbox ADD COLUMN claim_token TEXT"),
+        ("expires_at", "ALTER TABLE transactional_email_outbox ADD COLUMN expires_at TEXT"),
+        ("reminder_job_id", "ALTER TABLE transactional_email_outbox ADD COLUMN reminder_job_id INTEGER"),
+        ("reminder_first_application_id", "ALTER TABLE transactional_email_outbox ADD COLUMN reminder_first_application_id INTEGER"),
+        ("reminder_last_application_id", "ALTER TABLE transactional_email_outbox ADD COLUMN reminder_last_application_id INTEGER"),
+        ("reminder_cohort_started_at", "ALTER TABLE transactional_email_outbox ADD COLUMN reminder_cohort_started_at TEXT"),
+        ("reminder_stage", "ALTER TABLE transactional_email_outbox ADD COLUMN reminder_stage TEXT"),
+        ("provider_email_id", "ALTER TABLE transactional_email_outbox ADD COLUMN provider_email_id TEXT"),
+        ("delivery_status", "ALTER TABLE transactional_email_outbox ADD COLUMN delivery_status TEXT"),
+        ("delivered_at", "ALTER TABLE transactional_email_outbox ADD COLUMN delivered_at TEXT"),
+        ("bounced_at", "ALTER TABLE transactional_email_outbox ADD COLUMN bounced_at TEXT"),
+        ("complained_at", "ALTER TABLE transactional_email_outbox ADD COLUMN complained_at TEXT"),
+    ]:
+        ensure_column(db, "transactional_email_outbox", column_name, col_sql)
+    # Rows created before bounded validity windows existed are not safe to
+    # deliver. Terminalize and redact them once; never leave an immortal
+    # pending backlog that can become eligible after a later migration.
+    db.execute(
+        """UPDATE transactional_email_outbox
+           SET state='failed',delivery_status='suppressed',
+               last_error='legacy row without validity window',
+               next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL,
+               email_to='',title='',message='',link=''
+           WHERE state IN ('pending','sending') AND expires_at IS NULL"""
+    )
+    db.execute(
+        """UPDATE transactional_email_outbox
+           SET email_to='',title='',message='',link=''
+           WHERE state IN ('sent','failed')"""
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_state ON transactional_email_outbox(state,id)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_email_outbox_due "
+        "ON transactional_email_outbox(state,next_attempt_at,expires_at,id)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_email_outbox_provider_id "
+        "ON transactional_email_outbox(provider_email_id) WHERE provider_email_id IS NOT NULL"
+    )
+    db.execute("""CREATE TABLE IF NOT EXISTS transactional_email_delivery_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_event_id TEXT NOT NULL UNIQUE,
+        provider_email_id TEXT,
+        event_type TEXT NOT NULL,
+        event_created_at TEXT,
+        payload_sha256 TEXT NOT NULL,
+        received_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_email_delivery_provider "
+        "ON transactional_email_delivery_events(provider_email_id,event_type)"
+    )
+
+    # The first initialization after this feature deploys establishes a durable
+    # cutoff. Reminder scans never backfill applications created before it.
+    db.execute("""CREATE TABLE IF NOT EXISTS notification_system_state (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        application_reminders_enabled_at TEXT NOT NULL
+    )""")
+    db.execute(
+        """INSERT OR IGNORE INTO notification_system_state
+           (id,application_reminders_enabled_at) VALUES(1,datetime('now'))"""
+    )
+    db.execute("""CREATE TABLE IF NOT EXISTS notification_worker_leases (
+        worker_name TEXT PRIMARY KEY,
+        owner_token TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        heartbeat_at TEXT NOT NULL,
+        lease_expires_at TEXT NOT NULL
+    )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS job_application_views (
+        job_id INTEGER NOT NULL REFERENCES jobs(id),
+        employer_id INTEGER NOT NULL REFERENCES users(id),
+        first_viewed_at TEXT NOT NULL,
+        last_viewed_at TEXT NOT NULL,
+        last_seen_application_id INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(job_id,employer_id)
+    )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS job_application_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL REFERENCES jobs(id),
+        employer_id INTEGER NOT NULL REFERENCES users(id),
+        reminder_kind TEXT NOT NULL CHECK(reminder_kind IN ('24h','72h')),
+        cohort_started_at TEXT NOT NULL,
+        cohort_first_application_id INTEGER NOT NULL,
+        cohort_last_application_id INTEGER NOT NULL,
+        application_count INTEGER NOT NULL CHECK(application_count > 0),
+        notification_id INTEGER UNIQUE REFERENCES notifications(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(job_id,reminder_kind,cohort_first_application_id)
+    )""")
+    for column_name, col_sql in [
+        ("cohort_first_application_id", "ALTER TABLE job_application_reminders ADD COLUMN cohort_first_application_id INTEGER"),
+        ("cohort_last_application_id", "ALTER TABLE job_application_reminders ADD COLUMN cohort_last_application_id INTEGER"),
+    ]:
+        ensure_column(db, "job_application_reminders", column_name, col_sql)
+    db.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_application_reminder_cohort
+           ON job_application_reminders(job_id,reminder_kind,cohort_first_application_id)
+           WHERE cohort_first_application_id IS NOT NULL"""
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_application_reminders_job "
+        "ON job_application_reminders(job_id,employer_id,created_at)"
+    )
 
 _init_db_failure_hook = None
+
+
+_REQUIRED_NOTIFICATION_TABLE_CONTRACTS = {
+    "transactional_email_outbox": {
+        "columns": {
+            "id": ("INTEGER", False, None, 1, 0),
+            "user_id": ("INTEGER", True, None, 0, 0),
+            "notification_id": ("INTEGER", False, None, 0, 0),
+            "email_to": ("TEXT", True, None, 0, 0),
+            "notification_type": ("TEXT", True, None, 0, 0),
+            "title": ("TEXT", True, None, 0, 0),
+            "message": ("TEXT", True, None, 0, 0),
+            "link": ("TEXT", True, "''", 0, 0),
+            "dedupe_context": ("TEXT", True, None, 0, 0),
+            "dedupe_key": ("TEXT", True, None, 0, 0),
+            "state": ("TEXT", True, "'pending'", 0, 0),
+            "attempts": ("INTEGER", True, "0", 0, 0),
+            "claimed_at": ("TEXT", False, None, 0, 0),
+            "claim_token": ("TEXT", False, None, 0, 0),
+            "last_error": ("TEXT", False, None, 0, 0),
+            "next_attempt_at": ("TEXT", False, None, 0, 0),
+            "expires_at": ("TEXT", False, None, 0, 0),
+            "reminder_job_id": ("INTEGER", False, None, 0, 0),
+            "reminder_first_application_id": ("INTEGER", False, None, 0, 0),
+            "reminder_last_application_id": ("INTEGER", False, None, 0, 0),
+            "reminder_cohort_started_at": ("TEXT", False, None, 0, 0),
+            "reminder_stage": ("TEXT", False, None, 0, 0),
+            "provider_email_id": ("TEXT", False, None, 0, 0),
+            "delivery_status": ("TEXT", False, None, 0, 0),
+            "delivered_at": ("TEXT", False, None, 0, 0),
+            "bounced_at": ("TEXT", False, None, 0, 0),
+            "complained_at": ("TEXT", False, None, 0, 0),
+            "created_at": ("TEXT", True, "datetime('now')", 0, 0),
+            "sent_at": ("TEXT", False, None, 0, 0),
+        },
+        "checks": ("statein('pending','sending','sent','failed')",),
+        "foreign_keys": {
+            ("notification_id", "notifications", "id", "NO ACTION", "NO ACTION", "NONE"),
+            ("user_id", "users", "id", "NO ACTION", "NO ACTION", "NONE"),
+        },
+        "unique_indexes": {
+            ("u", False, (("dedupe_key", "BINARY", 0),), None),
+            ("c", True, (("provider_email_id", "BINARY", 0),), "provider_email_idisnotnull"),
+        },
+        "autoincrement": True,
+    },
+    "transactional_email_delivery_events": {
+        "columns": {
+            "id": ("INTEGER", False, None, 1, 0),
+            "provider_event_id": ("TEXT", True, None, 0, 0),
+            "provider_email_id": ("TEXT", False, None, 0, 0),
+            "event_type": ("TEXT", True, None, 0, 0),
+            "event_created_at": ("TEXT", False, None, 0, 0),
+            "payload_sha256": ("TEXT", True, None, 0, 0),
+            "received_at": ("TEXT", True, "datetime('now')", 0, 0),
+        },
+        "checks": (),
+        "foreign_keys": set(),
+        "unique_indexes": {
+            ("u", False, (("provider_event_id", "BINARY", 0),), None),
+        },
+        "autoincrement": True,
+    },
+    "notification_system_state": {
+        "columns": {
+            "id": ("INTEGER", False, None, 1, 0),
+            "application_reminders_enabled_at": ("TEXT", True, None, 0, 0),
+        },
+        "checks": ("id=1",),
+        "foreign_keys": set(),
+        "unique_indexes": set(),
+        "autoincrement": False,
+    },
+    "notification_worker_leases": {
+        "columns": {
+            "worker_name": ("TEXT", False, None, 1, 0),
+            "owner_token": ("TEXT", True, None, 0, 0),
+            "acquired_at": ("TEXT", True, None, 0, 0),
+            "heartbeat_at": ("TEXT", True, None, 0, 0),
+            "lease_expires_at": ("TEXT", True, None, 0, 0),
+        },
+        "checks": (),
+        "foreign_keys": set(),
+        "unique_indexes": {
+            ("pk", False, (("worker_name", "BINARY", 0),), None),
+        },
+        "autoincrement": False,
+    },
+    "job_application_views": {
+        "columns": {
+            "job_id": ("INTEGER", True, None, 1, 0),
+            "employer_id": ("INTEGER", True, None, 2, 0),
+            "first_viewed_at": ("TEXT", True, None, 0, 0),
+            "last_viewed_at": ("TEXT", True, None, 0, 0),
+            "last_seen_application_id": ("INTEGER", True, "0", 0, 0),
+        },
+        "checks": (),
+        "foreign_keys": {
+            ("employer_id", "users", "id", "NO ACTION", "NO ACTION", "NONE"),
+            ("job_id", "jobs", "id", "NO ACTION", "NO ACTION", "NONE"),
+        },
+        "unique_indexes": {
+            ("pk", False, (
+                ("job_id", "BINARY", 0), ("employer_id", "BINARY", 0),
+            ), None),
+        },
+        "autoincrement": False,
+    },
+    "job_application_reminders": {
+        "columns": {
+            "id": ("INTEGER", False, None, 1, 0),
+            "job_id": ("INTEGER", True, None, 0, 0),
+            "employer_id": ("INTEGER", True, None, 0, 0),
+            "reminder_kind": ("TEXT", True, None, 0, 0),
+            "cohort_started_at": ("TEXT", True, None, 0, 0),
+            "cohort_first_application_id": ("INTEGER", True, None, 0, 0),
+            "cohort_last_application_id": ("INTEGER", True, None, 0, 0),
+            "application_count": ("INTEGER", True, None, 0, 0),
+            "notification_id": ("INTEGER", False, None, 0, 0),
+            "created_at": ("TEXT", True, "datetime('now')", 0, 0),
+        },
+        "checks": (
+            "application_count>0", "reminder_kindin('24h','72h')",
+        ),
+        "foreign_keys": {
+            ("employer_id", "users", "id", "NO ACTION", "NO ACTION", "NONE"),
+            ("job_id", "jobs", "id", "NO ACTION", "NO ACTION", "NONE"),
+            ("notification_id", "notifications", "id", "NO ACTION", "NO ACTION", "NONE"),
+        },
+        "unique_indexes": {
+            ("u", False, (("notification_id", "BINARY", 0),), None),
+            ("u", False, (
+                ("job_id", "BINARY", 0), ("reminder_kind", "BINARY", 0),
+                ("cohort_first_application_id", "BINARY", 0),
+            ), None),
+            ("c", True, (
+                ("job_id", "BINARY", 0), ("reminder_kind", "BINARY", 0),
+                ("cohort_first_application_id", "BINARY", 0),
+            ), "cohort_first_application_idisnotnull"),
+        },
+        "autoincrement": True,
+    },
+}
+
+
+def _normalize_notification_schema_value(value):
+    if value is None:
+        return None
+    return re.sub(r"\s+", "", str(value).lower())
+
+
+def _strip_notification_sql_comments(sql):
+    """Return executable SQL with comments removed without touching quoted text."""
+    source = str(sql or "")
+    result = []
+    index = 0
+    quote_end = None
+    had_comments = False
+    while index < len(source):
+        character = source[index]
+        if quote_end:
+            result.append(character)
+            if character == quote_end:
+                if (
+                    quote_end != "]"
+                    and index + 1 < len(source)
+                    and source[index + 1] == quote_end
+                ):
+                    result.append(source[index + 1])
+                    index += 2
+                    continue
+                quote_end = None
+            index += 1
+            continue
+        if character in ("'", '"', "`"):
+            quote_end = character
+            result.append(character)
+            index += 1
+            continue
+        if character == "[":
+            quote_end = "]"
+            result.append(character)
+            index += 1
+            continue
+        if character == "-" and index + 1 < len(source) and source[index + 1] == "-":
+            had_comments = True
+            result.append(" ")
+            index += 2
+            while index < len(source) and source[index] not in "\r\n":
+                index += 1
+            continue
+        if character == "/" and index + 1 < len(source) and source[index + 1] == "*":
+            had_comments = True
+            result.append(" ")
+            end = source.find("*/", index + 2)
+            index = len(source) if end < 0 else end + 2
+            continue
+        result.append(character)
+        index += 1
+    return "".join(result), had_comments
+
+
+def _notification_sql_tokens(sql):
+    """Return unquoted executable word tokens for schema keyword checks."""
+    source = str(sql or "")
+    unquoted = []
+    index = 0
+    quote_end = None
+    while index < len(source):
+        character = source[index]
+        if quote_end:
+            unquoted.append(" ")
+            if character == quote_end:
+                if (
+                    quote_end != "]"
+                    and index + 1 < len(source)
+                    and source[index + 1] == quote_end
+                ):
+                    unquoted.append(" ")
+                    index += 2
+                    continue
+                quote_end = None
+            index += 1
+            continue
+        if character in ("'", '"', "`"):
+            quote_end = character
+            unquoted.append(" ")
+        elif character == "[":
+            quote_end = "]"
+            unquoted.append(" ")
+        else:
+            unquoted.append(character)
+        index += 1
+    return tuple(re.findall(r"[a-z_][a-z0-9_]*", "".join(unquoted).lower()))
+
+
+def _notification_token_sequence(tokens, *sequence):
+    size = len(sequence)
+    return any(tokens[index:index + size] == sequence for index in range(len(tokens) - size + 1))
+
+
+def _extract_notification_check_expressions(sql):
+    """Extract normalized CHECK expressions while respecting quotes/parentheses."""
+    source = str(sql or "")
+    lowered = source.lower()
+    expressions = []
+    position = 0
+    while True:
+        match = re.search(r"\bcheck\s*\(", lowered[position:])
+        if not match:
+            break
+        open_at = position + match.end() - 1
+        depth = 1
+        quote = None
+        index = open_at + 1
+        while index < len(source) and depth:
+            character = source[index]
+            if quote:
+                if character == quote:
+                    if index + 1 < len(source) and source[index + 1] == quote:
+                        index += 1
+                    else:
+                        quote = None
+            elif character in ("'", '"'):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            expressions.append("<malformed>")
+            break
+        expression = source[open_at + 1:index - 1]
+        expressions.append(re.sub(r"[\s\"`\[\]]+", "", expression.lower()))
+        position = index
+    return tuple(sorted(expressions))
+
+
+def _notification_index_predicate(sql):
+    where_match = re.search(r"\bwhere\b(.+)$", str(sql or ""), flags=re.IGNORECASE)
+    if not where_match:
+        return None
+    return re.sub(r"[\s\"`\[\]();]+", "", where_match.group(1).lower())
+
+
+def _notification_index_keys(db, index_name):
+    return tuple(
+        (row[2], str(row[4]).upper(), int(row[3]))
+        for row in db.execute(f"PRAGMA index_xinfo('{index_name}')").fetchall()
+        if row[5] == 1
+    )
+
+
+def validate_required_notification_schema(db):
+    """Fail startup closed when a same-name notification object is malformed."""
+    invalid = []
+    for table_name, contract in _REQUIRED_NOTIFICATION_TABLE_CONTRACTS.items():
+        row = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+            [table_name],
+        ).fetchone()
+        if row is None or not row["sql"]:
+            invalid.append(f"missing table {table_name}")
+            continue
+        sql = str(row["sql"])
+        executable_sql, had_comments = _strip_notification_sql_comments(sql)
+        tokens = _notification_sql_tokens(executable_sql)
+        if had_comments:
+            invalid.append(f"unexpected SQL comments {table_name}")
+
+        observed_columns = {
+            column[1]: (
+                str(column[2]).upper(), bool(column[3]),
+                _normalize_notification_schema_value(column[4]),
+                int(column[5]), int(column[6]),
+            )
+            for column in db.execute(
+                f"PRAGMA table_xinfo('{table_name}')"
+            ).fetchall()
+        }
+        if observed_columns != contract["columns"]:
+            invalid.append(f"invalid columns {table_name}")
+
+        if _extract_notification_check_expressions(executable_sql) != tuple(
+            sorted(contract["checks"])
+        ):
+            invalid.append(f"invalid checks {table_name}")
+
+        autoincrement_count = tokens.count("autoincrement")
+        expected_autoincrement_count = 1 if contract["autoincrement"] else 0
+        if autoincrement_count != expected_autoincrement_count:
+            invalid.append(f"invalid autoincrement {table_name}")
+        if (
+            any(token in tokens for token in ("collate", "deferrable", "match", "strict"))
+            or _notification_token_sequence(tokens, "on", "conflict")
+            or _notification_token_sequence(tokens, "without", "rowid")
+        ):
+            invalid.append(f"unsupported table modifier {table_name}")
+        table_list_row = db.execute(
+            f"PRAGMA table_list('{table_name}')"
+        ).fetchone()
+        if (
+            table_list_row is not None
+            and len(table_list_row) >= 6
+            and (int(table_list_row[4]) != 0 or int(table_list_row[5]) != 0)
+        ):
+            invalid.append(f"unsupported table storage {table_name}")
+
+        observed_foreign_keys = [
+            (
+                foreign_key[3], foreign_key[2], foreign_key[4],
+                str(foreign_key[5]).upper(), str(foreign_key[6]).upper(),
+                str(foreign_key[7]).upper(),
+            )
+            for foreign_key in db.execute(
+                f"PRAGMA foreign_key_list('{table_name}')"
+            ).fetchall()
+        ]
+        if (
+            len(observed_foreign_keys) != len(contract["foreign_keys"])
+            or set(observed_foreign_keys) != contract["foreign_keys"]
+        ):
+            invalid.append(f"invalid foreign keys {table_name}")
+        if db.execute(f"PRAGMA foreign_key_check('{table_name}')").fetchone():
+            invalid.append(f"foreign key violations {table_name}")
+
+        observed_unique_indexes = []
+        for index_row in db.execute(
+            f"PRAGMA index_list('{table_name}')"
+        ).fetchall():
+            if not bool(index_row[2]):
+                continue
+            index_name = index_row[1]
+            index_sql_row = db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+                [index_name],
+            ).fetchone()
+            index_sql = (index_sql_row["sql"] if index_sql_row else "") or ""
+            observed_unique_indexes.append((
+                str(index_row[3]), bool(index_row[4]),
+                _notification_index_keys(db, index_name),
+                _notification_index_predicate(index_sql),
+            ))
+        if (
+            len(observed_unique_indexes) != len(contract["unique_indexes"])
+            or set(observed_unique_indexes) != contract["unique_indexes"]
+        ):
+            invalid.append(f"invalid unique constraints {table_name}")
+
+        trigger = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=? LIMIT 1",
+            [table_name],
+        ).fetchone()
+        if trigger:
+            invalid.append(f"unexpected trigger {table_name}")
+
+    required_indexes = {
+        "transactional_email_outbox": {
+            "idx_email_outbox_state": {
+                "unique": False, "partial": False,
+                "keys": [("state", "BINARY", 0), ("id", "BINARY", 0)],
+                "predicate": None,
+            },
+            "idx_email_outbox_due": {
+                "unique": False, "partial": False,
+                "keys": [
+                    ("state", "BINARY", 0), ("next_attempt_at", "BINARY", 0),
+                    ("expires_at", "BINARY", 0), ("id", "BINARY", 0),
+                ],
+                "predicate": None,
+            },
+            "idx_email_outbox_provider_id": {
+                "unique": True, "partial": True,
+                "keys": [("provider_email_id", "BINARY", 0)],
+                "predicate": "provider_email_idisnotnull",
+            },
+        },
+        "transactional_email_delivery_events": {
+            "idx_email_delivery_provider": {
+                "unique": False, "partial": False,
+                "keys": [
+                    ("provider_email_id", "BINARY", 0),
+                    ("event_type", "BINARY", 0),
+                ],
+                "predicate": None,
+            },
+        },
+        "job_application_reminders": {
+            "idx_application_reminder_cohort": {
+                "unique": True, "partial": True,
+                "keys": [
+                    ("job_id", "BINARY", 0),
+                    ("reminder_kind", "BINARY", 0),
+                    ("cohort_first_application_id", "BINARY", 0),
+                ],
+                "predicate": "cohort_first_application_idisnotnull",
+            },
+            "idx_application_reminders_job": {
+                "unique": False, "partial": False,
+                "keys": [
+                    ("job_id", "BINARY", 0), ("employer_id", "BINARY", 0),
+                    ("created_at", "BINARY", 0),
+                ],
+                "predicate": None,
+            },
+        },
+    }
+    for table_name, expected_indexes in required_indexes.items():
+        observed_indexes = {
+            row[1]: {
+                "unique": bool(row[2]), "origin": row[3], "partial": bool(row[4]),
+            }
+            for row in db.execute(f"PRAGMA index_list('{table_name}')").fetchall()
+        }
+        for index_name, expected in expected_indexes.items():
+            observed = observed_indexes.get(index_name)
+            if not observed or observed != {
+                "unique": expected["unique"], "origin": "c",
+                "partial": expected["partial"],
+            }:
+                invalid.append(f"invalid index {index_name}")
+                continue
+            keys = list(_notification_index_keys(db, index_name))
+            sql_row = db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+                [index_name],
+            ).fetchone()
+            sql = (sql_row["sql"] if sql_row else "") or ""
+            predicate = _notification_index_predicate(sql)
+            if keys != expected["keys"] or predicate != expected["predicate"]:
+                invalid.append(f"invalid index {index_name}")
+
+    if invalid:
+        raise RuntimeError(
+            "Required notification schema missing: " + ", ".join(sorted(set(invalid)))
+        )
 
 
 def _run_init_db_failure_hook(stage):
@@ -1967,6 +2567,7 @@ def _init_db_connection(db):
         validate_required_payout_schema(db)
         validate_required_payment_setup_schema(db)
         validate_required_refund_schema(db)
+        validate_required_notification_schema(db)
         _prevalidate_financial_schema_before_mutation(db)
         db.commit()
     except Exception:
@@ -2442,7 +3043,7 @@ def get_body():
 
 
 def get_body_raw():
-    """Return raw request body as bytes (needed for Stripe webhook signature verification)."""
+    """Return raw request body as bytes (needed for signed webhook verification)."""
     if not hasattr(_request_ctx, 'raw_body'):
         # Prefer raw bytes if available (set by server.py)
         raw_bytes = getattr(_request_ctx, 'stdin_data_raw', None)
@@ -2452,7 +3053,39 @@ def get_body_raw():
             # Fallback: encode text data to bytes
             text_data = getattr(_request_ctx, 'stdin_data', '')
             _request_ctx.raw_body = text_data.encode('utf-8') if isinstance(text_data, str) else text_data
-    return _request_ctx.raw_body
+    cached = _request_ctx.raw_body
+    return cached.encode("utf-8") if isinstance(cached, str) else cached
+
+
+def verify_resend_webhook_signature(
+    raw_body, message_id, timestamp, signature_header, secret=None, now=None,
+):
+    """Verify the standard Svix signature used by Resend webhooks."""
+    configured_secret = (secret if secret is not None else RESEND_WEBHOOK_SECRET).strip()
+    if not configured_secret or not message_id or not timestamp or not signature_header:
+        return False
+    if not configured_secret.startswith("whsec_"):
+        return False
+    try:
+        timestamp_value = int(timestamp)
+        current_epoch = int(now if now is not None else time.time())
+        if abs(current_epoch - timestamp_value) > 300:
+            return False
+        encoded_secret = configured_secret[len("whsec_"):]
+        secret_bytes = base64.b64decode(encoded_secret, validate=True)
+    except (TypeError, ValueError, binascii.Error):
+        return False
+    if len(secret_bytes) < 16 or not isinstance(raw_body, bytes):
+        return False
+    signed_content = f"{message_id}.{timestamp}.".encode("utf-8") + raw_body
+    expected = base64.b64encode(
+        hmac.new(secret_bytes, signed_content, hashlib.sha256).digest()
+    ).decode("ascii")
+    for versioned in str(signature_header).split():
+        version, separator, candidate = versioned.partition(",")
+        if separator and version == "v1" and hmac.compare_digest(candidate, expected):
+            return True
+    return False
 
 
 def get_query_params():
@@ -3015,10 +3648,32 @@ def send_email(to_email, subject, html_body, idempotency_key=None):
             data=data,
             headers=headers,
         )
-        urllib.request.urlopen(req, timeout=10)
-        return True
+        response = urllib.request.urlopen(req, timeout=10)
+        try:
+            response_body = response.read()
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+        try:
+            provider_response = json.loads(response_body.decode("utf-8"))
+        except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+            provider_response = {}
+        provider_email_id = provider_response.get("id") if isinstance(provider_response, dict) else None
+        if isinstance(provider_email_id, str) and provider_email_id.strip():
+            return provider_email_id
+        # A provider 2xx without a durable correlation ID is ambiguous. The
+        # outbox retains its stable provider idempotency key and retries inside
+        # the bounded validity window rather than recording false acceptance.
+        return "unknown", None
+    except urllib.error.HTTPError:
+        # A completed HTTP response with a non-2xx status is a definitive
+        # rejection of this attempt. It is safe to retry with the same key.
+        return "failed", None
     except Exception:
-        return False
+        # Timeouts, connection resets and response-read failures can occur after
+        # provider acceptance. Preserve ambiguity and the stable idempotency key.
+        return "unknown", None
 
 
 def send_welcome_email(email, name):
@@ -3061,6 +3716,8 @@ TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES = {
     "revision_requested",
     "order_completed",
     "review_request",
+    "application_reminder_24h",
+    "application_reminder_72h",
 }
 
 
@@ -3093,7 +3750,11 @@ def transactional_email_already_sent(db, user_id, notif_type, link, dedupe_conte
 def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None):
     if notif_type not in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
         return False
-    user = db.execute("SELECT email, name FROM users WHERE id=? AND is_active=1 AND is_banned=0", [user_id]).fetchone()
+    user = db.execute(
+        """SELECT email,name FROM users
+           WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0""",
+        [user_id],
+    ).fetchone()
     if not user or not user['email']:
         return False
     already_sent, dedupe_key = transactional_email_already_sent(db, user_id, notif_type, link, dedupe_context)
@@ -3105,7 +3766,13 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
     safe_message = html.escape(message or "There is an update related to your GoHireHumans account.")
     platform_url = notification_platform_url(link)
     safe_url = html.escape(platform_url, quote=True)
-    subject = title or "GoHireHumans activity update"
+    subject = re.sub(r"[\r\n]+", " ", str(title or "GoHireHumans activity update")).strip()[:200]
+    cta_label = (
+        "Review applications"
+        if notif_type in {"new_application", "application_reminder_24h", "application_reminder_72h"}
+        else "View on GoHireHumans →"
+    )
+    safe_cta_label = html.escape(cta_label)
     html_body = f"""
     <div style="font-family:'Inter',system-ui,sans-serif;max-width:560px;margin:0 auto;color:#1a1816">
       <div style="background:#0d7377;padding:24px 32px;border-radius:8px 8px 0 0">
@@ -3115,7 +3782,7 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
         <p style="font-size:16px;line-height:1.6;margin-bottom:16px">Hi {first_name},</p>
         <p style="font-size:15px;line-height:1.6;margin-bottom:24px">{safe_message}</p>
         <div style="text-align:center;margin-bottom:24px">
-          <a href="{safe_url}" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">View on GoHireHumans →</a>
+          <a href="{safe_url}" style="display:inline-block;background:#0d7377;color:white;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px">{safe_cta_label}</a>
         </div>
         <p style="font-size:12px;color:#6b6963;line-height:1.5;margin-bottom:8px">You received this because this relates to your GoHireHumans marketplace activity.</p>
         <p style="font-size:12px;color:#6b6963;line-height:1.5">GoHireHumans keeps marketplace communication, work review, and configured payment records on-platform.</p>
@@ -3134,82 +3801,579 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
             # Compatibility for local test doubles with the historical signature.
             sent = send_email(user['email'], subject, html_body)
     except Exception:
-        sent = False
-    if sent:
+        sent = "unknown", None
+    if isinstance(sent, tuple) and len(sent) == 2:
+        outcome, provider_email_id = sent
+    elif isinstance(sent, str) and sent:
+        outcome, provider_email_id = "accepted", sent
+    elif sent is True:
+        # A bool-only test double cannot prove provider acceptance because it
+        # supplies no correlation ID.
+        outcome, provider_email_id = "unknown", None
+    else:
+        outcome, provider_email_id = "failed", None
+    if outcome == "accepted" and provider_email_id:
         audit(db, user_id, "transactional_email_sent", "notification_email", user_id, {
             "type": notif_type,
             "link": link or "",
             "dedupe_key": dedupe_key,
+            "provider_email_id": provider_email_id,
         })
-    return bool(sent)
+    return outcome, provider_email_id
 
 
-def flush_transactional_notification_emails(db):
-    """Claim committed outbox rows, perform I/O lock-free, then finalize briefly."""
-    if db.in_transaction:
-        db.commit()
-    # A hard-exited sender is safely retryable because the provider sees the same
-    # durable idempotency key.
-    db.execute("BEGIN IMMEDIATE")
+_DELIVERY_STATUS_RANK = {
+    None: -1,
+    "accepted": 0,
+    "sent": 1,
+    "delayed": 2,
+    "failed": 3,
+    "delivered": 4,
+    "bounced": 5,
+    "complained": 6,
+}
+
+
+def apply_transactional_email_delivery_status(db, provider_email_id, delivery_status):
+    """Apply provider evidence monotonically so late webhooks cannot downgrade state."""
+    row = db.execute(
+        "SELECT delivery_status FROM transactional_email_outbox WHERE provider_email_id=?",
+        [provider_email_id],
+    ).fetchone()
+    if row is None:
+        return False
+    current_status = row["delivery_status"]
+    if _DELIVERY_STATUS_RANK.get(delivery_status, -1) < _DELIVERY_STATUS_RANK.get(current_status, -1):
+        return False
     db.execute(
         """UPDATE transactional_email_outbox
-           SET state='pending',claimed_at=NULL,
-               last_error='recovered abandoned sender claim'
-           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')"""
+           SET delivery_status=?,
+               delivered_at=CASE WHEN ?='delivered' THEN COALESCE(delivered_at,datetime('now')) ELSE delivered_at END,
+               bounced_at=CASE WHEN ?='bounced' THEN COALESCE(bounced_at,datetime('now')) ELSE bounced_at END,
+               complained_at=CASE WHEN ?='complained' THEN COALESCE(complained_at,datetime('now')) ELSE complained_at END
+           WHERE provider_email_id=?""",
+        [delivery_status, delivery_status, delivery_status, delivery_status, provider_email_id],
     )
+    return True
+
+
+def reconcile_transactional_email_delivery_events(db, provider_email_id):
+    delivery_map = {
+        "email.sent": "sent",
+        "email.delivered": "delivered",
+        "email.delivery_delayed": "delayed",
+        "email.bounced": "bounced",
+        "email.complained": "complained",
+        "email.failed": "failed",
+    }
+    for event in db.execute(
+        """SELECT event_type FROM transactional_email_delivery_events
+           WHERE provider_email_id=? ORDER BY id""",
+        [provider_email_id],
+    ).fetchall():
+        delivery_status = delivery_map.get(event["event_type"])
+        if delivery_status:
+            apply_transactional_email_delivery_status(db, provider_email_id, delivery_status)
+
+
+def application_reminder_email_is_relevant(db, outbox_row, now=None):
+    if outbox_row["notification_type"] not in {
+        "application_reminder_24h", "application_reminder_72h",
+    }:
+        return True
+    try:
+        job_id = int(outbox_row["reminder_job_id"])
+        first_application_id = int(outbox_row["reminder_first_application_id"])
+        last_application_id = int(outbox_row["reminder_last_application_id"])
+        cohort = datetime.fromisoformat(
+            str(outbox_row["reminder_cohort_started_at"]).replace("Z", "+00:00")
+        )
+        stage = str(outbox_row["reminder_stage"])
+        if cohort.tzinfo is None:
+            cohort = cohort.replace(tzinfo=timezone.utc)
+        cohort = cohort.astimezone(timezone.utc).replace(microsecond=0)
+    except (TypeError, ValueError):
+        return False
+    if first_application_id <= 0 or last_application_id < first_application_id:
+        return False
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    age = current - cohort
+    expected_type = f"application_reminder_{stage}"
+    if expected_type != outbox_row["notification_type"]:
+        return False
+    if stage == "24h":
+        in_window = timedelta(hours=24) <= age < timedelta(hours=48)
+    elif stage == "72h":
+        in_window = timedelta(hours=72) <= age < timedelta(hours=96)
+    else:
+        return False
+    if not in_window:
+        return False
+    return db.execute(
+        """SELECT 1
+           FROM jobs j
+           JOIN users owner ON owner.id=j.employer_id
+           JOIN applications a ON a.job_id=j.id AND a.status='pending'
+           JOIN notification_system_state ns ON ns.id=1
+           LEFT JOIN job_application_views v
+             ON v.job_id=j.id AND v.employer_id=j.employer_id
+           WHERE j.id=? AND j.employer_id=? AND j.status IN ('open','reviewing')
+             AND owner.is_active=1 AND owner.is_banned=0 AND owner.is_suspended=0
+             AND a.id BETWEEN ? AND ?
+             AND a.created_at >= ns.application_reminders_enabled_at
+             AND COALESCE(v.last_seen_application_id,0) < ?
+           LIMIT 1""",
+        [job_id, outbox_row["user_id"], first_application_id,
+         last_application_id, first_application_id],
+    ).fetchone() is not None
+
+
+def transactional_email_recipient_is_eligible(db, user_id):
+    return db.execute(
+        """SELECT 1 FROM users
+           WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0
+             AND email IS NOT NULL AND trim(email) <> ''""",
+        [user_id],
+    ).fetchone() is not None
+
+
+def flush_transactional_notification_emails(
+    db, now=None, limit=20, owner_token=None, lease_seconds=120, lease_now=None,
+):
+    """Claim bounded rows with lease/row fencing and lock-free provider I/O."""
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
+    summary = {
+        "sent": 0,
+        "deferred": 0,
+        "failed": 0,
+        "claimed_recovered": 0,
+        "stale_skipped": 0,
+        "suppressed": 0,
+        "claim_lost": 0,
+        "lease_lost": 0,
+    }
+    if db.in_transaction:
+        db.commit()
+    # First recover abandoned claims. Retries reuse the same outbox
+    # durable idempotency key.
+    db.execute("BEGIN IMMEDIATE")
+    if owner_token and not _renew_notification_worker_lease_in_transaction(
+        db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+    ):
+        db.commit()
+        summary["lease_lost"] = 1
+        return summary
+    recovered = db.execute(
+        """UPDATE transactional_email_outbox
+           SET state='pending',claimed_at=NULL,claim_token=NULL,
+               next_attempt_at=?,last_error='recovered abandoned sender claim'
+           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')""",
+        [current_sql],
+    )
+    summary["claimed_recovered"] = int(recovered.rowcount or 0)
+    stale = db.execute(
+        """UPDATE transactional_email_outbox
+           SET state='failed',
+               delivery_status=CASE
+                   WHEN delivery_status='unknown' THEN 'manual_review'
+                   ELSE 'suppressed' END,
+               last_error=CASE
+                   WHEN delivery_status='unknown'
+                   THEN 'ambiguous provider outcome expired; manual review required'
+                   ELSE 'notification validity window expired' END,
+               next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL,
+               email_to='',title='',message='',link=''
+           WHERE state='pending' AND (expires_at IS NULL OR expires_at <= ?)""",
+        [current_sql],
+    )
+    summary["stale_skipped"] = int(stale.rowcount or 0)
     db.commit()
 
-    while True:
+    processed = 0
+    while processed < max(1, min(int(limit), 100)):
         db.execute("BEGIN IMMEDIATE")
+        if owner_token and not _renew_notification_worker_lease_in_transaction(
+            db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+        ):
+            db.commit()
+            summary["lease_lost"] = 1
+            return summary
         row = db.execute(
             """SELECT * FROM transactional_email_outbox
-               WHERE state='pending' ORDER BY id LIMIT 1"""
+               WHERE state='pending'
+                 AND expires_at IS NOT NULL AND expires_at > ?
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+               ORDER BY id LIMIT 1""",
+            [current_sql, current_sql],
         ).fetchone()
         if row is None:
             db.commit()
-            return
+            return summary
+        suppression_reason = None
+        if not transactional_email_recipient_is_eligible(db, row["user_id"]):
+            suppression_reason = "recipient is not eligible for email"
+        elif not application_reminder_email_is_relevant(db, row, now=current):
+            suppression_reason = "obsolete application reminder"
+        if suppression_reason:
+            db.execute(
+                """UPDATE transactional_email_outbox
+                   SET state='failed',delivery_status='suppressed',
+                       last_error=?,
+                       claimed_at=NULL,claim_token=NULL,next_attempt_at=NULL,
+                       email_to='',title='',message='',link=''
+                   WHERE id=? AND state='pending'""",
+                [suppression_reason, row["id"]],
+            )
+            db.commit()
+            summary["suppressed"] += 1
+            processed += 1
+            continue
+        claim_token = secrets.token_hex(16)
         claimed = db.execute(
             """UPDATE transactional_email_outbox
-               SET state='sending',attempts=attempts+1,claimed_at=datetime('now')
+               SET state='sending',attempts=attempts+1,claimed_at=?,claim_token=?
                WHERE id=? AND state='pending'""",
-            [row["id"]],
+            [current_sql, claim_token, row["id"]],
         )
         db.commit()
         if claimed.rowcount != 1:
             continue
+        processed += 1
+
+        # The source can be viewed, closed, or made ineligible after claim.
+        # Revalidate the exact fenced claim in a new short writer transaction
+        # immediately before provider I/O; never hold SQLite across the call.
+        db.execute("BEGIN IMMEDIATE")
+        if owner_token and not _renew_notification_worker_lease_in_transaction(
+            db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+        ):
+            db.execute(
+                """UPDATE transactional_email_outbox
+                   SET state='pending',attempts=MAX(attempts-1,0),
+                       claimed_at=NULL,claim_token=NULL,next_attempt_at=?,
+                       last_error='worker lease lost before provider call'
+                   WHERE id=? AND state='sending' AND claim_token=?""",
+                [current_sql, row["id"], claim_token],
+            )
+            db.commit()
+            summary["lease_lost"] = 1
+            return summary
+        claimed_row = db.execute(
+            """SELECT * FROM transactional_email_outbox
+               WHERE id=? AND state='sending' AND claim_token=?""",
+            [row["id"], claim_token],
+        ).fetchone()
+        post_claim_suppression = None
+        if claimed_row is None:
+            db.commit()
+            summary["claim_lost"] += 1
+            continue
+        if not transactional_email_recipient_is_eligible(db, claimed_row["user_id"]):
+            post_claim_suppression = "recipient is not eligible for email"
+        elif not application_reminder_email_is_relevant(
+            db, claimed_row, now=current,
+        ):
+            post_claim_suppression = "obsolete application reminder"
+        if post_claim_suppression:
+            suppressed = db.execute(
+                """UPDATE transactional_email_outbox
+                   SET state='failed',delivery_status='suppressed',last_error=?,
+                       claimed_at=NULL,claim_token=NULL,next_attempt_at=NULL,
+                       email_to='',title='',message='',link=''
+                   WHERE id=? AND state='sending' AND claim_token=?""",
+                [post_claim_suppression, row["id"], claim_token],
+            )
+            db.commit()
+            if suppressed.rowcount == 1:
+                summary["suppressed"] += 1
+            else:
+                summary["claim_lost"] += 1
+            continue
+        db.commit()
 
         try:
-            sent = send_transactional_notification_email(
+            send_result = send_transactional_notification_email(
                 db, row["user_id"], row["notification_type"], row["title"],
                 row["message"], row["link"], row["dedupe_context"],
                 provider_idempotency_key=row["dedupe_key"],
             )
-            error_text = None if sent else "email provider did not confirm delivery"
+            if isinstance(send_result, tuple) and len(send_result) == 2:
+                outcome, provider_email_id = send_result
+            elif isinstance(send_result, str) and send_result:
+                outcome, provider_email_id = "accepted", send_result
+            else:
+                outcome, provider_email_id = "unknown", None
+            sent = outcome == "accepted" and bool(provider_email_id)
+            error_text = None if sent else (
+                "email provider outcome is unknown"
+                if outcome == "unknown" else "email provider did not accept delivery"
+            )
         except Exception as exc:
+            outcome = "unknown"
             sent = False
+            provider_email_id = None
             error_text = str(exc)[:500]
 
         # send_transactional_notification_email may have written its audit row;
         # close that short local transaction together with the outbox final state.
-        db.execute(
+        attempts = int(row["attempts"] or 0) + 1
+        if sent:
+            state = "sent"
+            next_attempt_at = None
+        elif outcome == "unknown":
+            state = "pending"
+            backoff_minutes = (1, 5, 15, 60)[min(attempts - 1, 3)]
+            next_attempt_at = (current + timedelta(minutes=backoff_minutes)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        elif attempts >= 5:
+            state = "failed"
+            next_attempt_at = None
+        else:
+            state = "pending"
+            backoff_minutes = (1, 5, 15, 60)[min(attempts - 1, 3)]
+            next_attempt_at = (current + timedelta(minutes=backoff_minutes)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        finalized = db.execute(
             """UPDATE transactional_email_outbox
-               SET state=?,sent_at=CASE WHEN ? THEN datetime('now') ELSE sent_at END,
-                   claimed_at=NULL,last_error=? WHERE id=? AND state='sending'""",
-            ["sent" if sent else "pending", 1 if sent else 0, error_text, row["id"]],
+               SET state=?,sent_at=CASE WHEN ? THEN ? ELSE sent_at END,
+                   claimed_at=NULL,claim_token=NULL,last_error=?,next_attempt_at=?,
+                   provider_email_id=CASE WHEN ? THEN COALESCE(provider_email_id,?) ELSE provider_email_id END,
+                   delivery_status=CASE
+                       WHEN ? THEN COALESCE(delivery_status,'accepted')
+                       WHEN ? THEN 'unknown'
+                       ELSE delivery_status END
+               WHERE id=? AND state='sending' AND claim_token=?""",
+            [state, 1 if sent else 0, current_sql, error_text, next_attempt_at,
+             1 if sent else 0, provider_email_id, 1 if sent else 0,
+             1 if outcome == "unknown" else 0,
+             row["id"], claim_token],
+        )
+        if finalized.rowcount != 1:
+            # A newer sender reclaimed this row while provider I/O was in
+            # flight. Roll back any local send-audit write; only the current
+            # claim may finalize durable state.
+            db.rollback()
+            summary["claim_lost"] += 1
+            continue
+        if state in {"sent", "failed"}:
+            db.execute(
+                """UPDATE transactional_email_outbox
+                   SET email_to='',title='',message='',link=''
+                   WHERE id=? AND state=?""",
+                [row["id"], state],
+            )
+        if sent:
+            summary["sent"] += 1
+        elif state == "failed":
+            summary["failed"] += 1
+        else:
+            summary["deferred"] += 1
+        if sent and provider_email_id:
+            reconcile_transactional_email_delivery_events(db, provider_email_id)
+        db.commit()
+    return summary
+
+
+def notification_worker_enabled():
+    configured = os.environ.get(
+        "NOTIFICATION_MAINTENANCE_WORKER_ENABLED",
+        os.environ.get("EMAIL_OUTBOX_WORKER_ENABLED", ""),
+    ).strip().lower()
+    if configured:
+        return configured not in {"0", "false", "no", "off"}
+    # Keep unit/development imports side-effect free, while production still
+    # generates in-app reminders even during an email-provider outage.
+    return bool(PRODUCTION_MODE or RESEND_API_KEY)
+
+
+def acquire_notification_worker_lease(db, owner_token, now=None, lease_seconds=120):
+    """Acquire or renew the singleton maintenance lease without exposing its owner."""
+    owner_token = str(owner_token or "").strip()
+    if not owner_token:
+        raise ValueError("Notification worker owner token is required")
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(
+        microsecond=0
+    )
+    lease_seconds = max(30, min(int(lease_seconds), 600))
+    current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
+    expires_sql = (current + timedelta(seconds=lease_seconds)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    acquired = db.execute(
+        """INSERT INTO notification_worker_leases
+           (worker_name,owner_token,acquired_at,heartbeat_at,lease_expires_at)
+           VALUES('notification-maintenance',?,?,?,?)
+           ON CONFLICT(worker_name) DO UPDATE SET
+               owner_token=excluded.owner_token,
+               acquired_at=CASE
+                   WHEN notification_worker_leases.owner_token=excluded.owner_token
+                   THEN notification_worker_leases.acquired_at
+                   ELSE excluded.acquired_at
+               END,
+               heartbeat_at=excluded.heartbeat_at,
+               lease_expires_at=excluded.lease_expires_at
+           WHERE notification_worker_leases.owner_token=excluded.owner_token
+              OR notification_worker_leases.lease_expires_at <= excluded.heartbeat_at""",
+        [owner_token, current_sql, current_sql, expires_sql],
+    )
+    db.commit()
+    return acquired.rowcount == 1
+
+
+class NotificationWorkerLeaseLost(RuntimeError):
+    pass
+
+
+def _renew_notification_worker_lease_in_transaction(
+    db, owner_token, lease_seconds=120, now=None,
+):
+    """Renew only the current unexpired owner; caller controls the transaction."""
+    owner_token = str(owner_token or "").strip()
+    if not owner_token:
+        return False
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(
+        microsecond=0
+    )
+    lease_seconds = max(30, min(int(lease_seconds), 600))
+    current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
+    expires_sql = (current + timedelta(seconds=lease_seconds)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    renewed = db.execute(
+        """UPDATE notification_worker_leases
+           SET heartbeat_at=?,lease_expires_at=?
+           WHERE worker_name='notification-maintenance' AND owner_token=?
+             AND lease_expires_at > ?""",
+        [current_sql, expires_sql, owner_token, current_sql],
+    )
+    return renewed.rowcount == 1
+
+
+def renew_notification_worker_lease(db, owner_token, lease_seconds=120, now=None):
+    """Fence one maintenance phase with a short compare-and-renew transaction."""
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        renewed = _renew_notification_worker_lease_in_transaction(
+            db, owner_token, lease_seconds=lease_seconds, now=now,
         )
         db.commit()
-        if not sent:
-            return
+        return renewed
+    except Exception:
+        db.rollback()
+        raise
 
 
-def push_notification(db, user_id, notif_type, title, message=None, link=None, email=False, email_message=None, email_dedupe=None):
+def notification_delivery_health(db):
+    """Return aggregate notification operations only; never expose message or recipient data."""
+    states = {state: 0 for state in ("pending", "sending", "sent", "failed")}
+    for row in db.execute(
+        """SELECT state,COUNT(*) AS count FROM transactional_email_outbox
+           WHERE COALESCE(delivery_status,'') <> 'suppressed' GROUP BY state"""
+    ).fetchall():
+        states[row["state"]] = row["count"]
+    suppressed = int(db.execute(
+        """SELECT COUNT(*) FROM transactional_email_outbox
+           WHERE delivery_status='suppressed'"""
+    ).fetchone()[0])
+    manual_review = int(db.execute(
+        """SELECT COUNT(*) FROM transactional_email_outbox
+           WHERE delivery_status='manual_review'"""
+    ).fetchone()[0])
+    by_type = {}
+    for row in db.execute(
+        """SELECT notification_type,
+                  CASE
+                      WHEN delivery_status='suppressed' THEN 'suppressed'
+                      WHEN delivery_status='manual_review' THEN 'manual_review'
+                      ELSE state END AS state,
+                  COUNT(*) AS count
+           FROM transactional_email_outbox
+           GROUP BY notification_type,
+                    CASE
+                        WHEN delivery_status='suppressed' THEN 'suppressed'
+                        WHEN delivery_status='manual_review' THEN 'manual_review'
+                        ELSE state END
+           ORDER BY notification_type,state"""
+    ).fetchall():
+        by_type.setdefault(row["notification_type"], {})[row["state"]] = row["count"]
+    pending = db.execute(
+        """SELECT
+               SUM(CASE WHEN expires_at IS NOT NULL AND expires_at > datetime('now')
+                         AND (next_attempt_at IS NULL OR next_attempt_at <= datetime('now'))
+                        THEN 1 ELSE 0 END) AS eligible,
+               SUM(CASE WHEN expires_at IS NULL OR expires_at <= datetime('now')
+                        THEN 1 ELSE 0 END) AS stale,
+               COALESCE(MAX(0,strftime('%s','now')-strftime('%s',MIN(created_at))),0) AS oldest_age
+           FROM transactional_email_outbox WHERE state='pending'"""
+    ).fetchone()
+    delivery_events = {
+        row["event_type"]: row["count"]
+        for row in db.execute(
+            """SELECT event_type,COUNT(*) AS count
+               FROM transactional_email_delivery_events
+               WHERE received_at >= datetime('now','-24 hours')
+               GROUP BY event_type ORDER BY event_type"""
+        ).fetchall()
+    }
+    reminder_counts = {
+        row["reminder_kind"]: row["count"]
+        for row in db.execute(
+            "SELECT reminder_kind,COUNT(*) AS count FROM job_application_reminders GROUP BY reminder_kind"
+        ).fetchall()
+    }
+    worker_lease = db.execute(
+        """SELECT heartbeat_at,lease_expires_at,
+                  CASE WHEN lease_expires_at > datetime('now') THEN 1 ELSE 0 END AS active
+           FROM notification_worker_leases
+           WHERE worker_name='notification-maintenance'"""
+    ).fetchone()
+    return {
+        "configuration": {
+            "provider_configured": bool(RESEND_API_KEY),
+            "sender_configured": bool((EMAIL_FROM or "").strip()),
+            "webhook_configured": bool(RESEND_WEBHOOK_SECRET),
+            "worker_enabled": notification_worker_enabled(),
+        },
+        "outbox": {
+            "states": states,
+            "suppressed": suppressed,
+            "manual_review": manual_review,
+            "eligible_pending": int(pending["eligible"] or 0),
+            "stale_pending": int(pending["stale"] or 0),
+            "oldest_pending_age_seconds": int(pending["oldest_age"] or 0),
+            "by_type": by_type,
+        },
+        "delivery_events_24h": delivery_events,
+        "application_reminders": reminder_counts,
+        "worker": {
+            "lease_active": bool(worker_lease and worker_lease["active"]),
+            "last_heartbeat_at": worker_lease["heartbeat_at"] if worker_lease else None,
+            "lease_expires_at": worker_lease["lease_expires_at"] if worker_lease else None,
+        },
+    }
+
+
+def push_notification(
+    db, user_id, notif_type, title, message=None, link=None, email=False,
+    email_message=None, email_dedupe=None, email_expires_at=None,
+    email_reminder_binding=None,
+):
     cursor = db.execute(
         "INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
         [user_id, notif_type, title, message or "", link or ""]
     )
     if email and notif_type in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
         user = db.execute(
-            "SELECT email FROM users WHERE id=? AND is_active=1 AND is_banned=0",
+            """SELECT email FROM users
+               WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0""",
             [user_id],
         ).fetchone()
         if user and user["email"]:
@@ -3220,16 +4384,206 @@ def push_notification(db, user_id, notif_type, title, message=None, link=None, e
             dedupe_key = hashlib.sha256(
                 f"{user_id}|{notif_type}|{link or ''}|{dedupe_context}".encode("utf-8")
             ).hexdigest()
+            binding = email_reminder_binding or {}
             db.execute(
                 """INSERT OR IGNORE INTO transactional_email_outbox
                    (user_id,notification_id,email_to,notification_type,title,message,
-                    link,dedupe_context,dedupe_key,state)
-                   VALUES (?,?,?,?,?,?,?,?,?,'pending')""",
-                [user_id, cursor.lastrowid, user["email"], notif_type, title,
+                    link,dedupe_context,dedupe_key,state,next_attempt_at,expires_at,
+                    reminder_job_id,reminder_first_application_id,
+                    reminder_last_application_id,reminder_cohort_started_at,reminder_stage)
+                   VALUES (?,?,?,?,?,?,?,?,?,'pending',datetime('now'),
+                           COALESCE(?,datetime('now','+24 hours')),?,?,?,?,?)""",
+                [user_id, cursor.lastrowid, "", notif_type, title,
                  email_message if email_message is not None else (message or ""),
-                 link or "", str(dedupe_context), dedupe_key],
+                 link or "", str(dedupe_context), dedupe_key, email_expires_at,
+                 binding.get("job_id"), binding.get("first_application_id"),
+                 binding.get("last_application_id"), binding.get("cohort_started_at"),
+                 binding.get("stage")],
             )
     return cursor.lastrowid
+
+
+def generate_application_reminders(
+    db, now=None, limit=20, owner_token=None, lease_seconds=120, lease_now=None,
+):
+    """Queue one bounded, lease-fenced batch of due application cohorts."""
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
+    batch_limit = max(1, min(int(limit), 100))
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    created = 0
+    try:
+        if owner_token and not _renew_notification_worker_lease_in_transaction(
+            db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+        ):
+            raise NotificationWorkerLeaseLost("notification maintenance lease lost")
+        state = db.execute(
+            "SELECT application_reminders_enabled_at FROM notification_system_state WHERE id=1"
+        ).fetchone()
+        if state is None:
+            raise RuntimeError("Application reminder rollout state is unavailable")
+        enabled_at = state["application_reminders_enabled_at"]
+        rows = db.execute(
+            """SELECT j.id AS job_id,j.employer_id,j.title,
+                      MIN(a.created_at) AS cohort_started_at,
+                      MIN(a.id) AS cohort_first_application_id,
+                      MAX(a.id) AS cohort_last_application_id,
+                      COUNT(*) AS application_count
+               FROM jobs j
+               JOIN applications a ON a.job_id=j.id AND a.status='pending'
+               LEFT JOIN job_application_views v
+                 ON v.job_id=j.id AND v.employer_id=j.employer_id
+               JOIN users u ON u.id=j.employer_id AND u.is_active=1
+                           AND u.is_banned=0 AND u.is_suspended=0
+               WHERE j.status IN ('open','reviewing')
+                 AND a.created_at >= ?
+                 AND a.id > COALESCE(v.last_seen_application_id,0)
+               GROUP BY j.id,j.employer_id,j.title
+               HAVING (
+                    MIN(a.created_at) <= datetime(?,'-24 hours')
+                    AND MIN(a.created_at) > datetime(?,'-48 hours')
+               ) OR (
+                    MIN(a.created_at) <= datetime(?,'-72 hours')
+                    AND MIN(a.created_at) > datetime(?,'-96 hours')
+               )
+               ORDER BY MIN(a.created_at),j.id
+               LIMIT ?""",
+            [enabled_at, current_sql, current_sql, current_sql, current_sql,
+             batch_limit],
+        ).fetchall()
+        for row in rows:
+            try:
+                cohort = datetime.fromisoformat(str(row["cohort_started_at"]).replace("Z", "+00:00"))
+                if cohort.tzinfo is None:
+                    cohort = cohort.replace(tzinfo=timezone.utc)
+                cohort = cohort.astimezone(timezone.utc).replace(microsecond=0)
+            except (TypeError, ValueError):
+                continue
+            age = current - cohort
+            if timedelta(hours=24) <= age < timedelta(hours=48):
+                reminder_kind = "24h"
+                window_end = cohort + timedelta(hours=48)
+            elif timedelta(hours=72) <= age < timedelta(hours=96):
+                reminder_kind = "72h"
+                window_end = cohort + timedelta(hours=96)
+            else:
+                continue
+            cohort_sql = cohort.strftime("%Y-%m-%d %H:%M:%S")
+            claim = db.execute(
+                """INSERT OR IGNORE INTO job_application_reminders
+                   (job_id,employer_id,reminder_kind,cohort_started_at,
+                    cohort_first_application_id,cohort_last_application_id,application_count)
+                   VALUES(?,?,?,?,?,?,?)""",
+                [row["job_id"], row["employer_id"], reminder_kind, cohort_sql,
+                 row["cohort_first_application_id"], row["cohort_last_application_id"],
+                 row["application_count"]],
+            )
+            if claim.rowcount != 1:
+                continue
+            count = int(row["application_count"])
+            title = f"Applications are waiting for {row['title']}"
+            message = (
+                "People are waiting for your response. Review the applications and "
+                "choose whether to hire, decline, or keep the job open."
+            )
+            notification_id = push_notification(
+                db, row["employer_id"], f"application_reminder_{reminder_kind}",
+                title, message, f"/jobs/{row['job_id']}/applications", email=True,
+                email_dedupe=(
+                    f"application_reminder:{row['job_id']}:{reminder_kind}:"
+                    f"{row['cohort_first_application_id']}"
+                ),
+                email_expires_at=window_end.strftime("%Y-%m-%d %H:%M:%S"),
+                email_reminder_binding={
+                    "job_id": row["job_id"],
+                    "first_application_id": row["cohort_first_application_id"],
+                    "last_application_id": row["cohort_last_application_id"],
+                    "cohort_started_at": cohort_sql,
+                    "stage": reminder_kind,
+                },
+            )
+            linked = db.execute(
+                """UPDATE job_application_reminders SET notification_id=?
+                   WHERE id=? AND notification_id IS NULL""",
+                [notification_id, claim.lastrowid],
+            )
+            if linked.rowcount != 1:
+                raise RuntimeError("Application reminder notification binding changed")
+            audit(
+                db, row["employer_id"], "application_reminder_queued", "job",
+                row["job_id"], {"kind": reminder_kind, "application_count": count},
+            )
+            created += 1
+        db.commit()
+        return created
+    except Exception:
+        db.rollback()
+        raise
+
+
+def run_notification_maintenance_once(
+    now=None, owner_token=None, lease_seconds=120, lease_now=None,
+):
+    """Run one bounded cycle only while the caller owns the fencing lease."""
+    if not str(owner_token or "").strip():
+        raise ValueError("Notification worker owner token is required")
+    db = get_db()
+    empty_delivery = {
+        "sent": 0,
+        "deferred": 0,
+        "failed": 0,
+        "claimed_recovered": 0,
+        "stale_skipped": 0,
+        "suppressed": 0,
+        "claim_lost": 0,
+        "lease_lost": 0,
+    }
+    try:
+        if not renew_notification_worker_lease(
+            db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+        ):
+            return {
+                "application_reminders_created": 0,
+                "email_delivery": {**empty_delivery, "lease_lost": 1},
+                "lease_lost": 1,
+            }
+        try:
+            reminders_created = generate_application_reminders(
+                db, now=now, limit=20, owner_token=owner_token,
+                lease_seconds=lease_seconds, lease_now=lease_now,
+            )
+        except NotificationWorkerLeaseLost:
+            return {
+                "application_reminders_created": 0,
+                "email_delivery": {**empty_delivery, "lease_lost": 1},
+                "lease_lost": 1,
+            }
+        if not renew_notification_worker_lease(
+            db, owner_token, lease_seconds=lease_seconds, now=lease_now,
+        ):
+            return {
+                "application_reminders_created": reminders_created,
+                "email_delivery": {**empty_delivery, "lease_lost": 1},
+                "lease_lost": 1,
+            }
+        if RESEND_API_KEY:
+            delivery = flush_transactional_notification_emails(
+                db, now=now, limit=20, owner_token=owner_token,
+                lease_seconds=lease_seconds, lease_now=lease_now,
+            )
+        else:
+            delivery = {**empty_delivery, "provider_unavailable": 1}
+        return {
+            "application_reminders_created": reminders_created,
+            "email_delivery": delivery,
+            "lease_lost": int(delivery.get("lease_lost", 0) > 0),
+        }
+    finally:
+        if db.in_transaction:
+            db.rollback()
+        db.close()
 
 
 def generate_order_reminders(db, user_id, now=None):
@@ -6860,7 +8214,6 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
         {"job_id": job["id"], "worker_id": application["worker_id"]},
     )
     db.commit()
-    flush_transactional_notification_emails(db)
     return _job_hire_replay_response(db, order["id"], mode)
 
 
@@ -7658,6 +9011,9 @@ def handle_request():
         _request_ctx.http_authorization = os.environ.get("HTTP_AUTHORIZATION", "")
         _request_ctx.http_x_api_key = os.environ.get("HTTP_X_API_KEY", "")
         _request_ctx.http_stripe_signature = os.environ.get("HTTP_STRIPE_SIGNATURE", "")
+        _request_ctx.http_svix_id = os.environ.get("HTTP_SVIX_ID", "")
+        _request_ctx.http_svix_timestamp = os.environ.get("HTTP_SVIX_TIMESTAMP", "")
+        _request_ctx.http_svix_signature = os.environ.get("HTTP_SVIX_SIGNATURE", "")
         _request_ctx.http_x_diagnostic_secret = os.environ.get("HTTP_X_DIAGNOSTIC_SECRET", "")
         _request_ctx.stdin_data = sys.stdin.read() if sys.stdin else ""
 
@@ -8780,7 +10136,6 @@ def _handle_routes(db):
             pass  # Don't fail job creation if notifications error
 
         db.commit()
-        flush_transactional_notification_emails(db)
         job = db.execute("SELECT * FROM jobs WHERE id = ?", [job_id]).fetchone()
         return json_response(row_to_dict(job), 201)
 
@@ -8876,8 +10231,7 @@ def _handle_routes(db):
         if job['employer_id'] != user['id'] and not user['is_admin']:
             return error_response("Forbidden — only the job owner can view applicants", 403)
 
-        apps = db.execute(
-            """SELECT a.*, u.name as worker_name, u.avatar_url as worker_avatar,
+        applications_sql = """SELECT a.*, u.name as worker_name, u.avatar_url as worker_avatar,
                wp.bio as worker_bio, wp.avg_rating as worker_rating,
                wp.total_reviews as worker_review_count, wp.skills as worker_skills,
                wp.is_verified as worker_is_verified
@@ -8885,9 +10239,54 @@ def _handle_routes(db):
                JOIN users u ON a.worker_id = u.id
                LEFT JOIN worker_profiles wp ON a.worker_id = wp.user_id
                WHERE a.job_id = ?
-               ORDER BY a.created_at DESC""",
-            [job_id]
-        ).fetchall()
+               ORDER BY a.created_at DESC"""
+        is_human_owner_view = (
+            job['employer_id'] == user['id']
+            and user.get('auth_principal_type') != 'api_key'
+        )
+        if is_human_owner_view:
+            if db.in_transaction:
+                db.commit()
+            db.execute("BEGIN IMMEDIATE")
+            apps = db.execute(applications_sql, [job_id]).fetchall()
+            last_seen_application_id = max((app["id"] for app in apps), default=0)
+            db.execute(
+                """INSERT INTO job_application_views
+                   (job_id,employer_id,first_viewed_at,last_viewed_at,last_seen_application_id)
+                   VALUES(?,?,datetime('now'),datetime('now'),?)
+                   ON CONFLICT(job_id,employer_id) DO UPDATE
+                   SET last_viewed_at=datetime('now'),
+                       last_seen_application_id=MAX(
+                         job_application_views.last_seen_application_id,
+                         excluded.last_seen_application_id
+                       )""",
+                [job_id, user['id'], last_seen_application_id],
+            )
+            reminder_link = f"/jobs/{job_id}/applications"
+            db.execute(
+                """UPDATE notifications SET is_read=1
+                   WHERE user_id=? AND link=? AND is_read=0
+                     AND type IN ('application_reminder_24h','application_reminder_72h')""",
+                [user['id'], reminder_link],
+            )
+            db.execute(
+                """UPDATE transactional_email_outbox
+                   SET state='failed',delivery_status='suppressed',
+                       last_error='application cohort viewed',next_attempt_at=NULL,
+                       claimed_at=NULL,claim_token=NULL,email_to='',title='',message='',link=''
+                   WHERE user_id=? AND reminder_job_id=? AND state='pending'
+                     AND reminder_first_application_id <= ?
+                     AND notification_type IN (
+                       'application_reminder_24h','application_reminder_72h'
+                     )""",
+                [user['id'], job_id, last_seen_application_id],
+            )
+            audit(db, user['id'], "view_job_applications", "job", job_id, {
+                "application_count": len(apps),
+            })
+            db.commit()
+        else:
+            apps = db.execute(applications_sql, [job_id]).fetchall()
         return json_response([row_to_dict(a) for a in apps])
 
     elif re.match(r"^/jobs/(\d+)/apply$", path) and method == "POST":
@@ -8947,7 +10346,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "apply_job", "application", app_id)
         db.commit()
-        flush_transactional_notification_emails(db)
         app = db.execute("SELECT * FROM applications WHERE id = ?", [app_id]).fetchone()
         return json_response(row_to_dict(app), 201)
 
@@ -9217,7 +10615,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "hire_worker", "order", order_id, {"job_id": job_id, "worker_id": worker_id})
         db.commit()
-        flush_transactional_notification_emails(db)
 
         order = db.execute("SELECT * FROM orders WHERE id = ?", [order_id]).fetchone()
         result = row_to_dict(order)
@@ -9307,7 +10704,6 @@ def _handle_routes(db):
                     )
                 audit(db, user['id'], "reconcile_service_order_funding", "order", existing_order['id'])
                 db.commit()
-                flush_transactional_notification_emails(db)
             elif existing_order['status'] == 'in_progress' and milestone['status'] != 'in_progress':
                 return error_response("Existing service order requires lifecycle reconciliation", 409)
 
@@ -9430,7 +10826,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "order_service", "order", order_id)
         db.commit()
-        flush_transactional_notification_emails(db)
 
         order = db.execute("SELECT * FROM orders WHERE id = ?", [order_id]).fetchone()
         result = row_to_dict(order)
@@ -9720,7 +11115,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "submit_order", "order", order_id)
         db.commit()
-        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "status": "submitted"})
 
     elif re.match(r"^/orders/(\d+)/approve$", path) and method == "POST":
@@ -9981,7 +11375,6 @@ def _handle_routes(db):
                 "funding_attempt_id": recovery["funding_attempt_id"],
             })
             db.commit()
-            flush_transactional_notification_emails(db)
             return json_response({
                 "ok": True,
                 "status": "in_progress",
@@ -10175,7 +11568,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "approve_order", "order", order_id)
         db.commit()
-        flush_transactional_notification_emails(db)
         return json_response({"ok": True, "worker_payout": worker_payout, "platform_fee": fee})
 
     elif re.match(r"^/orders/(\d+)/request-revision$", path) and method == "POST":
@@ -10262,7 +11654,6 @@ def _handle_routes(db):
 
         audit(db, user['id'], "request_revision", "order", order_id)
         db.commit()
-        flush_transactional_notification_emails(db)
         return json_response({
             "ok": True,
             "status": "revision_requested",
@@ -11338,8 +12729,71 @@ def _handle_routes(db):
         })
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # STRIPE WEBHOOK
+    # RESEND + STRIPE WEBHOOKS
     # ═══════════════════════════════════════════════════════════════════════════
+
+    elif path == "/webhooks/resend" and method == "POST":
+        body_raw = get_body_raw()
+        if not RESEND_WEBHOOK_SECRET:
+            return error_response("Webhook secret not configured", 500)
+        message_id = getattr(_request_ctx, "http_svix_id", "")
+        timestamp = getattr(_request_ctx, "http_svix_timestamp", "")
+        signature = getattr(_request_ctx, "http_svix_signature", "")
+        if not verify_resend_webhook_signature(
+            body_raw, message_id, timestamp, signature,
+        ):
+            return error_response("Invalid signature", 400)
+        try:
+            event = json.loads(body_raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return error_response("Invalid payload", 400)
+        if not isinstance(event, dict):
+            return error_response("Invalid payload", 400)
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        event_type = event.get("type")
+        if not isinstance(event_type, str) or not event_type or len(event_type) > 255:
+            event_type = "unknown"
+        provider_email_id = data.get("email_id")
+        if not isinstance(provider_email_id, str) or not provider_email_id or len(provider_email_id) > 255:
+            provider_email_id = None
+        if len(message_id) > 255:
+            return error_response("Invalid payload", 400)
+        event_created_at = event.get("created_at")
+        if not isinstance(event_created_at, str) or len(event_created_at) > 255:
+            event_created_at = None
+        if db.in_transaction:
+            db.commit()
+        # Serialize event insertion and monotonic evidence application. This
+        # makes the helper's read/compare/write sequence atomic across workers.
+        db.execute("BEGIN IMMEDIATE")
+        inserted = db.execute(
+            """INSERT OR IGNORE INTO transactional_email_delivery_events
+               (provider_event_id,provider_email_id,event_type,event_created_at,payload_sha256)
+               VALUES(?,?,?,?,?)""",
+            [message_id, provider_email_id, event_type, event_created_at,
+             hashlib.sha256(body_raw).hexdigest()],
+        )
+        supported = event_type.startswith("email.") and provider_email_id is not None
+        if inserted.rowcount == 1 and supported:
+            delivery_map = {
+                "email.sent": "sent",
+                "email.delivered": "delivered",
+                "email.delivery_delayed": "delayed",
+                "email.bounced": "bounced",
+                "email.complained": "complained",
+                "email.failed": "failed",
+            }
+            delivery_status = delivery_map.get(event_type)
+            if delivery_status:
+                apply_transactional_email_delivery_status(
+                    db, provider_email_id, delivery_status,
+                )
+        db.commit()
+        return json_response({
+            "received": True,
+            "duplicate": inserted.rowcount != 1,
+            "ignored": not supported,
+        })
 
     elif path == "/webhooks/stripe" and method == "POST":
         body_raw = get_body_raw()
@@ -11704,6 +13158,12 @@ def _handle_routes(db):
         audit(db, user['id'], "send_worker_activation_notifications", "notification", None, {"user_ids": sent, "link": link})
         db.commit()
         return json_response({"ok": True, "sent_user_ids": sent, "count": len(sent)})
+
+    elif path == "/admin/notification-health" and method == "GET":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+        return json_response(notification_delivery_health(db))
 
     elif path == "/admin/dashboard" and method == "GET":
         user = authenticate(db)

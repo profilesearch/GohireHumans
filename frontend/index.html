@@ -3985,14 +3985,21 @@ async function updateProfile(e) {
 async function renderAdminDashboard() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'dashboard');
   try {
-    const [stats, usersData, ordersData, revenue] = await Promise.all([
+    const [stats, usersData, ordersData, revenue, notificationHealth] = await Promise.all([
       api('/admin/dashboard').catch(() => ({})),
       api('/admin/users').catch(() => []),
       api('/admin/orders').catch(() => []),
       api('/admin/revenue').catch(() => ({})),
+      api('/admin/notification-health').catch(() => ({ unavailable: true })),
     ]);
     const users = (Array.isArray(usersData) ? usersData : (usersData.users||[])).slice(0,8);
     const orders = (Array.isArray(ordersData) ? ordersData : (ordersData.orders||[])).slice(0,8);
+    const notificationConfig = notificationHealth.configuration || {};
+    const notificationOutbox = notificationHealth.outbox || {};
+    const notificationStates = notificationOutbox.states || {};
+    const deliveryEvents = notificationHealth.delivery_events_24h || {};
+    const applicationReminders = notificationHealth.application_reminders || {};
+    const notificationWorker = notificationHealth.worker || {};
 
     appShell(`
       <h1 class="page-title">Admin Dashboard</h1>
@@ -4003,6 +4010,26 @@ async function renderAdminDashboard() {
         <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value">${stats.total_orders||0}</div></div>
         <div class="stat-card"><div class="stat-label">Platform Revenue</div><div class="stat-value">$${Number(revenue.total_fees||0).toFixed(2)}</div></div>
         <div class="stat-card"><div class="stat-label">Payment Held</div><div class="stat-value">$${Number(revenue.escrow_held||revenue.payment_held||0).toFixed(2)}</div></div>
+      </div>
+      <div class="card" id="notification-delivery-health" style="margin-top:var(--space-6)">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Notification Delivery</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-1)">Aggregate operational status only; no recipients or message content.</div>
+          </div>
+        </div>
+        ${notificationHealth.unavailable ? `
+          <div class="empty-state"><p>Notification health is unavailable.</p></div>
+        ` : `
+          <div class="stats-grid" style="margin-top:var(--space-3)">
+            <div class="stat-card"><div class="stat-label">Provider</div><div class="stat-sub">${notificationConfig.provider_configured ? 'Provider configured' : 'Provider not configured'}</div></div>
+            <div class="stat-card"><div class="stat-label">Worker</div><div class="stat-sub">${notificationConfig.worker_enabled ? (notificationWorker.lease_active ? 'Active · heartbeat '+escapeHTML(notificationWorker.last_heartbeat_at||'unknown') : 'Enabled · no active lease') : 'Worker disabled'}</div></div>
+            <div class="stat-card"><div class="stat-label">Webhook</div><div class="stat-sub">${notificationConfig.webhook_configured ? 'Webhook configured' : 'Webhook not configured'}</div></div>
+            <div class="stat-card"><div class="stat-label">Outbox</div><div class="stat-sub">${Number(notificationStates.pending||0)} pending · ${Number(notificationOutbox.eligible_pending||0)} eligible · ${Number(notificationOutbox.stale_pending||0)} stale · ${Number(notificationStates.failed||0)} failed · ${Number(notificationOutbox.manual_review||0)} manual review · ${Number(notificationOutbox.suppressed||0)} suppressed</div></div>
+            <div class="stat-card"><div class="stat-label">Provider evidence · 24h</div><div class="stat-sub">${Number(deliveryEvents['email.delivered']||0)} delivered · ${Number(deliveryEvents['email.bounced']||0)} bounced</div></div>
+            <div class="stat-card"><div class="stat-label">Application reminders</div><div class="stat-sub">${Number(applicationReminders['24h']||0)} × 24h · ${Number(applicationReminders['72h']||0)} × 72h</div></div>
+          </div>
+        `}
       </div>
       <div class="card" style="margin-top:var(--space-6)">
         <div class="card-header"><div class="card-title">Recent Users</div><button class="btn btn-ghost btn-sm" onclick="navigate('#/admin/users')">View all</button></div>

@@ -821,6 +821,11 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertIsNotNone(notif)
             self.assertEqual(notif["user_id"], 1)
             self.assertEqual(notif["link"], f"#/jobs/{response['id']}")
+            queued = db.execute(
+                "SELECT state,attempts FROM transactional_email_outbox"
+            ).fetchone()
+            self.assertEqual(tuple(queued), ("pending", 0))
+            self.module.flush_transactional_notification_emails(db)
             self.assertEqual(len(sent), 1)
             to, subject, html = sent[0]
             self.assertEqual(to, "worker@example.com")
@@ -835,7 +840,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
             sent = []
             self.module.RESEND_API_KEY = "configured-for-test"
-            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
             self.module.push_notification(
                 db,
@@ -879,7 +884,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
             sent = []
             self.module.RESEND_API_KEY = "configured-for-test"
-            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
             self.module.push_notification(
                 db,
@@ -925,7 +930,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
             sent = []
             self.module.RESEND_API_KEY = "configured-for-test"
-            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
             self.module.push_notification(
                 db,
@@ -953,7 +958,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker Name')")
             sent = []
             self.module.RESEND_API_KEY = "configured-for-test"
-            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or True
+            self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
             self.module.push_notification(
                 db,
@@ -1009,6 +1014,19 @@ class BackendRegressionTests(unittest.TestCase):
             status, body = parse_cgi_output(out.getvalue())
             self.assertEqual(status, 201, body)
 
+        db = self.module.get_db()
+        try:
+            queued = db.execute(
+                """SELECT dedupe_context,state,attempts FROM transactional_email_outbox
+                   ORDER BY id"""
+            ).fetchall()
+            self.assertEqual(len(queued), 2)
+            self.assertEqual([row["state"] for row in queued], ["pending", "pending"])
+            self.assertEqual(len({row["dedupe_context"] for row in queued}), 2)
+            self.module.flush_transactional_notification_emails(db)
+        finally:
+            db.close()
+
         self.assertEqual(len(sent), 2)
         self.assertEqual([item[0] for item in sent], ["employer@example.com", "employer@example.com"])
 
@@ -1044,6 +1062,15 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.handle_request()
         status, body = parse_cgi_output(out.getvalue())
         self.assertEqual(status, 200, body)
+        db = self.module.get_db()
+        try:
+            queued = db.execute(
+                "SELECT state,attempts FROM transactional_email_outbox"
+            ).fetchone()
+            self.assertEqual(tuple(queued), ("pending", 0))
+            self.module.flush_transactional_notification_emails(db)
+        finally:
+            db.close()
         self.assertEqual(len(sent), 1)
         self.assertIn("A revision has been requested on order #9", sent[0][2])
         self.assertNotIn("abc123", sent[0][2])
