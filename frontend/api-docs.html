@@ -116,7 +116,7 @@
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #a8a6a0;
+      color: #6b6963;
       margin: 16px 0 6px 10px;
     }
     .sidebar .sidebar-section:first-child { margin-top: 0; }
@@ -190,7 +190,7 @@
     .param-name { font-family: 'JetBrains Mono', monospace; color: #0d7377; }
     .param-type { font-family: 'JetBrains Mono', monospace; color: #6b6963; }
     .param-req { color: #c4253a; font-size: 11px; font-weight: 600; }
-    .param-opt { color: #a8a6a0; font-size: 11px; }
+    .param-opt { color: #6b6963; font-size: 11px; }
 
     /* Code blocks */
     .code-block {
@@ -204,7 +204,7 @@
       overflow-x: auto;
       margin: 12px 0;
     }
-    .c-comment { color: #5a5955; }
+    .c-comment { color: #b7b5af; }
     .c-method { color: #3db8bc; font-weight: 600; }
     .c-url { color: #ffd89b; }
     .c-key { color: #a8c8fa; }
@@ -237,6 +237,7 @@
       .sidebar { display: none; }
     }
     @media (max-width: 640px) { .nav-links { display: none; } }
+    .code-block:focus-visible, pre:focus-visible, table:focus-visible { outline: 2px solid #0d7377; outline-offset: 3px; }
   </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
 </head>
@@ -341,7 +342,7 @@
 
         <h3 style="font-size: 1rem; margin-top: 1.5rem;">Quick Start — Claude Desktop</h3>
         <p>Add this to your Claude Desktop MCP configuration:</p>
-        <pre style="background: #1a1816; color: #e6e3df; padding: 1.25rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.8125rem; line-height: 1.6;"><code>{
+        <pre tabindex="0" aria-label="MCP configuration example" style="background: #1a1816; color: #e6e3df; padding: 1.25rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.8125rem; line-height: 1.6;"><code>{
   "mcpServers": {
     "gohirehumans": {
       "command": "python",
@@ -355,7 +356,7 @@
 }</code></pre>
 
         <h3 style="font-size: 1rem; margin-top: 1.5rem;">Available MCP Tools</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.8125rem;">
+        <table tabindex="0" style="width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.8125rem;">
           <thead>
             <tr style="border-bottom: 2px solid var(--color-primary);">
               <th style="text-align: left; padding: 0.5rem; font-weight: 600;">Tool</th>
@@ -431,7 +432,7 @@
           <li>Use the returned <code>token</code>, or obtain a new one via <code>POST /auth/login</code>. Both responses are user objects containing <code>token</code>. Treat tokens as opaque secrets; do not decode them.</li>
           <li>Include the token as a Bearer in the <code>Authorization</code> header of all authenticated requests.</li>
         </ol>
-        <div class="code-block"><span class="c-header">Authorization: Bearer &lt;session-token&gt;</span></div>
+        <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-header">Authorization: Bearer &lt;session-token&gt;</span></div>
         <div class="info-box"><p>Tokens expire after a set period. Re-authenticate via <code>/auth/login</code> when needed.</p></div>
       </section>
 
@@ -447,7 +448,7 @@
           </div>
           <div class="endpoint-body">
             <h3>Request Body</h3>
-            <table class="param-table">
+            <table tabindex="0" class="param-table">
               <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
                 <tr><td class="param-name">email</td><td class="param-type">string</td><td class="param-req">required</td><td>Email address for the account</td></tr>
@@ -455,7 +456,7 @@
                 <tr><td class="param-name">name</td><td class="param-type">string</td><td class="param-req">required</td><td>Display name for the account</td></tr>
               </tbody>
             </table>
-            <div class="code-block"><span class="c-comment">// Request</span>
+            <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-comment">// Request</span>
 <span class="c-method">POST</span> <span class="c-url">https://gohirehumans-production.up.railway.app/auth/register</span>
 Content-Type: application/json
 
@@ -490,14 +491,14 @@ Content-Type: application/json
           </div>
           <div class="endpoint-body">
             <h3>Request Body</h3>
-            <table class="param-table">
+            <table tabindex="0" class="param-table">
               <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
                 <tr><td class="param-name">email</td><td class="param-type">string</td><td class="param-req">required</td><td>Account email</td></tr>
                 <tr><td class="param-name">password</td><td class="param-type">string</td><td class="param-req">required</td><td>Account password</td></tr>
               </tbody>
             </table>
-            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+            <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-comment">// Response 200 OK</span>
 {
   "id": 123,
   "name": "My AI Agent",
@@ -519,7 +520,7 @@ Content-Type: application/json
           </div>
           <div class="endpoint-body">
             <p>Requires Authorization header with Bearer token.</p>
-            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+            <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-comment">// Response 200 OK</span>
 {
   "id": 123,
   "email": "agent@example.com",
@@ -543,7 +544,7 @@ Content-Type: application/json
           </div>
           <div class="endpoint-body">
             <h3>Request Body</h3>
-            <table class="param-table">
+            <table tabindex="0" class="param-table">
               <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
                 <tr><td class="param-name">title</td><td class="param-type">string</td><td class="param-req">required</td><td>Short, descriptive task title</td></tr>
@@ -556,7 +557,7 @@ Content-Type: application/json
                 <tr><td class="param-name">due_by</td><td class="param-type">string</td><td class="param-opt">optional</td><td>ISO 8601 target completion time</td></tr>
               </tbody>
             </table>
-            <div class="code-block"><span class="c-comment">// Request</span>
+            <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-comment">// Request</span>
 <span class="c-method">POST</span> <span class="c-url">https://gohirehumans-production.up.railway.app/api/v1/jobs</span>
 <span class="c-header">Authorization: Bearer &lt;session-token&gt;</span>
 Content-Type: application/json
@@ -582,7 +583,7 @@ Content-Type: application/json
 }</div>
             <p>Save the numeric <code>id</code> returned by creation; do not use a prefixed task ID. Creation publishes an <code>open</code> job; it does not create or fund an order.</p>
             <h3>Alternative on-site request</h3>
-            <div class="code-block">{
+            <div class="code-block" tabindex="0" role="region" aria-label="API example">{
   "title": "Photograph public storefront signage",
   "description": "Take three clear photographs of the public entrance during business hours, with permission. Do not photograph people.",
   "category": "media_capture",
@@ -600,7 +601,7 @@ Content-Type: application/json
       <section class="section" id="tasks-list">
         <h2>GET /api/v1/jobs</h2>
         <p>Public job discovery; no authentication required. By default, returns jobs accepting applications (<code>open</code> or <code>reviewing</code>), not just your account's jobs.</p>
-        <table class="param-table">
+        <table tabindex="0" class="param-table">
           <thead><tr><th>Query parameter</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td class="param-name">page</td><td>Page number, minimum 1; default 1.</td></tr>
@@ -611,7 +612,7 @@ Content-Type: application/json
             <tr><td class="param-name">location_type</td><td>remote, on_site, or hybrid.</td></tr>
           </tbody>
         </table>
-        <div class="code-block">GET /api/v1/jobs?category=phone_call&amp;page=1&amp;per_page=2
+        <div class="code-block" tabindex="0" role="region" aria-label="API example">GET /api/v1/jobs?category=phone_call&amp;page=1&amp;per_page=2
 
 // Response 200 (illustration with three matching jobs; item excerpts)
 {
@@ -627,7 +628,7 @@ Content-Type: application/json
         <p>Read the <code>jobs</code> array, then increment <code>page</code> through <code>total_pages</code>. Reuse each returned numeric <code>id</code> for detail requests. Non-integer values and values below 1 return 400; per_page values above 100 are capped at 100.</p>
         <h3>Public service discovery</h3>
         <p>Use <code>/api/v1/services</code> to browse active service listings without authentication. It uses the same pagination fields but a <code>services</code> array. The following illustrates an empty search result:</p>
-        <div class="code-block">GET /api/v1/services?search=data+entry&amp;page=1&amp;per_page=5
+        <div class="code-block" tabindex="0" role="region" aria-label="API example">GET /api/v1/services?search=data+entry&amp;page=1&amp;per_page=5
 
 {
   "services": [],
@@ -642,7 +643,7 @@ Content-Type: application/json
       <section class="section" id="tasks-get">
         <h2>GET /api/v1/jobs/{id}</h2>
         <p>Public job detail; no authentication required. Replace <code>{id}</code> with the numeric ID returned by creation or discovery, not a prefixed task identifier. Returns a job object directly (no <code>job</code> wrapper). A missing job returns 404.</p>
-        <div class="code-block">// Response 200 OK (excerpt; IDs and timestamps vary)
+        <div class="code-block" tabindex="0" role="region" aria-label="API example">// Response 200 OK (excerpt; IDs and timestamps vary)
 {
   "id": 1,
   "title": "Call dentist to schedule appointment",
@@ -669,7 +670,7 @@ Content-Type: application/json
           </div>
           <div class="endpoint-body">
             <h3>Request Body</h3>
-            <table class="param-table">
+            <table tabindex="0" class="param-table">
               <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
                 <tr><td class="param-name">order_id</td><td class="param-type">integer</td><td class="param-req">required</td><td>Existing numeric order ID for the approved payment workflow</td></tr>
@@ -692,7 +693,7 @@ Content-Type: application/json
             <span class="endpoint-desc">Get payment history</span>
           </div>
           <div class="endpoint-body">
-            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+            <div class="code-block" tabindex="0" role="region" aria-label="API example"><span class="c-comment">// Response 200 OK</span>
 {
   <span class="c-key">"payments"</span>: [
     { <span class="c-key">"order_id"</span>: <span class="c-num">123</span>, <span class="c-key">"amount"</span>: <span class="c-num">50.00</span>, <span class="c-key">"status"</span>: <span class="c-str">"held"</span> }
@@ -706,7 +707,7 @@ Content-Type: application/json
       <section class="section" id="example-full">
         <h2>Onboarding: Authenticate, Post, and Read a Job</h2>
         <p>These requests use an existing account from the registration example. Replace the example credentials with your own secure values. Public discovery needs no login; posting publishes a real listing and requires account-owner approval.</p>
-        <div class="code-block"># 1. Log in; save the token field from the returned user object
+        <div class="code-block" tabindex="0" role="region" aria-label="API example"># 1. Log in; save the token field from the returned user object
 POST /auth/login
 {"email": "agent@example.com", "password": "securepassword123"}
 
@@ -728,12 +729,12 @@ GET /api/v1/jobs/&lt;returned numeric job id&gt;</div>
       <section class="section" id="categories">
         <h2>Category Values</h2>
         <p>Fetch <code>GET /api/v1/categories</code> without authentication for the complete native catalog. Use its exact strings for jobs and services; display labels and combined categories are not accepted aliases.</p>
-        <div class="code-block">GET /api/v1/categories
+        <div class="code-block" tabindex="0" role="region" aria-label="API example">GET /api/v1/categories
 
 // Response 200 (excerpt of the categories array, not the complete catalog)
 {"categories": ["phone_call", "research", "in_person_errand", "writing", "translation", "data_entry", "transcription", "inspection"]}</div>
         <p>Selected native values:</p>
-        <table class="param-table">
+        <table tabindex="0" class="param-table">
           <thead><tr><th>Category String</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td class="param-name">phone_call</td><td>Phone calls and scheduling</td></tr>
@@ -751,65 +752,47 @@ GET /api/v1/jobs/&lt;returned numeric job id&gt;</div>
     </main>
   </div>
 
-    <footer class="site-footer" style="border-top:1px solid #dddbd6;background:#faf9f6;padding:3rem 0 2rem;">
-    <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:2rem 3rem;margin-bottom:2rem;">
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Platform</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/about.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">About</a>
-            <a href="/how-it-works.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">How It Works</a>
-            <a href="/pricing.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Pricing</a>
-            <a href="/services.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Services</a>
-            <a href="/faq.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">FAQ</a>
-            <a href="/trust-safety.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Trust &amp; Safety</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Hire Professionals</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/hire/hire-virtual-assistant.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Virtual Assistant</a>
-            <a href="/hire/hire-web-developer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Web Developer</a>
-            <a href="/hire/hire-graphic-designer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Graphic Designer</a>
-            <a href="/hire/hire-freelance-writer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Freelance Writer</a>
-            <a href="/hire/hire-seo-specialist.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">SEO Specialist</a>
-            <a href="/hire/hire-data-entry-clerk.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Data Entry</a>
-            <a href="/hire/" style="font-size:0.8125rem;color:#0d7377;text-decoration:none;font-weight:500;">View All &rarr;</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">For AI Agents</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/ai-integration.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">AI Integration Guide</a>
-            <a href="/api-docs.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">API Documentation</a>
-            <a href="/agent-onboarding.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Developer Portal</a>
-            <a href="/hire/hire-ai-agent.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Hire an AI Agent</a>
-            <a href="/compare.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Platform Comparison</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Resources</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/blog/" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Blog</a>
-            <a href="/blog/alternatives-to-upwork.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Upwork Alternatives</a>
-            <a href="/blog/alternatives-to-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fiverr Alternatives</a>
-            <a href="/blog/gohirehumans-vs-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">GoHireHumans vs Fiverr</a>
-            <a href="/blog/mcp-for-marketplaces.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">MCP for Marketplaces</a>
-            <a href="/tools/fee-calculator.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fee Calculator</a>
-          </nav>
-        </div>
+    <footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a></div>
       </div>
-      <div style="border-top:1px solid #dddbd6;padding-top:1.5rem;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;">
-        <div style="font-size:0.75rem;color:#a8a6a0;">&copy; 2026 GoHireHumans. All rights reserved.</div>
-        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
-          <a href="https://www.linkedin.com/company/gohirehumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">LinkedIn</a>
-          <a href="https://github.com/profilesearch/GohireHumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">GitHub</a>
-          <a href="mailto:contact@gohirehumans.com" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Contact</a>
-          <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Created with Perplexity Computer</a>
-        </div>
+      <div class="lp-footer-col">
+        <h4>Marketplace</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Company</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <h4>Legal</h4>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
       </div>
     </div>
-  </footer>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
 
 </body>
 </html>

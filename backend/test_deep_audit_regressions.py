@@ -1467,7 +1467,7 @@ class BackendRegressionTests(unittest.TestCase):
         required = [
             "requireAuth(`jobs/${id}?apply=1`)",
             "const shouldAutoApply = getQuery().get('apply') === '1'",
-            "setTimeout(() => handleJobApply(id), 0)",
+            "setTimeout(() => { if (canResume()) handleJobApply(id); }, 0)",
             "sessionStorage.setItem('ghh_auth_intent'",
             "sessionStorage.removeItem('ghh_auth_intent')",
             "Sign in to Apply",
