@@ -269,7 +269,7 @@
               <tr>
                 <th>Platform</th>
                 <th>Platform take</th>
-                <th>You net</th>
+                <th id="result-heading">You net</th>
               </tr>
             </thead>
             <tbody id="rows"></tbody>
@@ -386,6 +386,7 @@
     function render(){
       const gross = Math.max(0, parseFloat(grossInput.value) || 0);
       const role = roleSel.value;
+      document.getElementById('result-heading').textContent = role === 'buyer' ? 'Your total' : 'You net';
       const annualGross = gross * 12;
 
       const rows = PLATFORMS.map(p => {

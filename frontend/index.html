@@ -358,6 +358,22 @@ async function shareGHH(path = '/', source = 'site_share') {
   }
 }
 
+// Both auth methods consume the same route intent, never a transactional action.
+function consumeAuthIntent() {
+  const redirect = getQuery().get('redirect') || '';
+  let storedIntent = '';
+  try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
+  const intent = redirect || storedIntent;
+  // URLSearchParams already decoded the outer redirect. Never decode the route
+  // again: encoded separators could turn an invalid/double-encoded path valid.
+  // Keep valid query encoding intact so draft text (including % and URLs) survives.
+  const path = intent.split('?')[0];
+  const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
+  if (!safePath.test(path) || /[\\#\u0000-\u001f\u007f\ufffd]/.test(intent)) return '#/';
+  try { decodeURIComponent(intent); } catch (_) { return '#/'; }
+  return `#/${intent}`;
+}
+
 // ─── Google Sign-In callback ──────────────────────────────────
 function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
@@ -372,7 +388,7 @@ function handleGoogleCredential(response) {
         trackRecommendedEvent('login', { method: 'google' });
         toast('Welcome back!', 'success');
       }
-      navigate('#/');
+      navigate(consumeAuthIntent());
     })
     .catch(err => toast(err.message || 'Google sign-in failed', 'error'));
 }
@@ -1435,6 +1451,7 @@ async function renderLanding() {
 // SERVICES BROWSE — PUBLIC
 // ═══════════════════════════════════════════════════════════════
 async function renderServices() {
+  const isCurrent = currentRenderGuard();
   const q = getQuery();
   const search = q.get('search') || '';
   const category = q.get('category') || '';
@@ -1476,8 +1493,8 @@ async function renderServices() {
             <label class="label" for="srv-provider">Provider</label>
             <select class="select" id="srv-provider" onchange="applyServiceFilters()">
               <option value="">All (Human & AI)</option>
-              <option value="human">Human only</option>
-              <option value="ai">AI-Powered only</option>
+              <option value="human" ${provider==='human'?'selected':''}>Human only</option>
+              <option value="ai" ${provider==='ai'?'selected':''}>AI-Powered only</option>
             </select>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/services')" style="width:100%">Clear filters</button>
@@ -1506,6 +1523,7 @@ async function renderServices() {
   // Load categories
   try {
     const cats = await loadCategories();
+    if (!isCurrent()) return;
     const sel = document.getElementById('srv-cat');
     if (sel) {
       cats.forEach(c => {
@@ -1559,6 +1577,7 @@ async function loadCategories() {
 }
 
 async function loadServicesGrid(page, filters) {
+  const isCurrent = currentRenderGuard();
   const grid = document.getElementById('services-grid');
   const pag = document.getElementById('services-pagination');
   if (!grid) return;
@@ -1573,6 +1592,7 @@ async function loadServicesGrid(page, filters) {
 
   try {
     const data = await api(url);
+    if (!isCurrent()) return;
     const services = Array.isArray(data) ? data : (data.services || []);
     const total = Number(data.total ?? services.length);
     const hasFilters = Boolean(filters.search || filters.category || filters.minPrice || filters.maxPrice || filters.provider);
@@ -1634,6 +1654,7 @@ async function loadServicesGrid(page, filters) {
       }).join('');
     }
   } catch(err) {
+    if (!isCurrent()) return;
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:var(--space-12) var(--space-6)">
               <div style="font-size:3rem;margin-bottom:var(--space-4)">⚡</div>
               <h3 style="margin-bottom:var(--space-3);font-size:var(--text-xl)">Something went wrong</h3>
@@ -1672,9 +1693,11 @@ function serviceCard(s) {
 let filterDebounce = null;
 function debounceFilter() {
   clearTimeout(filterDebounce);
-  filterDebounce = setTimeout(applyServiceFilters, 400);
+  const isCurrent = currentRenderGuard();
+  filterDebounce = setTimeout(() => { if (isCurrent()) applyServiceFilters(); }, 400);
 }
 function applyServiceFilters() {
+  if (location.hash.split('?')[0] !== '#/services') return;
   const search = document.getElementById('srv-search')?.value || '';
   const category = document.getElementById('srv-cat')?.value || '';
   const minPrice = document.getElementById('srv-min')?.value || '';
@@ -1693,6 +1716,7 @@ function applyServiceFilters() {
 // SERVICE DETAIL — PUBLIC
 // ═══════════════════════════════════════════════════════════════
 async function renderServiceDetail(id) {
+  const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
     ${renderPublicNav('services')}
     <div style="max-width:var(--content-wide);margin:0 auto;padding:var(--space-6)">
@@ -1701,11 +1725,13 @@ async function renderServiceDetail(id) {
 
   try {
     const svc = await api(`/services/${id}`);
+    if (!isCurrent()) return;
     let reviews = [];
     if (svc.worker_id) {
       try { const rd = await api(`/users/${svc.worker_id}/reviews`); reviews = Array.isArray(rd) ? rd : (rd.reviews || []); } catch {}
     }
 
+    if (!isCurrent()) return;
     const canOrder = !!state.user;
     const orderBtn = `<button class="btn btn-primary btn-lg" style="width:100%" onclick="handleOrderService(${id})">Order This Service</button>`;
     const deliveryLabel = serviceDeliveryLabel(svc.delivery_time_days);
@@ -1803,6 +1829,7 @@ async function renderServiceDetail(id) {
       </div>
       ${publicFooter()}`;
   } catch(err) {
+    if (!isCurrent()) return;
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('services')}
       <div style="max-width:var(--content-wide);margin:0 auto;padding:var(--space-8)">
@@ -1866,6 +1893,7 @@ async function handleOrderService(id) {
 // JOBS BROWSE — PUBLIC
 // ═══════════════════════════════════════════════════════════════
 async function renderJobs() {
+  const isCurrent = currentRenderGuard();
   const q = getQuery();
   const search = q.get('search') || '';
   const category = q.get('category') || '';
@@ -1931,6 +1959,7 @@ async function renderJobs() {
   // Load categories
   try {
     const cats = await loadCategories();
+    if (!isCurrent()) return;
     const sel = document.getElementById('job-cat');
     if (sel) {
       cats.forEach(c => {
@@ -1947,6 +1976,7 @@ async function renderJobs() {
 }
 
 async function loadJobsList(page, filters) {
+  const isCurrent = currentRenderGuard();
   const list = document.getElementById('jobs-list');
   const pag = document.getElementById('jobs-pagination');
   if (!list) return;
@@ -1960,6 +1990,7 @@ async function loadJobsList(page, filters) {
 
   try {
     const data = await api(url);
+    if (!isCurrent()) return;
     const jobs = Array.isArray(data) ? data : (data.jobs || []);
     const sortedJobs = [...jobs].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     const total = Number(data.total ?? sortedJobs.length);
@@ -2025,6 +2056,7 @@ async function loadJobsList(page, filters) {
       }).join('');
     }
   } catch(err) {
+    if (!isCurrent()) return;
     const summary = document.getElementById('jobs-summary');
     if (summary) {
       summary.hidden = false;
@@ -2074,9 +2106,11 @@ function jobAcceptsApplications(job) {
 let jobFilterDebounce = null;
 function debounceJobFilter() {
   clearTimeout(jobFilterDebounce);
-  jobFilterDebounce = setTimeout(applyJobFilters, 400);
+  const isCurrent = currentRenderGuard();
+  jobFilterDebounce = setTimeout(() => { if (isCurrent()) applyJobFilters(); }, 400);
 }
 function applyJobFilters() {
+  if (location.hash.split('?')[0] !== '#/jobs') return;
   const search = document.getElementById('job-search')?.value || '';
   const category = document.getElementById('job-cat')?.value || '';
   const budgetType = document.getElementById('job-budget-type')?.value || '';
@@ -2093,6 +2127,7 @@ function applyJobFilters() {
 // JOB DETAIL — PUBLIC
 // ═══════════════════════════════════════════════════════════════
 async function renderJobDetail(id) {
+  const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
     ${renderPublicNav('jobs')}
     <div style="max-width:var(--content-wide);margin:0 auto;padding:var(--space-6)">
@@ -2101,6 +2136,7 @@ async function renderJobDetail(id) {
 
   try {
     const job = await api(`/jobs/${id}`);
+    if (!isCurrent()) return;
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = state.user && String(state.user.id) === String(job.employer_id);
     const acceptsApplications = jobAcceptsApplications(job);
@@ -2176,9 +2212,11 @@ async function renderJobDetail(id) {
       ${publicFooter()}`;
     if (shouldAutoApply) {
       clearHashQueryParam('apply');
-      setTimeout(() => handleJobApply(id), 0);
+      const canResume = currentRenderGuard();
+      setTimeout(() => { if (canResume()) handleJobApply(id); }, 0);
     }
   } catch(err) {
+    if (!isCurrent()) return;
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
       <div style="max-width:var(--content-wide);margin:0 auto;padding:var(--space-8)">
@@ -2293,7 +2331,7 @@ function renderAuth(mode) {
             <div></div>
           </div>` : ''}
           <div id="auth-error" class="auth2-error" role="alert" aria-live="polite" hidden></div>
-          <form id="authForm" onsubmit="handleAuth(event,'${mode}','${encodeURIComponent(redirect)}')">
+          <form id="authForm" onsubmit="handleAuth(event,'${mode}')">
             ${!isLogin ? `
             <div class="form-group">
               <label class="label" for="auth-name">Full name</label>
@@ -2322,8 +2360,8 @@ function renderAuth(mode) {
           </form>
           <div class="auth2-toggle">
             ${isLogin
-              ? `New here? <a onclick="navigate('#/register${redirect?'?redirect='+encodeURIComponent(redirect):''}')">Create a free account</a>`
-              : `Already have an account? <a onclick="navigate('#/login${redirect?'?redirect='+encodeURIComponent(redirect):''}')">Sign in</a>`}
+              ? `New here? <a href="#/register${redirect?'?redirect='+esc(encodeURIComponent(redirect)):''}">Create a free account</a>`
+              : `Already have an account? <a href="#/login${redirect?'?redirect='+esc(encodeURIComponent(redirect)):''}">Sign in</a>`}
           </div>
         </div>
       </div>
@@ -2353,7 +2391,7 @@ function renderAuth(mode) {
   }
 }
 
-async function handleAuth(e, mode, encodedRedirect) {
+async function handleAuth(e, mode) {
   e.preventDefault();
   const form = new FormData(e.target);
   const body = Object.fromEntries(form);
@@ -2379,10 +2417,7 @@ async function handleAuth(e, mode, encodedRedirect) {
       trackRecommendedEvent('sign_up', { method: 'email', source: 'auth_form' });
     }
     toast(mode === 'login' ? 'Welcome back!' : 'Account created! Welcome to GoHireHumans.', 'success');
-    const redirect = encodedRedirect ? decodeURIComponent(encodedRedirect) : '';
-    let storedIntent = '';
-    try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
-    navigate((redirect || storedIntent) ? `#/${redirect || storedIntent}` : '#/');
+    navigate(consumeAuthIntent());
   } catch(err) {
     const message = err.message || (mode === 'login' ? 'Invalid email or password.' : 'Could not create account. Please try again.');
     trackEvent(mode === 'login' ? 'login_failed' : 'signup_failed', { source: 'auth_form', error_message: String(message).slice(0, 120) });
@@ -2727,6 +2762,7 @@ async function renderPostJob() {
     title: query.get('draft_title') || templateDraft.title || storedGuidedDraft.title,
     description: query.get('draft_description') || templateDraft.description || storedGuidedDraft.description,
     required_skills: query.get('draft_skills') || templateDraft.required_skills || storedGuidedDraft.required_skills,
+    category: query.get('draft_category') || templateDraft.category || storedGuidedDraft.category,
     budget_amount: query.get('draft_budget') || templateDraft.budget_amount || storedGuidedDraft.budget_amount,
     budget_type: templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed'
   };
@@ -4450,7 +4486,16 @@ function renderGuidelines() {
 // ═══════════════════════════════════════════════════════════════
 // ROUTER
 // ═══════════════════════════════════════════════════════════════
+let renderGeneration = 0;
+function currentRenderGuard() {
+  const generation = renderGeneration;
+  const hash = location.hash;
+  return () => generation === renderGeneration && hash === location.hash;
+}
 function render() {
+  renderGeneration++;
+  clearTimeout(filterDebounce);
+  clearTimeout(jobFilterDebounce);
   const hash = location.hash.slice(1) || '/';
   const path = hash.split('?')[0];
   trackSpaPageView(path);

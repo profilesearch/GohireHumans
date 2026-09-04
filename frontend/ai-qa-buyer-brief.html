@@ -70,7 +70,7 @@
       <textarea id="context" placeholder="Paste source links, company policy, customer brief, retrieved docs, expected behavior, acceptance criteria, or notes..."></textarea>
       <label for="budget">Budget</label>
       <select id="budget"><option>$15–$35 quick review</option><option>$25–$75 detailed review</option><option>$75–$200 multi-step QA</option><option>$200–$500 batch or high-context review</option></select>
-      <div class="btns"><button class="btn" onclick="gen()">Generate brief</button><button class="btn secondary" onclick="copyOut()">Copy brief</button><a class="btn secondary" id="managedRequest" href="mailto:contact@gohirehumans.com?subject=Managed%20AI%20QA%20pilot%20request" onclick="trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_email'})">Email managed request</a></div>
+      <div class="btns"><button class="btn" onclick="gen()">Generate brief</button><button class="btn secondary" onclick="copyOut()">Copy brief</button><a class="btn secondary" id="managedRequest" href="mailto:contact@gohirehumans.com?subject=Managed%20AI%20QA%20pilot%20request" onclick="gen(false);trackGHH('managed_ai_qa_request_click',{source:'buyer_brief_email'})">Email managed request</a></div>
     </section>
     <aside class="card">
       <h2>Good reviewer deliverable</h2>
@@ -97,7 +97,11 @@ function enc(s){return encodeURIComponent(s||'')}
 const serviceAliases={'blog-fact-check':'fact-check','source-check':'citation-check','agent-review':'agent-work-audit'};
 function serviceFromUrl(){const p=new URLSearchParams(location.search);const raw=p.get('service');const svc=serviceAliases[raw]||raw;if(svc&&templates[svc])document.getElementById('type').value=svc}
 function gen(shouldTrack=true){if(shouldTrack)trackGHH('ai_qa_brief_generate',{source:'buyer_brief'});const key=document.getElementById('type').value,t=templates[key],o=document.getElementById('output').value.trim(),c=document.getElementById('context').value.trim(),b=document.getElementById('budget').value;const desc=`${t[1]}\n\nAI output/work to review:\n${o||'[paste AI output/work here]'}\n\nSource/context:\n${c||'[paste source/context here]'}\n\nExpected deliverable:\n- pass / revise / high-risk recommendation\n- issue list with severity\n- source links, notes, or screenshots where relevant\n- corrected wording/data where useful\n- confidence and uncertainty notes\n\nSuggested budget: ${b}\n\nManaged pilot note: no checkout or job should be created until the scope, reviewer, quote, and payment-processing path are approved.`;const text=`Title: ${t[0]}\n\nDescription:\n${desc}\n\nRequired skills: ${t[2]}`;document.getElementById('out').textContent=text;document.getElementById('managedRequest').href=`mailto:contact@gohirehumans.com?subject=${enc('Managed AI QA pilot request: '+t[0])}&body=${enc(text)}`}
-async function copyOut(){trackGHH('ai_qa_brief_copy',{source:'buyer_brief'});const text=document.getElementById('out').textContent;try{await navigator.clipboard.writeText(text);alert('Copied brief')}catch(e){alert('Copy failed; select the brief text manually.')}}
+async function copyOut(){gen(false);trackGHH('ai_qa_brief_copy',{source:'buyer_brief'});const text=document.getElementById('out').textContent;try{await navigator.clipboard.writeText(text);alert('Copied brief')}catch(e){alert('Copy failed; select the brief text manually.')}}
+['type','output','context','budget'].forEach(id=>{
+  const field=document.getElementById(id);
+  ['input','change'].forEach(event=>field.addEventListener(event,()=>gen(false)));
+});
 serviceFromUrl();gen(false);
 </script>
 </body>
