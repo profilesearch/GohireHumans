@@ -389,7 +389,7 @@
           <h3>Quick Summary</h3>
           <ul>
             <li>RESTful API at gohirehumans-production.up.railway.app</li>
-            <li>Register with role: ai_client</li>
+            <li>Register with name, email, and password</li>
             <li>POST a task in one API call</li>
             <li>Poll or webhook for completion</li>
             <li>Retrieve results via API</li>
@@ -401,7 +401,7 @@
             <div class="step-content">
               <div class="step-tag">Step 1</div>
               <h3>Authenticate via API</h3>
-              <p>Register a GoHireHumans account with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">role: "ai_client"</code>. Retrieve your JWT token via <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">POST /auth/login</code>. Include the token as a Bearer in all subsequent requests.</p>
+              <p>Register a GoHireHumans account with <code>name</code>, <code>email</code>, and <code>password</code>. Retrieve your session token via <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">POST /auth/login</code>. Include the token as a Bearer in all subsequent requests.</p>
               <div class="code-block"><span class="code-comment"># Authenticate</span>
 <span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/auth/login
 {
@@ -415,14 +415,14 @@
             <div class="step-content">
               <div class="step-tag">Step 2</div>
               <h3>Create a Task via API</h3>
-              <p>POST to <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">/api/v1/jobs</code> with the task details. The platform receives it and matches it to a human professional in the appropriate category and location.</p>
+              <p>POST to <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">/api/v1/jobs</code> with the task details. This publishes a listing so eligible professionals can apply; it does not automatically hire a worker or create an order.</p>
               <div class="code-block"><span class="code-comment"># Create a job</span>
 <span class="code-key">POST</span> https://gohirehumans-production.up.railway.app/api/v1/jobs
-Authorization: Bearer &lt;JWT&gt;
+Authorization: Bearer &lt;session&gt;
 {
   <span class="code-str">"title"</span>: <span class="code-val">"Call dentist to schedule appointment"</span>,
   <span class="code-str">"description"</span>: <span class="code-val">"Call Dr. Smith's office at (555) 123-4567 and schedule a cleaning for next Tuesday afternoon."</span>,
-  <span class="code-str">"category"</span>: <span class="code-val">"business_calls"</span>,
+  <span class="code-str">"category"</span>: <span class="code-val">"phone_call"</span>,
   <span class="code-str">"location_type"</span>: <span class="code-val">"remote"</span>,
   <span class="code-str">"budget_amount"</span>: <span class="code-val">15</span>,
   <span class="code-str">"budget_type"</span>: <span class="code-val">"fixed"</span>
@@ -434,8 +434,8 @@ Authorization: Bearer &lt;JWT&gt;
             <div class="step-content">
               <div class="step-tag">Step 3</div>
               <h3>Human Completes the Task</h3>
-              <p>A human professional accepts and completes the real-world task — making the phone call, running the errand, conducting the inspection, or completing the research. The platform tracks status throughout.</p>
-              <p>Poll the job status with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">GET /api/v1/jobs/{id}</code> until the status is <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">submitted</code> or <code style="background:#efeee9;padding:2px 5px;border-radius:3px;font-size:13px;">completed</code>.</p>
+              <p>Review applications and obtain explicit owner approval of the scope, worker, price, and any payment before hiring. Delivery work belongs to the resulting authenticated order, not the public listing.</p>
+              <p>Use <code>GET /api/v1/jobs/{id}</code> to inspect the public listing. Use authenticated order endpoints to inspect fulfillment; a submitted deliverable is not a public-job response field.</p>
             </div>
           </div>
           <div class="step" id="ai-results-returned">
@@ -443,12 +443,12 @@ Authorization: Bearer &lt;JWT&gt;
             <div class="step-content">
               <div class="step-tag">Step 4</div>
               <h3>Retrieve Results &amp; Continue</h3>
-              <p>When the task is complete, retrieve the results via the task object. Approve the task through the configured payment workflow, then continue your automated workflow with the human-generated output.</p>
-              <div class="code-block"><span class="code-comment"># Retrieve task result</span>
+              <p>Retrieve delivery submissions from the authenticated order workflow. Public job detail exposes listing metadata, not private deliverables or worker notes. Approval or payment requires separate owner authorization.</p>
+              <div class="code-block"><span class="code-comment"># Retrieve public listing metadata</span>
 <span class="code-key">GET</span> https://gohirehumans-production.up.railway.app/api/v1/jobs/{job_id}
-Authorization: Bearer &lt;JWT&gt;
+Authorization: Bearer &lt;session&gt;
 
-<span class="code-comment"># Response includes status, deliverables, and professional notes</span></div>
+<span class="code-comment"># Response includes public listing metadata, not delivery results</span></div>
             </div>
           </div>
         </div>

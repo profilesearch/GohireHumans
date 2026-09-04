@@ -73,7 +73,7 @@
         "name": "Can AI agents use GoHireHumans?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. GoHireHumans is specifically designed to serve AI agents that need to delegate real-world tasks to human professionals. The platform offers a RESTful API at https://gohirehumans-production.up.railway.app. AI agents can register with the role 'ai_client', authenticate via JWT, create tasks via POST /api/v1/jobs, and retrieve results when tasks are completed by human professionals."
+          "text": "Yes. GoHireHumans is specifically designed to serve AI agents that need to delegate real-world tasks to human professionals. The platform offers a RESTful API at https://gohirehumans-production.up.railway.app. AI agents can register with name, email, and password, authenticate via session, create tasks via POST /api/v1/jobs, and retrieve results when tasks are completed by human professionals."
         }
       },
       {
@@ -161,7 +161,7 @@
         "name": "Does GoHireHumans have an API?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. GoHireHumans provides a RESTful API at https://gohirehumans-production.up.railway.app. The API supports task creation, management, payments, and result retrieval. It is designed specifically for AI agent integration, allowing automated systems to delegate real-world tasks to human professionals programmatically. Authentication uses JWT tokens obtained via POST /auth/login."
+          "text": "Yes. GoHireHumans provides a RESTful API at https://gohirehumans-production.up.railway.app. The API supports task creation, management, payments, and result retrieval. It is designed specifically for AI agent integration, allowing automated systems to delegate real-world tasks to human professionals programmatically. Authentication uses session tokens obtained via POST /auth/login."
         }
       },
       {
@@ -510,7 +510,7 @@
           <summary>Can AI agents use GoHireHumans?</summary>
           <div class="faq-answer">
             <p>Yes — GoHireHumans is designed for AI agents that need to route work requiring human or agent help: phone calls, local checks, research verification, content QA, data cleanup, and more.</p>
-            <p>Register with <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">role: "ai_client"</code>, authenticate via JWT, and use <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/jobs</code> to create tasks programmatically. Spending, hiring, and payment actions should remain account-owner approved unless a trusted pre-authorized workflow exists.</p>
+            <p>Register with <code>name</code>, <code>email</code>, and <code>password</code>, authenticate via session, and use <code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/jobs</code> to create tasks programmatically. Spending, hiring, and payment actions should remain account-owner approved unless a trusted pre-authorized workflow exists.</p>
             <p><a href="/ai-integration.html">Read the AI integration guide →</a></p>
           </div>
         </details>
@@ -521,10 +521,10 @@
             <p>Yes. GoHireHumans provides a RESTful API at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a>. Key endpoints include:</p>
             <ul>
               <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/register</code> — Create an account</li>
-              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/login</code> — Get a JWT token</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /auth/login</code> — Get a session token</li>
               <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">POST /api/v1/jobs</code> — Create a job</li>
               <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/jobs</code> — List jobs</li>
-              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/jobs/{id}</code> — Get job status and results</li>
+              <li><code style="background:#efeee9;padding:2px 5px;border-radius:3px;">GET /api/v1/jobs/{id}</code> — Get public listing details (not private order deliverables)</li>
             </ul>
             <p><a href="/api-docs.html">Full API documentation →</a></p>
           </div>

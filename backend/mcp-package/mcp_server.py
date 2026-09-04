@@ -896,7 +896,7 @@ def handle_get_pricing_info(args):
 All payments are held in milestone-based escrow via Stripe. Funds are released only when the employer approves the completed work.
 
 ## For AI Agents
-AI agents can use the platform with the same fee structure. Register for an API key, authenticate via JWT or API key, and use the REST API or MCP to manage the full hiring lifecycle.
+AI agents can use the platform with the same fee structure. Register for an API key, authenticate via session or API key, and use the REST API or MCP to manage the full hiring lifecycle.
 """
     return [{"type": "text", "text": output}]
 
@@ -935,7 +935,7 @@ AI agents can:
 
 ## Quick Start
 1. Register at https://www.gohirehumans.com
-2. Generate an API key from your dashboard
+2. Use the `token` from POST /auth/login, or create a least-privilege key via authenticated POST /api-keys
 3. Configure the MCP server or use the REST API directly
 4. Search for services, post jobs, and hire humans programmatically
 
@@ -959,9 +959,9 @@ def handle_resource(uri):
 `https://gohirehumans-production.up.railway.app/api/v1`
 
 ## Authentication
-- Register: `POST /auth/register` with `{email, password, name, role}`
-- Login: `POST /auth/login` with `{email, password}` → returns JWT token
-- API Key: `POST /api-keys` (authenticated) → returns `ghh_*` key
+- Register: `POST /auth/register` with `{email, password, name}`; returns a user object with `token` and numeric `id`
+- Login: `POST /auth/login` with `{email, password}` → returns a user object with `token` (an opaque session token)
+- API Key: authenticate with the session token, then `POST /api-keys` with `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key`; listing keys never returns it. Add `write` only when approved job/listing mutations are needed.
 - Use token: `Authorization: Bearer <token>` header on all authenticated requests
 - Use API key: `X-API-Key: ghh_*` header as an alternative to Bearer tokens
 
@@ -969,9 +969,9 @@ def handle_resource(uri):
 
 ### Public (no auth required)
 - `GET /categories` — List all service categories
-- `GET /services` — Search/browse services (params: search, category, min_price, max_price, limit)
+- `GET /services` — Search/browse services (params: search, category, min_price, max_price, page, per_page)
 - `GET /services/{id}` — Get service details
-- `GET /jobs` — Browse open jobs (params: category, budget_type, limit)
+- `GET /jobs` — Browse jobs accepting applications (params: category, budget_type, page, per_page)
 - `GET /jobs/{id}` — Get job details
 - `GET /pricing/info` — Get platform pricing information
 - `GET /platform/stats` — Get platform statistics
@@ -981,10 +981,10 @@ def handle_resource(uri):
 - `PUT /services/{id}` — Update a service
 - `POST /jobs` — Post a job
 - `PUT /jobs/{id}` — Update a job
-- `POST /orders` — Create an order (hire someone)
+- `POST /services/{id}/order` — Order a service; requires explicit owner approval, a stable idempotency key, and payment readiness. Not a discovery/onboarding step.
 - `GET /orders` — List your orders
 - `GET /orders/{id}` — Get order details
-- `PUT /orders/{id}` — Update order status (approve, dispute, review)
+- Order actions are separate routes with participant, lifecycle and authentication guards; there is no generic PUT order-status endpoint. Do not automate funding, approval or release from this quickstart.
 - `GET /profile` — Get your profile
 - `PUT /profile` — Update your profile
 - `GET /notifications` — Get notifications
@@ -1009,17 +1009,13 @@ def handle_resource(uri):
 ## Response Format
 All responses are JSON. Successful responses include the requested data. Error responses include an `error` field with a human-readable message.
 
-## Example: AI Agent Hiring Flow
+## Example: Discovery Before Owner Approval
 ```
-1. POST /api-keys → generate API key (one-time setup)
-2. GET /categories → see available categories
-3. GET /services?category=web_development&search=react → find React developers
-4. GET /services/{id} → review a specific developer's profile
-5. POST /orders → hire the developer (requires auth + payment method)
-6. GET /orders/{id} → monitor progress
-7. PUT /orders/{id} → approve completed work → payment released
-8. PUT /orders/{id} → submit review and rating
+1. GET /categories → read the supported category catalog
+2. GET /services?category=web_development&search=react&page=1&per_page=5
+3. GET /services/{id} → use a numeric ID returned by step 2
 ```
+Lists return services or jobs plus total, page, per_page, and total_pages. Public jobs are marketplace listings, not the authenticated account's orders. Stop before mutation: hiring, funding, release and reviews have separate owner/state/scope prerequisites and require owner approval; posting a job does not create a funded order.
 """
             }]
         }
@@ -1040,10 +1036,11 @@ All responses are JSON. Successful responses include the requested data. Error r
                 "mimeType": "text/markdown",
                 "text": """# GoHireHumans MCP Integration Quickstart
 
-## Step 1: Get Your API Key
-1. Register at https://www.gohirehumans.com
-2. Log in and navigate to Settings → API Keys
-3. Click "Generate API Key" — save it securely
+## Step 1: Choose Authentication
+1. Public discovery needs no account or key.
+2. Register using POST /auth/register with name, email, and password; login via POST /auth/login returns a user object containing an opaque token.
+3. Use that token with GOHIREHUMANS_AUTH_TOKEN, or authenticate POST /api-keys with the session token and body {"name": "agent-reader", "scopes": ["read"]}. Save api_key.key securely; it is shown once. Add write only for approved job/listing mutations.
+4. Download backend/mcp_server.py from https://github.com/profilesearch/GohireHumans and replace the absolute path below. It uses Python standard-library modules; the npm package is not an npx executable.
 
 ## Step 2: Configure MCP
 Add to your MCP client config (e.g., Claude Desktop):
@@ -1053,7 +1050,7 @@ Add to your MCP client config (e.g., Claude Desktop):
   "mcpServers": {
     "gohirehumans": {
       "command": "python",
-      "args": ["path/to/mcp_server.py"],
+      "args": ["/absolute/path/to/mcp_server.py"],
       "env": {
         "GOHIREHUMANS_API_URL": "https://gohirehumans-production.up.railway.app",
         "GOHIREHUMANS_API_KEY": "ghh_your_key_here"
@@ -1081,17 +1078,10 @@ Available MCP tools:
 
 ## Example Workflow
 ```
-Agent: "I need a logo designer for my startup"
-
-1. search_services(query="logo design") → finds 5 designers
-2. get_service_details(service_id=12) → reviews top pick
-3. Generate one stable operation key for this checkout (for example, `service-order-<uuid>`)
-4. hire_worker(service_id=12, requirements="Modern minimalist logo for a fintech startup", idempotency_key="service-order-<same-uuid>") → creates order
-5. On any ambiguous failure, retry step 4 with the exact same idempotency key
-6. get_job_status(order_id=45) → checks progress
-7. release_payment(order_id=45) → approves and pays
-8. submit_review(order_id=45, rating=5, comment="Excellent work") → leaves feedback
+1. search_services(query="logo design")
+2. get_service_details(service_id=<numeric ID returned by search>)
 ```
+This is discovery only. Require owner approval before creating a listing, hiring, funding or releasing payment. Read-scoped keys cannot perform those mutations. A job ID is not an order ID. Preserve one stable idempotency key for each approved order operation and exact retries; do not infer funding or delivery from order creation. Inspect the actual order state and supported session/scope requirements before any later action.
 
 ## Support
 - API Docs: https://www.gohirehumans.com/api-docs.html

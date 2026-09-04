@@ -564,18 +564,19 @@ class NotificationReliabilityTests(unittest.TestCase):
             ).fetchone()[0], 0)
 
     def test_view_after_claim_suppresses_before_provider_io(self):
+        # Keep the cohort and worker on SQLite's outbox enqueue clock.
         with self.api.get_db() as db:
             db.execute(
-                "UPDATE notification_system_state SET application_reminders_enabled_at='2026-08-20 00:00:00' WHERE id=1"
+                "UPDATE notification_system_state SET application_reminders_enabled_at=datetime('now','-5 days') WHERE id=1"
             )
             db.execute(
                 """INSERT INTO applications
                    (id,job_id,worker_id,cover_message,status,created_at)
-                   VALUES(1,1,1,'Claim race cohort','pending','2026-08-24 10:00:00')"""
+                   VALUES(1,1,1,'Claim race cohort','pending',datetime('now','-26 hours'))"""
             )
             db.commit()
             self.assertEqual(self.api.generate_application_reminders(
-                db, now=datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+                db,
             ), 1)
 
             class ViewBeforeSecondWriter:
@@ -608,7 +609,7 @@ class NotificationReliabilityTests(unittest.TestCase):
                 side_effect=lambda *args, **kwargs: provider_calls.append(args) or "provider-id",
             ):
                 result = self.api.flush_transactional_notification_emails(
-                    proxy, now=datetime(2026, 8, 25, 12, 1, tzinfo=timezone.utc),
+                    proxy,
                 )
             self.assertEqual(view_statuses, [200])
             self.assertEqual(provider_calls, [])
@@ -1462,15 +1463,16 @@ class NotificationReliabilityTests(unittest.TestCase):
     def test_periodic_maintenance_generates_and_flushes_due_reminder(self):
         self.api.RESEND_API_KEY = "configured-for-test"
         owner_token = "periodic-owner"
-        lease_now = datetime(2026, 8, 25, 11, 59, tzinfo=timezone.utc)
+        # Use the enqueue wall clock, including when maintenance opens a new DB.
+        lease_now = datetime.now(timezone.utc) - timedelta(minutes=1)
         with self.api.get_db() as db:
             db.execute(
-                "UPDATE notification_system_state SET application_reminders_enabled_at='2026-08-20 00:00:00' WHERE id=1"
+                "UPDATE notification_system_state SET application_reminders_enabled_at=datetime('now','-5 days') WHERE id=1"
             )
             db.execute(
                 """INSERT INTO applications
                    (id,job_id,worker_id,cover_message,status,created_at)
-                   VALUES(9,1,1,'Maintenance test','pending','2026-08-24 10:00:00')"""
+                   VALUES(9,1,1,'Maintenance test','pending',datetime('now','-26 hours'))"""
             )
             self.assertTrue(self.api.acquire_notification_worker_lease(
                 db, owner_token, now=lease_now, lease_seconds=120,
@@ -1481,7 +1483,6 @@ class NotificationReliabilityTests(unittest.TestCase):
             self.api, "send_transactional_notification_email", return_value="email-maintenance-1"
         ):
             result = self.api.run_notification_maintenance_once(
-                now=datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc),
                 owner_token=owner_token, lease_seconds=120, lease_now=lease_now,
             )
         self.assertEqual(result["application_reminders_created"], 1)

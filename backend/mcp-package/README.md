@@ -16,11 +16,15 @@ This MCP server enables AI agents (Claude, ChatGPT, OpenClaw, and any MCP-compli
 
 ## Quick Start
 
-### 1. Get Your API Key
+### 1. Choose Authentication
 
-1. Register at [gohirehumans.com](https://www.gohirehumans.com)
-2. Navigate to Settings → API Keys
-3. Generate a key (starts with `ghh_`)
+Public service/job discovery needs no account or key. For authenticated operations:
+
+1. Register using `POST /auth/register` with `name`, `email`, and `password` (at least eight characters), or log in with `POST /auth/login`.
+2. Both return a user object containing `token`, an opaque session token. Set `GOHIREHUMANS_AUTH_TOKEN` to use it directly.
+3. Alternatively, authenticate `POST /api-keys` with the session token and body `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key` securely and set `GOHIREHUMANS_API_KEY`. Add `write` only for approved job/listing mutations. Never default to payment scopes.
+
+Download `backend/mcp_server.py` from the repository and replace the absolute file path below. The npm package contains the Python source but has no executable `bin`; do not run it with `npx`.
 
 ### 2. Configure Your MCP Client
 
@@ -40,16 +44,15 @@ This MCP server enables AI agents (Claude, ChatGPT, OpenClaw, and any MCP-compli
 }
 ```
 
-### 3. Start Hiring
+### 3. Start With Discovery
 
 ```
 Agent: "I need a logo designer"
 → search_services(query="logo design")
-→ hire_worker(service_id=12, requirements="Modern minimalist logo")
-→ get_job_status(order_id=45)
-→ release_payment(order_id=45)
-→ submit_review(order_id=45, rating=5, comment="Excellent work")
+→ get_service_details(service_id=<numeric ID returned by search>)
 ```
+
+Require owner approval before publishing a job, hiring, funding or releasing payment. A read-scoped key cannot perform those actions. Posting a job does not create an order or fund work. Later steps require the actual returned order ID, valid lifecycle state and supported authentication/scopes. For an approved order operation, preserve one stable idempotency key across exact retries; do not infer payment or completion from creation alone.
 
 ## Available Tools
 
@@ -96,7 +99,7 @@ Agent: "I need a logo designer"
 |----------|----------|-------------|
 | `GOHIREHUMANS_API_URL` | No | API base URL (defaults to production) |
 | `GOHIREHUMANS_API_KEY` | Recommended | Your API key for authenticated operations |
-| `GOHIREHUMANS_AUTH_TOKEN` | Alternative | JWT auth token (alternative to API key) |
+| `GOHIREHUMANS_AUTH_TOKEN` | Alternative | session auth token (alternative to API key) |
 
 ## License
 
