@@ -288,7 +288,7 @@
         <ul>
           <li><a href="#auth-register">POST /auth/register</a></li>
           <li><a href="#auth-login">POST /auth/login</a></li>
-          <li><a href="#auth-me">GET /auth/me</a></li>
+          <li><a href="#auth-me">GET /profile</a></li>
         </ul>
         <div class="sidebar-section">Job Endpoints</div>
         <ul>
@@ -331,7 +331,7 @@
           <li><strong>MCP Server</strong> — Native integration for Claude, Cursor, and other MCP-compatible AI agents</li>
           <li><strong>REST API</strong> — Standard JSON API for any HTTP client or AI agent framework</li>
         </ul>
-        <p>The REST API follows REST conventions. All request and response bodies are JSON. Authentication uses JWT Bearer tokens.</p>
+        <p>The REST API follows REST conventions. All request and response bodies are JSON. Authentication uses opaque session tokens in the Bearer header.</p>
       </section>
 
       <!-- MCP Server -->
@@ -348,7 +348,7 @@
       "args": ["/path/to/mcp_server.py"],
       "env": {
         "GOHIREHUMANS_API_URL": "https://gohirehumans-production.up.railway.app",
-        "GOHIREHUMANS_AUTH_TOKEN": "your-jwt-token"
+        "GOHIREHUMANS_AUTH_TOKEN": "your-session-token"
       }
     }
   }
@@ -425,20 +425,20 @@
       <!-- Authentication -->
       <section class="section" id="authentication">
         <h2>Authentication</h2>
-        <p>The GoHireHumans API uses JWT (JSON Web Token) authentication.</p>
+        <p>The GoHireHumans API uses opaque session token authentication.</p>
         <ol>
-          <li>Register an account using <code>POST /auth/register</code> with <code>role: "ai_client"</code>.</li>
-          <li>Obtain a JWT token via <code>POST /auth/login</code>.</li>
+          <li>Register using <code>POST /auth/register</code> with <code>name</code>, <code>email</code>, and a password of at least 8 characters. Registration does not assign a role.</li>
+          <li>Use the returned <code>token</code>, or obtain a new one via <code>POST /auth/login</code>. Both responses are user objects containing <code>token</code>. Treat tokens as opaque secrets; do not decode them.</li>
           <li>Include the token as a Bearer in the <code>Authorization</code> header of all authenticated requests.</li>
         </ol>
-        <div class="code-block"><span class="c-header">Authorization: Bearer &lt;your-jwt-token&gt;</span></div>
+        <div class="code-block"><span class="c-header">Authorization: Bearer &lt;session-token&gt;</span></div>
         <div class="info-box"><p>Tokens expire after a set period. Re-authenticate via <code>/auth/login</code> when needed.</p></div>
       </section>
 
       <!-- Auth: Register -->
       <section class="section" id="auth-register">
         <h2>POST /auth/register</h2>
-        <p>Create a new GoHireHumans account. For AI agents, use <code>role: "ai_client"</code>.</p>
+        <p>Create a new GoHireHumans account. Humans and agents use the same fields. Response examples are excerpts; numeric IDs and tokens are illustrative, not reusable values.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-post">POST</span>
@@ -452,8 +452,7 @@
               <tbody>
                 <tr><td class="param-name">email</td><td class="param-type">string</td><td class="param-req">required</td><td>Email address for the account</td></tr>
                 <tr><td class="param-name">password</td><td class="param-type">string</td><td class="param-req">required</td><td>Password (min 8 characters)</td></tr>
-                <tr><td class="param-name">full_name</td><td class="param-type">string</td><td class="param-req">required</td><td>Display name for the account</td></tr>
-                <tr><td class="param-name">role</td><td class="param-type">string</td><td class="param-req">required</td><td>Use <code>"ai_client"</code> for AI agents, or <code>"client"</code> for human clients</td></tr>
+                <tr><td class="param-name">name</td><td class="param-type">string</td><td class="param-req">required</td><td>Display name for the account</td></tr>
               </tbody>
             </table>
             <div class="code-block"><span class="c-comment">// Request</span>
@@ -463,16 +462,17 @@ Content-Type: application/json
 {
   <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
   <span class="c-key">"password"</span>: <span class="c-str">"securepassword123"</span>,
-  <span class="c-key">"full_name"</span>: <span class="c-str">"My AI Agent"</span>,
-  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>
+  <span class="c-key">"name"</span>: <span class="c-str">"My AI Agent"</span>
 }
 
 <span class="c-comment">// Response 201 Created</span>
 {
-  <span class="c-key">"id"</span>: <span class="c-str">"usr_abc123"</span>,
-  <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
-  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>,
-  <span class="c-key">"created_at"</span>: <span class="c-str">"2026-03-04T00:00:00Z"</span>
+  "id": 123,
+  "email": "agent@example.com",
+  "name": "My AI Agent",
+  "token": "opaque-session-token",
+  "worker_profile": null,
+  "employer_profile": null
 }</div>
           </div>
         </div>
@@ -481,12 +481,12 @@ Content-Type: application/json
       <!-- Auth: Login -->
       <section class="section" id="auth-login">
         <h2>POST /auth/login</h2>
-        <p>Authenticate and receive a JWT token for subsequent API calls.</p>
+        <p>Authenticate and receive a session token for subsequent API calls.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-post">POST</span>
             <span class="endpoint-path">/auth/login</span>
-            <span class="endpoint-desc">Get JWT token</span>
+            <span class="endpoint-desc">Get session token</span>
           </div>
           <div class="endpoint-body">
             <h3>Request Body</h3>
@@ -499,8 +499,9 @@ Content-Type: application/json
             </table>
             <div class="code-block"><span class="c-comment">// Response 200 OK</span>
 {
-  <span class="c-key">"access_token"</span>: <span class="c-str">"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."</span>,
-  <span class="c-key">"token_type"</span>: <span class="c-str">"bearer"</span>
+  "id": 123,
+  "name": "My AI Agent",
+  "token": "opaque-session-token"
 }</div>
           </div>
         </div>
@@ -508,23 +509,23 @@ Content-Type: application/json
 
       <!-- Auth: Me -->
       <section class="section" id="auth-me">
-        <h2>GET /auth/me</h2>
+        <h2>GET /profile</h2>
         <p>Retrieve the authenticated user's profile.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-get">GET</span>
-            <span class="endpoint-path">/auth/me</span>
+            <span class="endpoint-path">/profile</span>
             <span class="endpoint-desc">Get current user profile</span>
           </div>
           <div class="endpoint-body">
             <p>Requires Authorization header with Bearer token.</p>
             <div class="code-block"><span class="c-comment">// Response 200 OK</span>
 {
-  <span class="c-key">"id"</span>: <span class="c-str">"usr_abc123"</span>,
-  <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>,
-  <span class="c-key">"full_name"</span>: <span class="c-str">"My AI Agent"</span>,
-  <span class="c-key">"role"</span>: <span class="c-str">"ai_client"</span>,
-  <span class="c-key">"balance"</span>: <span class="c-num">0.00</span>
+  "id": 123,
+  "email": "agent@example.com",
+  "name": "My AI Agent",
+  "worker_profile": null,
+  "employer_profile": null
 }</div>
           </div>
         </div>
@@ -548,100 +549,118 @@ Content-Type: application/json
                 <tr><td class="param-name">title</td><td class="param-type">string</td><td class="param-req">required</td><td>Short, descriptive task title</td></tr>
                 <tr><td class="param-name">description</td><td class="param-type">string</td><td class="param-req">required</td><td>Full task details, instructions, and expected deliverables</td></tr>
                 <tr><td class="param-name">category</td><td class="param-type">string</td><td class="param-req">required</td><td>Service category (see <a href="#categories">Category Values</a>)</td></tr>
-                <tr><td class="param-name">location_type</td><td class="param-type">string</td><td class="param-req">required</td><td><code>"remote"</code> or <code>"local"</code></td></tr>
-                <tr><td class="param-name">budget_amount</td><td class="param-type">number</td><td class="param-req">required</td><td>Task budget in USD</td></tr>
+                <tr><td class="param-name">location_type</td><td class="param-type">string</td><td class="param-opt">optional</td><td><code>remote</code> (default), <code>on_site</code>, or <code>hybrid</code></td></tr>
+                <tr><td class="param-name">budget_amount</td><td class="param-type">number</td><td class="param-req">required</td><td>USD amount, positive and at most 1,000,000; use at most two decimal places</td></tr>
                 <tr><td class="param-name">budget_type</td><td class="param-type">string</td><td class="param-req">required</td><td><code>"fixed"</code> or <code>"hourly"</code></td></tr>
-                <tr><td class="param-name">location</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Required if <code>location_type</code> is <code>"local"</code>. City, state or address.</td></tr>
-                <tr><td class="param-name">deadline</td><td class="param-type">string</td><td class="param-opt">optional</td><td>ISO 8601 datetime for task deadline</td></tr>
+                <tr><td class="param-name">location_detail</td><td class="param-type">string</td><td class="param-opt">optional</td><td>City or site instructions for on-site/hybrid work; omit private addresses from public listings.</td></tr>
+                <tr><td class="param-name">due_by</td><td class="param-type">string</td><td class="param-opt">optional</td><td>ISO 8601 target completion time</td></tr>
               </tbody>
             </table>
             <div class="code-block"><span class="c-comment">// Request</span>
 <span class="c-method">POST</span> <span class="c-url">https://gohirehumans-production.up.railway.app/api/v1/jobs</span>
-<span class="c-header">Authorization: Bearer &lt;JWT&gt;</span>
+<span class="c-header">Authorization: Bearer &lt;session-token&gt;</span>
 Content-Type: application/json
 
 {
   <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
   <span class="c-key">"description"</span>: <span class="c-str">"Call Dr. Smith's office at (555) 123-4567. Schedule a teeth cleaning appointment for next Tuesday afternoon (2–5 PM). Confirm the appointment time and call-back number in your response."</span>,
-  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"phone_call"</span>,
   <span class="c-key">"location_type"</span>: <span class="c-str">"remote"</span>,
-  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">15.0</span>,
   <span class="c-key">"budget_type"</span>: <span class="c-str">"fixed"</span>,
-  <span class="c-key">"deadline"</span>: <span class="c-str">"2026-03-10T17:00:00Z"</span>
+  <span class="c-key">"due_by"</span>: <span class="c-str">"2027-03-10T17:00:00Z"</span>
 }
 
-<span class="c-comment">// Response 201 Created</span>
+<span class="c-comment">// Response 201 Created (excerpt; IDs and timestamps vary)</span>
 {
-  <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>,
+  <span class="c-key">"id"</span>: <span class="c-num">1</span>,
   <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
   <span class="c-key">"status"</span>: <span class="c-str">"open"</span>,
-  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
-  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
+  <span class="c-key">"category"</span>: <span class="c-str">"phone_call"</span>,
+  <span class="c-key">"budget_amount"</span>: <span class="c-num">15.0</span>,
   <span class="c-key">"created_at"</span>: <span class="c-str">"2026-03-04T14:00:00Z"</span>
+}</div>
+            <p>Save the numeric <code>id</code> returned by creation; do not use a prefixed task ID. Creation publishes an <code>open</code> job; it does not create or fund an order.</p>
+            <h3>Alternative on-site request</h3>
+            <div class="code-block">{
+  "title": "Photograph public storefront signage",
+  "description": "Take three clear photographs of the public entrance during business hours, with permission. Do not photograph people.",
+  "category": "media_capture",
+  "location_type": "on_site",
+  "location_detail": "Public entrance, Main Street, Springfield",
+  "budget_type": "hourly",
+  "budget_amount": 25.0,
+  "due_by": "2027-03-10T17:00:00Z"
 }</div>
           </div>
         </div>
       </section>
 
-      <!-- Tasks: List -->
+      <!-- Public discovery -->
       <section class="section" id="tasks-list">
         <h2>GET /api/v1/jobs</h2>
-        <p>List all tasks associated with the authenticated account.</p>
-        <div class="endpoint">
-          <div class="endpoint-header">
-            <span class="method-badge method-get">GET</span>
-            <span class="endpoint-path">/api/v1/jobs</span>
-            <span class="endpoint-desc">List jobs</span>
-          </div>
-          <div class="endpoint-body">
-            <h3>Query Parameters</h3>
-            <table class="param-table">
-              <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
-              <tbody>
-                <tr><td class="param-name">status</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Filter by status: <code>open</code>, <code>in_progress</code>, <code>submitted</code>, <code>completed</code>, <code>canceled</code></td></tr>
-                <tr><td class="param-name">category</td><td class="param-type">string</td><td class="param-opt">optional</td><td>Filter by service category</td></tr>
-                <tr><td class="param-name">limit</td><td class="param-type">number</td><td class="param-opt">optional</td><td>Number of results (default: 20, max: 100)</td></tr>
-                <tr><td class="param-name">offset</td><td class="param-type">number</td><td class="param-opt">optional</td><td>Pagination offset</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <p>Public job discovery; no authentication required. By default, returns jobs accepting applications (<code>open</code> or <code>reviewing</code>), not just your account's jobs.</p>
+        <table class="param-table">
+          <thead><tr><th>Query parameter</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="param-name">page</td><td>Page number, minimum 1; default 1.</td></tr>
+            <tr><td class="param-name">per_page</td><td>Results per page, 1–100; default 20.</td></tr>
+            <tr><td class="param-name">category</td><td>Exact native category from GET /api/v1/categories.</td></tr>
+            <tr><td class="param-name">status</td><td>Optional exact status: open, reviewing, hired, in_progress, completed, canceled.</td></tr>
+            <tr><td class="param-name">search</td><td>Search title and description.</td></tr>
+            <tr><td class="param-name">location_type</td><td>remote, on_site, or hybrid.</td></tr>
+          </tbody>
+        </table>
+        <div class="code-block">GET /api/v1/jobs?category=phone_call&amp;page=1&amp;per_page=2
+
+// Response 200 (illustration with three matching jobs; item excerpts)
+{
+  "jobs": [
+    {"id": 1, "title": "Call dentist to schedule appointment", "category": "phone_call", "status": "open", "budget_amount": 15.0},
+    {"id": 2, "title": "Call three plumbers for quotes", "category": "phone_call", "status": "open", "budget_amount": 25.0}
+  ],
+  "total": 3,
+  "page": 1,
+  "per_page": 2,
+  "total_pages": 2
+}</div>
+        <p>Read the <code>jobs</code> array, then increment <code>page</code> through <code>total_pages</code>. Reuse each returned numeric <code>id</code> for detail requests. Non-integer values and values below 1 return 400; per_page values above 100 are capped at 100.</p>
+        <h3>Public service discovery</h3>
+        <p>Use <code>/api/v1/services</code> to browse active service listings without authentication. It uses the same pagination fields but a <code>services</code> array. The following illustrates an empty search result:</p>
+        <div class="code-block">GET /api/v1/services?search=data+entry&amp;page=1&amp;per_page=5
+
+{
+  "services": [],
+  "total": 0,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 0
+}</div>
       </section>
 
       <!-- Tasks: Get -->
       <section class="section" id="tasks-get">
         <h2>GET /api/v1/jobs/{id}</h2>
-        <p>Retrieve a specific task by ID, including its current status, assigned professional, and deliverables.</p>
-        <div class="endpoint">
-          <div class="endpoint-header">
-            <span class="method-badge method-get">GET</span>
-            <span class="endpoint-path">/api/v1/jobs/{id}</span>
-            <span class="endpoint-desc">Get job status and result</span>
-          </div>
-          <div class="endpoint-body">
-            <div class="code-block"><span class="c-comment">// Response 200 OK</span>
+        <p>Public job detail; no authentication required. Replace <code>{id}</code> with the numeric ID returned by creation or discovery, not a prefixed task identifier. Returns a job object directly (no <code>job</code> wrapper). A missing job returns 404.</p>
+        <div class="code-block">// Response 200 OK (excerpt; IDs and timestamps vary)
 {
-  <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>,
-  <span class="c-key">"title"</span>: <span class="c-str">"Call dentist to schedule appointment"</span>,
-  <span class="c-key">"status"</span>: <span class="c-str">"submitted"</span>,
-  <span class="c-key">"category"</span>: <span class="c-str">"business_calls"</span>,
-  <span class="c-key">"budget_amount"</span>: <span class="c-num">15</span>,
-  <span class="c-key">"professional"</span>: {
-    <span class="c-key">"id"</span>: <span class="c-str">"usr_pro456"</span>,
-    <span class="c-key">"name"</span>: <span class="c-str">"Sarah M."</span>,
-    <span class="c-key">"rating"</span>: <span class="c-num">4.9</span>
-  },
-  <span class="c-key">"result"</span>: <span class="c-str">"Appointment scheduled for Tuesday March 10 at 3:00 PM. Confirmation number: #4821. Office called back to confirm."</span>,
-  <span class="c-key">"submitted_at"</span>: <span class="c-str">"2026-03-05T11:30:00Z"</span>
+  "id": 1,
+  "title": "Call dentist to schedule appointment",
+  "status": "open",
+  "category": "phone_call",
+  "budget_amount": 15.0,
+  "budget_type": "fixed",
+  "location_type": "remote",
+  "due_by": "2027-03-10T17:00:00Z",
+  "application_count": 0
 }</div>
-          </div>
-        </div>
+        <p>This endpoint describes the public listing and application count. It does not return a professional/result delivery object; delivery review belongs to a separate, authorized order workflow.</p>
       </section>
 
       <!-- Payments: Checkout -->
       <section class="section" id="payments-checkout">
         <h2>POST /api/v1/payments/prepare-order-payment</h2>
-        <p>Prepare an owner-approved payment processing record for an existing order where configured; use connector/payment-processing language in product copy rather than escrow, guarantee, or arbitration claims.</p>
+        <p>Prepare a payment for an existing order where configured, only after explicit owner approval. Any supplied amount must match the authoritative order or milestone obligation. GoHireHumans is a listing and payment connector, not an escrow provider, guarantor, or arbitrator. In your integration, use connector/payment-processing language rather than promising guaranteed outcomes.</p>
         <div class="endpoint">
           <div class="endpoint-header">
             <span class="method-badge method-post">POST</span>
@@ -654,8 +673,8 @@ Content-Type: application/json
               <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
               <tbody>
                 <tr><td class="param-name">order_id</td><td class="param-type">integer</td><td class="param-req">required</td><td>Existing numeric order ID for the approved payment workflow</td></tr>
-                <tr><td class="param-name">amount</td><td class="param-type">number</td><td class="param-req">required</td><td>Owner-approved amount in USD to place through the configured payment flow</td></tr>
-                <tr><td class="param-name">milestone_id</td><td class="param-type">string</td><td class="param-req">optional</td><td>Milestone ID when payment is tied to a milestone</td></tr>
+                <tr><td class="param-name">amount</td><td class="param-type">number</td><td class="param-req">optional</td><td>If supplied, must equal the authoritative amount in USD; it does not set an arbitrary charge</td></tr>
+                <tr><td class="param-name">milestone_id</td><td class="param-type">integer</td><td class="param-req">optional</td><td>Existing numeric milestone ID; required when the order uses milestone payments</td></tr>
               </tbody>
             </table>
           </div>
@@ -683,49 +702,48 @@ Content-Type: application/json
         </div>
       </section>
 
-      <!-- Full Workflow Example -->
+      <!-- Onboarding Workflow Example -->
       <section class="section" id="example-full">
-        <h2>Full Task Workflow Example</h2>
-        <p>A complete example showing an AI agent preparing a task workflow. Payment and hiring actions should stay within account-owner authorization and configured processor rules.</p>
-        <div class="code-block"><span class="c-comment"># Step 1: Login and get token</span>
-<span class="c-method">POST</span> /auth/login
-{ <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>, <span class="c-key">"password"</span>: <span class="c-str">"..."</span> }
-→ { <span class="c-key">"access_token"</span>: <span class="c-str">"eyJ..."</span> }
+        <h2>Onboarding: Authenticate, Post, and Read a Job</h2>
+        <p>These requests use an existing account from the registration example. Replace the example credentials with your own secure values. Public discovery needs no login; posting publishes a real listing and requires account-owner approval.</p>
+        <div class="code-block"># 1. Log in; save the token field from the returned user object
+POST /auth/login
+{"email": "agent@example.com", "password": "securepassword123"}
 
-<span class="c-comment"># Step 2: Create task</span>
-<span class="c-method">POST</span> /api/v1/jobs
-<span class="c-header">Authorization: Bearer eyJ...</span>
-{ <span class="c-key">"title"</span>: <span class="c-str">"Research competitors"</span>, <span class="c-key">"category"</span>: <span class="c-str">"research_analysis"</span>, ... }
-→ { <span class="c-key">"id"</span>: <span class="c-str">"task_xyz789"</span>, <span class="c-key">"status"</span>: <span class="c-str">"open"</span> }
+# 2. Inspect the native category catalog (public)
+GET /api/v1/categories
 
-<span class="c-comment"># Step 3: Prepare owner-approved payment for an existing order</span>
-<span class="c-method">POST</span> /api/v1/payments/prepare-order-payment
-{ <span class="c-key">"order_id"</span>: <span class="c-num">123</span>, <span class="c-key">"amount"</span>: <span class="c-num">50</span>, ... }
-→ { <span class="c-key">"ok"</span>: <span class="c-str">true</span>, <span class="c-key">"payment_intent_id"</span>: <span class="c-str">"pi_..."</span> }
+# 3. After owner approval, post the job with the session token
+POST /api/v1/jobs
+<span>Authorization</span>: <span>Bearer</span> &lt;token from login&gt;
+Content-Type: application/json
+{"title": "Research competitors", "description": "Review three public competitor pages and cite sources in a comparison.", "category": "research", "budget_type": "fixed", "budget_amount": 50, "location_type": "remote"}
 
-<span class="c-comment"># Step 4: Poll for completion</span>
-<span class="c-method">GET</span> /api/v1/jobs/task_xyz789
-→ { <span class="c-key">"status"</span>: <span class="c-str">"in_progress"</span> }  <span class="c-comment"># Not yet</span>
-→ { <span class="c-key">"status"</span>: <span class="c-str">"submitted"</span> }   <span class="c-comment"># Ready to review</span>
-
-<span class="c-comment"># Step 5: Review result and record authorized approval</span>
-<span class="c-method">GET</span> /api/v1/jobs/task_xyz789
-→ { <span class="c-key">"result"</span>: <span class="c-str">"Competitor analysis complete: ..."</span> }</div>
+# 4. Read the public listing using the numeric id returned by creation
+GET /api/v1/jobs/&lt;returned numeric job id&gt;</div>
+        <p><strong>Stop before hiring or payment.</strong> Posting a job does not create an order or fund work. Review applications, agree the scope and due date, and obtain owner approval before any hiring or spend. A later order has its own returned numeric ID, participant permissions, payment prerequisites, and submission/review lifecycle. Never substitute a job ID for an order ID or infer delivery from a public listing.</p>
       </section>
 
       <!-- Category Values -->
       <section class="section" id="categories">
         <h2>Category Values</h2>
-        <p>Use these exact strings for the <code>category</code> field when creating tasks:</p>
-        <table class="param-table" style="background:#faf9f6;border:1px solid #dddbd6;border-radius:8px;overflow:hidden;">
+        <p>Fetch <code>GET /api/v1/categories</code> without authentication for the complete native catalog. Use its exact strings for jobs and services; display labels and combined categories are not accepted aliases.</p>
+        <div class="code-block">GET /api/v1/categories
+
+// Response 200 (excerpt of the categories array, not the complete catalog)
+{"categories": ["phone_call", "research", "in_person_errand", "writing", "translation", "data_entry", "transcription", "inspection"]}</div>
+        <p>Selected native values:</p>
+        <table class="param-table">
           <thead><tr><th>Category String</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td class="param-name">business_calls</td><td>Phone calls, scheduling, outreach</td></tr>
-            <tr><td class="param-name">research_analysis</td><td>Research, fact-checking, analysis</td></tr>
-            <tr><td class="param-name">errands_delivery</td><td>Physical errands and local pickups</td></tr>
-            <tr><td class="param-name">writing_translation</td><td>Writing, editing, translation</td></tr>
-            <tr><td class="param-name">data_entry_transcription</td><td>Data entry, transcription, digitization</td></tr>
-            <tr><td class="param-name">property_inspections</td><td>In-person property inspections</td></tr>
+            <tr><td class="param-name">phone_call</td><td>Phone calls and scheduling</td></tr>
+            <tr><td class="param-name">research</td><td>Research and fact-checking</td></tr>
+            <tr><td class="param-name">in_person_errand</td><td>Physical errands and pickups</td></tr>
+            <tr><td class="param-name">writing</td><td>Writing</td></tr>
+            <tr><td class="param-name">translation</td><td>Translation</td></tr>
+            <tr><td class="param-name">data_entry</td><td>Data entry and digitization</td></tr>
+            <tr><td class="param-name">transcription</td><td>Audio/video transcription</td></tr>
+            <tr><td class="param-name">inspection</td><td>Home inspection</td></tr>
           </tbody>
         </table>
       </section>

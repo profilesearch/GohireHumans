@@ -882,6 +882,7 @@
         <div class="key-reveal-value">
           <span id="keyRevealText"></span>
           <button onclick="copyKey(document.getElementById('keyRevealText').textContent)">Copy</button>
+          <button onclick="dismissKeyReveal()">Dismiss key</button>
         </div>
       </div>
 
@@ -951,9 +952,9 @@
             <div class="stat-sub">requests</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Total</div>
+            <div class="stat-label" id="statPeriod">Last 31 days</div>
             <div class="stat-value" id="statTotal">—</div>
-            <div class="stat-sub">all time</div>
+            <div class="stat-sub">requests</div>
           </div>
         </div>
         <div class="usage-bar-container" style="margin-top:24px;">
@@ -991,7 +992,7 @@
           <div class="guide-step-num">1</div>
           <h3>Generate an API Key</h3>
         </div>
-        <p>Sign in above and click <strong>"Generate New Key"</strong> to create an API key. Choose a descriptive name and select the scopes your agent needs. Your key will look like <code>ghh_a1b2c3d4e5...</code></p>
+        <p>Sign in above and click <strong>"Generate New Key"</strong> to create an API key. Choose a descriptive name and start with the default <code>read</code> scope. Review the broad-write warning before opting in to <code>write</code>. Your key will look like <code>ghh_a1b2c3d4e5...</code></p>
         <p>Keys are hashed server-side — store yours securely. You can have up to 5 active keys.</p>
       </div>
 
@@ -1001,15 +1002,14 @@
           <div class="guide-step-num">2</div>
           <h3>Search for Services</h3>
         </div>
-        <p>Use the <code>/search</code> endpoint to find human professionals matching your requirements.</p>
+        <p>Use the public <code>/services</code> endpoint to find service listings. No API key is required for discovery; use <code>search</code>, <code>page</code>, and <code>per_page</code>.</p>
         <div class="code-block has-label">
           <span class="code-block-label">cURL</span>
           <button class="copy-btn" onclick="copyCodeBlock(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             Copy
           </button>
-<span class="keyword">curl</span> <span class="flag">-X</span> GET <span class="url">"https://gohirehumans-production.up.railway.app/search?q=data+entry&limit=5"</span> \
-  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span></div>
+<span class="keyword">curl</span> <span class="flag">-X</span> GET <span class="url">"https://gohirehumans-production.up.railway.app/services?search=data+entry&amp;page=1&amp;per_page=5"</span></div>
       </div>
 
       <!-- Step 3 -->
@@ -1018,7 +1018,7 @@
           <div class="guide-step-num">3</div>
           <h3>Create a Job</h3>
         </div>
-        <p>Post a task with requirements, budget, and deadline. The platform will match you with qualified professionals.</p>
+        <p>With explicit owner approval and a write-scoped key, post a task with requirements, budget, and due date. Use an exact category from GET /categories. This POST /jobs request publishes a real listing but does not create or fund an order. The key's write scope is broader than posting: it can also authorize hiring and service-order actions that charge a configured payment method. Use it only for trusted, explicitly owner-approved automation.</p>
         <div class="code-block has-label">
           <span class="code-block-label">cURL</span>
           <button class="copy-btn" onclick="copyCodeBlock(this)">
@@ -1026,13 +1026,14 @@
             Copy
           </button>
 <span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/jobs"</span> \
-  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span> \
+  <span class="flag">-H</span> <span class="string">"X-API-Key: ghh_YOUR_API_KEY"</span> \
   <span class="flag">-H</span> <span class="string">"Content-Type: application/json"</span> \
   <span class="flag">-d</span> <span class="string">'{
     "title": "Transcribe 30-min interview recording",
     "category": "data_entry",
-    "budget": 45.00,
-    "deadline": "2026-03-20T00:00:00Z",
+    "budget_type": "fixed",
+    "budget_amount": 45.00,
+    "due_by": "2027-03-20T00:00:00Z",
     "description": "Accurate transcription with speaker labels"
   }'</span></div>
       </div>
@@ -1041,23 +1042,10 @@
       <div class="guide-step">
         <div class="guide-step-header">
           <div class="guide-step-num">4</div>
-          <h3>Hire &amp; Pay</h3>
+          <h3>Review Before Hiring or Paying</h3>
         </div>
-        <p>Review proposals, choose a provider, and prepare the payment approval step when the work is complete. Require account-owner authorization before hiring or spending.</p>
-        <div class="code-block has-label">
-          <span class="code-block-label">cURL</span>
-          <button class="copy-btn" onclick="copyCodeBlock(this)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Copy
-          </button>
-<span class="comment"># Hire a professional</span>
-<span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/jobs/TASK_ID/hire"</span> \
-  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span> \
-  <span class="flag">-d</span> <span class="string">'{"professional_id": "PRO_ID"}'</span>
-
-<span class="comment"># Prepare payment approval after completion</span>
-<span class="keyword">curl</span> <span class="flag">-X</span> POST <span class="url">"https://gohirehumans-production.up.railway.app/jobs/TASK_ID/release"</span> \
-  <span class="flag">-H</span> <span class="string">"Authorization: Bearer ghh_YOUR_API_KEY"</span></div>
+        <p>Review applications and confirm the scope, price, and due date with the account owner. Stop here until hiring and spend are explicitly approved. A job ID is not an order ID, and the public job object is not a delivery report.</p>
+        <p>Later actions must use the actual returned order ID, the required authentication and scope, and the valid order lifecycle. Do not treat this discovery/posting guide as executable payment instructions.</p>
       </div>
 
       <!-- MCP Server Setup -->
@@ -1066,7 +1054,7 @@
           <div class="guide-step-num">5</div>
           <h3>MCP Server Setup</h3>
         </div>
-        <p>Add GoHireHumans to your Claude Desktop (or any MCP-compatible client) by updating your configuration file:</p>
+        <p>Download <code>backend/mcp_server.py</code> from <a href="https://github.com/profilesearch/GohireHumans">the repository</a>. It uses Python standard-library modules; the npm package has no executable. Replace the absolute script path below and configure your MCP client:</p>
         <div class="code-block has-label">
           <span class="code-block-label">claude_desktop_config.json</span>
           <button class="copy-btn" onclick="copyCodeBlock(this)">
@@ -1076,15 +1064,15 @@
 {
   <span class="json-key">"mcpServers"</span>: {
     <span class="json-key">"gohirehumans"</span>: {
-      <span class="json-key">"command"</span>: <span class="json-val">"npx"</span>,
-      <span class="json-key">"args"</span>: [<span class="json-val">"-y"</span>, <span class="json-val">"@gohirehumans/mcp-server"</span>],
+      <span class="json-key">"command"</span>: <span class="json-val">"python"</span>,
+      <span class="json-key">"args"</span>: [<span class="json-val">"/absolute/path/to/mcp_server.py"</span>],
       <span class="json-key">"env"</span>: {
-        <span class="json-key">"GHH_API_KEY"</span>: <span class="json-val">"ghh_YOUR_API_KEY"</span>
+        <span class="json-key">"GOHIREHUMANS_API_KEY"</span>: <span class="json-val">"ghh_YOUR_API_KEY"</span>
       }
     }
   }
 }</div>
-        <p>Once configured, Claude can search for providers, draft jobs, and manage approved hiring/payment workflows through natural language. Keep scopes narrow and require owner approval before spend, hiring, or payout actions.</p>
+        <p>Start with public discovery or a read-scoped key. Opt in only for trusted, explicitly owner-approved automation: write is broad and can authorize hiring and service-order actions that charge a configured payment method, not just listing changes. Dedicated payments:* scopes are not offered in this form; their absence does not make write nonfinancial. Alternatively set GOHIREHUMANS_AUTH_TOKEN to the opaque token from login instead of an API key. Hiring, payment, and approval still require explicit owner approval and valid order state; they are not part of this quickstart.</p>
         <p>See the full <a href="/api-docs.html">API Documentation</a> for all available endpoints and response schemas.</p>
       </div>
     </div>
@@ -1110,32 +1098,16 @@
       <div class="form-group">
         <label>Scopes</label>
         <div class="scope-grid" id="scopeGrid">
-          <label class="scope-item" data-scope="search">
-            <input type="checkbox" value="search" checked>
-            search
+          <label class="scope-item" data-scope="read">
+            <input type="checkbox" value="read" checked>
+            read
           </label>
-          <label class="scope-item" data-scope="create_job">
-            <input type="checkbox" value="create_job">
-            create_job
-          </label>
-          <label class="scope-item" data-scope="hire">
-            <input type="checkbox" value="hire">
-            hire
-          </label>
-          <label class="scope-item" data-scope="payments">
-            <input type="checkbox" value="payments">
-            payments
-          </label>
-          <label class="scope-item" data-scope="reviews">
-            <input type="checkbox" value="reviews">
-            reviews
-          </label>
-          <label class="scope-item" data-scope="all">
-            <input type="checkbox" value="all">
-            all
+          <label class="scope-item" data-scope="write">
+            <input type="checkbox" value="write">
+            write
           </label>
         </div>
-        <div class="hint">Select the permissions this key should have. Keep scopes narrow; "all" grants full access and should be reserved for trusted, intentional automation.</div>
+        <div class="hint">Start with read. Write is a broad mutation permission, not a listing-only permission: it can authorize hiring and service-order actions that charge a configured payment method. Enable it only for trusted, explicitly owner-approved automation. Dedicated payments:* scopes are not offered in this form; their absence does not make write nonfinancial.</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1247,7 +1219,20 @@
 
   // ── Auth check ──
   function getToken() {
-    return localStorage.getItem('token');
+    // Match the main app's session key; never persist API secrets here.
+    let token = null;
+    try { token = sessionStorage.getItem('ghh_token'); } catch (err) { return null; }
+    try {
+      const legacyToken = localStorage.getItem('ghh_token');
+      if (legacyToken) {
+        if (!token) {
+          sessionStorage.setItem('ghh_token', legacyToken);
+          token = legacyToken;
+        }
+        localStorage.removeItem('ghh_token');
+      }
+    } catch (err) { /* Storage can be disabled; retain a working session. */ }
+    return token;
   }
 
   function isLoggedIn() {
@@ -1301,7 +1286,8 @@
       }
 
       const data = await res.json();
-      currentKeys = Array.isArray(data) ? data : (data.keys || data.api_keys || []);
+      if (!Array.isArray(data.api_keys)) throw new Error('Invalid API key list response');
+      currentKeys = data.api_keys;
       renderKeys();
     } catch (err) {
       loading.style.display = 'none';
@@ -1331,11 +1317,15 @@
 
     currentKeys.forEach(key => {
       const tr = document.createElement('tr');
-      const prefix = key.key_prefix || key.prefix || (key.key ? key.key.substring(0, 12) + '...' : 'ghh_***');
+      const prefix = key.key_prefix || 'ghh_***';
       const created = key.created_at ? new Date(key.created_at).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : '—';
-      const scopes = (key.scopes || []).join(', ') || 'all';
-      const status = key.revoked ? 'revoked' : (key.status || 'active');
-      const isActive = status === 'active';
+      let parsedScopes = key.scopes;
+      if (typeof parsedScopes === 'string') {
+        try { parsedScopes = JSON.parse(parsedScopes); } catch (err) { parsedScopes = []; }
+      }
+      const scopes = Array.isArray(parsedScopes) ? parsedScopes.join(', ') : 'Unknown';
+      const isActive = key.is_active === 1 || key.is_active === true;
+      const status = isActive ? 'active' : 'revoked';
 
       tr.innerHTML = `
         <td><strong>${escapeHtml(key.name || 'Unnamed')}</strong></td>
@@ -1344,9 +1334,10 @@
         <td class="hide-mobile" style="font-size:13px;color:var(--color-text-muted);">${created}</td>
         <td><span class="key-status ${status}">${status}</span></td>
         <td>
-          ${isActive ? `<button class="btn btn-danger btn-sm" onclick="openRevokeModal('${key.id || key._id}', '${escapeHtml(key.name || 'this key')}')">Revoke</button>` : '<span style="font-size:12px;color:var(--color-text-muted);">—</span>'}
+          ${isActive ? '<button class="btn btn-danger btn-sm">Revoke</button>' : '<span style="font-size:12px;color:var(--color-text-muted);">—</span>'}
         </td>
       `;
+      if (isActive) tr.querySelector('button').addEventListener('click', () => openRevokeModal(key.id, key.name || 'this key'));
       tbody.appendChild(tr);
     });
   }
@@ -1389,7 +1380,10 @@
       }
 
       const data = await res.json();
-      const fullKey = data.api_key || data.key;
+      const fullKey = data.api_key && data.api_key.key;
+      if (typeof fullKey !== 'string' || !fullKey) {
+        throw new Error('API key secret was not returned. Check your key list and revoke the new key before retrying.');
+      }
 
       // Show the key
       if (fullKey) {
@@ -1400,7 +1394,7 @@
       closeCreateKeyModal();
       nameInput.value = '';
       document.querySelectorAll('#scopeGrid input').forEach(cb => {
-        cb.checked = cb.value === 'search';
+        cb.checked = cb.value === 'read';
         cb.closest('.scope-item').classList.toggle('checked', cb.checked);
       });
 
@@ -1457,39 +1451,44 @@
 
   // ── Usage ──
   async function loadUsage() {
+    document.getElementById('rateLimitText').textContent = 'Not reported by the API';
+    document.getElementById('rateLimitBar').style.width = '0%';
     try {
-      const res = await fetch(API_BASE + '/api-keys/usage', {
-        headers: authHeaders()
-      });
-
+      const res = await fetch(API_BASE + '/api-keys/usage?days=31', { headers: authHeaders() });
       if (!res.ok) throw new Error('Failed to load usage');
-
       const data = await res.json();
-
-      document.getElementById('statToday').textContent = formatNum(data.today || data.requests_today || 0);
-      document.getElementById('statWeek').textContent = formatNum(data.last_7_days || data.week || 0);
-      document.getElementById('statMonth').textContent = formatNum(data.this_month || data.requests_month || 0);
-      document.getElementById('statTotal').textContent = formatNum(data.total || data.requests_total || 0);
-
-      // Rate limit
-      const used = data.rate_limit_used || 0;
-      const limit = data.rate_limit || 60;
-      document.getElementById('rateLimitText').textContent = used + ' / ' + limit + ' requests per minute';
-      document.getElementById('rateLimitBar').style.width = Math.min((used / limit) * 100, 100) + '%';
-
-      // Daily bars
-      const daily = data.daily || data.daily_breakdown || [];
-      renderDailyBars(daily);
-
-      document.getElementById('usageLastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+      if (!Array.isArray(data.usage) || !data.summary ||
+          !Number.isFinite(data.summary.total_requests) || data.summary.total_requests < 0) {
+        throw new Error('Invalid usage response');
+      }
+      const byDate = new Map();
+      for (const row of data.usage) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(row.date) ||
+            !Number.isFinite(row.request_count) || row.request_count < 0) {
+          throw new Error('Invalid usage row');
+        }
+        byDate.set(row.date, (byDate.get(row.date) || 0) + row.request_count);
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const weekStart = new Date(today + 'T00:00:00Z');
+      weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+      const weekDate = weekStart.toISOString().slice(0, 10);
+      const monthDate = today.slice(0, 7) + '-01';
+      const sumFrom = from => [...byDate].reduce((sum, [date, count]) =>
+        sum + (date >= from && date <= today ? count : 0), 0);
+      document.getElementById('statToday').textContent = formatNum(byDate.get(today) || 0);
+      document.getElementById('statWeek').textContent = formatNum(sumFrom(weekDate));
+      document.getElementById('statMonth').textContent = formatNum(sumFrom(monthDate));
+      document.getElementById('statTotal').textContent = formatNum(data.summary.total_requests);
+      renderDailyBars([...byDate].map(([date, count]) => ({ date, count })));
+      document.getElementById('usageLastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) + ' · daily totals use UTC';
     } catch (err) {
-      // Set defaults
-      document.getElementById('statToday').textContent = '0';
-      document.getElementById('statWeek').textContent = '0';
-      document.getElementById('statMonth').textContent = '0';
-      document.getElementById('statTotal').textContent = '0';
-      document.getElementById('rateLimitText').textContent = '0 / 60 requests per minute';
-      renderDailyBars([]);
+      for (const id of ['statToday', 'statWeek', 'statMonth', 'statTotal']) {
+        document.getElementById(id).textContent = '—';
+      }
+      document.getElementById('dailyBars').innerHTML = '';
+      document.getElementById('dailyLegend').textContent = '';
+      document.getElementById('usageLastUpdated').textContent = 'Usage unavailable';
       console.error('Load usage error:', err);
     }
   }
@@ -1503,7 +1502,7 @@
     const today = new Date();
     for (let i = 13; i >= 0; i--) {
       const d = new Date(today);
-      d.setDate(d.getDate() - i);
+      d.setUTCDate(d.getUTCDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const match = daily.find(item => item.date === dateStr);
       bars.push({
@@ -1520,13 +1519,13 @@
       const el = document.createElement('div');
       el.className = 'daily-bar';
       el.style.height = height + '%';
-      el.innerHTML = '<div class="daily-bar-tooltip">' + bar.date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ': ' + bar.count + ' req</div>';
+      el.innerHTML = '<div class="daily-bar-tooltip">' + bar.date.toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) + ': ' + bar.count + ' req</div>';
       container.appendChild(el);
     });
 
     legend.innerHTML = '';
-    const first = bars[0].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-    const last = bars[bars.length - 1].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    const first = bars[0].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+    const last = bars[bars.length - 1].date.toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
     legend.innerHTML = '<span>' + first + '</span><span>' + last + '</span>';
   }
 
@@ -1562,48 +1561,15 @@
   function initScopeCheckboxes() {
     document.querySelectorAll('#scopeGrid .scope-item').forEach(item => {
       const cb = item.querySelector('input');
-      if (cb.checked) item.classList.add('checked');
-
-      item.addEventListener('click', e => {
-        if (e.target.tagName === 'INPUT') return; // let native handle
-        cb.checked = !cb.checked;
-        item.classList.toggle('checked', cb.checked);
-
-        // "all" logic
-        if (cb.value === 'all' && cb.checked) {
-          document.querySelectorAll('#scopeGrid input').forEach(other => {
-            if (other.value !== 'all') {
-              other.checked = false;
-              other.closest('.scope-item').classList.remove('checked');
-            }
-          });
-        } else if (cb.value !== 'all') {
-          const allCb = document.querySelector('#scopeGrid input[value="all"]');
-          if (allCb) {
-            allCb.checked = false;
-            allCb.closest('.scope-item').classList.remove('checked');
-          }
-        }
-      });
-
-      cb.addEventListener('change', () => {
-        item.classList.toggle('checked', cb.checked);
-        if (cb.value === 'all' && cb.checked) {
-          document.querySelectorAll('#scopeGrid input').forEach(other => {
-            if (other.value !== 'all') {
-              other.checked = false;
-              other.closest('.scope-item').classList.remove('checked');
-            }
-          });
-        } else if (cb.value !== 'all') {
-          const allCb = document.querySelector('#scopeGrid input[value="all"]');
-          if (allCb) {
-            allCb.checked = false;
-            allCb.closest('.scope-item').classList.remove('checked');
-          }
-        }
-      });
+      item.classList.toggle('checked', cb.checked);
+      // Native label/keyboard activation owns the checkbox state.
+      cb.addEventListener('change', () => item.classList.toggle('checked', cb.checked));
     });
+  }
+
+  function dismissKeyReveal() {
+    document.getElementById('keyRevealText').textContent = '';
+    document.getElementById('keyReveal').classList.remove('show');
   }
 
   // ── Copy helpers ──
@@ -1652,6 +1618,7 @@
   window.closeRevokeModal = closeRevokeModal;
   window.confirmRevoke = confirmRevoke;
   window.loadUsage = loadUsage;
+  window.dismissKeyReveal = dismissKeyReveal;
   window.copyKey = copyKey;
   window.copyCodeBlock = copyCodeBlock;
 

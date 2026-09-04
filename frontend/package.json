@@ -3,7 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "test:browser": "playwright test",
+    "test:portal": "node -e \"process.env.PORTAL_NODE_TEST='1';require('./tests/agent-onboarding.spec.js')\"",
+    "test:browser": "npm run test:portal && playwright test",
     "test:browser:headed": "playwright test --headed"
   },
   "devDependencies": {
