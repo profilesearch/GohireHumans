@@ -25,6 +25,21 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+try:
+    import agentmail_transport
+except ModuleNotFoundError as exc:
+    if exc.name != "agentmail_transport":
+        raise
+    # Standalone importlib/CGI entrypoints may not add this file's directory.
+    # Resolve the sibling explicitly instead of mutating the global search path.
+    import importlib.util
+    _agentmail_spec = importlib.util.spec_from_file_location(
+        "agentmail_transport", os.path.join(os.path.dirname(__file__), "agentmail_transport.py"),
+    )
+    if _agentmail_spec is None or _agentmail_spec.loader is None:
+        raise ImportError("AgentMail transport module is unavailable")
+    agentmail_transport = importlib.util.module_from_spec(_agentmail_spec)
+    _agentmail_spec.loader.exec_module(agentmail_transport)
 from collections.abc import Mapping
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -2568,6 +2583,7 @@ def _init_db_connection(db):
         validate_required_payment_setup_schema(db)
         validate_required_refund_schema(db)
         validate_required_notification_schema(db)
+        agentmail_transport.init_schema(db)
         _prevalidate_financial_schema_before_mutation(db)
         db.commit()
     except Exception:
@@ -3681,7 +3697,9 @@ def require_admin_step_up(db, admin_user, body, action):
 
 
 def send_email(to_email, subject, html_body, idempotency_key=None):
-    """Send email via Resend API, using provider dedupe when supplied."""
+    """Legacy Resend entrypoint; AgentMail requires a durable approved outbox."""
+    if os.environ.get("EMAIL_PROVIDER", "resend") != "resend":
+        return False
     if not RESEND_API_KEY:
         return False
     try:
@@ -3801,7 +3819,12 @@ def transactional_email_already_sent(db, user_id, notif_type, link, dedupe_conte
     return row is not None, dedupe_key
 
 
-def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None):
+def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None, outbox_id=None, outbox_claim_token=None):
+    if (os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
+            or agentmail_transport.owns_key(db, provider_idempotency_key)):
+        return agentmail_transport.send(
+            db, outbox_id, outbox_claim_token, provider_idempotency_key, user_id, notif_type,
+        )
     if notif_type not in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
         return False
     user = db.execute(
@@ -4026,6 +4049,42 @@ def flush_transactional_notification_emails(
         [current_sql],
     )
     summary["claimed_recovered"] = int(recovered.rowcount or 0)
+    # Durable attempted-send evidence precedes pre-send suppression. Only pending
+    # rows (including abandoned claims above) are ours to reconcile; a live
+    # sending claim must remain fenced until its sender acknowledges or expires.
+    batch_limit = max(1, min(int(limit), 100))
+    db.create_function("agentmail_key_digest", 1, agentmail_transport.digest,
+                       deterministic=True)
+    attempted = db.execute(
+        """SELECT o.id,o.dedupe_key,l.state,l.provider_id,l.prepared_at
+           FROM transactional_email_outbox o JOIN agentmail_send_ledger l
+             ON l.outbox_id=o.id AND l.key_digest=agentmail_key_digest(o.dedupe_key)
+           WHERE o.state='pending' AND l.state IN ('prepared','unknown','accepted')
+           ORDER BY o.id LIMIT ?""",
+        [batch_limit],
+    ).fetchall()
+    for intent in attempted:
+        accepted = intent["state"] == "accepted"
+        finalized = db.execute(
+            """UPDATE transactional_email_outbox
+               SET state=?,delivery_status=?,
+                   provider_email_id=CASE WHEN ? THEN ? ELSE provider_email_id END,
+                   sent_at=CASE WHEN ? THEN COALESCE(sent_at,?) ELSE sent_at END,
+                   claimed_at=NULL,claim_token=NULL,next_attempt_at=NULL,last_error=?,
+                   email_to='',title='',message='',link=''
+               WHERE id=? AND state='pending' AND dedupe_key=?""",
+            ["sent" if accepted else "failed",
+             "accepted" if accepted else "manual_review",
+             accepted, intent["provider_id"], accepted, intent["prepared_at"],
+             None if accepted else "agentmail_manual_review",
+             intent["id"], intent["dedupe_key"]],
+        )
+        summary["sent" if accepted else "failed"] += int(finalized.rowcount or 0)
+    if len(attempted) == batch_limit:
+        # Leave any remaining attempted rows pending, never suppress them just
+        # because this bounded reconciliation batch is full.
+        db.commit()
+        return summary
     stale = db.execute(
         """UPDATE transactional_email_outbox
            SET state='failed',
@@ -4044,8 +4103,8 @@ def flush_transactional_notification_emails(
     summary["stale_skipped"] = int(stale.rowcount or 0)
     db.commit()
 
-    processed = 0
-    while processed < max(1, min(int(limit), 100)):
+    processed = len(attempted)
+    while processed < batch_limit:
         db.execute("BEGIN IMMEDIATE")
         if owner_token and not _renew_notification_worker_lease_in_transaction(
             db, owner_token, lease_seconds=lease_seconds, now=lease_now,
@@ -4151,6 +4210,7 @@ def flush_transactional_notification_emails(
                 db, row["user_id"], row["notification_type"], row["title"],
                 row["message"], row["link"], row["dedupe_context"],
                 provider_idempotency_key=row["dedupe_key"],
+                outbox_id=row["id"], outbox_claim_token=claim_token,
             )
             if isinstance(send_result, tuple) and len(send_result) == 2:
                 outcome, provider_email_id = send_result
@@ -4167,7 +4227,7 @@ def flush_transactional_notification_emails(
             outcome = "unknown"
             sent = False
             provider_email_id = None
-            error_text = str(exc)[:500]
+            error_text = "notification_transport_error"
 
         # send_transactional_notification_email may have written its audit row;
         # close that short local transaction together with the outbox final state.
@@ -4175,6 +4235,10 @@ def flush_transactional_notification_emails(
         if sent:
             state = "sent"
             next_attempt_at = None
+        elif outcome in {"manual_review", "suppressed"}:
+            state = "failed"
+            next_attempt_at = None
+            error_text = "agentmail_" + outcome
         elif outcome == "unknown":
             state = "pending"
             backoff_minutes = (1, 5, 15, 60)[min(attempts - 1, 3)]
@@ -4213,6 +4277,9 @@ def flush_transactional_notification_emails(
             summary["claim_lost"] += 1
             continue
         if state in {"sent", "failed"}:
+            if outcome in {"manual_review", "suppressed"}:
+                db.execute("UPDATE transactional_email_outbox SET delivery_status=? WHERE id=?",
+                           [outcome, row["id"]])
             db.execute(
                 """UPDATE transactional_email_outbox
                    SET email_to='',title='',message='',link=''
@@ -4231,6 +4298,30 @@ def flush_transactional_notification_emails(
     return summary
 
 
+def email_provider_configuration():
+    """Describe the selected transport without exposing credentials or recipients."""
+    selected = os.environ.get("EMAIL_PROVIDER", "resend")
+    if selected == "agentmail":
+        cfg, _ = agentmail_transport.config()
+        return {
+            "selected_provider": "agentmail",
+            "provider_configured": cfg is not None,
+            "sender_configured": os.environ.get("AGENTMAIL_INBOX_ID") == agentmail_transport.SENDER,
+            "webhook_configured": False,
+        }
+    if selected == "resend":
+        return {
+            "selected_provider": "resend",
+            "provider_configured": bool(RESEND_API_KEY),
+            "sender_configured": bool((EMAIL_FROM or "").strip()),
+            "webhook_configured": bool(RESEND_WEBHOOK_SECRET),
+        }
+    return {
+        "selected_provider": "invalid", "provider_configured": False,
+        "sender_configured": False, "webhook_configured": False,
+    }
+
+
 def notification_worker_enabled():
     configured = os.environ.get(
         "NOTIFICATION_MAINTENANCE_WORKER_ENABLED",
@@ -4240,7 +4331,7 @@ def notification_worker_enabled():
         return configured not in {"0", "false", "no", "off"}
     # Keep unit/development imports side-effect free, while production still
     # generates in-app reminders even during an email-provider outage.
-    return bool(PRODUCTION_MODE or RESEND_API_KEY)
+    return bool(PRODUCTION_MODE or email_provider_configuration()['provider_configured'])
 
 
 def acquire_notification_worker_lease(db, owner_token, now=None, lease_seconds=120):
@@ -4391,11 +4482,10 @@ def notification_delivery_health(db):
     ).fetchone()
     return {
         "configuration": {
-            "provider_configured": bool(RESEND_API_KEY),
-            "sender_configured": bool((EMAIL_FROM or "").strip()),
-            "webhook_configured": bool(RESEND_WEBHOOK_SECRET),
+            **email_provider_configuration(),
             "worker_enabled": notification_worker_enabled(),
         },
+        "agentmail": agentmail_transport.health(db),
         "outbox": {
             "states": states,
             "suppressed": suppressed,
@@ -4439,7 +4529,7 @@ def push_notification(
                 f"{user_id}|{notif_type}|{link or ''}|{dedupe_context}".encode("utf-8")
             ).hexdigest()
             binding = email_reminder_binding or {}
-            db.execute(
+            queued = db.execute(
                 """INSERT OR IGNORE INTO transactional_email_outbox
                    (user_id,notification_id,email_to,notification_type,title,message,
                     link,dedupe_context,dedupe_key,state,next_attempt_at,expires_at,
@@ -4454,6 +4544,8 @@ def push_notification(
                  binding.get("last_application_id"), binding.get("cohort_started_at"),
                  binding.get("stage")],
             )
+            if queued.rowcount == 1:
+                agentmail_transport.enroll(db, queued.lastrowid)
     return cursor.lastrowid
 
 
@@ -4622,7 +4714,7 @@ def run_notification_maintenance_once(
                 "email_delivery": {**empty_delivery, "lease_lost": 1},
                 "lease_lost": 1,
             }
-        if RESEND_API_KEY:
+        if email_provider_configuration()['provider_configured']:
             delivery = flush_transactional_notification_emails(
                 db, now=now, limit=20, owner_token=owner_token,
                 lease_seconds=lease_seconds, lease_now=lease_now,
