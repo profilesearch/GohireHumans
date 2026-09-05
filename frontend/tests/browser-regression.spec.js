@@ -885,6 +885,18 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       if (url.pathname === '/payments/status') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"employer_ready":true}' });
       }
+      if (url.pathname === '/services/1') {
+        return route.fulfill({ json: { id: 1, title: 'Fixture service', pricing_type: 'fixed' } });
+      }
+      if (url.pathname === '/profile') {
+        expect(route.request().headers().authorization).toBe('Bearer employer-token');
+        return route.fulfill({ json: { id: 2, name: 'Employer', is_admin: false } });
+      }
+      if (url.pathname === '/services/1/quote') {
+        return route.fulfill({ json: { service_id: 1, pricing_type: 'fixed', currency: 'usd', hours: null,
+          base_amount_cents: 2500, processing_fee_cents: 75, platform_fee_cents: 25,
+          total_charge_cents: 2600, quote_token: 'a'.repeat(64) } });
+      }
       if (url.pathname === '/services/1/order') {
         orderBodies.push(route.request().postDataJSON());
         if (orderBodies.length === 1) {
@@ -897,6 +909,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => handleOrderService(1));
+    await page.getByRole('button', { name: 'Review quote', exact: true }).click();
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect.poll(() => orderBodies.length).toBe(1);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -905,10 +918,11 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect.poll(() => orderBodies.length).toBe(2);
     expect(orderBodies[0].idempotency_key).toMatch(/^[A-Za-z0-9._:-]{16,128}$/);
     expect(orderBodies[1].idempotency_key).toBe(orderBodies[0].idempotency_key);
-    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('ghh_pending_service_order_1'))).toBeNull();
+    expect(orderBodies[1]).toEqual(orderBodies[0]);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem(serviceCheckoutStorageKey('2', 1)))).toBeNull();
   });
 
-  test('clearing a session removes pending service checkout operation identities', async ({ page }) => {
+  test('clearing a session retains unresolved legacy identity to prevent replacement charges', async ({ page }) => {
     await page.addInitScript(() => {
       sessionStorage.setItem('ghh_token', 'employer-token');
       localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
@@ -929,7 +943,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       };
     });
 
-    expect(cleared).toEqual({ stored: null, cached: false });
+    expect(cleared).toEqual({ stored: 'service-order-12345678-1234-1234-1234-123456789012', cached: false });
   });
 
   test('order deadline UI renders lifecycle evidence and sends a canonical revision deadline', async ({ page }) => {

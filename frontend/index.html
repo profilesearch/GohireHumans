@@ -285,6 +285,7 @@ try {
 } catch(e) {}
 
 function saveSession(token, user) {
+  if (state.token !== token || String(state.user?.id) !== String(user?.id)) serviceCheckout?.close();
   state.user = user;
   state.token = token;
   try {
@@ -297,15 +298,14 @@ function saveSession(token, user) {
 const pendingServiceOrderOperations = new Map();
 
 function clearSession() {
+  serviceCheckout?.close();
   state.user = null;
   state.token = null;
   pendingServiceOrderOperations.clear();
   try {
     sessionStorage.removeItem('ghh_token');
-    for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
-      const key = sessionStorage.key(i);
-      if (key && key.startsWith('ghh_pending_service_order_')) sessionStorage.removeItem(key);
-    }
+    // Pending checkout records (including legacy keys) must survive logout:
+    // removing an unresolved operation could authorize a duplicate order.
     localStorage.removeItem('ghh_token');
     localStorage.removeItem('ghh_user');
   } catch(e) {}
@@ -436,7 +436,11 @@ async function api(path, opts = {}) {
       navigate('#/login');
       throw new Error('Session expired');
     }
-    throw new Error(data?.error || data?.detail || data?.message || `Request failed (${res.status})`);
+    const error = new Error(data?.error || data?.detail || data?.message || `Request failed (${res.status})`);
+    error.status = res.status;
+    if (data && Object.prototype.hasOwnProperty.call(data, 'code')) error.code = data.code;
+    if (data && Object.prototype.hasOwnProperty.call(data, 'retry_safe')) error.retry_safe = data.retry_safe;
+    throw error;
   }
   return data;
 }
@@ -1839,54 +1843,194 @@ async function renderServiceDetail(id) {
   }
 }
 
-function pendingServiceOrderOperationKey(id) {
-  const serviceId = String(id);
-  const storageKey = `ghh_pending_service_order_${serviceId}`;
-  let operationKey = pendingServiceOrderOperations.get(serviceId) || '';
-  try { operationKey = sessionStorage.getItem(storageKey) || operationKey; } catch (_) {}
-  if (!/^service-order-[A-Za-z0-9-]{16,114}$/.test(operationKey)) {
-    operationKey = `service-order-${crypto.randomUUID()}`;
-  }
-  pendingServiceOrderOperations.set(serviceId, operationKey);
-  try { sessionStorage.setItem(storageKey, operationKey); } catch (_) {}
-  return operationKey;
+function serviceCheckoutStorageKey(buyer, id) {
+  return `ghh_service_checkout_v1:${buyer}:${id}`;
 }
 
-function clearPendingServiceOrderOperation(id) {
-  const serviceId = String(id);
-  pendingServiceOrderOperations.delete(serviceId);
-  try { sessionStorage.removeItem(`ghh_pending_service_order_${serviceId}`); } catch (_) {}
+function readPendingServiceCheckout(buyer, id) {
+  if (sessionStorage.getItem(`ghh_pending_service_order_${id}`) !== null || localStorage.getItem(`ghh_pending_service_order_${id}`) !== null) {
+    throw new Error('An unresolved legacy order has no saved confirmation. Contact support before ordering this service again.');
+  }
+  const raw = localStorage.getItem(serviceCheckoutStorageKey(buyer, id));
+  if (!raw) return null;
+  let record;
+  try { record = JSON.parse(raw); } catch (_) {}
+  const q = record?.quote, payload = record?.payload;
+  if (!record || record.version !== 1 || record.buyer_id !== buyer || record.service_id !== String(id)
+      || !['fixed', 'hourly'].includes(q?.pricing_type) || !serviceQuoteValid(q, id, q.pricing_type)
+      || !payload || typeof payload.notes !== 'string' || typeof record.title !== 'string'
+      || !/^service-order-[A-Za-z0-9-]{16,114}$/.test(payload.idempotency_key)
+      || payload.quote_token !== q.quote_token
+      || (q.pricing_type === 'hourly' ? payload.hours !== q.hours : 'hours' in payload)
+      || Object.keys(payload).some(k => !['idempotency_key', 'quote_token', 'hours', 'notes'].includes(k))) {
+    throw new Error('Pending order cannot be safely recovered. Contact support; do not start another order.');
+  }
+  return record;
+}
+
+function persistServiceCheckout(record) {
+  const key = serviceCheckoutStorageKey(record.buyer_id, record.service_id);
+  const existing = readPendingServiceCheckout(record.buyer_id, record.service_id);
+  const raw = JSON.stringify(record);
+  if (existing && JSON.stringify(existing) !== raw) throw new Error('Another pending order exists. Close and reopen checkout to recover it.');
+  localStorage.setItem(key, raw);
+  if (localStorage.getItem(key) !== raw) throw new Error('Unable to save the exact order for safe retry. No order was submitted.');
+}
+
+function clearPendingServiceCheckout(record) {
+  const key = serviceCheckoutStorageKey(record.buyer_id, record.service_id);
+  if (localStorage.getItem(key) !== JSON.stringify(record)) throw new Error('Pending order changed. Contact support before ordering again.');
+  localStorage.removeItem(key);
+}
+
+
+let serviceCheckout = null;
+
+function serviceQuoteValid(q, id, type) {
+  const fields = ['base_amount_cents', 'processing_fee_cents', 'platform_fee_cents', 'total_charge_cents'];
+  return q && String(q.service_id) === String(id) && q.pricing_type === type && q.currency === 'usd'
+    && typeof q.quote_token === 'string' && /^[0-9a-f]{64}$/.test(q.quote_token)
+    && fields.every(k => Number.isSafeInteger(q[k]) && q[k] >= 0)
+    && q.base_amount_cents > 0
+    && q.base_amount_cents + q.processing_fee_cents + q.platform_fee_cents === q.total_charge_cents
+    && (type === 'hourly' ? typeof q.hours === 'string' && /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(q.hours) && Number(q.hours) > 0 : q.hours === null);
+}
+
+function serviceCents(cents) {
+  return `USD $${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
 async function handleOrderService(id) {
   trackEvent('service_order_intent', { service_id: String(id), source: 'service_detail' });
   if (!requireAuth(`services/${id}`)) return;
-  // Check payment status
+  if (serviceCheckout) return;
+  const ctx = { buyer: String(state.user.id), token: state.token, principal: null, busy: false, overlay: null };
+  serviceCheckout = ctx;
+  const snapshotMatches = () => {
+    try {
+      return !ctx.closed && !!state.token && state.token === ctx.token && String(state.user?.id) === ctx.buyer
+        && sessionStorage.getItem('ghh_token') === ctx.token
+        && String(JSON.parse(localStorage.getItem('ghh_user') || 'null')?.id) === ctx.buyer;
+    } catch (_) { return false; }
+  };
+  const accountMatches = () => ctx.principal === ctx.buyer && snapshotMatches();
+  const onStorage = () => { if (!snapshotMatches()) close(); };
+  const close = () => {
+    ctx.closed = true; ctx.overlay?.remove();
+    window.removeEventListener('hashchange', close);
+    window.removeEventListener('storage', onStorage);
+    if (serviceCheckout === ctx) serviceCheckout = null;
+  };
+  ctx.close = close;
+  window.addEventListener('hashchange', close);
+  window.addEventListener('storage', onStorage);
+  const assertAccount = () => { if (!accountMatches()) { close(); throw new Error('Account changed. Reopen checkout with the original buyer account.'); } };
   try {
-    const status = await api('/payments/status');
+    // The per-tab token and shared cached user can belong to different buyers.
+    // Authenticate their binding before even reading a buyer's private retry record.
+    if (!snapshotMatches()) throw new Error('Account changed. Reopen checkout with the original buyer account.');
+    const profile = await api('/profile');
+    if (!snapshotMatches() || !Number.isSafeInteger(profile?.id) || profile.id <= 0 || String(profile.id) !== ctx.buyer) {
+      throw new Error('Checkout identity could not be verified. Sign in with the original buyer account.');
+    }
+    ctx.principal = String(profile.id);
+    assertAccount();
+    let pending = readPendingServiceCheckout(ctx.buyer, id);
+    const status = pending ? { employer_ready: true } : await api('/payments/status');
+    assertAccount();
     if (!status.employer_ready) {
+      close();
       showModal('Payment Required', 'You need to set up a payment method before ordering. Would you like to set up your payment method now?', () => navigate('#/payments'), 'Set Up Payment');
       return;
     }
-    // Persist the operation identity until the API confirms success. Ambiguous
-    // failures and page reloads must retry with the same processor identity.
-    const orderOperationKey = pendingServiceOrderOperationKey(id);
-    showModal('Confirm Order', `<p>Your payment will be processed through the configured checkout flow after you confirm the order.</p><p style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-text-muted)">Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p><div style="display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-4);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#635bff" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span style="font-size:11px;color:var(--color-text-muted)">Payment processing by <strong style="color:#635bff">Stripe</strong> where configured</span></div>`, async () => {
+    const svc = pending ? { title: pending.title, pricing_type: pending.quote.pricing_type } : await api(`/services/${id}`);
+    assertAccount();
+    if (!['fixed', 'hourly'].includes(svc.pricing_type)) throw new Error('Custom-price checkout is unavailable. Contact the provider to agree on a fixed-price service.');
+    const overlay = document.createElement('div');
+    ctx.overlay = overlay;
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('data-service-checkout', '');
+    overlay.innerHTML = `<div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="service-checkout-title" style="max-height:90dvh;overflow:auto;overflow-wrap:anywhere">
+      <h2 class="modal-title" id="service-checkout-title">Review service order</h2>
+      <p>${esc(svc.title)}</p><div class="modal-body"></div>
+      <p data-checkout-error role="status" style="white-space:pre-wrap"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" data-submit>Review quote</button></div></div>`;
+    document.body.appendChild(overlay);
+    const body = overlay.querySelector('.modal-body');
+    const submit = overlay.querySelector('[data-submit]');
+    const error = overlay.querySelector('[data-checkout-error]');
+    overlay.querySelector('[data-close]').onclick = () => { if (!ctx.busy) close(); };
+    let command = pending?.payload, quoted = pending?.quote;
+    const showQuote = () => {
+      body.innerHTML = `<dl style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2)">
+        ${quoted.hours !== null ? `<dt>Hours</dt><dd>${esc(quoted.hours)}</dd>` : ''}
+        <dt>Service amount</dt><dd>${serviceCents(quoted.base_amount_cents)}</dd>
+        <dt>Stripe processing</dt><dd>${serviceCents(quoted.processing_fee_cents)}</dd>
+        <dt>GoHireHumans fee</dt><dd>${serviceCents(quoted.platform_fee_cents)}</dd>
+        <dt><strong>Total charge</strong></dt><dd><strong>${serviceCents(quoted.total_charge_cents)}</strong></dd></dl>
+        <p style="margin-top:var(--space-3)">Order notes</p><p style="white-space:pre-wrap">${esc(command.notes) || 'None'}</p>`;
+      submit.textContent = 'Place Order';
+      submit.onclick = async () => {
+        if (ctx.busy) return;
+        ctx.busy = true; submit.disabled = true;
+        try {
+          assertAccount();
+          pending = pending || { version: 1, buyer_id: ctx.buyer, service_id: String(id), title: svc.title || '', quote: quoted, payload: command };
+          persistServiceCheckout(pending);
+          overlay.querySelector('[data-close]').textContent = 'Close (keep pending order)';
+          const order = await api(`/services/${id}/order`, { method: 'POST', body: command });
+          assertAccount();
+          if (!order.id && !order.order_id) throw new Error('Order response incomplete. Retry this exact order.');
+          clearPendingServiceCheckout(pending);
+          close();
+          trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id) });
+          trackRecommendedEvent('generate_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id) });
+          trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id) });
+          toast('Order placed! Payment follows the configured workflow.', 'success');
+          navigate(`#/orders/${order.id || order.order_id}`);
+        } catch (err) {
+          if (!accountMatches()) { close(); return; }
+          error.textContent = `${err.message} The saved order is retained. Retry only this exact order or contact support.`;
+          if (accountMatches() && err.status === 409 && err.code === 'service_quote_changed' && err.retry_safe === true) {
+            try {
+              clearPendingServiceCheckout(pending);
+              pending = null;
+              submit.remove();
+              overlay.querySelector('[data-close]').textContent = 'Close';
+              error.textContent = 'Quote changed. No order was created. Close this dialog and review a new quote before confirming again.';
+            } catch (storageError) { error.textContent = storageError.message; }
+          }
+        }
+        finally { ctx.busy = false; submit.disabled = false; }
+      };
+    };
+    if (pending) {
+      showQuote();
+      overlay.querySelector('[data-close]').textContent = 'Close (keep pending order)';
+      error.textContent = 'An earlier order may have completed. Only retry this exact saved order; do not place a replacement.';
+      return;
+    }
+    body.innerHTML = `${svc.pricing_type === 'hourly' ? '<label class="label" for="service-hours">Hours</label><input class="input" id="service-hours" inputmode="decimal" type="text" value="1">' : ''}
+      <label class="label" for="service-order-notes">Order notes</label><textarea class="input" id="service-order-notes" rows="4" maxlength="5000" placeholder="Describe the task and expected delivery"></textarea>`;
+    submit.onclick = async () => {
+      if (ctx.busy) return;
+      ctx.busy = true; submit.disabled = true; error.textContent = '';
       try {
-        trackEvent('service_order_submit', { service_id: String(id) });
-        const order = await api(`/services/${id}/order`, { method: 'POST', body: { idempotency_key: orderOperationKey } });
-        clearPendingServiceOrderOperation(id);
-        trackEvent('service_order_completed', { service_id: String(id), order_id: String(order.id || order.order_id || '') });
-        trackRecommendedEvent('generate_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
-        trackConfiguredKeyEvent('close_convert_lead', { lead_type: 'service_order_completed', service_id: String(id), order_id: String(order.id || order.order_id || '') });
-        toast('Order placed! Payment follows the configured workflow.', 'success');
-        navigate(`#/orders/${order.id || order.order_id}`);
-      } catch(err) { toast(err.message, 'error'); }
-    }, 'Place Order', 'Cancel', false, true);
-    return;
-  } catch(err) {
-    toast(err.message, 'error');
-  }
+        assertAccount();
+        const hours = overlay.querySelector('#service-hours')?.value;
+        if (svc.pricing_type === 'hourly' && (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(hours) || Number(hours) <= 0)) throw new Error('Enter positive decimal hours.');
+        const notes = overlay.querySelector('#service-order-notes').value;
+        if (notes.length > 5000) throw new Error('Order notes must be 5000 characters or less.');
+        quoted = await api(`/services/${id}/quote${hours === undefined ? '' : '?hours=' + encodeURIComponent(hours)}`);
+        assertAccount();
+        const canonicalHours = hours === undefined ? null : hours.replace(/(\.[0-9]*?)0+$/, '$1').replace(/\.$/, '');
+        if (!serviceQuoteValid(quoted, id, svc.pricing_type) || quoted.hours !== canonicalHours) throw new Error('Checkout quote unavailable. No order was submitted.');
+        command = { ...(svc.pricing_type === 'hourly' ? { hours: quoted.hours } : {}), notes, quote_token: quoted.quote_token, idempotency_key: `service-order-${crypto.randomUUID()}` };
+        showQuote();
+      } catch (err) { if (!accountMatches()) close(); else error.textContent = err.message; }
+      finally { ctx.busy = false; submit.disabled = false; }
+    };
+  } catch (err) { close(); toast(err.message, 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════════

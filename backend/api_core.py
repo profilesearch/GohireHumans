@@ -3326,6 +3326,54 @@ def validated_idempotency_key(value):
     return value
 
 
+def service_quote(service, employer_id, inputs):
+    """Pure commercial snapshot; token is a version binding, not an authorization."""
+    service = dict(service)
+    pricing_type = service["pricing_type"]
+    hours_text = None
+    if pricing_type == "fixed":
+        base_cents = money_to_cents(service["price"] or 0, "service price")
+    elif pricing_type == "hourly":
+        hours = canonical_decimal_quantity(inputs.get("hours", 1), "hours")
+        hours_text = format(hours, "f")
+        if "." in hours_text:
+            hours_text = hours_text.rstrip("0").rstrip(".")
+        base_cents = rounded_product_cents(service["hourly_rate"] or 0, hours, "service hourly rate")
+    elif pricing_type == "custom":
+        base_cents = money_to_cents(inputs.get("amount", 0), "custom service amount")
+    else:
+        raise ValueError("Unsupported service pricing type")
+    if base_cents <= 0:
+        raise ValueError("Service price must be positive")
+    charge = buyer_charge_breakdown_cents(f"{base_cents // 100}.{base_cents % 100:02d}")
+    result = {
+        "service_id": int(service["id"]), "pricing_type": pricing_type,
+        "currency": "usd", "hours": hours_text,
+        "base_amount_cents": charge["base_cents"],
+        "processing_fee_cents": charge["processing_fee_cents"],
+        "platform_fee_cents": charge["platform_fee_cents"],
+        "total_charge_cents": charge["total_cents"],
+    }
+    terms = {key: service.get(key) for key in (
+        "worker_id", "pricing_type", "price", "hourly_rate", "provider_type",
+        "fulfillment_type", "delivery_time_days", "title", "description",
+        "includes", "category", "api_endpoint", "ai_model", "status",
+    )}
+    payload = {
+        "version": 1, "employer_id": int(employer_id), "service_terms": terms,
+        "quote": result,
+        "quantity_inputs": service_order_creation_request_fingerprint(
+            employer_id, service["id"],
+            {key: inputs[key] for key in ("hours", "amount") if key in inputs},
+        ),
+        "fee_policy": {"version": "component-half-up-v1",
+                       "platform_bps": PLATFORM_FEE_BPS, "processing_bps": PROCESSING_FEE_BPS},
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    result["quote_token"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return result
+
+
 def service_order_creation_request_fingerprint(employer_id, service_id, body):
     """Bind a service-order identity to canonical client-controlled inputs."""
     amount_cents = None
@@ -3354,6 +3402,12 @@ def service_order_creation_request_fingerprint(employer_id, service_id, body):
         "service_id": int(service_id),
         "version": 1,
     }
+    # Omission preserves the exact historical fingerprint and client body.
+    if "quote_token" in body:
+        token = body["quote_token"]
+        if not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{64}", token):
+            raise ValueError("quote_token must be a lowercase SHA256 token")
+        payload["quote_token"] = token
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -7698,6 +7752,74 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
     else:
         attempt_number = 1
 
+    order = db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone()
+    if order and order["type"] == "service_order":
+        worker_sql = """SELECT wp.payout_account_id,wp.payout_method,
+                       u.is_active,u.is_banned,u.is_suspended FROM worker_profiles wp
+                       JOIN users u ON u.id=wp.user_id WHERE u.id=?"""
+        worker = db.execute(worker_sql, [order["worker_id"]]).fetchone()
+        service = db.execute("SELECT * FROM services WHERE id=?", [order["service_id"]]).fetchone()
+        milestone = db.execute("SELECT * FROM milestones WHERE id=?", [milestone_id]).fetchone()
+        if (not worker or not worker["payout_account_id"] or not worker["is_active"]
+                or worker["is_banned"] or worker["is_suspended"]):
+            raise FundingConflict("Worker payout setup is required before service funding.")
+        if (order["service_id"] is not None and
+                (not service or service["status"] != "active"
+                 or service["worker_id"] != order["worker_id"]
+                 or order["status"] != "pending" or order["employer_id"] != employer_id
+                 or not milestone or milestone["order_id"] != order_id
+                 or milestone["status"] != "pending"
+                 or money_to_cents(milestone["amount"]) != charge["base_cents"]
+                 or money_to_cents(order["total_amount"]) != charge["base_cents"])):
+            raise FundingConflict("Service checkout requires an unchanged pending order and milestone.")
+        buyer_sql = "SELECT id,is_active,is_banned,is_suspended FROM users WHERE id=?"
+        buyer = db.execute(buyer_sql, [employer_id]).fetchone()
+        if not buyer or not buyer['is_active'] or buyer['is_banned'] or buyer['is_suspended']:
+            raise FundingConflict("Buyer is not eligible for new service funding.")
+        # Older generic funding records may have no service or milestone.
+        # Preserve their caller-specific lifecycle policy; snapshot every present
+        # binding rather than imposing the one-milestone checkout shape on them.
+        snapshot = tuple(dict(row) if row is not None else None
+                         for row in (order, service, worker, milestone))
+        previous_attempt = dict(latest) if latest else None
+        if db.in_transaction:
+            db.commit()
+        try:
+            if stripe_configured():
+                account = retrieve_live_connect_account(worker["payout_account_id"])
+                ready = (stripe_attr(account, "id") == worker["payout_account_id"]
+                         and stripe_attr(account, "payouts_enabled") is True
+                         and stripe_attr(account, "charges_enabled") is True
+                         and is_live_connect_account_ready(account))
+            else:
+                ready = worker_has_payout_setup(db, order["worker_id"])
+        except Exception:
+            ready = False
+        if not ready:
+            raise FundingConflict("Worker payouts are unavailable; no new service funding is permitted.")
+        db.execute("BEGIN IMMEDIATE")
+        current_rows = (
+            db.execute("SELECT * FROM orders WHERE id=?", [order_id]).fetchone(),
+            db.execute("SELECT * FROM services WHERE id=?", [order["service_id"]]).fetchone(),
+            db.execute(worker_sql, [order["worker_id"]]).fetchone(),
+            db.execute("SELECT * FROM milestones WHERE id=?", [milestone_id]).fetchone(),
+        )
+        current_attempt = db.execute(
+            "SELECT * FROM funding_attempts WHERE operation_key=? ORDER BY attempt_number DESC LIMIT 1",
+            [funding_identity],
+        ).fetchone()
+        current_ep = db.execute(
+            "SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id=?",
+            [employer_id],
+        ).fetchone()
+        if (tuple(dict(row) if row is not None else None for row in current_rows) != snapshot
+                or (dict(current_attempt) if current_attempt else None) != previous_attempt
+                or (dict(current_ep) if current_ep else None) != (dict(ep) if ep else None)
+                or tuple(db.execute(buyer_sql, [employer_id]).fetchone() or ()) != tuple(buyer)
+                or db.execute("SELECT 1 FROM escrow_holds WHERE order_id=? AND milestone_id IS ?", [order_id, milestone_id]).fetchone()):
+            db.rollback()
+            raise FundingConflict("Service funding inputs changed during payout readiness verification; retry the same operation.")
+
     if stripe_configured() and (
             not ep or not ep["stripe_customer_id"] or not ep["payment_method_id"]):
         raise FundingPaymentFailed(
@@ -10630,6 +10752,26 @@ def _handle_routes(db):
     # SERVICE ORDERS (Purchase a service)
     # ═══════════════════════════════════════════════════════════════════════════
 
+    elif re.match(r"^/services/(\d+)/quote$", path) and method == "GET":
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        service_id = int(re.match(r"^/services/(\d+)/quote$", path).group(1))
+        svc = db.execute("SELECT * FROM services WHERE id=? AND status='active'", [service_id]).fetchone()
+        if not svc:
+            return error_response("Service not found or unavailable", 404)
+        if svc['worker_id'] == user['id']:
+            return error_response("You cannot order your own service", 403)
+        # Keep explicit empty quantities invalid rather than silently defaulting.
+        quote_inputs = dict(urllib.parse.parse_qsl(
+            getattr(_request_ctx, 'query_string', ''), keep_blank_values=True
+        ))
+        try:
+            quote = service_quote(svc, user['id'], quote_inputs)
+        except ValueError as exc:
+            return error_response(str(exc), 400)
+        return json_response(quote)
+
     elif re.match(r"^/services/(\d+)/order$", path) and method == "POST":
         user = authenticate(db)
         if not user:
@@ -10718,6 +10860,18 @@ def _handle_routes(db):
             return json_response(result, 200)
 
         svc = db.execute("SELECT * FROM services WHERE id = ? AND status = 'active'", [service_id]).fetchone()
+        if "quote_token" in body:
+            # This branch runs only after the writer-serialized lookup proved no
+            # order exists. Never mark an existing operation safe to replace.
+            try:
+                fresh_token = service_quote(svc, user['id'], body)["quote_token"] if svc else None
+            except ValueError:
+                fresh_token = None
+            if fresh_token != body["quote_token"]:
+                return json_response({
+                    "error": "Service quote changed. Review a fresh quote before ordering.",
+                    "code": "service_quote_changed", "retry_safe": True,
+                }, 409)
         if not svc:
             return error_response("Service not found or unavailable", 404)
         if svc['worker_id'] == user['id']:

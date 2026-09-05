@@ -112,7 +112,7 @@ class V7PaymentLifecycleRedTests(unittest.TestCase):
             calls["transfer"] += 1
             return SimpleNamespace(id="tr_prior_exact", amount=kwargs["amount"], currency=kwargs["currency"], destination=kwargs["destination"], metadata=kwargs["metadata"])
         self.api.stripe.Transfer = SimpleNamespace(create=transfer_create)
-        account = {"payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = lifecycle.ready_connect_account("acct_live_worker")
         with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
             status, first = self.request("POST", "/orders/971/approve", token="tok-employer")
             self.assertEqual(status, 409, first)
@@ -180,7 +180,9 @@ api=importlib.util.module_from_spec(spec); spec.loader.exec_module(api)
 api._db_path_resolved=None; api.STRIPE_AVAILABLE=True; api.STRIPE_SECRET_KEY="configured"
 def create(**kw):
     return SimpleNamespace(id="pi_hard_success", status="succeeded", amount=kw["amount"], amount_received=kw["amount"], currency=kw["currency"], metadata=kw["metadata"])
-api.stripe=SimpleNamespace(PaymentIntent=SimpleNamespace(create=create))
+def retrieve_account(account_id):
+    return dict(id=account_id, payouts_enabled=True, charges_enabled=True, capabilities=dict(transfers="active"))
+api.stripe=SimpleNamespace(PaymentIntent=SimpleNamespace(create=create), Account=SimpleNamespace(retrieve=retrieve_account))
 inspect=api._processor_intent_inspection
 def hard_exit_after_exact_processor_success(*args, **kwargs):
     result=inspect(*args, **kwargs)

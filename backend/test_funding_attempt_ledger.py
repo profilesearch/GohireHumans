@@ -15,6 +15,7 @@ from unittest import mock
 import stripe as stripe_sdk
 
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
+from test_transaction_lifecycle_regressions import ready_connect_account
 
 
 StripeError = stripe_sdk.StripeError
@@ -38,6 +39,7 @@ class FundingAttemptLedgerTests(unittest.TestCase):
         self.retrieve = mock.Mock()
         self.search = mock.Mock()
         self.api.stripe = SimpleNamespace(
+            Account=SimpleNamespace(retrieve=mock.Mock(side_effect=ready_connect_account)),
             PaymentIntent=SimpleNamespace(
                 create=self.create,
                 retrieve=self.retrieve,
@@ -50,7 +52,7 @@ class FundingAttemptLedgerTests(unittest.TestCase):
         with self.api.get_db() as db:
             db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (1,'worker@example.com','Worker','x')")
             db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (2,'employer@example.com','Employer','x')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
             db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_test','pm_test')")
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,status) VALUES (1,1,'QA','QA work','testing','custom','active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-employer',datetime('now','+1 day'))")
