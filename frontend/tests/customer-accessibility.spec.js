@@ -20,7 +20,7 @@ for (const route of pages) {
     expect(errors).toEqual([]);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
     await expect(page.locator('footer')).toHaveCount(1);
-    await expect(page.locator('footer a[href="mailto:contact@gohirehumans.com"]')).toBeVisible();
+    await expect(page.locator('footer a[href="mailto:gohirehumans.operations@agentmail.to"]')).toBeVisible();
     for(const href of ['/#/terms','/#/privacy','/#/guidelines']) await expect(page.locator(`footer a[href="${href}"]`)).toBeVisible();
     if(route==='/api-docs.html'){
       const scrollable=page.locator('pre,table,.code-block');

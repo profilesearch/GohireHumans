@@ -2716,7 +2716,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             'We could not find <code>${safePath}</code>',
             'href="/starter-offers.html">Starter Offers</a>',
             'Find Work</button>',
-            'class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:contact@gohirehumans.com">contact@gohirehumans.com</a>',
+            'class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a>',
         ]
         required_css = [
             '.skip-link {',
@@ -2810,7 +2810,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         syncer = (REPO_ROOT / "scripts/sync_public_shell.py").read_text(encoding="utf-8", errors="ignore")
         for token in ["Marketplace", "Find Work", "For Agents", "Pricing", "Trust", "Post a task", "lp-nav"]:
             self.assertIn(token, nav)
-        for token in ["Find Work", "Starter Offers", "contact@gohirehumans.com", "Direct-payment instructions are not allowed"]:
+        for token in ["Find Work", "Starter Offers", "gohirehumans.operations@agentmail.to", "Direct-payment instructions are not allowed"]:
             self.assertIn(token, footer)
             self.assertIn(token, checker)
         for token in ["marketplace-first", "Find Work", "Use-case pages remain grouped"]:
@@ -2865,7 +2865,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
         required_footer = [
             'class="lp-footer"',
-            'contact@gohirehumans.com',
+            'gohirehumans.operations@agentmail.to',
             'Workers receive the listed payout',
             'Direct-payment instructions are not allowed',
         ]
@@ -3644,7 +3644,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "no Stripe session is created",
             "no job is automatically published",
             "You approve the quote and review plan before any reviewer starts",
-            "mailto:contact@gohirehumans.com",
+            "mailto:gohirehumans.operations@agentmail.to",
             "managed_ai_qa_request_click",
         ]:
             self.assertIn(phrase, request_page)

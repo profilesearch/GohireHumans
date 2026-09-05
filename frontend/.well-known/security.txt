@@ -1,7 +1,7 @@
 # GoHireHumans Security Policy
 # https://securitytxt.org
 
-Contact: mailto:security@gohirehumans.com
+Contact: mailto:gohirehumans.operations@agentmail.to
 Contact: https://gohirehumans.com/trust-safety.html
 Expires: 2027-04-30T00:00:00.000Z
 Preferred-Languages: en
@@ -9,7 +9,7 @@ Canonical: https://www.gohirehumans.com/.well-known/security.txt
 Policy: https://gohirehumans.com/trust-safety.html
 
 # We take security seriously. If you've found a vulnerability,
-# please email security@gohirehumans.com with details.
+# please email gohirehumans.operations@agentmail.to with details.
 # Please give us a reasonable time to respond before public disclosure.
 # We don't run a paid bounty program at this time, but we do
 # acknowledge contributions on our security acknowledgements page.

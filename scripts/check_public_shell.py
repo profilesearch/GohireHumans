@@ -18,7 +18,7 @@ for token in ['Marketplace', 'Find Work', 'For Agents', 'Pricing', 'Trust', 'Pos
     if token not in nav:
         print('Missing nav token', token)
         raise SystemExit(1)
-for token in ['lp-footer', 'Find Work', 'Starter Offers', 'contact@gohirehumans.com', 'Direct-payment instructions are not allowed']:
+for token in ['lp-footer', 'Find Work', 'Starter Offers', 'gohirehumans.operations@agentmail.to', 'Direct-payment instructions are not allowed']:
     if token not in footer:
         print('Missing footer token', token)
         raise SystemExit(1)

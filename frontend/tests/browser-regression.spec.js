@@ -572,7 +572,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       await page.goto(path, { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       await expect(page.locator('.lp-footer').first(), `${path} canonical footer`).toBeVisible();
-      await expect(page.locator('.lp-footer').first(), `${path} footer contact`).toContainText('contact@gohirehumans.com');
+      await expect(page.locator('.lp-footer').first(), `${path} footer contact`).toContainText('gohirehumans.operations@agentmail.to');
       await expect(page.locator('.lp-footer').first(), `${path} no old builder credit`).not.toContainText('Created with Perplexity Computer');
       const button = page.locator('.lp-hamburger').first();
       await expect(button, `${path} hamburger controls menu`).toHaveAttribute('aria-controls', 'mobileMenu');
