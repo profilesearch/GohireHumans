@@ -1085,7 +1085,7 @@ This is discovery only. Require owner approval before creating a listing, hiring
 
 ## Support
 - API Docs: https://www.gohirehumans.com/api-docs.html
-- Email: contact@gohirehumans.com
+- Email: gohirehumans.operations@agentmail.to
 - Website: https://www.gohirehumans.com
 """
             }]

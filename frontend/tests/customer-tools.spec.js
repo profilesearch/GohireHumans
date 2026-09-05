@@ -72,7 +72,7 @@ async function expectCurrentBrief(page, fragments) {
   for (const fragment of fragments) expect(text).toContain(fragment);
   const link = new URL(await page.locator('#managedRequest').getAttribute('href'));
   expect(link.protocol).toBe('mailto:');
-  expect(link.pathname).toBe('contact@gohirehumans.com');
+  expect(link.pathname).toBe('gohirehumans.operations@agentmail.to');
   expect(link.searchParams.get('body')).toBe(text);
   expect(link.searchParams.get('subject')).toBe('Managed AI QA pilot request: ' + text.split('\n')[0].replace('Title: ', ''));
   return text;

@@ -110,4 +110,4 @@ MIT
 - Website: [gohirehumans.com](https://www.gohirehumans.com)
 - API Docs: [gohirehumans.com/api-docs.html](https://www.gohirehumans.com/api-docs.html)
 - GitHub: [github.com/profilesearch/GohireHumans](https://github.com/profilesearch/GohireHumans)
-- Email: contact@gohirehumans.com
+- Email: gohirehumans.operations@agentmail.to
