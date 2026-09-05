@@ -1434,6 +1434,7 @@ class NotificationReliabilityTests(unittest.TestCase):
         self.assertEqual(
             health["configuration"],
             {
+                "selected_provider": "resend",
                 "provider_configured": False,
                 "sender_configured": True,
                 "webhook_configured": False,
