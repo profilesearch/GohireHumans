@@ -8,8 +8,10 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
+from test_transaction_lifecycle_regressions import ready_connect_account
 
 
 class OrderDeadlineReminderTests(unittest.TestCase):
@@ -64,7 +66,7 @@ class OrderDeadlineReminderTests(unittest.TestCase):
                    VALUES(1,1,?,'ghh_dead','deadline-read','[\"read\"]',1,0)""",
                 [hashlib.sha256(self.read_api_key.encode()).hexdigest()],
             )
-            db.execute("INSERT INTO worker_profiles(user_id) VALUES(1)")
+            db.execute("INSERT INTO worker_profiles(user_id,payout_account_id,payout_method) VALUES(1,'acct_live_worker','stripe_connect_active')")
             db.execute(
                 "INSERT INTO employer_profiles(user_id,payment_method_id,stripe_customer_id) VALUES(2,'pm_test','cus_test')"
             )
@@ -258,11 +260,26 @@ class OrderDeadlineReminderTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.api.service_order_deadline(invalid, now=anchor)
 
+    def _configure_ready_checkout_processor(self):
+        self.api.STRIPE_AVAILABLE = True
+        self.api.stripe = SimpleNamespace(
+            Account=SimpleNamespace(retrieve=ready_connect_account),
+            PaymentIntent=SimpleNamespace(create=lambda **kwargs: {
+                "id": "pi_deadline_checkout",
+                "status": "succeeded",
+                "amount": kwargs["amount"],
+                "amount_received": kwargs["amount"],
+                "currency": kwargs["currency"],
+                "metadata": kwargs["metadata"],
+            }),
+        )
+
     def test_fixed_service_checkout_persists_published_delivery_deadline(self):
         previous_production = self.api.PRODUCTION_MODE
         previous_stripe_key = self.api.STRIPE_SECRET_KEY
-        self.api.PRODUCTION_MODE = False
-        self.api.STRIPE_SECRET_KEY = ""
+        self.api.PRODUCTION_MODE = True
+        self.api.STRIPE_SECRET_KEY = "configured-test-key"
+        self._configure_ready_checkout_processor()
         before = datetime.now(timezone.utc).replace(microsecond=0)
         try:
             status, body = self.request(
@@ -293,8 +310,9 @@ class OrderDeadlineReminderTests(unittest.TestCase):
             db.commit()
         previous_production = self.api.PRODUCTION_MODE
         previous_stripe_key = self.api.STRIPE_SECRET_KEY
-        self.api.PRODUCTION_MODE = False
-        self.api.STRIPE_SECRET_KEY = ""
+        self.api.PRODUCTION_MODE = True
+        self.api.STRIPE_SECRET_KEY = "configured-test-key"
+        self._configure_ready_checkout_processor()
         before = datetime.now(timezone.utc).replace(microsecond=0)
         try:
             status, body = self.request(

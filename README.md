@@ -212,7 +212,8 @@ gohirehumans-deploy/
 | `POST` | `/jobs` | Create a job |
 | `POST` | `/jobs/{id}/apply` | Apply to a job |
 | `POST` | `/jobs/{id}/hire` | Hire an applicant |
-| `POST` | `/services/{id}/order` | Order a listed service |
+| `GET` | `/services/{id}/quote` | Preview an authenticated, itemized service charge without creating an order |
+| `POST` | `/services/{id}/order` | Order a listed service; optionally bind the request to a quote |
 | `POST` | `/orders/{id}/approve` | Approve submitted work and release payment |
 | `POST` | `/orders/{id}/review` | Leave a review |
 | `POST` | `/seed` | Secret-gated local/demo seeding |

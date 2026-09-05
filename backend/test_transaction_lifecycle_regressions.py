@@ -16,6 +16,15 @@ from unittest import mock
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
 
 
+def ready_connect_account(account_id):
+    return {
+        "id": account_id,
+        "payouts_enabled": True,
+        "charges_enabled": True,
+        "capabilities": {"transfers": "active"},
+    }
+
+
 def exact_transfer(transfer_id, kwargs):
     return type("TransferResult", (), {
         "id": transfer_id,
@@ -59,6 +68,9 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.payment_create = mock.Mock(side_effect=create_payment_intent)
         self.api.stripe = type("Stripe", (), {
             "PaymentIntent": type("PaymentIntent", (), {"create": self.payment_create}),
+            "Account": type("Account", (), {
+                "retrieve": mock.Mock(side_effect=ready_connect_account),
+            }),
             "error": type("Error", (), {"StripeError": Exception}),
         })
         self._seed()
@@ -74,8 +86,8 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (1,'worker1@example.com','Worker One','x')")
             db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (2,'employer@example.com','Employer','x')")
             db.execute("INSERT INTO users (id,email,name,password_hash) VALUES (3,'worker2@example.com','Worker Two','x')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (3)")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (1,'acct_live_worker','stripe_connect_active')")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) VALUES (3,'acct_live_worker_two','stripe_connect_active')")
             db.execute("INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_test','pm_test')")
             db.execute("INSERT INTO services (id,worker_id,title,description,category,pricing_type,status) VALUES (1,1,'Custom QA','Scoped QA','testing','custom','active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-worker',datetime('now','+1 day'))")
@@ -1501,7 +1513,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             return exact_transfer(f"tr_release_{len(transfer_calls)}", kwargs)
 
         transfer_api = type("Transfer", (), {"create": staticmethod(transfer_create)})
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(
             self.api.stripe, "Transfer", transfer_api, create=True
         ), mock.patch.object(
@@ -1553,7 +1565,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             ))
         })
         modern_stripe = type("ModernStripe", (), {"Transfer": transfer})()
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(self.api, "stripe", modern_stripe), mock.patch.object(
             self.api, "STRIPE_ERROR", ModernStripeError
         ), mock.patch.object(
@@ -1606,7 +1618,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         transfer_api = type("Transfer", (), {
             "create": staticmethod(lambda **kwargs: exact_transfer("tr_ignored_cas", kwargs))
         })
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(
             self.api.stripe, "Transfer", transfer_api, create=True
         ), mock.patch.object(
@@ -1666,7 +1678,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.api.stripe.Transfer = type(
             "Transfer", (), {"create": mock.Mock(side_effect=create_transfer)}
         )
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
             for current_id, next_id in ((643, 644), (644, 645)):
                 status, submitted = self.request(
@@ -1741,7 +1753,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         transfer_api = type("Transfer", (), {
             "create": staticmethod(lambda **kwargs: exact_transfer("tr_approve_drift", kwargs))
         })
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(
             self.api, "_commit_funding_attempt", side_effect=commit_then_drift
         ), mock.patch.object(
@@ -1800,7 +1812,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.api.stripe.Transfer = type("Transfer", (), {
             "create": mock.Mock(side_effect=lambda **kwargs: exact_transfer("tr_mock_release", kwargs))
         })
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         real_audit = self.api.audit
 
         def crash_after_next_funding(*args, **kwargs):
@@ -1990,7 +2002,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.api.stripe.Transfer = type("Transfer", (), {
             "create": mock.Mock(side_effect=lambda **kwargs: exact_transfer("tr_mock_release", kwargs))
         })
-        account = {"details_submitted": True, "payouts_enabled": True, "charges_enabled": True, "capabilities": {"transfers": "active"}}
+        account = {"details_submitted": True, **ready_connect_account("acct_live_worker")}
         with mock.patch.object(self.api, "retrieve_live_connect_account", return_value=account):
             status, result = self.request("POST", "/orders/590/approve", token="tok-employer")
         self.assertEqual(status, 200, result)
