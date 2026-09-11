@@ -15,7 +15,7 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 SENDER = 'gohirehumans.operations@agentmail.to'
 SUPPORTED_TYPES = frozenset({'new_application'})
@@ -64,7 +64,16 @@ def validate_schema(db):
         raise RuntimeError('agentmail_schema_invalid')
 
 
-def config():
+def _expiry_time():
+    value = os.environ.get('AGENTMAIL_EXPIRES_AT', '')
+    try:
+        end = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+        return end if end.strftime('%Y-%m-%dT%H:%M:%SZ') == value else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def config() -> tuple[dict | None, str]:
     env = os.environ
     if env.get('EMAIL_PROVIDER', 'resend') != 'agentmail':
         return None, 'provider_not_selected'
@@ -94,6 +103,16 @@ def config():
             raise ValueError()
     except (TypeError, ValueError, OverflowError):
         return None, 'activation_time_invalid'
+    end = _expiry_time()
+    if end is None:
+        return None, 'expiry_time_invalid'
+    if not timedelta(0) < end - start <= timedelta(days=7):
+        return None, 'expiry_window_invalid'
+    now = datetime.now(timezone.utc)
+    if now < start:
+        return None, 'activation_not_started'
+    if now >= end:
+        return None, 'expired'
     cap = env.get('AGENTMAIL_DAILY_SEND_CAP', '1')
     if not re.fullmatch(r'[1-9][0-9]{0,2}', cap) or not 1 <= int(cap) <= 100:
         return None, 'daily_cap_invalid'
@@ -101,7 +120,7 @@ def config():
     if not re.fullmatch(r'[1-9][0-9]{0,2}', total_cap) or not 1 <= int(total_cap) <= 100:
         return None, 'total_cap_invalid'
     return dict(key=key, recipients=set(recipients), types=types, highwater=values[0],
-                notification_highwater=values[1], start=start, cap=int(cap),
+                notification_highwater=values[1], start=start, end=end, cap=int(cap),
                 total_cap=int(total_cap)), 'ready'
 
 
@@ -141,6 +160,8 @@ def enroll(db, outbox_id):
     row = db.execute('SELECT * FROM transactional_email_outbox WHERE id=?', [outbox_id]).fetchone()
     binding = _binding(db, row, cfg) if row is not None else None
     if binding:
+        if not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
+            return
         db.execute("INSERT OR IGNORE INTO agentmail_send_ledger(key_digest,outbox_id,fingerprint,state) VALUES(?,?,?,'approved')",
                    [digest(row['dedupe_key']), row['id'], binding[0]])
 
@@ -197,6 +218,10 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
             headers={'Authorization': 'Bearer ' + cfg['key'], 'Content-Type': 'application/json',
                      'Idempotency-Key': 'ghh-agentmail-' + digest(key)}, method='POST')
         opener = urllib.request.build_opener(_NoRedirect())
+        # Preparation/opener construction may cross the rollout boundary.
+        # Keep the committed intent (and consumed budget); never retry it.
+        if not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
+            return 'manual_review', None
         response = opener.open(request, timeout=10)
         try:
             body = response.read(16385)
@@ -230,6 +255,7 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
 
 def health(db):
     cfg, reason = config()
+    end = _expiry_time()
     counts = dict(approved=0, prepared=0, accepted=0, unknown=0)
     try:
         validate_schema(db)
@@ -247,6 +273,7 @@ def health(db):
     if reason == 'ready' and used >= cfg['cap']:
         reason = 'daily_cap_reached'
     return dict(counts, ready=reason == 'ready', blocked_reason=reason,
+                expires_at=end.strftime('%Y-%m-%dT%H:%M:%SZ') if end else None,
                 attempts_today=used, daily_cap=cfg['cap'] if cfg else None,
                 attempts_total=total, total_cap=cfg['total_cap'] if cfg else None,
                 delivery_tracking_enabled=False,
