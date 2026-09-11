@@ -18,13 +18,14 @@ class AgentMailIntegrationTests(unittest.TestCase):
             'AGENTMAIL_RECIPIENT_ALLOWLIST': '', 'AGENTMAIL_NOTIFICATION_TYPES': '',
             'AGENTMAIL_OUTBOX_HIGHWATER': '', 'AGENTMAIL_NOTIFICATION_HIGHWATER': '',
             'AGENTMAIL_ACTIVATED_AT': '', 'AGENTMAIL_DAILY_SEND_CAP': '1',
-            'AGENTMAIL_TOTAL_SEND_CAP': '1',
+            'AGENTMAIL_TOTAL_SEND_CAP': '1', 'AGENTMAIL_EXPIRES_AT': '',
         })
         self.env.start()
         self.api = load_api_core()
-        self.api._db_path_resolved = None
+        self.api._db_path_resolved = self.tmp.name + '/mail.db'
         self.api.init_db()
         self.db = self.api.get_db()
+        self.assertEqual(self.db.execute('PRAGMA database_list').fetchone()[2], self.tmp.name + '/mail.db')
         self.db.execute("INSERT INTO users(id,email,name,password_hash) VALUES(1,'canary@example.com','Private name','x')")
         self.db.commit()
         self.api.RESEND_API_KEY = 'offline-resend-key'
@@ -35,6 +36,7 @@ class AgentMailIntegrationTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def activate(self):
+        start = datetime.now(timezone.utc) - timedelta(seconds=1)
         os.environ.update({
             'AGENTMAIL_SEND_ENABLED': 'true',
             'AGENTMAIL_INBOX_ID': 'gohirehumans.operations@agentmail.to',
@@ -42,7 +44,8 @@ class AgentMailIntegrationTests(unittest.TestCase):
             'AGENTMAIL_NOTIFICATION_TYPES': 'new_application',
             'AGENTMAIL_OUTBOX_HIGHWATER': str(self.db.execute('SELECT COALESCE(MAX(id),0) FROM transactional_email_outbox').fetchone()[0]),
             'AGENTMAIL_NOTIFICATION_HIGHWATER': str(self.db.execute('SELECT COALESCE(MAX(id),0) FROM notifications').fetchone()[0]),
-            'AGENTMAIL_ACTIVATED_AT': (datetime.now(timezone.utc) - timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'AGENTMAIL_ACTIVATED_AT': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'AGENTMAIL_EXPIRES_AT': (start + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ'),
         })
 
     def enqueue(self, context='one', notif_type='new_application'):
@@ -206,6 +209,31 @@ class AgentMailIntegrationTests(unittest.TestCase):
             self.assertEqual(tuple(after), ('failed', 'suppressed', None))
         post.assert_not_called()
         resend.assert_not_called()
+
+    def _recover_after_sender_expiry(self, accepted):
+        row = self._crash_before_outbox_ack(accepted=accepted)
+        ledger = dict(self.db.execute('SELECT * FROM agentmail_send_ledger').fetchone())
+        deadline = datetime.strptime(os.environ['AGENTMAIL_EXPIRES_AT'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+        class ExpiredClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return deadline if tz else deadline.replace(tzinfo=None)
+        with mock.patch.object(self.api.agentmail_transport, 'datetime', ExpiredClock):
+            health = self.api.notification_delivery_health(self.db)
+            self.assertEqual(health['agentmail']['blocked_reason'], 'expired')
+            self.assertEqual(health['agentmail']['expires_at'], os.environ['AGENTMAIL_EXPIRES_AT'])
+            self.assertFalse(health['configuration']['provider_configured'])
+            after = self._recover_crashed_outbox(row)
+        self.assertEqual(dict(self.db.execute('SELECT * FROM agentmail_send_ledger').fetchone()), ledger)
+        self.assertEqual(after['delivery_status'], 'accepted' if accepted else 'manual_review')
+        if accepted:
+            self.assertEqual(after['provider_email_id'], ledger['provider_id'])
+
+    def test_sender_expiry_preserves_accepted_recovery_without_redelivery(self):
+        self._recover_after_sender_expiry(accepted=True)
+
+    def test_sender_expiry_preserves_prepared_recovery_without_redelivery(self):
+        self._recover_after_sender_expiry(accepted=False)
 
     def test_selected_provider_health_and_worker_readiness_are_truthful(self):
         self.api.RESEND_API_KEY = ''

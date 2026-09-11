@@ -73,6 +73,7 @@ class AgentMailTests(unittest.TestCase):
             'AGENTMAIL_NOTIFICATION_TYPES': 'new_application',
             'AGENTMAIL_OUTBOX_HIGHWATER': '0', 'AGENTMAIL_NOTIFICATION_HIGHWATER': '0',
             'AGENTMAIL_ACTIVATED_AT': '2026-09-05T11:59:59Z',
+            'AGENTMAIL_EXPIRES_AT': '2026-09-12T11:59:59Z',
         })
         os.environ.update(overrides)
 
@@ -107,6 +108,154 @@ class AgentMailTests(unittest.TestCase):
 
     def ledger(self, i=1):
         return self.db.execute('SELECT * FROM agentmail_send_ledger WHERE outbox_id=?', (i,)).fetchone()
+
+    def test_sender_window_configuration_and_enrollment(self):
+        self.activate()
+        start = datetime(2026, 9, 5, 11, 59, 59, tzinfo=timezone.utc)
+        cases = [
+            (None, start, 'expiry_time_invalid'),
+            ('', start, 'expiry_time_invalid'),
+            ('garbage', start, 'expiry_time_invalid'),
+            ('2026-09-12T11:59:59+00:00', start, 'expiry_time_invalid'),
+            ('2026-09-12T11:59:59.000Z', start, 'expiry_time_invalid'),
+            ('2026-9-12T11:59:59Z', start, 'expiry_time_invalid'),
+            ('2026-09-12T11:59:59z', start, 'expiry_time_invalid'),
+            ('2026-09-12T11:59:59Z\n', start, 'expiry_time_invalid'),
+            ('2026-02-30T11:59:59Z', start, 'expiry_time_invalid'),
+            ('2026-09-05T11:59:58Z', start, 'expiry_window_invalid'),
+            ('2026-09-05T11:59:59Z', start, 'expiry_window_invalid'),
+            ('2026-09-12T12:00:00Z', start, 'expiry_window_invalid'),
+            ('2026-09-12T11:59:59Z', start - timedelta(microseconds=1), 'activation_not_started'),
+            ('2026-09-12T11:59:59Z', start, 'ready'),
+            ('2026-09-12T11:59:59Z', start + timedelta(days=7, microseconds=-1), 'ready'),
+            ('2026-09-12T11:59:59Z', start + timedelta(days=7), 'expired'),
+            ('2026-09-12T11:59:59Z', start + timedelta(days=7, microseconds=1), 'expired'),
+        ]
+        for index, (expiry, now, reason) in enumerate(cases):
+            with self.subTest(expiry=expiry, now=now):
+                Clock.current = now
+                if expiry is None:
+                    os.environ.pop('AGENTMAIL_EXPIRES_AT', None)
+                else:
+                    os.environ['AGENTMAIL_EXPIRES_AT'] = expiry
+                cfg, actual = transport.config()
+                self.assertEqual(actual, reason)
+                self.assertEqual(cfg is not None, reason == 'ready')
+                i = self.enqueue('window-' + str(index))
+                self.assertEqual(self.ledger(i) is not None, reason == 'ready')
+                if reason != 'ready':
+                    self.assertEqual(self.send(i), ('suppressed', None))
+        self.network_mock.assert_not_called()
+
+    def test_expiry_crossing_during_binding_prevents_enrollment(self):
+        self.activate(AGENTMAIL_EXPIRES_AT='2026-09-05T12:00:01Z')
+        real_binding = transport._binding
+
+        def binding_at_expiry(db, row, cfg):
+            self.assertLess(Clock.current, cfg['end'])
+            Clock.current = cfg['end']
+            binding = real_binding(db, row, cfg)
+            self.assertIsNotNone(binding)
+            return binding
+
+        with mock.patch.object(transport, '_binding', side_effect=binding_at_expiry) as binding:
+            i = self.enqueue()
+        binding.assert_called_once()
+        self.assertIsNone(self.ledger(i))
+        self.network_mock.assert_not_called()
+
+    def test_expiry_crossing_after_intent_before_post_never_redelivers(self):
+        self.activate(AGENTMAIL_EXPIRES_AT='2026-09-05T12:00:01Z')
+        i = self.enqueue()
+        opener = mock.Mock()
+        opener.open.return_value = self.response()
+        def construct_opener(*args):
+            self.assertFalse(self.db.in_transaction)
+            self.assertEqual(self.ledger(i)['state'], 'prepared')
+            Clock.current += timedelta(seconds=1)
+            return opener
+        with mock.patch('urllib.request.build_opener', side_effect=construct_opener):
+            self.assertEqual(self.send(i), ('manual_review', None))
+        opener.open.assert_not_called()
+        before = dict(self.ledger(i))
+        self.assertEqual(before['state'], 'prepared')
+        self.db.close()
+        self.db = self.connect()
+        self.assertEqual(self.send(i), ('manual_review', None))
+        # Even restoring a valid window cannot retry a committed intent.
+        os.environ['AGENTMAIL_EXPIRES_AT'] = '2026-09-12T11:59:59Z'
+        self.assertEqual(self.send(i), ('manual_review', None))
+        self.assertEqual(dict(self.ledger(i)), before)
+        self.assertEqual(transport.health(self.db)['attempts_total'], 1)
+        self.network_mock.assert_not_called()
+
+    def test_health_exposes_only_strict_absolute_expiry_and_reason(self):
+        self.activate()
+        cases = [
+            ('2026-09-12T11:59:59Z', 'ready', '2026-09-12T11:59:59Z'),
+            ('2026-09-05T12:00:00Z', 'expired', '2026-09-05T12:00:00Z'),
+            ('2026-09-13T12:00:00Z', 'expiry_window_invalid', '2026-09-13T12:00:00Z'),
+            ('offline-secret@example.com', 'expiry_time_invalid', None),
+            ('2026-09-12T11:59:59+00:00', 'expiry_time_invalid', None),
+            ('2026-02-30T11:59:59Z', 'expiry_time_invalid', None),
+            ('', 'expiry_time_invalid', None),
+        ]
+        for expiry, reason, exposed in cases:
+            with self.subTest(expiry=expiry):
+                os.environ['AGENTMAIL_EXPIRES_AT'] = expiry
+                result = transport.health(self.db)
+                self.assertIn('expires_at', result)
+                self.assertEqual(result['expires_at'], exposed)
+                self.assertEqual(result['blocked_reason'], reason)
+                self.assertEqual(result['ready'], reason == 'ready')
+                for secret in ('offline-secret@example.com', 'offline-test-key', 'canary@example.com'):
+                    self.assertNotIn(secret, json.dumps(result))
+        os.environ.pop('AGENTMAIL_EXPIRES_AT')
+        self.assertIsNone(transport.health(self.db).get('expires_at'))
+        self.activate(AGENTMAIL_SEND_ENABLED='false')
+        self.assertEqual(transport.health(self.db).get('expires_at'), '2026-09-12T11:59:59Z')
+        self.assertEqual(transport.health(self.db)['blocked_reason'], 'send_disabled')
+        self.activate()
+        Clock.current = datetime(2026, 9, 5, 11, tzinfo=timezone.utc)
+        self.assertEqual(transport.health(self.db)['blocked_reason'], 'activation_not_started')
+        self.assertEqual(transport.health(self.db).get('expires_at'), '2026-09-12T11:59:59Z')
+
+    def test_sender_send_boundary_preserves_approved_and_accepted_evidence(self):
+        self.activate(AGENTMAIL_TOTAL_SEND_CAP='100', AGENTMAIL_DAILY_SEND_CAP='100',
+                      AGENTMAIL_EXPIRES_AT='2026-09-05T12:00:01Z')
+        for index, micros in enumerate((-1, 0, 1)):
+            with self.subTest(microseconds_from_expiry=micros):
+                Clock.current = datetime(2026, 9, 5, 12, tzinfo=timezone.utc)
+                i = self.enqueue('send-boundary-' + str(index))
+                Clock.current += timedelta(seconds=1, microseconds=micros)
+                with mock.patch('urllib.request.OpenerDirector.open', return_value=self.response()) as post:
+                    result = self.send(i)
+                    self.assertEqual(result[0], 'accepted' if micros < 0 else 'manual_review')
+                    self.assertEqual(post.call_count, 1 if micros < 0 else 0)
+                before = dict(self.ledger(i))
+                self.assertEqual(before['state'], 'accepted' if micros < 0 else 'approved')
+                Clock.current = datetime(2026, 9, 5, 12, 0, 2, tzinfo=timezone.utc)
+                self.assertEqual(self.send(i), ('manual_review', None))
+                self.assertEqual(dict(self.ledger(i)), before)
+        self.network_mock.assert_not_called()
+
+    def test_missing_invalid_or_future_window_blocks_already_enrolled_send(self):
+        self.activate()
+        i = self.enqueue()
+        before = dict(self.ledger(i))
+        for expiry in (None, '', 'invalid', '2026-09-13T11:59:59Z'):
+            with self.subTest(expiry=expiry):
+                if expiry is None:
+                    os.environ.pop('AGENTMAIL_EXPIRES_AT', None)
+                else:
+                    os.environ['AGENTMAIL_EXPIRES_AT'] = expiry
+                self.assertEqual(self.send(i), ('manual_review', None))
+                self.assertEqual(dict(self.ledger(i)), before)
+        self.activate()
+        Clock.current -= timedelta(seconds=2)
+        self.assertEqual(self.send(i), ('manual_review', None))
+        self.assertEqual(dict(self.ledger(i)), before)
+        self.network_mock.assert_not_called()
 
     def test_committed_intent_unlocks_database_during_http(self):
         self.activate()

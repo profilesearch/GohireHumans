@@ -26,9 +26,40 @@ Required configuration (never put real keys in source, shell arguments or report
 - `AGENTMAIL_NOTIFICATION_TYPES=new_application`
 - `AGENTMAIL_OUTBOX_HIGHWATER` and `AGENTMAIL_NOTIFICATION_HIGHWATER`: current authenticated admin health maxima captured at approved cutover.
 - `AGENTMAIL_ACTIVATED_AT`: explicit current approved UTC instant (`YYYY-MM-DDTHH:MM:SSZ`).
+- `AGENTMAIL_EXPIRES_AT`: required absolute UTC deadline in that same strict format, later than activation and no more than seven days after it. No offsets, fractions, whitespace, or implicit default. Existing configurations without this value fail closed after upgrading.
 - `AGENTMAIL_DAILY_SEND_CAP=1`, `AGENTMAIL_TOTAL_SEND_CAP=1` for the initial canary.
 
 Do not create fake public jobs/applications merely to trigger a canary. A separately approved local adapter canary can exercise the released module against an isolated local fixture database; that does not verify Railway credential installation or prove production delivery. Alternatively wait for an approved genuine new application addressed to the allowlisted employer.
+
+## Sender-expiry health contract
+The sender permits enrollment and a new POST only in the half-open interval
+`activation <= now < expiry`. It checks configuration before enrollment/send,
+then checks the pinned window again immediately before `opener.open`, after the
+intent commit, request preparation and opener construction. Crossing the deadline
+leaves the intent `prepared`, consumes the existing budgets and returns
+`manual_review`; it never retries, even if a valid window is later restored.
+Already accepted and ambiguous evidence remains in the unchanged ledger. The
+existing worker reconciliation still preserves acceptance without re-delivery.
+An in-flight POST started before the deadline may complete afterward; expiry
+cannot recall mail or cancel provider-side processing. External shutdown monitors
+are defense in depth, not the authority for this deadline.
+
+Authenticated notification-delivery health includes `agentmail.expires_at`: the
+strictly parsed absolute `YYYY-MM-DDTHH:MM:SSZ` value, or JSON `null` when missing
+or malformed. A syntactically valid deadline remains visible while disabled,
+not started, expired, or outside the allowed seven-day window; raw invalid input
+is never echoed. `agentmail.ready` is false and `agentmail.blocked_reason` is:
+- `expiry_time_invalid`: missing, empty, malformed or impossible UTC expiry.
+- `expiry_window_invalid`: expiry <= activation or > activation + seven days.
+- `activation_not_started`: valid window but now < activation.
+- `expired`: valid window but now >= expiry (including exact equality).
+
+Existing earlier configuration gates keep precedence (provider, enable flag,
+key, sender, allowlists, high-water marks, activation syntax). Schema errors
+still override configuration reasons; cap reasons apply only when otherwise
+`ready`. `daily_cap` and `total_cap` remain null when configuration is blocked;
+ledger counts and attempt counters remain available. No secrets, recipients,
+message handles, schema, fingerprint, template or cap policy are changed.
 
 ## Verification
 1. Verify source/CI/deployment and authenticated admin readiness while disabled.
