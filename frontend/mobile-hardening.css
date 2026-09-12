@@ -2,6 +2,16 @@
    Keeps public, SEO, auth, browse, and app surfaces usable on phone-width screens. */
 
 @media (max-width: 768px) {
+  /* Let detail grid items shrink; keep evidence URLs inside their cards. */
+  .detail-body > .detail-content,
+  .detail-body > .detail-sidebar {
+    min-width: 0;
+  }
+
+  .detail-body .card {
+    overflow-wrap: anywhere;
+  }
+
   html,
   body {
     max-width: 100%;

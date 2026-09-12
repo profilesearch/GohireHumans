@@ -896,6 +896,11 @@ function markGuidedTaskIntakeStart(fieldName) {
   markFirstTaskWizardStarted({ source: 'homepage_guided_task_intake', field: fieldName || 'unknown', wizard_entry: 'inline_form' });
   trackEvent('guided_task_intake_start', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown' });
 }
+function parseFixedUsdDraftBudget(budget) {
+  // Draft prefill only: never infer a fixed price from ranges, rates or prose.
+  const match = budget.match(/^(?:\$\s*|USD\s*)?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?:\s*USD)?$/i);
+  return match ? match[1].replace(/,/g, '') : '';
+}
 function createGuidedTaskDraft() {
   const task = (document.getElementById('guided-task-need')?.value || '').trim();
   const helper = (document.getElementById('guided-task-helper')?.value || '').trim();
@@ -905,13 +910,14 @@ function createGuidedTaskDraft() {
     task ? `What needs to be done:\n${task}` : '',
     helper ? `Type of human or agent needed:\n${helper}` : '',
     deliverable ? `Suggested deliverable/result:\n${deliverable}` : '',
+    budget ? `Budget preference (review before publishing):\n${budget}` : '',
     'Please review this draft and edit the scope before publishing. Nothing is submitted until you post the listing.'
   ].filter(Boolean).join('\n\n');
   const params = new URLSearchParams();
   if (task) params.set('draft_title', task.slice(0, 100));
   if (description) params.set('draft_description', description);
   if (helper) params.set('draft_skills', helper);
-  const numericBudget = (budget.match(/\d+(?:\.\d{1,2})?/) || [])[0];
+  const numericBudget = parseFixedUsdDraftBudget(budget);
   if (numericBudget) params.set('draft_budget', numericBudget);
   try {
     sessionStorage.setItem('ghh_guided_task_draft', JSON.stringify({
