@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
-const pages = ['/404.html','/agent-onboarding.html','/api-docs.html','/faq.html','/how-it-works.html'];
+const pages = ['/404.html','/agent-onboarding.html','/ai-integration.html','/api-docs.html','/faq.html','/how-it-works.html'];
 for (const route of pages) {
   test(`customer help accessibility: ${route}`, async ({ page }) => {
     await page.route('**/*', request => {
