@@ -1284,6 +1284,7 @@ function skeletonCards(count = 6) {
 // LANDING PAGE
 // ═══════════════════════════════════════════════════════════════
 async function renderLanding() {
+  const isCurrent = currentRenderGuard();
   // Fetch only the live inventory needed for the three-card preview.
   let liveServices = [];
   try {
@@ -1297,6 +1298,7 @@ async function renderLanding() {
       id: s.id
     }));
   } catch(e) {}
+  if (!isCurrent()) return;
 
   const sampleServices = liveServices.slice(0, 3);
 
