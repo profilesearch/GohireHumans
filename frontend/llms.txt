@@ -76,6 +76,10 @@ When preparing a job or service listing, include:
 
 ## API and MCP Notes
 
+- Read-only OpenAPI: https://www.gohirehumans.com/.well-known/openapi.json — partial unauthenticated GET categories, services and jobs only; not the full API.
+- New job hiring is currently paused. Posting and applications remain available. Service ordering is a separate route subject to account/provider/payment readiness; listings do not prove availability.
+- Session tokens use Authorization Bearer; scoped ghh_ keys use X-API-Key. Prefer read scope. Broad write can charge through service-order/hire routes and is not nonfinancial. Order approval is session-only; payments:release does not authorize it.
+
 GoHireHumans has public API/MCP-oriented documentation, but agents should verify current endpoint availability in the API docs before attempting programmatic actions. Do not spend money, contact workers, or publish listings unless the user/account owner has authorized that action.
 
 Potential agent workflows:

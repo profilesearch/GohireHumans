@@ -1,0 +1,461 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GoHireHumans public discovery (read-only subset)",
+    "version": "1.0.0",
+    "description": "Partial contract: only unauthenticated category, service and job discovery. This is not the full REST API or MCP tool catalog. Listing fields below are a supported subset; additional fields may be returned. No accounts, keys, orders, hiring or payments are exposed by this schema. Listings do not establish provider availability, verification or payment readiness. New job hiring is currently paused; service ordering is a separate authenticated workflow subject to payment and provider readiness. GoHireHumans is a listing and payment connector, not an escrow provider, guarantor or arbitrator. Employers pay Stripe processing plus a 1% GoHireHumans fee where configured.",
+    "contact": {
+      "email": "gohirehumans.operations@agentmail.to"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://gohirehumans-production.up.railway.app/api/v1"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/categories": {
+      "get": {
+        "operationId": "getCategories",
+        "summary": "Supported category catalog, not a count of active providers.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Supported category catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "categories"
+                  ],
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "operationId": "searchServices",
+        "summary": "Public active service listings; availability and payout readiness are not guaranteed.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Public discovery results. total_pages can be zero for empty lists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "services",
+                    "total",
+                    "page",
+                    "per_page",
+                    "total_pages"
+                  ],
+                  "properties": {
+                    "services": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Partial listing fields, not an order or delivery result.",
+                        "required": [
+                          "id",
+                          "title",
+                          "category",
+                          "status",
+                          "description",
+                          "pricing_type"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "pricing_type": {
+                            "type": "string",
+                            "enum": [
+                              "fixed",
+                              "hourly",
+                              "custom"
+                            ]
+                          },
+                          "provider_type": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "human",
+                              "ai",
+                              null
+                            ]
+                          },
+                          "price": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "hourly_rate": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "per_page": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "total_pages": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or filter value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Positive page size; values above 100 are capped at 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Exact category from GET /categories; an unknown category returns an empty list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pricing_type",
+            "in": "query",
+            "required": false,
+            "description": "Known matching values. Unknown values return an empty list, not a validation error.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "hourly",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "provider_type",
+            "in": "query",
+            "required": false,
+            "description": "Known matching values. Unknown values return an empty list, not a validation error.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "human",
+                "ai"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/jobs": {
+      "get": {
+        "operationId": "browseJobs",
+        "summary": "Public jobs accepting applications (open or reviewing by default), not funded orders. New job hiring is currently paused.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Public discovery results. total_pages can be zero for empty lists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs",
+                    "total",
+                    "page",
+                    "per_page",
+                    "total_pages"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Partial listing fields, not an order or delivery result.",
+                        "required": [
+                          "id",
+                          "title",
+                          "category",
+                          "status",
+                          "description",
+                          "budget_type",
+                          "location_type",
+                          "budget_amount"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "reviewing",
+                              "hired",
+                              "in_progress",
+                              "completed",
+                              "canceled"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "budget_type": {
+                            "type": "string",
+                            "enum": [
+                              "fixed",
+                              "hourly"
+                            ]
+                          },
+                          "location_type": {
+                            "type": "string",
+                            "enum": [
+                              "remote",
+                              "on_site",
+                              "hybrid"
+                            ]
+                          },
+                          "budget_amount": {
+                            "type": "number"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "per_page": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "total_pages": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or filter value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Positive page size; values above 100 are capped at 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Exact category from GET /categories; an unknown category returns an empty list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "budget_type",
+            "in": "query",
+            "required": false,
+            "description": "Known matching values. Unknown values return an empty list, not a validation error.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "hourly"
+              ]
+            }
+          },
+          {
+            "name": "location_type",
+            "in": "query",
+            "required": false,
+            "description": "Known matching values. Unknown values return an empty list, not a validation error.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "remote",
+                "on_site",
+                "hybrid"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Known matching values. Unknown values return an empty list, not a validation error. Omit status to return open and reviewing jobs.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "reviewing",
+                "hired",
+                "in_progress",
+                "completed",
+                "canceled"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
