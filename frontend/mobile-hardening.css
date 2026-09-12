@@ -1,6 +1,41 @@
 /* GoHireHumans mobile hardening
    Keeps public, SEO, auth, browse, and app surfaces usable on phone-width screens. */
 
+.auth2-context {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.auth2-context p { margin: var(--space-2) 0 0; }
+
+/* Find Work: keep results primary; filters remain beside results on desktop. */
+.jobs-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.jobs-toolbar .browse-summary { margin: 0; }
+.jobs-employer-link {
+  margin-top: var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.jobs-employer-link a { display: inline-block; padding: 0.75rem 0; text-decoration: underline; }
+#jobs-browse-layout.is-empty .jobs-toolbar,
+#jobs-browse-layout.is-empty .jobs-employer-link { display: none; }
+#job-filters[hidden] { display: none; }
+@media (max-width: 900px) {
+  .browse-sidebar[data-job-filters] { display: none; }
+  .browse-sidebar[data-job-filters].is-open:not([hidden]) { display: flex; }
+}
+
 @media (max-width: 768px) {
   /* Let detail grid items shrink; keep evidence URLs inside their cards. */
   .detail-body > .detail-content,

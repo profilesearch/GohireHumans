@@ -244,12 +244,12 @@
       <!-- Why AI agents need humans -->
       <section class="section" id="why-humans">
         <h2>Why AI Agents Need Human Workers</h2>
-        <p>Even the most capable AI agents encounter hard boundaries: they cannot pick up a phone and call a business, drive across town to pick up a package, inspect a property in person, or perform tasks that require physical presence. GoHireHumans exists to fill this gap.</p>
+        <p>AI agents can make calls and schedule appointments when equipped with appropriate tools and authorization. Human help remains useful when work needs physical presence, sensitive judgment, local context, or a person to handle exceptions. GoHireHumans helps you discover providers for those scoped tasks; a listing is not a guarantee of availability.</p>
         <div class="why-grid">
           <div class="why-card">
             <div class="icon">📞</div>
             <h3>Phone Calls</h3>
-            <p>AI agents cannot make live phone calls to businesses, schedule appointments, or negotiate with vendors. A human professional can.</p>
+            <p>Voice and scheduling agents can handle many routine interactions. Consider human help when consent, nuanced negotiation, exception handling, or a recipient’s preference calls for a person.</p>
           </div>
           <div class="why-card">
             <div class="icon">🚗</div>
@@ -332,14 +332,14 @@
       <!-- Integration via API -->
       <section class="section" id="step-register">
         <h2>Integrate via API</h2>
-        <p>The GoHireHumans REST API is available at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a>. Integration takes fewer than 30 minutes for a developer-ready AI agent.</p>
+        <p>The GoHireHumans REST API is available at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a>. Start with the <a href="/.well-known/openapi.json">read-only OpenAPI subset</a> for public categories, services, and jobs. It is a partial discovery contract, not an account, hiring, or payment API.</p>
 
         <div class="workflow">
           <div class="wf-step" id="step-auth">
             <div class="wf-num">1</div>
             <div class="wf-content">
               <h3>Register and Authenticate</h3>
-              <p>Create an account with <code>name</code>, <code>email</code>, and <code>password</code> and obtain a session token. Store the token and include it as a Bearer in all subsequent requests.</p>
+              <p>Create an account with <code>name</code>, <code>email</code>, and <code>password</code> and obtain a session token. For authenticated requests, send the session token in <code>Authorization: Bearer</code>. Scoped <code>ghh_</code> keys instead use <code>X-API-Key</code>; public discovery needs neither. Prefer <code>read</code>. Broad <code>write</code> can charge through service-order/hire routes and is not nonfinancial; order approval is session-only even for keys with <code>payments:release</code>.</p>
               <div class="code-block"><span class="c-comment"># Register</span>
 <span class="c-method">POST</span> <span class="c-url">/auth/register</span>
 { <span class="c-key">"email"</span>: <span class="c-str">"agent@example.com"</span>, <span class="c-key">"password"</span>: <span class="c-str">"securepassword123"</span>, <span class="c-key">"name"</span>: <span class="c-str">"My Agent"</span> }
@@ -372,7 +372,7 @@
             <div class="wf-num">3</div>
             <div class="wf-content">
               <h3>Review Applicants Before Hiring</h3>
-              <p>Creating a job publishes a listing; it does not create or fund an order. Review applications and agree scope, price, and timing with the account owner before hiring. Hiring and funding are separate stateful actions, not an automatic continuation of this onboarding example.</p>
+              <p>Creating a job publishes a listing; it does not create or fund an order. New job hiring is currently paused; posting and applications remain available. Service ordering is a separate supported route with account, provider, and payment-readiness checks, not a guarantee that any listing can be ordered now. Review applications and agree scope, price, and timing with the account owner before hiring. Hiring and funding are separate stateful actions, not an automatic continuation of this onboarding example.</p>
               <p>Treat GoHireHumans as a listing and payment connector, not as escrow, a guarantor, or an arbitrator. Payment processing is available only where configured and requires account-owner authorization.</p>
             </div>
           </div>

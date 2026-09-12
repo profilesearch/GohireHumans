@@ -284,7 +284,9 @@ try {
   storedUser = JSON.parse(localStorage.getItem('ghh_user') || 'null');
 } catch(e) {}
 
+let sessionGeneration = 0;
 function saveSession(token, user) {
+  sessionGeneration++;
   if (state.token !== token || String(state.user?.id) !== String(user?.id)) serviceCheckout?.close();
   state.user = user;
   state.token = token;
@@ -298,6 +300,7 @@ function saveSession(token, user) {
 const pendingServiceOrderOperations = new Map();
 
 function clearSession() {
+  sessionGeneration++;
   serviceCheckout?.close();
   state.user = null;
   state.token = null;
@@ -358,12 +361,19 @@ async function shareGHH(path = '/', source = 'site_share') {
   }
 }
 
-// Both auth methods consume the same route intent, never a transactional action.
-function consumeAuthIntent() {
+// Preview and both auth methods share validation; preview never consumes intent.
+function readAuthIntent() {
   const redirect = getQuery().get('redirect') || '';
   let storedIntent = '';
-  try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
-  const intent = redirect || storedIntent;
+  try { storedIntent = sessionStorage.getItem('ghh_auth_intent') || ''; } catch (_) {}
+  return redirect || storedIntent;
+}
+function consumeAuthIntent() {
+  const intent = readAuthIntent();
+  try { sessionStorage.removeItem('ghh_auth_intent'); } catch (_) {}
+  return validatedAuthIntent(intent);
+}
+function validatedAuthIntent(intent) {
   // URLSearchParams already decoded the outer redirect. Never decode the route
   // again: encoded separators could turn an invalid/double-encoded path valid.
   // Keep valid query encoding intact so draft text (including % and URLs) survives.
@@ -413,9 +423,12 @@ window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 // ─── API Client ───────────────────────────────────────────────
 async function api(path, opts = {}) {
   const url = `${API}${path}`;
+  const requestToken = state.token;
+  const requestGeneration = sessionGeneration;
+  const requestUserId = String(state.user?.id);
   const headers = { 'X-Requested-With': 'XMLHttpRequest' };
   if (opts.body) headers['Content-Type'] = 'application/json';
-  if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+  if (requestToken) headers['Authorization'] = `Bearer ${requestToken}`;
   let res;
   try {
     res = await fetch(url, {
@@ -429,8 +442,10 @@ async function api(path, opts = {}) {
   let data;
   try { data = await res.json(); } catch { throw new Error(`Server error (${res.status})`); }
   if (!res.ok) {
-    // Auto-clear stale session on 401 and redirect to login
-    if (res.status === 401 && state.token) {
+    // Expire only the session that sent this request, not a newer sign-in.
+    // Route changes alone must not suppress genuine current-session expiry.
+    if (res.status === 401 && requestToken && state.token === requestToken
+        && sessionGeneration === requestGeneration && String(state.user?.id) === requestUserId) {
       clearSession();
       toast('Session expired — please log in again.', 'error');
       navigate('#/login');
@@ -775,7 +790,7 @@ trackSocialAttribution();
 const taskDraftTemplates = {
   ai_review: {
     title: 'Have a human QA AI-generated output',
-    description: 'Please review the AI-generated output I provide for factual errors, unsupported claims, risky wording, missing context, and unclear recommendations.\n\nAcceptance criteria:\n1. Check every item I provide.\n2. Return an issue table with item, issue, severity, evidence/source when available, and suggested fix.\n3. Clearly flag uncertainty instead of guessing.\n\nDeliverable: concise QA report plus corrected lines or notes where useful.',
+    description: 'AI Output Verification — suggested fixed task budget: $99.\n\nInputs: one AI-generated document or response set, up to 2,000 words and 10 claims selected by the buyer, with available source links and intended use. Agree the claim list before work.\n\nExclusions: full-document rewriting, exhaustive research, paid sources, and legal, medical, or financial advice or certification. Do not include credentials or sensitive customer data.\n\nDeliverable: a claim-by-claim issue table with source links where available, severity, uncertainty, and suggested corrections; a concise trust-risk summary.\n\nAcceptance criteria: cover every agreed claim, distinguish supported, contradicted, and unverifiable items, and identify missing evidence without guessing. The buyer reviews the report against the agreed scope; expanded work needs a separate agreement.\n\nTiming: agree a delivery date after the provider accepts the scope and receives complete, safe inputs. Provider availability and turnaround are not guaranteed. This is an editable marketplace request, not a booking or managed-service commitment; the independent provider performs the review and the buyer decides how to use it.',
     category: 'expert_review',
     budget_type: 'fixed',
     budget_amount: '99',
@@ -783,7 +798,7 @@ const taskDraftTemplates = {
   },
   automation_verification: {
     title: 'Verify AI agent or automation runs',
-    description: 'Please spot-check the AI agent or automation outputs/runs I provide and report whether they match the expected behavior.\n\nAcceptance criteria:\n1. Review the sample runs, logs, screenshots, or outputs I provide.\n2. Mark each run pass/fail/uncertain with evidence.\n3. Identify recurring failure modes and the top fixes to check next.\n\nDeliverable: run checklist, anomaly report, and confidence notes.',
+    description: 'Automation QA Sprint — suggested fixed task budget: $199.\n\nInputs: AI agent or automation outputs/runs, or one website or app flow, with up to 5 supplied runs or 5 agreed test cases in one agreed environment. Provide expected behavior, a checklist, redacted logs/screenshots, or safe sandbox access. Agree supplied-evidence review versus sandbox run-through before work.\n\nExclusions: production changes, purchases, live messages, security/load testing, code fixes, and exhaustive device coverage. Do not include credentials or sensitive customer data in the public brief.\n\nDeliverable: run checklist, anomaly report, pass/fail/uncertain findings, screenshots where safe and available, reproduction steps or log references, severity, and confidence notes. Explain evidence that could not be captured.\n\nAcceptance criteria: cover every agreed run or test case, compare expected versus actual behavior, and identify recurring failure modes and next checks. The buyer reviews coverage and evidence; fixes or retests need a separate agreement.\n\nTiming: agree a delivery date after the provider accepts the scope and receives complete, safe inputs. Provider availability and turnaround are not guaranteed. This is an editable marketplace request, not a booking or managed-service commitment; the independent provider performs the checks.',
     category: 'testing',
     budget_type: 'fixed',
     budget_amount: '199',
@@ -791,7 +806,7 @@ const taskDraftTemplates = {
   },
   clay_gtm_qa: {
     title: 'Human QA a Clay or GTM lead list',
-    description: 'Please spot-check the Clay/GTM table or outbound list I provide before it goes live.\n\nAcceptance criteria:\n1. Review a sample of account/contact rows for ICP fit, broken source links, unsupported personalization claims, duplicates, and risky AI-generated statements.\n2. Mark each row pass/fail/uncertain with evidence notes.\n3. Recommend what to fix before sending.\n\nDeliverable: row-level QA table, source notes, risk flags, and campaign-readiness summary.',
+    description: 'Clay/GTM QA Sprint — suggested fixed task budget: $199.\n\nInputs: an existing Clay/GTM table or outbound list sample of 25–50 rows (maximum 50), up to 5 fields per row, row IDs, available source links, and buyer-defined ICP and claim-checking criteria. Agree the sample and fields before work.\n\nExclusions: new lead sourcing, paid enrichment, bulk cleanup, outreach or sending campaigns, and compliance certification. Use public business data or redacted inputs; do not include credentials or sensitive personal data.\n\nDeliverable: row-level QA table, source notes, duplicate/broken-link/stale-data flags, unsupported personalization claims, and a campaign-readiness summary with cleanup recommendations.\n\nAcceptance criteria: mark every agreed row pass/fail/uncertain against the supplied criteria, cite evidence where available, and flag missing or unverifiable data without guessing. The buyer reviews the sample report; it does not validate the full database or authorize outreach. Extra rows or corrections need a separate agreement.\n\nTiming: agree a delivery date after the provider accepts the scope and receives complete, safe inputs. Provider availability and turnaround are not guaranteed. This is an editable marketplace request, not a booking or managed-service commitment; the independent provider performs the QA.',
     category: 'research',
     budget_type: 'fixed',
     budget_amount: '199',
@@ -815,7 +830,7 @@ const taskDraftTemplates = {
   },
   phone_fact_check: {
     title: 'Make phone calls or verify a fact',
-    description: 'Please make the short call or verify the fact I specify using the public details I provide.\n\nAcceptance criteria:\n1. Do not share private data or credentials.\n2. Record when and what you checked.\n3. Flag uncertainty, voicemail, no-answer, or conflicting information.\n\nDeliverable: call/fact-check log, outcome, and any source notes.',
+    description: 'Real-World Check — suggested fixed task budget: $79.\n\nInputs: one business or location, up to 3 questions, public contact/source details, and an agreed method: up to 2 call attempts or 3 public-source checks, OR one safe local visit of up to 30 minutes where a provider agrees access and travel in advance. These are alternatives, not a combined package.\n\nExclusions: purchases, paid access or travel expenses, impersonation, covert recording, restricted locations, private personal data, and guaranteed contact or confirmation. Do not share credentials or sensitive data.\n\nDeliverable: call/source/visit log with timestamps, answers, evidence where lawful and available, and confirmed/contradicted/unreachable or uncertain outcomes. Photos only with permission where safe.\n\nAcceptance criteria: document every agreed question and attempt, including no-answer, refusal, or conflicting information. The buyer reviews the log; an honestly documented unreachable outcome is valid evidence, not a confirmed fact. Extra attempts or visits need a separate agreement.\n\nTiming: agree a delivery date after the provider accepts the scope and receives complete, safe inputs, subject to opening hours and lawful access. Provider availability and turnaround are not guaranteed. This is an editable marketplace request, not a booking or managed-service commitment; the independent provider performs the check.',
     category: 'phone_call',
     budget_type: 'fixed',
     budget_amount: '79',
@@ -1813,7 +1828,7 @@ async function renderServiceDetail(id) {
               <p class="svc-order-note">Payment status is tracked through the configured workflow after buyer review.</p>
               <div style="display:flex;gap:var(--space-2);align-items:center;justify-content:center;margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span style="font-size:11px;color:var(--color-text-faint)">Secured by Stripe</span>
+                <span style="font-size:11px;color:var(--color-text-faint)">Stripe processing where configured</span>
                 <span style="font-size:11px;color:var(--color-text-faint)">&bull;</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 <span style="font-size:11px;color:var(--color-text-faint)">Payment review</span>
@@ -2061,7 +2076,11 @@ async function renderJobs() {
         <p class="browse-sub">Find your next opportunity</p>
       </div>
       <div class="browse-layout" id="jobs-browse-layout">
-        <aside class="browse-sidebar" data-job-filters>
+        <div class="jobs-toolbar">
+          <div class="browse-summary" id="jobs-summary" aria-live="polite">Loading jobs…</div>
+          <button type="button" class="btn btn-secondary btn-sm browse-filter-toggle" id="job-filter-toggle" aria-expanded="false" aria-controls="job-filters" onclick="toggleJobFilters()">Filters${search || category || budgetType || locationType ? ' (active)' : ''}</button>
+        </div>
+        <aside class="browse-sidebar" id="job-filters" data-job-filters aria-label="Job filters" onkeydown="if(event.key === 'Escape') { event.preventDefault(); toggleJobFilters(false); }">
           <div class="filter-group">
             <label class="label" for="job-search">Search</label>
             <div style="position:relative">
@@ -2093,16 +2112,13 @@ async function renderJobs() {
             </select>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="navigate('#/jobs')" style="width:100%">Clear filters</button>
-          ${state.user
-            ? `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><button class="btn btn-primary" style="width:100%" onclick="navigate('#/post-job')">Post a Job</button></div>`
-            : `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-divider)"><p style="font-size:var(--text-xs);color:var(--color-text-faint);margin-bottom:var(--space-3)">Post jobs and find great talent</p><button class="btn btn-primary" style="width:100%" onclick="navigate('#/register')">Post a job free</button></div>`}
         </aside>
         <div class="browse-content">
-          <div class="browse-summary" id="jobs-summary" aria-live="polite">Loading jobs…</div>
           <div id="jobs-list" class="job-list">
             ${Array(5).fill(0).map(()=>`<div class="skeleton-card" style="height:100px"></div>`).join('')}
           </div>
           <div id="jobs-pagination" class="pagination"></div>
+          <p class="jobs-employer-link">Looking to hire? <a href="#/post-job">Post a job instead</a>.</p>
         </div>
       </div>
     </div>
@@ -2125,6 +2141,16 @@ async function renderJobs() {
   } catch(e) {}
 
   await loadJobsList(page, { search, category, budgetType, locationType });
+}
+
+function toggleJobFilters(forceOpen) {
+  const filters = document.getElementById('job-filters');
+  const button = document.getElementById('job-filter-toggle');
+  if (!filters || !button || !window.matchMedia('(max-width: 900px)').matches) return;
+  const open = typeof forceOpen === 'boolean' ? forceOpen : !filters.classList.contains('is-open');
+  filters.classList.toggle('is-open', open);
+  button.setAttribute('aria-expanded', String(open));
+  (open ? document.getElementById('job-search') : button)?.focus();
 }
 
 async function loadJobsList(page, filters) {
@@ -2342,7 +2368,7 @@ async function renderJobDetail(id) {
               </div>
               ${acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" style="width:100%" onclick="handleJobApply(${id})">${state.user ? 'Apply to This Job' : 'Sign in to Apply'}</button>
-                   <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${state.user ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
+                   <p class="svc-order-note">You do not pay to apply or get hired. ${state.user ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
                 : !acceptsApplications
                   ? `<p style="font-size:var(--text-sm);color:var(--color-text-faint);text-align:center">This job is no longer accepting applications.</p>`
                   : ''}
@@ -2458,10 +2484,59 @@ async function handleJobApply(id) {
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
+async function renderAuthContext(intent) {
+  const container = document.querySelector('[data-auth-context]');
+  const isCurrent = currentRenderGuard();
+  const [path, query = ''] = intent.split('?');
+  const isDraft = path === 'post-job';
+  const isJob = /^jobs\/\d+$/.test(path);
+  const isService = /^services\/\d+$/.test(path);
+  if (!container || !(isDraft || isJob || isService)) return;
+  const next = isDraft ? 'Review and edit your draft after sign-in.'
+    : isJob ? 'Review your application after sign-in.' : 'Review service details after sign-in.';
+  const show = (title, price = '') => {
+    if (!isCurrent() || !container.isConnected) return;
+    container.hidden = false;
+    // Only catalog data is shown; private draft fields/URLs never enter this card.
+    container.replaceChildren();
+    for (const [tag, text] of [['strong', title], ['p', price], ['p', next], ['p', 'Nothing is submitted or charged by signing in.']]) {
+      if (!text) continue;
+      const node = document.createElement(tag);
+      node.textContent = text;
+      container.appendChild(node);
+    }
+  };
+  const amountLabel = (value, type, label) => {
+    if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') return '';
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount <= 0 || !['fixed', 'hourly'].includes(type)) return '';
+    return `${label}: $${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}${type === 'hourly' ? '/hr' : ''}`;
+  };
+  if (isDraft) {
+    const template = getTaskDraftTemplate(new URLSearchParams(query).get('template'));
+    // Reject prototype/inherited lookups without changing the draft-template contract.
+    const knownTemplate = template && Object.values(taskDraftTemplates).includes(template);
+    show(knownTemplate ? template.title : 'Your job draft', knownTemplate
+      ? amountLabel(template.budget_amount, template.budget_type, 'Suggested budget') : '');
+    return;
+  }
+  show(isJob ? 'Your selected job' : 'Your selected service');
+  try {
+    // Validated numeric detail paths only; no query text or transactional endpoints.
+    const item = await api('/' + path);
+    show(typeof item?.title === 'string' ? item.title : (isJob ? 'Your selected job' : 'Your selected service'),
+      isJob ? amountLabel(item?.budget_amount, item?.budget_type, 'Listed budget')
+        : amountLabel(item?.pricing_type === 'hourly' ? item?.hourly_rate : item?.price, item?.pricing_type, 'Listed price'));
+  } catch (_) {
+    show(isJob ? 'Your selected job' : 'Your selected service', 'Details are unavailable right now. Review them after sign-in.');
+  }
+}
+
 function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
-  const hasSavedJobDraft = redirect === 'post-job' || redirect.startsWith('post-job?');
+  const intent = validatedAuthIntent(readAuthIntent()).slice(2);
+  const hasSavedJobDraft = intent === 'post-job' || intent.startsWith('post-job?');
   const authTitle = hasSavedJobDraft ? 'Your job draft is saved' : (isLogin ? 'Welcome back' : 'Join GoHireHumans');
   const authSubtitle = hasSavedJobDraft
     ? 'Sign in or create a free account to review it. Nothing has been posted or charged.'
@@ -2473,6 +2548,7 @@ function renderAuth(mode) {
         <div class="auth2-card">
           <h1 class="auth2-title">${authTitle}</h1>
           <div class="auth2-sub">${authSubtitle}</div>
+          <section class="auth2-context" data-auth-context aria-label="Your next step" aria-live="polite" hidden></section>
           ${GOOGLE_CLIENT_ID ? `
           <div class="auth2-google-wrap" id="google-signin-wrap" hidden>
             <div id="google-signin-btn" style="display:flex;justify-content:center"></div>
@@ -2518,6 +2594,7 @@ function renderAuth(mode) {
         </div>
       </div>
     </div>`;
+  renderAuthContext(intent);
   // Initialize Google Sign-In button if configured
   if (GOOGLE_CLIENT_ID) {
     const tryRenderGoogleBtn = () => {

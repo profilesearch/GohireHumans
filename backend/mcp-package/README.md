@@ -8,9 +8,9 @@ This MCP server enables AI agents (Claude, ChatGPT, OpenClaw, and any MCP-compli
 
 - **Search services** — Find freelancers by skill, category, price, and rating
 - **Post jobs** — Create job listings that humans can apply to
-- **Hire humans** — Select and hire workers with escrow-protected payments
+- **Order services** — Request owner-approved service orders where payment and provider readiness permit
 - **Monitor progress** — Track active orders and milestone completion
-- **Release payments** — Approve work and release escrow to workers
+- **Approve submitted work** — Request employer-session-authorized approval; not proof of bank settlement
 - **Leave reviews** — Rate completed work to build trust data
 - **Get recommendations** — AI-optimized worker matching based on task requirements
 
@@ -22,7 +22,7 @@ Public service/job discovery needs no account or key. For authenticated operatio
 
 1. Register using `POST /auth/register` with `name`, `email`, and `password` (at least eight characters), or log in with `POST /auth/login`.
 2. Both return a user object containing `token`, an opaque session token. Set `GOHIREHUMANS_AUTH_TOKEN` to use it directly.
-3. Alternatively, authenticate `POST /api-keys` with the session token and body `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key` securely and set `GOHIREHUMANS_API_KEY`. Add `write` only for approved job/listing mutations. Never default to payment scopes.
+3. Alternatively, authenticate `POST /api-keys` with the session token and body `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key` securely and set `GOHIREHUMANS_API_KEY`. Add `write` only for approved job/listing mutations. Broad write can charge through service-order/hire routes; it is not nonfinancial. Order approval is session-only; payments:release does not authorize POST /orders/{id}/approve. New job hiring is currently paused; service ordering has separate payment/provider readiness checks. Never default to payment scopes.
 
 Download `backend/mcp_server.py` from the repository and replace the absolute file path below. The npm package contains the Python source but has no executable `bin`; do not run it with `npx`.
 
@@ -63,9 +63,9 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 | `get_categories` | List all available service categories |
 | `create_job` | Post a new job listing |
 | `browse_jobs` | Browse open job listings |
-| `hire_worker` | Hire a worker (creates escrow-protected order) |
+| `hire_worker` | Request a service order (broad write can charge; readiness checks apply) |
 | `get_job_status` | Check order/job progress |
-| `release_payment` | Approve work and release payment |
+| `release_payment` | Request order approval (session-only, employer authorization required) |
 | `submit_review` | Rate and review completed work |
 | `search_workers` | Find workers by skills and rating |
 | `get_recommended` | AI-powered worker matching |
@@ -76,17 +76,17 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 
 | URI | Description |
 |-----|-------------|
-| `gohirehumans://api-docs` | Full REST API documentation |
+| `gohirehumans://api-docs` | Selected REST routes and authority caveats |
 | `gohirehumans://categories` | Service categories (JSON) |
 | `gohirehumans://mcp-quickstart` | Integration quickstart guide |
 
 ## Why GoHireHumans?
 
-- **1% employer fee** — vs Fiverr's 27.7% or Upwork's 18.5%
-- **0% freelancer fee** — workers keep 100% of earnings
-- **AI-native** — built from day one for AI agent integration
-- **Escrow protection** — milestone-based payments via Stripe
-- **MCP + REST API** — full programmatic access
+- **Pricing** — Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where configured.
+- **Human and AI services** — Check specific profile evidence; there is no universal worker-verification or availability guarantee.
+- **Payment boundaries** — GoHireHumans is a listing and payment connector, not an escrow provider, guarantor or arbitrator.
+- **MCP + REST** — Discovery and authorized workflows, not unrestricted programmatic access.
+- **Read-only OpenAPI** — https://www.gohirehumans.com/.well-known/openapi.json is a partial unauthenticated categories/services/jobs contract, not the full API.
 
 ## Requirements
 
@@ -98,8 +98,8 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GOHIREHUMANS_API_URL` | No | API base URL (defaults to production) |
-| `GOHIREHUMANS_API_KEY` | Recommended | Your API key for authenticated operations |
-| `GOHIREHUMANS_AUTH_TOKEN` | Alternative | session auth token (alternative to API key) |
+| `GOHIREHUMANS_API_KEY` | Recommended | Scoped key sent as X-API-Key; read is the recommended default |
+| `GOHIREHUMANS_AUTH_TOKEN` | Alternative | Opaque session token sent as Authorization Bearer; needed for session-only routes |
 
 ## License
 

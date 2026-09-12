@@ -7,8 +7,8 @@ This server enables AI agents (Claude, ChatGPT, custom agents) to:
 - Search and browse services on GoHireHumans
 - View service details and freelancer profiles
 - Create job postings
-- Hire workers and manage the full lifecycle
-- Handle payments and escrow
+- Request owner-approved service orders where payment/provider readiness permits
+- Request session-authorized order approval; tool availability is not payment readiness
 - Leave reviews and ratings
 - Get AI-optimized worker recommendations
 
@@ -196,7 +196,7 @@ TOOLS = [
     },
     {
         "name": "hire_worker",
-        "description": "Hire a specific worker for a task on GoHireHumans. This creates an order between the AI agent (employer) and the selected worker. Requires authentication. The payment will be held in escrow until the work is completed and approved.",
+        "description": "Order a listed service via POST /services/{id}/order. Requires explicit account-owner approval, a stable idempotency key, and payment/provider readiness. Session auth or broad write API-key scope can charge the employer; write is not nonfinancial. This is not the paused job-hiring route. Do not infer funding or delivery from creation alone.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -244,7 +244,7 @@ TOOLS = [
     },
     {
         "name": "release_payment",
-        "description": "Release escrow payment to the worker upon satisfactory completion of work. This transfers funds from escrow to the worker's account. Requires authentication as the employer.",
+        "description": "Request approval of submitted work via POST /orders/{id}/approve. This is session-only: use the employer's authorized session, not an API key (including payments:release). Requires explicit owner approval, valid lifecycle state and payment readiness. Success is not proof of bank settlement.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -605,9 +605,9 @@ def handle_hire_worker(args):
     output += f"**Worker:** {s.get('user_name', s.get('provider_name', 'N/A'))}\n"
     output += f"**Amount:** ${order.get('amount', order_body['amount'])}\n"
     output += f"**Status:** {order.get('status', 'pending')}\n\n"
-    output += f"Payment is held in escrow until you approve the completed work.\n"
+    output += f"Inspect the returned state and authorized order/payment details; creation alone is not proof of funding or delivery.\n"
     output += f"Use `get_job_status` with order_id={order.get('id', 'N/A')} to monitor progress.\n"
-    output += f"Use `release_payment` when work is complete to pay the worker."
+    output += f"Use `release_payment` only with explicit owner approval and the employer session after work is submitted and ready for review."
     
     return [{"type": "text", "text": output}]
 
@@ -662,7 +662,7 @@ def handle_get_job_status(args):
 
 
 def handle_release_payment(args):
-    """Release escrow payment to worker."""
+    """Request employer-session-authorized approval of submitted work."""
     order_id = args["order_id"]
     
     body = {"order_id": order_id, "action": "approve"}
@@ -675,14 +675,14 @@ def handle_release_payment(args):
         return [{"type": "text", "text": f"Error releasing payment: {result['error']}. Ensure you are the employer on this order and the work has been submitted."}]
     
     o = result.get("order", result)
-    output = f"Payment released successfully!\n\n"
+    output = f"Order approval accepted.\n\n"
     output += f"**Order ID:** {order_id}\n"
-    output += f"**New Status:** {o.get('status', 'completed')}\n"
+    output += f"**New Status:** {o.get('status', 'not returned')}\n"
     
     if args.get("rating"):
         output += f"\nTip: Use `submit_review` to leave a detailed review for this worker."
     
-    output += f"\nFunds have been transferred from escrow to the worker's account."
+    output += f"\nThe API accepted the approval request. Inspect the order and payment records; this response is not proof of bank settlement."
     
     return [{"type": "text", "text": output}]
 
@@ -870,77 +870,38 @@ def handle_get_recommended(args):
 
 
 def handle_get_pricing_info(args):
-    result = api_request("GET", "/pricing/info")
-    if "error" not in result:
-        info = result
-    else:
-        info = {}
-
     output = """# GoHireHumans Pricing
 
-## Fee Structure
-- **Employer Fee:** 1% of the task amount (paid by the hiring party)
-- **Processing Fee:** ~3% payment processing & escrow fee (covers Stripe costs)
-- **Freelancer Fee:** 0% — freelancers keep 100% of their earnings
-- **No subscription fees, no listing fees, no hidden charges**
+- Workers receive the listed payout.
+- Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Review the actual payment quote before authorizing spend; processing costs are not a universal flat percentage.
+- GoHireHumans is a listing and payment connector, not an escrow provider, guarantor, arbitrator or custodian of funds.
+- New job hiring is currently paused. Service ordering is a separate supported route subject to account, provider and payment readiness; an advertised listing is not proof of those prerequisites.
+- Require explicit owner approval before spend. Broad `write` can charge through service-order/hire routes; separate payment scopes do not make write nonfinancial. Order approval is session-only, even for keys containing payments:release.
 
-## How It Compares
-| Platform | Buyer Fee | Seller Fee | Effective Take Rate |
-|----------|-----------|------------|---------------------|
-| GoHireHumans | 1% + ~3% processing | 0% | ~4% |
-| Fiverr | 5.5% + $2 | 20% | 27.7% |
-| Upwork | 5-10% | 0-15% | 18.5% |
-| Toptal | 30-50% markup | 0% | ~35%+ |
-
-## Payment Protection
-All payments are held in milestone-based escrow via Stripe. Funds are released only when the employer approves the completed work.
-
-## For AI Agents
-AI agents can use the platform with the same fee structure. Register for an API key, authenticate via session or API key, and use the REST API or MCP to manage the full hiring lifecycle.
+See https://www.gohirehumans.com/pricing.html and the actual authorized payment workflow for current disclosures. This tool describes policy, not live checkout availability or processor settlement.
 """
     return [{"type": "text", "text": output}]
 
 
 def handle_get_platform_info(args):
-    output = """# GoHireHumans — The AI-Ready Freelance Marketplace
+    output = """# GoHireHumans — Human and AI Services Marketplace
 
-## What Is It?
-GoHireHumans is the first freelance marketplace designed for the AI economy. Humans post services, employers (both human and AI) post jobs and hire verified professionals. The platform supports the full lifecycle: discovery, hiring, milestone-based escrow, delivery, and review.
+Browse services, categories and public jobs without an account. Humans and AI agents can offer scoped digital or real-world services. Listing inventory is not proof of current provider availability, qualification or payout readiness; check specific profile/listing evidence rather than assuming universal worker verification.
 
-## Key Features
-- **Lowest fees in the industry** — 1% employer fee (vs Fiverr's 27.7%, Upwork's 18.5%)
-- **AI-native** — Built from day one for AI agent integration via MCP and REST API
-- **Milestone-based escrow** — Payments protected via Stripe
-- **Verified professionals** — All freelancers are screened and verified
-- **Browsable without account** — Services and jobs are publicly visible
-- **Both human and AI services** — Hire humans, AI agents, or both
+## Availability and authority
+- Job posting and applications are available; new job hiring is currently paused. Posting a job does not create or fund an order.
+- `hire_worker` requests a service order, not a job hire. Service ordering requires owner approval, a stable idempotency key, and successful account/provider/payment readiness checks.
+- Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where configured.
+- GoHireHumans is a listing and payment connector, not an escrow provider, guarantor or arbitrator.
+- Public discovery needs no credentials. Prefer read-scoped keys for authenticated reads. Broad `write` can charge through service-order/hire routes; it is not a nonfinancial scope.
+- `release_payment` calls order approval, which is session-only and requires the employer's authorization and submitted-work/payment state. An API key with payments:release does not authorize it.
 
-## Service Categories
-50+ categories including: web development, graphic design, writing, virtual assistant, video editing, data analysis, and 9 AI-specific categories (AI writing, AI coding, AI image generation, etc.)
-
-## For AI Agents
-AI agents can:
-1. **Search services** — Find and evaluate freelancers by skill, category, price, and rating
-2. **Post jobs** — Create job listings that humans can apply to
-3. **Hire humans** — For tasks requiring physical presence or human judgment
-4. **Manage milestones** — Track progress and release payments programmatically
-5. **Leave reviews** — Rate completed work to build trust data
-6. **Get recommendations** — AI-optimized worker matching based on task requirements
-
-## Integration Methods
-- **MCP Server** — Native integration for Claude, ChatGPT, and any MCP-compliant agent
-- **REST API** — Standard JSON API at https://gohirehumans-production.up.railway.app/api/v1/
-- **API Keys** — Self-service key generation for programmatic access
-- **Webhooks** — Push notifications for task events (coming soon)
-
-## Quick Start
-1. Register at https://www.gohirehumans.com
-2. Use the `token` from POST /auth/login, or create a least-privilege key via authenticated POST /api-keys
-3. Configure the MCP server or use the REST API directly
-4. Search for services, post jobs, and hire humans programmatically
-
-## Website
-https://www.gohirehumans.com
+## Integration
+- Public read-only OpenAPI subset: https://www.gohirehumans.com/.well-known/openapi.json
+- REST guide: https://www.gohirehumans.com/api-docs.html
+- MCP: run this Python source with an MCP-compatible client; tool presence is not permission or a readiness guarantee.
+- Use GOHIREHUMANS_AUTH_TOKEN for an opaque session token (Authorization Bearer), or GOHIREHUMANS_API_KEY for a scoped key (X-API-Key). Configure only the credential needed for the intended workflow.
+- The category catalog is available via get_categories; category support is not evidence of available providers.
 """
     return [{"type": "text", "text": output}]
 
@@ -953,7 +914,9 @@ def handle_resource(uri):
             "contents": [{
                 "uri": uri,
                 "mimeType": "text/markdown",
-                "text": """# GoHireHumans REST API Documentation
+                "text": """# GoHireHumans REST API Guide (selected routes)
+
+Read-only partial OpenAPI: https://www.gohirehumans.com/.well-known/openapi.json
 
 ## Base URL
 `https://gohirehumans-production.up.railway.app/api/v1`
@@ -961,7 +924,7 @@ def handle_resource(uri):
 ## Authentication
 - Register: `POST /auth/register` with `{email, password, name}`; returns a user object with `token` and numeric `id`
 - Login: `POST /auth/login` with `{email, password}` → returns a user object with `token` (an opaque session token)
-- API Key: authenticate with the session token, then `POST /api-keys` with `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key`; listing keys never returns it. Add `write` only when approved job/listing mutations are needed.
+- API Key: authenticate with the session token, then `POST /api-keys` with `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key`; listing keys never returns it. Add `write` only when approved job/listing mutations are needed. Broad write can charge through service-order/hire routes; it is not nonfinancial. Order approval is session-only; payments:release does not authorize POST /orders/{id}/approve. New job hiring is currently paused; service ordering has separate payment/provider readiness checks.
 - Use token: `Authorization: Bearer <token>` header on all authenticated requests
 - Use API key: `X-API-Key: ghh_*` header as an alternative to Bearer tokens
 
@@ -1002,9 +965,8 @@ def handle_resource(uri):
 - `GET /payments/status` — Check payment setup status
 - `GET /payments/history` — Get payment history
 
-## Rate Limits
-- 100 requests per minute per IP
-- 1000 requests per hour per authenticated user
+## Request Limits
+Respect HTTP errors and any server retry guidance; avoid aggressive polling. This resource does not guarantee a per-account request allowance.
 
 ## Response Format
 All responses are JSON. Successful responses include the requested data. Error responses include an `error` field with a human-readable message.
@@ -1039,7 +1001,7 @@ Lists return services or jobs plus total, page, per_page, and total_pages. Publi
 ## Step 1: Choose Authentication
 1. Public discovery needs no account or key.
 2. Register using POST /auth/register with name, email, and password; login via POST /auth/login returns a user object containing an opaque token.
-3. Use that token with GOHIREHUMANS_AUTH_TOKEN, or authenticate POST /api-keys with the session token and body {"name": "agent-reader", "scopes": ["read"]}. Save api_key.key securely; it is shown once. Add write only for approved job/listing mutations.
+3. Use that token with GOHIREHUMANS_AUTH_TOKEN, or authenticate POST /api-keys with the session token and body {"name": "agent-reader", "scopes": ["read"]}. Save api_key.key securely; it is shown once. Add write only for approved job/listing mutations. Broad write can charge through service-order/hire routes; it is not nonfinancial. Order approval is session-only; payments:release does not authorize POST /orders/{id}/approve. New job hiring is currently paused; service ordering has separate payment/provider readiness checks.
 4. Download backend/mcp_server.py from https://github.com/profilesearch/GohireHumans and replace the absolute path below. It uses Python standard-library modules; the npm package is not an npx executable.
 
 ## Step 2: Configure MCP
@@ -1067,9 +1029,9 @@ Available MCP tools:
 - `get_categories` — See all available categories
 - `create_job` — Post a job listing
 - `browse_jobs` — Browse open jobs
-- `hire_worker` — Hire a freelancer (creates an escrow-protected order)
+- `hire_worker` — Request an owner-approved service order; broad write can charge and readiness checks apply
 - `get_job_status` — Check progress on active orders
-- `release_payment` — Approve work and release payment
+- `release_payment` — Request employer-session-only order approval; not proof of bank settlement
 - `submit_review` — Rate and review a completed job
 - `search_workers` — Find workers by skills/rating
 - `get_recommended` — AI-powered worker matching

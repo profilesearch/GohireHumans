@@ -14,11 +14,9 @@
 
 window.GOHIREHUMANS_API_URL = 'https://gohirehumans-production.up.railway.app';
 
-// REPLACE BEFORE GOING LIVE:
-//   pk_test_... for Stripe test mode
-//   pk_live_... for production (real payments)
-// While empty, the backend falls back to simulated payments and the UI should
-// hide / disable real-money CTAs.
+// Optional browser Stripe key: pk_test_... is test mode; pk_live_... is live mode.
+// An empty browser key does not establish the backend's payment mode.
+// Checkout availability and funding safeguards are enforced by the backend.
 window.STRIPE_PUBLISHABLE_KEY = '';
 
 // ── Runtime sanity checks ──
@@ -32,7 +30,7 @@ window.GOHIREHUMANS_CONFIG_OK = (() => {
     }
     if (!window.STRIPE_PUBLISHABLE_KEY) {
         if (location.hostname === 'www.gohirehumans.com' || location.hostname === 'gohirehumans.com') {
-            console.warn('[GoHireHumans] STRIPE_PUBLISHABLE_KEY not set — payments are SIMULATED.');
+            console.warn('[GoHireHumans] Browser Stripe key is not configured. Check backend payment readiness before checkout.');
         }
     }
     if (issues.length) {
