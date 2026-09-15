@@ -1,162 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Analytics (GA4) -->
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trust &amp; Safety — GoHireHumans | Profile Signals, Stripe Processing</title>
-  <meta name="description" content="How GoHireHumans handles profile trust signals, Stripe payment processing where available, content safety screening, dispute review, and privacy protections.">
+  <title>Trust and Safety: Review Before You Commit | GoHireHumans</title>
+  <meta name="description" content="How GoHireHumans handles profile trust signals, Stripe-powered processing where configured, evidence-based issue review, content screening, and privacy.">
   <link rel="canonical" href="https://www.gohirehumans.com/trust-safety.html">
-
+  <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.gohirehumans.com/trust-safety.html">
-  <meta property="og:title" content="Trust &amp; Safety — GoHireHumans">
-  <meta property="og:description" content="Profile trust signals, payment processing, issue review, and privacy practices on GoHireHumans.">
+  <meta property="og:title" content="Trust and Safety: Review Before You Commit | GoHireHumans">
+  <meta property="og:description" content="How GoHireHumans handles profile trust signals, Stripe-powered processing where configured, evidence-based issue review, content screening, and privacy.">
   <meta property="og:site_name" content="GoHireHumans">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
-
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans, a marketplace for small, scoped human help">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Trust &amp; Safety — GoHireHumans">
-  <meta name="twitter:description" content="Profile trust signals, payment processing, issue review, and privacy practices on GoHireHumans.">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
-
-  <meta name="robots" content="index, follow">
+  <meta name="twitter:title" content="Trust and Safety: Review Before You Commit | GoHireHumans">
+  <meta name="twitter:description" content="How GoHireHumans handles profile trust signals, Stripe-powered processing where configured, evidence-based issue review, content screening, and privacy.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
-  <!-- JSON-LD -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebPage",
-    "url": "https://www.gohirehumans.com/trust-safety.html",
-    "name": "Trust & Safety — GoHireHumans",
-    "description": "How GoHireHumans supports clients and professionals through profile trust signals, payment processing, issue review, and privacy practices.",
-    "about": {
-      "@type": "Organization",
-      "name": "GoHireHumans",
-      "url": "https://www.gohirehumans.com",
-      "description": "Trusted marketplace for hiring human and agent service providers.",
-      "knowsAbout": [
-        "profile trust signals",
-        "portfolio review",
-        "Stripe payment processing",
-        "issue review"
-      ]
-    }
-  }
-  </script>
-
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
-    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
-    a { color: #0d7377; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
-    .nav-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
-    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
-    .nav-logo span { color: #0d7377; }
-    .nav-links { display: flex; gap: 24px; list-style: none; }
-    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
-    .nav-links a:hover { color: #0d7377; text-decoration: none; }
-    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
-    .nav-cta:hover { background: #095558; text-decoration: none; }
-
-    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-
-    .page-header { padding: 56px 0 40px; border-bottom: 1px solid #dddbd6; margin-bottom: 48px; }
-    .page-header .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 12px; }
-    .page-header h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); font-weight: 600; line-height: 1.15; color: #1a1816; margin-bottom: 16px; }
-    .page-header .lead { font-size: 17px; color: #6b6963; max-width: 680px; line-height: 1.6; }
-
-    .section { margin-bottom: 56px; }
-    .section h2 { font-size: 22px; font-weight: 600; color: #1a1816; margin-bottom: 8px; padding-bottom: 12px; border-bottom: 1px solid #dddbd6; }
-    .section > p { font-size: 15px; color: #6b6963; margin: 12px 0 24px; max-width: 72ch; }
-
-    /* Pillars */
-    .pillar-list { display: flex; flex-direction: column; gap: 2px; }
-    .pillar {
-      display: flex;
-      gap: 0;
-      background: #faf9f6;
-      border: 1px solid #dddbd6;
-    }
-    .pillar:first-child { border-radius: 8px 8px 0 0; }
-    .pillar:last-child { border-radius: 0 0 8px 8px; border-top: none; }
-    .pillar + .pillar { border-top: none; }
-    .pillar-icon-col { width: 64px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; background: #f0efeb; }
-    .pillar-content { padding: 20px 24px; }
-    .pillar-content h3 { font-size: 16px; font-weight: 600; color: #1a1816; margin-bottom: 6px; }
-    .pillar-content p { font-size: 14px; color: #3d3b38; max-width: 65ch; margin-bottom: 8px; }
-    .pillar-content p:last-child { margin-bottom: 0; }
-    .pillar-content ul { padding-left: 18px; font-size: 14px; color: #3d3b38; margin-top: 6px; }
-    .pillar-content li { margin-bottom: 4px; }
-
-    /* Prohibited content */
-    .prohibited-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .prohibited-item {
-      background: #fce8eb;
-      border: 1px solid #f0b3bb;
-      border-radius: 8px;
-      padding: 14px 16px;
-      font-size: 13px;
-      color: #7a1526;
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-    }
-    .prohibited-item::before { content: "✗"; font-weight: 700; flex-shrink: 0; }
-
-    /* Trust badges */
-    .trust-badges { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
-    .trust-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #e6f3f3;
-      color: #095558;
-      border: 1px solid #b3d9da;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-    }
-
-    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 80px; }
-    .footer-inner { max-width: 960px; margin: 0 auto; }
-    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
-    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
-    .footer-links a { font-size: 13px; color: #8a8884; }
-    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
-    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-    .footer-copy a { color: #5a5955; }
-    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
-
-    @media (max-width: 640px) {
-      .nav-links { display: none; }
-      .pillar-icon-col { width: 44px; font-size: 18px; }
-    }
-  </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "url": "https://www.gohirehumans.com/trust-safety.html",
+  "name": "Trust and Safety | GoHireHumans",
+  "description": "How GoHireHumans supports clients and workers through profile trust signals, Stripe payment processing where configured, evidence-based issue review, and privacy practices.",
+  "dateModified": "2026-09-14",
+  "about": {
+    "@type": "Organization",
+    "name": "GoHireHumans",
+    "url": "https://www.gohirehumans.com/",
+    "description": "A marketplace for small, scoped human help.",
+    "knowsAbout": [
+      "profile trust signals",
+      "portfolio review",
+      "Stripe payment processing",
+      "issue review"
+    ]
+  }
+}
+  </script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Home",
+      "item": "https://www.gohirehumans.com/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Trust and Safety",
+      "item": "https://www.gohirehumans.com/trust-safety.html"
+    }
+  ]
+}
+  </script>
 </head>
 <body>
-
-  <div class="lp-nav-wrap">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/trust-safety.html">Trust</a></div>
@@ -165,7 +85,6 @@
     </nav>
     <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
-
   <script>
     function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
@@ -187,29 +106,43 @@
       });
     }
   </script>
-<main data-trust-simplified="true">
-    <div class="container">
-      <header class="page-header">
-        <div class="label">Trust &amp; Safety</div>
-        <h1>Know what to review before anyone commits</h1>
-        <p class="lead">GoHireHumans is a marketplace and payment connector. Profiles may display trust signals where available, and support can review task issues using platform records and available evidence.</p>
-      </header>
-
-      <section class="section trust-summary" aria-label="Trust overview">
-        <div class="trust-badges">
-          <div class="trust-badge">Profile signals where available</div>
-          <div class="trust-badge">Stripe checkout where configured</div>
-          <div class="trust-badge">Evidence-based issue review</div>
-          <div class="trust-badge">Content screening and reporting</div>
-        </div>
-      </section>
-
-      <section class="section trust-details" aria-labelledby="trust-details-heading">
+<main id="main-content" tabindex="-1" data-trust-simplified="true">
+<section class="pub-hero">
+  <div class="pub-hero-inner">
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> / <span aria-current="page">Trust and safety</span></nav>
+    <p class="pub-hero-label">Trust and safety</p>
+    <h1>Know what to review before anyone commits</h1>
+    <p class="pub-hero-lead">GoHireHumans is a marketplace and payment connector. Profiles may display trust signals where available, and support can review task issues using platform records and available evidence.</p>
+    <dl class="pub-hero-facts">
+      <dt>Worker payout</dt>
+      <dd>Workers receive the listed payout.</dd>
+      <dt>Employer fee</dt>
+      <dd>Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</dd>
+      <dt>Issue review</dt>
+      <dd>Evidence-based. Outcomes follow processor rules and platform records.</dd>
+    </dl>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="trust-details-heading">
+  <div class="pub-inner">
+    <div class="trust-summary" aria-label="Trust overview">
+      <div class="trust-badges">
+        <div class="trust-badge">Profile signals where available</div>
+        <div class="trust-badge">Stripe checkout where configured</div>
+        <div class="trust-badge">Evidence-based issue review</div>
+        <div class="trust-badge">Content screening and reporting</div>
+      </div>
+    </div>
+    <div class="pub-split">
+      <div class="section-head">
         <h2 id="trust-details-heading">Three checks before you proceed</h2>
+        <p>Trust signals inform your decision; they do not decide it for you. Review the provider, the terms, and the information you share.</p>
+      </div>
+      <div class="trust-details">
         <details class="trust-detail" open>
           <summary><span>1</span> Check the provider and scope</summary>
           <div class="trust-detail-body">
-            <p>Profiles may show identity status, experience, work samples, ratings, and reviews where available. Those signals are not a guarantee.</p>
+            <p>Profiles may show identity status, experience, work samples, ratings, and reviews where available. Those signals are inputs to your decision, not a promise of results.</p>
             <ul><li>Compare the profile with the specific task and requested result.</li><li>Define inputs, exclusions, timing, price, and acceptance criteria.</li><li>Keep task communication on-platform where possible so there is a usable record.</li></ul>
           </div>
         </details>
@@ -217,7 +150,7 @@
           <summary><span>2</span> Review payment and issue terms</summary>
           <div class="trust-detail-body">
             <p><strong>Stripe-powered processing where configured.</strong> Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured.</p>
-            <p><strong>Payment Review and dispute handling.</strong> Issue review uses configured processor rules, platform records, and available evidence; an outcome is not guaranteed.</p>
+            <p><strong>Payment review and dispute handling.</strong> Issue review uses configured processor rules, platform records, and available evidence; outcomes depend on that evidence and are not assured.</p>
             <ul><li>Supported checkout flows use Stripe where configured; payment availability can vary by workflow.</li><li>Review the listed scope, provider details, and deliverables before approving paid work.</li><li>Revision, refund, and other payment outcomes follow configured processor rules, platform records, and available evidence.</li><li>Off-platform payment requests can bypass platform records and issue-review evidence.</li></ul>
           </div>
         </details>
@@ -226,21 +159,26 @@
           <div class="trust-detail-body">
             <p>Fraud, fake reviews, privacy violations, explicit content, dangerous physical tasks, and other prohibited work can trigger review or account action.</p>
             <ul><li>Do not put passwords, credentials, payment instructions, or sensitive customer data in public listings.</li><li>Share only the information needed for the scoped task and use account security controls.</li><li>GoHireHumans does not sell user data to advertisers. See the Privacy Policy for collection, use, and sharing details.</li></ul>
-            <p><a href="/#/guidelines">Read Community Guidelines →</a> · <a href="/#/privacy">Read Privacy Policy →</a></p>
+            <p><a href="/#/guidelines">Read the Community Guidelines</a> &middot; <a href="/#/privacy">Read the Privacy Policy</a></p>
           </div>
         </details>
-      </section>
-
-      <section class="section trust-next-step" aria-labelledby="trust-next-step-heading">
-        <h2 id="trust-next-step-heading">Start with a small, reviewable task</h2>
-        <p>Use a bounded scope, define the evidence you expect, and review the draft before publishing or paying.</p>
-        <div class="trust-badges">
-          <a class="btn btn-primary" href="/#/post-job">Post a task</a>
-          <a class="btn btn-ghost" href="/#/services">Browse marketplace</a>
-        </div>
-      </section>
+      </div>
     </div>
-  </main>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="trust-next-step-heading">
+  <div class="pub-inner">
+    <div class="pub-cta trust-next-step">
+      <h2 id="trust-next-step-heading">Start with a small, reviewable task</h2>
+      <p>Use a bounded scope, define the evidence you expect, and review the draft before publishing or paying.</p>
+      <div class="pub-cta-actions">
+        <a class="btn btn-primary" href="/#/post-job">Post a task</a>
+        <a class="btn btn-ghost" href="/#/services">Browse marketplace</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
 <footer class="lp-footer">
   <div class="lp-footer-inner">
     <div class="lp-footer-top">
@@ -250,7 +188,7 @@
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
       </div>
       <div class="lp-footer-col">
-        <h4>Marketplace</h4>
+        <div class="lp-footer-heading">Marketplace</div>
         <ul class="lp-footer-links">
           <li><a href="/#/services">Browse Services</a></li>
           <li><a href="/#/jobs">Find Work</a></li>
@@ -259,7 +197,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Company</h4>
+        <div class="lp-footer-heading">Company</div>
         <ul class="lp-footer-links">
           <li><a href="/pricing.html">Pricing</a></li>
           <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
@@ -268,7 +206,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Legal</h4>
+        <div class="lp-footer-heading">Legal</div>
         <ul class="lp-footer-links">
           <li><a href="/#/terms">Terms of Service</a></li>
           <li><a href="/#/privacy">Privacy Policy</a></li>

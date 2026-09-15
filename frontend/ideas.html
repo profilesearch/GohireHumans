@@ -1,5 +1,46 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Task Ideas | Help Define GoHireHumans</title><meta name="description" content="Vote on task ideas, say what work you would pay for or do, and help define the future of GoHireHumans."><meta name="robots" content="index,follow"><link rel="canonical" href="https://www.gohirehumans.com/ideas.html"><meta property="og:title" content="Task Ideas | Help Define GoHireHumans"><meta property="og:description" content="Vote on task ideas, say what work you would pay for or do, and help define the future of GoHireHumans."><meta property="og:url" content="https://www.gohirehumans.com/ideas.html"><meta property="og:site_name" content="GoHireHumans"><link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;margin:0;color:#1a1816;background:#faf9f6}a{color:#0d7377}.wrap{max-width:1120px;margin:0 auto;padding:36px 22px 68px}.hero{background:linear-gradient(135deg,#07191a,#0d7377);color:white;border-radius:28px;padding:50px}.eyebrow{text-transform:uppercase;letter-spacing:.08em;font-weight:800;font-size:12px;color:#a7f3d0}.hero h1{font-size:clamp(34px,6vw,64px);line-height:1;margin:12px 0}.hero p{font-size:20px;line-height:1.55;color:rgba(255,255,255,.86);max-width:820px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:18px;margin:28px 0}.card{background:white;border:1px solid #e6e1d7;border-radius:18px;padding:22px;box-shadow:0 10px 28px rgba(30,20,10,.06)}.muted,.card p,li{color:#6b6963;line-height:1.7}.cta{display:inline-block;background:#0d7377;color:white;text-decoration:none;border-radius:12px;padding:14px 20px;font-weight:800;border:0;cursor:pointer}.secondary{background:#fff;color:#0d7377;border:1px solid #cfe7e7}.field{display:block;width:100%;box-sizing:border-box;border:1px solid #d8d2c8;border-radius:12px;padding:13px;margin:8px 0 14px;font:inherit}.pill{display:inline-block;background:#e6f3f3;color:#0d7377;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;margin:4px 6px 4px 0}.section{margin-top:34px}.footer{margin-top:40px;color:#6b6963;font-size:14px}.idea-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.tiny{font-size:12px;color:#6b6963}</style><link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix"><script src="/analytics-bootstrap.js"></script>
-<script>try{gtag('config', 'G-KM69M3NES8');}catch(e){}function trackGHH(n,p){try{gtag('event',n,p||{})}catch(e){}}function saveDraftAndOpen(d){const categories={unsure:'other',testing:'testing',expert_review:'expert_review',research:'research',phone_calls:'phone_call',local_check:'inspection',data_cleanup:'data_entry',other:'other'};d.category=categories[d.required_skills]||'other';try{sessionStorage.setItem('ghh_guided_task_draft',JSON.stringify(d));}catch(e){} const p=new URLSearchParams(); if(d.title)p.set('draft_title',d.title); if(d.description)p.set('draft_description',d.description); if(d.required_skills)p.set('draft_skills',d.required_skills); if(d.category)p.set('draft_category',d.category); if(d.budget_amount)p.set('draft_budget',d.budget_amount); location.href='/#/post-job'+(p.toString()?'?'+p.toString():'');}function requestAnyTaskDraft(){const task=document.getElementById('task_description')?.value.trim()||'';const outcome=document.getElementById('desired_outcome')?.value.trim()||'';const type=document.getElementById('task_type')?.value||'unsure';const budget=document.getElementById('budget_range')?.value.trim()||'';const urgency=document.getElementById('urgency')?.value.trim()||'';trackGHH('request_any_task_draft_created',{task_type:type,has_task:!!task,has_budget:!!budget,has_urgency:!!urgency});saveDraftAndOpen({title:(task||'Request a human task').slice(0,100),description:['What needs to be done:\n'+task,'Desired outcome:\n'+outcome,'Task type / category guess:\n'+type,'Budget range:\n'+budget,'Timing / urgency:\n'+urgency,'Please review this draft before publishing.'].filter(Boolean).join('\n\n'),required_skills:type,budget_amount:(budget.match(/\d+(?:\.\d{1,2})?/)||[''])[0],budget_type:'fixed'});}function ideaDraft(title,cat,budget){trackGHH('task_idea_draft_click',{idea:title,category:cat});saveDraftAndOpen({title:title,description:'I want help with this task idea: '+title+'\n\nPlease describe the inputs, deliverable, acceptance criteria, and timing before publishing.',required_skills:cat,budget_amount:budget||'',budget_type:'fixed'});}function voteIdea(title,role){trackGHH('task_idea_interest_vote',{idea:title,role:role});alert('Thanks — interest recorded in analytics. To turn it into a job, choose “Request this task.”');}</script></head><body><div class="lp-nav-wrap">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Ideas to Vote On | GoHireHumans</title>
+  <meta name="description" content="Vote on nine task ideas, say what you would pay for or do, and turn any idea into a draft job you review before publishing on GoHireHumans.">
+  <link rel="canonical" href="https://www.gohirehumans.com/ideas.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.gohirehumans.com/ideas.html">
+  <meta property="og:title" content="Task Ideas to Vote On | GoHireHumans">
+  <meta property="og:description" content="Vote on nine task ideas, say what you would pay for or do, and turn any idea into a draft job you review before publishing on GoHireHumans.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans: a marketplace for small, scoped human help">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Task Ideas to Vote On | GoHireHumans">
+  <meta name="twitter:description" content="Vote on nine task ideas, say what you would pay for or do, and turn any idea into a draft job you review before publishing on GoHireHumans.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>try{gtag('config', 'G-KM69M3NES8');}catch(e){}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
+  <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "Task ideas to vote on", "description": "Vote on nine task ideas, say what you would pay for or do, and turn any idea into a draft job you review before publishing on GoHireHumans.", "url": "https://www.gohirehumans.com/ideas.html", "dateModified": "2026-09-14", "isPartOf": {"@type": "WebSite", "name": "GoHireHumans", "url": "https://www.gohirehumans.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.gohirehumans.com/"}, {"@type": "ListItem", "position": 2, "name": "Use cases", "item": "https://www.gohirehumans.com/use-cases/"}, {"@type": "ListItem", "position": 3, "name": "Task ideas", "item": "https://www.gohirehumans.com/ideas.html"}]}
+  </script>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
@@ -8,6 +49,7 @@
     </nav>
     <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
+
   <script>
     function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
@@ -28,4 +70,171 @@
         if (event.target.closest('.lp-mobile-link')) toggleMobileMenu(false);
       });
     }
-  </script><div class="wrap"><section class="hero"><div class="eyebrow">Marketplace discovery</div><h1>What should people hire humans for?</h1><p>GoHireHumans should be shaped by real demand. Browse task ideas, signal what you would pay for or do, or turn an idea into a draft job.</p></section><section class="section"><h2>Help define the marketplace</h2><p class="muted">These are example task ideas, not limits. Click interest signals or turn any idea into a draft job. Nothing is published until you review and submit.</p><div class="grid"><article class="card"><span class="pill">testing</span><h3>Test a website signup flow</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Test a website signup flow','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Test a website signup flow','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Test a website signup flow','testing','25')">Request this task</button></div></article><article class="card"><span class="pill">expert_review</span><h3>Review AI output for trust issues</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Review AI output for trust issues','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Review AI output for trust issues','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Review AI output for trust issues','expert_review','35')">Request this task</button></div></article><article class="card"><span class="pill">research</span><h3>Build a sourced lead list</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Build a sourced lead list','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Build a sourced lead list','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Build a sourced lead list','research','50')">Request this task</button></div></article><article class="card"><span class="pill">phone_calls</span><h3>Make a phone call and report back</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Make a phone call and report back','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Make a phone call and report back','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Make a phone call and report back','phone_calls','25')">Request this task</button></div></article><article class="card"><span class="pill">local_check</span><h3>Check a local place or take photos</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Check a local place or take photos','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Check a local place or take photos','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Check a local place or take photos','local_check','40')">Request this task</button></div></article><article class="card"><span class="pill">data_cleanup</span><h3>Clean up a spreadsheet</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Clean up a spreadsheet','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Clean up a spreadsheet','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Clean up a spreadsheet','data_cleanup','30')">Request this task</button></div></article><article class="card"><span class="pill">research</span><h3>Compare vendor options</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Compare vendor options','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Compare vendor options','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Compare vendor options','research','45')">Request this task</button></div></article><article class="card"><span class="pill">testing</span><h3>Human review of chatbot responses</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Human review of chatbot responses','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Human review of chatbot responses','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Human review of chatbot responses','testing','35')">Request this task</button></div></article><article class="card"><span class="pill">research</span><h3>Verify source links in AI research</h3><p>Vote if you would pay for this or could do this work. Strong signals help shape what GoHireHumans becomes.</p><div class="idea-actions"><button class="cta secondary" onclick="voteIdea('Verify source links in AI research','buyer')">I would pay for this</button><button class="cta secondary" onclick="voteIdea('Verify source links in AI research','worker')">I can do this</button><button class="cta" onclick="ideaDraft('Verify source links in AI research','research','30')">Request this task</button></div></article></div></section><section class="section"><div class="card"><h2>Have a different idea?</h2><p>Describe any real-world or digital task you want a human to do.</p><a class="cta" href="/request-any-task.html" onclick="trackGHH('ideas_request_any_task_click',{source:'ideas_page'})">Describe any task</a></div></section><div class="footer">© 2026 GoHireHumans. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div></div></body></html>
+  </script>
+<main id="main-content">
+<section class="pub-hero"><div class="pub-hero-inner"><div><p class="pub-hero-label">Marketplace discovery</p><h1>What should people hire humans for?</h1><p class="pub-hero-lead">GoHireHumans should be shaped by real demand. Browse task ideas, signal what you would pay for or do, or turn an idea into a draft job. Nothing is published until you review and submit.</p><div class="pub-hero-actions"><a class="btn btn-primary" href="/request-any-task.html" onclick="trackGHH('ideas_request_any_task_click',{source:'ideas_page'})">Describe any task</a><a class="btn btn-secondary" href="/task-ideas.html">See 50 task ideas</a></div></div></div></section>
+<section class="pub-section"><div class="pub-inner">
+<nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><a href="/use-cases/">Use cases</a></li><li aria-current="page">Task ideas</li></ol></nav>
+<div class="section-head"><h2>Help define the marketplace</h2><p>These are example task ideas, not limits. Record your interest or turn any idea into a draft job. Votes are counted in analytics only; nothing is published until you review and submit.</p></div>
+<div class="pub-grid pub-grid--3">
+<article class="card card--interactive">
+  <span class="badge">testing</span>
+  <h3 class="card-title mt-3">Test a website signup flow</h3>
+  <p class="card-text mt-2">Walk through a signup or checkout flow on a real device and report every point of friction with screenshots.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $25</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Test a website signup flow','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Test a website signup flow','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Test a website signup flow','testing','25')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">expert_review</span>
+  <h3 class="card-title mt-3">Review AI output for trust issues</h3>
+  <p class="card-text mt-2">Read AI-written copy, replies, or claims and flag anything inaccurate, risky, or off-brand with evidence.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $35</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Review AI output for trust issues','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Review AI output for trust issues','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Review AI output for trust issues','expert_review','35')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">research</span>
+  <h3 class="card-title mt-3">Build a sourced lead list</h3>
+  <p class="card-text mt-2">Find a small set of matching companies or people and cite the public source for every row.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $50</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Build a sourced lead list','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Build a sourced lead list','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Build a sourced lead list','research','50')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">phone_calls</span>
+  <h3 class="card-title mt-3">Make a phone call and report back</h3>
+  <p class="card-text mt-2">Call a business, ask a scripted question, and return the answer as a short call log.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $25</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Make a phone call and report back','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Make a phone call and report back','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Make a phone call and report back','phone_calls','25')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">local_check</span>
+  <h3 class="card-title mt-3">Check a local place or take photos</h3>
+  <p class="card-text mt-2">Visit a public location, confirm what is there, and return dated photos and notes.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $40</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Check a local place or take photos','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Check a local place or take photos','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Check a local place or take photos','local_check','40')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">data_cleanup</span>
+  <h3 class="card-title mt-3">Clean up a spreadsheet</h3>
+  <p class="card-text mt-2">Dedupe, normalise, and flag ambiguous rows in a small sheet, with a change log.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $30</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Clean up a spreadsheet','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Clean up a spreadsheet','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Clean up a spreadsheet','data_cleanup','30')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">research</span>
+  <h3 class="card-title mt-3">Compare vendor options</h3>
+  <p class="card-text mt-2">Shortlist three to five vendors against your criteria and explain the trade-offs.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $45</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Compare vendor options','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Compare vendor options','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Compare vendor options','research','45')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">testing</span>
+  <h3 class="card-title mt-3">Human review of chatbot responses</h3>
+  <p class="card-text mt-2">Score a batch of chatbot answers against source documents and record what was wrong.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $35</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Human review of chatbot responses','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Human review of chatbot responses','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Human review of chatbot responses','testing','35')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+<article class="card card--interactive">
+  <span class="badge">research</span>
+  <h3 class="card-title mt-3">Verify source links in AI research</h3>
+  <p class="card-text mt-2">Open every citation in an AI-assisted report and confirm it exists and says what is claimed.</p>
+  <p class="text-xs text-muted mt-2">Suggested starting budget: $30</p>
+  <div class="cluster mt-4">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Verify source links in AI research','buyer',this)">I would pay for this</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="voteIdea('Verify source links in AI research','worker',this)">I can do this</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="ideaDraft('Verify source links in AI research','research','30')">Request this task</button>
+  </div>
+  <p class="form-help" data-vote-status role="status"></p>
+</article>
+</div>
+</div></section>
+<section class="pub-section pub-section--tight"><div class="pub-inner"><div class="pub-cta"><h2>Have a different idea?</h2><p>Describe any real-world or digital task you want a human to do. You get a draft to review; nothing is published or charged until you decide.</p><div class="pub-cta-actions"><a class="btn btn-primary" href="/#/post-job">Post a task</a><a class="btn btn-ghost" href="/examples/sample-deliverables.html">See sample deliverables</a></div></div></div></section>
+</main>
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Marketplace</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Company</div>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Legal</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
+<script>
+function trackGHH(n,p){try{if(typeof gtag==='function'){gtag('event',n,p||{});}}catch(e){}}
+function saveDraftAndOpen(d){const categories={unsure:'other',testing:'testing',expert_review:'expert_review',research:'research',phone_calls:'phone_call',local_check:'inspection',data_cleanup:'data_entry',other:'other'};d.category=categories[d.required_skills]||'other';try{sessionStorage.setItem('ghh_guided_task_draft',JSON.stringify(d));}catch(e){} const p=new URLSearchParams(); if(d.title)p.set('draft_title',d.title); if(d.description)p.set('draft_description',d.description); if(d.required_skills)p.set('draft_skills',d.required_skills); if(d.category)p.set('draft_category',d.category); if(d.budget_amount)p.set('draft_budget',d.budget_amount); location.href='/#/post-job'+(p.toString()?'?'+p.toString():'');}
+function ideaDraft(title,cat,budget){trackGHH('task_idea_draft_click',{idea:title,category:cat});saveDraftAndOpen({title:title,description:'I want help with this task idea: '+title+'\n\nPlease describe the inputs, deliverable, acceptance criteria, and timing before publishing.',required_skills:cat,budget_amount:budget||'',budget_type:'fixed'});}
+function voteIdea(title,role,btn){trackGHH('task_idea_interest_vote',{idea:title,role:role});var card=btn&&btn.closest?btn.closest('article'):null;var status=card?card.querySelector('[data-vote-status]'):null;if(status){status.textContent=role==='buyer'?'Thanks, your interest as a buyer is recorded. To turn it into a job, choose Request this task.':'Thanks, your interest as a worker is recorded. Watch Find Work for matching jobs.';status.hidden=false;}}
+</script>
+</body>
+</html>

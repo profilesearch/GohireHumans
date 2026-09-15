@@ -3282,7 +3282,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 if internal and re.search(r'(?:\?|&)utm_(?:source|medium|campaign|content|term)=', url, re.IGNORECASE):
                     failures.append(f"{rel}: internal UTM link {url}")
         self.assertEqual(failures, [])
-        self.assertEqual(bootstrap_count, 109)
+        self.assertEqual(bootstrap_count, 135)
 
         bootstrap = (REPO_ROOT / "frontend/analytics-bootstrap.js").read_text(encoding="utf-8")
         for snippet in [
@@ -3696,7 +3696,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             start = sitemap.index(f"<loc>{loc}</loc>")
             end = sitemap.index("</url>", start)
             block = sitemap[start:end]
-            self.assertIn("<lastmod>2026-05-25</lastmod>", block, loc)
+            self.assertIn("<lastmod>2026-09-14</lastmod>", block, loc)
 
     def test_ai_qa_example_deliverables_cover_every_fixed_sku(self):
         page = (REPO_ROOT / "frontend/ai-qa-example-deliverables.html").read_text(encoding="utf-8")
@@ -3738,7 +3738,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         start = sitemap.index(f"<loc>{loc}</loc>")
         end = sitemap.index("</url>", start)
         block = sitemap[start:end]
-        self.assertIn("<lastmod>2026-05-26</lastmod>", block)
+        self.assertIn("<lastmod>2026-09-14</lastmod>", block)
 
     def test_ai_qa_task_generator_supports_fixed_sku_shortcuts(self):
         generator = (REPO_ROOT / "frontend/ai-qa-task-generator.html").read_text(encoding="utf-8")

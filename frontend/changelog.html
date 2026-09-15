@@ -1,57 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Changelog — GoHireHumans</title>
-  <meta name="description" content="What shipped on GoHireHumans, in reverse chronological order. Auto-updated from git.">
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="Changelog — GoHireHumans">
-  <meta property="og:description" content="What shipped on GoHireHumans, in reverse chronological order.">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
-  <meta property="og:url" content="https://www.gohirehumans.com/changelog.html">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <title>Changelog | GoHireHumans</title>
+  <meta name="description" content="What shipped on GoHireHumans, newest first: design system refresh, owner-scoped listing endpoints, pricing copy fixes, SEO cleanup, and earlier launches.">
   <link rel="canonical" href="https://www.gohirehumans.com/changelog.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.gohirehumans.com/changelog.html">
+  <meta property="og:title" content="Changelog | GoHireHumans">
+  <meta property="og:description" content="What shipped on GoHireHumans, newest first: design system refresh, owner-scoped listing endpoints, pricing copy fixes, SEO cleanup, and earlier launches.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans: a marketplace for small, scoped human help">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Changelog | GoHireHumans">
+  <meta name="twitter:description" content="What shipped on GoHireHumans, newest first: design system refresh, owner-scoped listing endpoints, pricing copy fixes, SEO cleanup, and earlier launches.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
+  <link rel="alternate" type="application/atom+xml" title="GoHireHumans Blog" href="/atom.xml">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--bg:#f5f4f0;--surface:#faf9f6;--surface2:#fff;--divider:#dddbd6;--text:#1a1816;--muted:#6b6963;--faint:#a8a6a0;--primary:#0d7377;--primary-subtle:#e6f3f3;--radius:.5rem;--radius-lg:.75rem}
-    body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
-    .header{position:sticky;top:0;z-index:50;background:rgba(245,244,240,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--divider)}
-    .header-inner{max-width:1200px;margin:0 auto;padding:0 1.5rem;height:56px;display:flex;align-items:center;justify-content:space-between}
-    .logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:.9375rem;color:var(--text);text-decoration:none}
-    .logo-icon{width:28px;height:28px;background:var(--primary);border-radius:.375rem;display:flex;align-items:center;justify-content:center}
-    .logo-icon svg{width:16px;height:16px}
-    .header-nav{display:flex;align-items:center;gap:.5rem}
-    .header-nav a{font-size:.8125rem;font-weight:500;color:var(--muted);text-decoration:none;padding:.375rem .75rem;border-radius:.375rem}
-    .btn-cta{background:var(--primary)!important;color:#fff!important;font-weight:600!important}
-    main{max-width:760px;margin:0 auto;padding:3rem 1.5rem 4rem}
-    .hero{margin-bottom:2.5rem}
-    .hero h1{font-size:clamp(2rem,4.5vw,2.75rem);font-weight:800;letter-spacing:-.025em;margin-bottom:.5rem}
-    .hero p{color:var(--muted);font-size:1.0625rem}
-    .day{margin-bottom:2.5rem}
-    .day-head{display:flex;align-items:baseline;gap:1rem;margin-bottom:.875rem;padding-bottom:.5rem;border-bottom:1px solid var(--divider)}
-    .day-date{font-size:.875rem;font-weight:700;color:var(--primary);font-family:var(--mono)}
-    .day-meta{font-size:.75rem;color:var(--faint)}
-    .entry{padding:.875rem 1rem;background:var(--surface2);border:1px solid var(--divider);border-radius:var(--radius);margin-bottom:.5rem;font-size:.9375rem}
-    .entry-tag{display:inline-block;font-size:.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.125rem .5rem;background:var(--primary-subtle);color:var(--primary);border-radius:99px;margin-right:.5rem}
-    .entry-tag.fix{background:#fef3c7;color:#92400e}
-    .entry-tag.feat{background:var(--primary-subtle);color:var(--primary)}
-    .entry-tag.docs{background:#e8f5ea;color:#1e5f2a}
-    .entry-tag.seo{background:#e0e7ff;color:#3730a3}
-    .entry-sha{font-family:var(--mono);font-size:.75rem;color:var(--faint);margin-left:.375rem}
-    .entry-sha a{color:var(--faint);text-decoration:none}
-    .entry-sha a:hover{color:var(--primary);text-decoration:underline}
-  </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "Changelog", "description": "What shipped on GoHireHumans, newest first: design system refresh, owner-scoped listing endpoints, pricing copy fixes, SEO cleanup, and earlier launches.", "url": "https://www.gohirehumans.com/changelog.html", "dateModified": "2026-09-14", "isPartOf": {"@type": "WebSite", "name": "GoHireHumans", "url": "https://www.gohirehumans.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.gohirehumans.com/"}, {"@type": "ListItem", "position": 2, "name": "About", "item": "https://www.gohirehumans.com/about.html"}, {"@type": "ListItem", "position": 3, "name": "Changelog", "item": "https://www.gohirehumans.com/changelog.html"}]}
+  </script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
@@ -83,50 +73,140 @@
       });
     }
   </script>
-<main>
-    <section class="hero">
-      <h1>Changelog</h1>
-      <p>Every shipped change, newest first. See <a href="https://github.com/profilesearch/GohireHumans/commits/main" style="color:var(--primary)">main on GitHub</a> for the full git log.</p>
-    </section>
-
-    <section class="day">
-      <div class="day-head"><span class="day-date">Apr 30, 2026</span><span class="day-meta">Autonomous SEO push</span></div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Public roadmap (<code>/roadmap</code>) and changelog (<code>/changelog</code>).</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Live stats dashboard at <code>/stats</code> with real-time charts pulling from <code>/platform/stats</code>.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Self-serve press kit at <code>/press</code> with copy-paste boilerplates, brand colors, and asset downloads.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Interactive <a href="/tools/freelance-fee-calculator.html">Freelance Fee Calculator</a> comparing Fiverr / Upwork / Toptal / GoHireHumans.</div>
-      <div class="entry"><span class="entry-tag seo">SEO</span>BreadcrumbList JSON-LD added to all 25 blog posts.</div>
-      <div class="entry"><span class="entry-tag seo">SEO</span>RSS 2.0 (<code>/feed.xml</code>) and Atom (<code>/atom.xml</code>) feeds auto-generated from blog posts.</div>
-      <div class="entry"><span class="entry-tag fix">Fix</span>Updated stale platform-fee copy toward current connector pricing: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
-      <div class="entry"><span class="entry-tag seo">SEO</span><code>/.well-known/security.txt</code>, <code>/llms.txt</code>, <code>/humans.txt</code> for AI crawlers and security researchers.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Branded 404 page with search box, popular pages grid, and trust strip.</div>
-      <div class="entry"><span class="entry-tag fix">Fix</span>Hero H1 line-break (was reading "Find Expert Freelancersin Minutes" as one word for screen readers).</div>
-      <div class="entry"><span class="entry-tag fix">Fix</span>Three-steps section animation failsafe (force-visible after 3s if IntersectionObserver doesn't fire).</div>
-      <div class="entry"><span class="entry-tag fix">Fix</span>Required Terms-of-Service checkbox on registration form.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Hardened <code>backend/server.py</code>: structured JSON logging, X-Request-Id, X-Forwarded-For trust, defensive init_db, WAL mode.</div>
-      <div class="entry"><span class="entry-tag fix">Fix</span>Permissions-Policy now allows Stripe payment APIs (was blocking <code>payment</code> entirely).</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Pinned <code>requirements.txt</code> versions, non-root Dockerfile, gunicorn log piping.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Two new SEO blog posts: <a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html">Fiverr vs Upwork vs GoHireHumans</a> and <a href="/blog/how-to-hire-ai-agent.html">How to Hire an AI Agent</a>.</div>
-    </section>
-
-    <section class="day">
-      <div class="day-head"><span class="day-date">Mar 17, 2026</span><span class="day-meta">Phase 2 launch</span></div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>MCP server for AI agent integration (<a href="/blog/mcp-for-marketplaces.html">how it works</a>).</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Public REST API + agent developer portal (<code>/agent-onboarding</code>).</div>
-    </section>
-
-    <section class="day">
-      <div class="day-head"><span class="day-date">Mar 16, 2026</span><span class="day-meta">Content sprint</span></div>
-      <div class="entry"><span class="entry-tag seo">SEO</span>20+ new blog posts and "hire by role" landing pages.</div>
-      <div class="entry"><span class="entry-tag seo">SEO</span>Sitemap.xml expanded; OG cards on all key pages.</div>
-    </section>
-
-    <section class="day">
-      <div class="day-head"><span class="day-date">Mar 04, 2026</span><span class="day-meta">Initial public launch</span></div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>GoHireHumans public marketplace launch.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Stripe payment processing where configured integration for milestone-based payments.</div>
-      <div class="entry"><span class="entry-tag feat">Feat</span>Stripe processing + 1% GoHireHumans fee, 0% seller commission.</div>
-    </section>
-  </main>
+<main id="main-content">
+<section class="pub-hero"><div class="pub-hero-inner"><div><p class="pub-hero-label">Company</p><h1>Changelog</h1><p class="pub-hero-lead">What shipped on GoHireHumans, newest first. For commit-level history see <a href="https://github.com/profilesearch/GohireHumans/commits/main" rel="noopener" target="_blank">main on GitHub</a>.</p></div></div></section>
+<section class="pub-section"><div class="pub-inner pub-inner--narrow">
+<nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><a href="/about.html">About</a></li><li aria-current="page">Changelog</li></ol></nav>
+<div class="stack">
+<section class="stack" aria-labelledby="day-2026-09-14">
+<div class="section-head"><h2 id="day-2026-09-14"><time datetime="2026-09-14">September 14, 2026</time></h2><p>Site refresh</p></div>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Changes shipped on September 14, 2026">
+<table class="data-table">
+<caption>Changes shipped on September 14, 2026</caption>
+<thead><tr><th scope="col">Type</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-open">Design</span></td><td>Unified design system: one shared token set and component library in <code>style.css</code>, with page-local styles removed from every static page.</td></tr>
+<tr><td><span class="badge badge-open">Design</span></td><td>Canonical shell on every public page: the shared navigation, footer, skip link, and main landmark, synced from the partials.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Corrected pricing copy across the site. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</td></tr>
+<tr><td><span class="badge badge-completed">SEO</span></td><td>Metadata cleanup: titles, descriptions, canonicals, Open Graph and Twitter cards, and structured data on every static page; builder attribution removed.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>App fixes: dialogs, toasts, and navigation now use the shared components and keep focus and keyboard behaviour consistent.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Owner-scoped listing endpoints: <code>GET /me/services</code> and <code>GET /me/jobs</code> return the caller&#8217;s own listings in every status, newest first, with pagination and a status filter. See the <a href="/api-docs.html#me-services">API documentation</a>.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="stack" aria-labelledby="day-2026-04-30">
+<div class="section-head"><h2 id="day-2026-04-30"><time datetime="2026-04-30">April 30, 2026</time></h2><p>SEO and tooling push</p></div>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Changes shipped on April 30, 2026">
+<table class="data-table">
+<caption>Changes shipped on April 30, 2026</caption>
+<thead><tr><th scope="col">Type</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Public <a href="/roadmap.html">roadmap</a> and this changelog.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Live stats dashboard at <a href="/stats.html">/stats</a> with charts backed by <code>/platform/stats</code>.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Self-serve <a href="/press.html">press kit</a> with copy-paste boilerplates, brand colors, and asset downloads.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Interactive <a href="/tools/freelance-fee-calculator.html">freelance fee calculator</a> comparing Fiverr, Upwork, Toptal, and GoHireHumans.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Per-category landing pages and <a href="/vs/">comparison hubs</a> for the major marketplaces.</td></tr>
+<tr><td><span class="badge badge-completed">SEO</span></td><td>BreadcrumbList JSON-LD added to all 25 blog posts.</td></tr>
+<tr><td><span class="badge badge-completed">SEO</span></td><td>RSS 2.0 (<a href="/feed.xml">/feed.xml</a>) and Atom (<a href="/atom.xml">/atom.xml</a>) feeds generated from blog posts.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Updated stale platform-fee copy to the current connector pricing: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</td></tr>
+<tr><td><span class="badge badge-completed">SEO</span></td><td><code>/.well-known/security.txt</code>, <code>/llms.txt</code>, and <code>/humans.txt</code> for AI crawlers and security researchers.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Branded 404 page with a search box and popular-pages grid.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Hero heading line break read as one word by screen readers.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Three-step section animation fails safe: forced visible after 3 seconds if IntersectionObserver never fires.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Required Terms of Service checkbox on the registration form.</td></tr>
+<tr><td><span class="badge badge-in_progress">Infra</span></td><td>Hardened <code>backend/server.py</code>: structured JSON logging, X-Request-Id, X-Forwarded-For trust, defensive init_db, WAL mode.</td></tr>
+<tr><td><span class="badge badge-in_progress">Fix</span></td><td>Permissions-Policy now allows the Stripe payment APIs (it was blocking <code>payment</code> entirely).</td></tr>
+<tr><td><span class="badge badge-in_progress">Infra</span></td><td>Pinned <code>requirements.txt</code> versions, non-root Dockerfile, gunicorn log piping.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Two new blog posts: <a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html">Fiverr vs Upwork vs GoHireHumans</a> and <a href="/blog/how-to-hire-ai-agent.html">How to hire an AI agent</a>.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="stack" aria-labelledby="day-2026-03-17">
+<div class="section-head"><h2 id="day-2026-03-17"><time datetime="2026-03-17">March 17, 2026</time></h2><p>Phase 2 launch</p></div>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Changes shipped on March 17, 2026">
+<table class="data-table">
+<caption>Changes shipped on March 17, 2026</caption>
+<thead><tr><th scope="col">Type</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-open">Feature</span></td><td>MCP server for AI agent integration (<a href="/blog/mcp-for-marketplaces.html">how it works</a>).</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Public REST API and the <a href="/agent-onboarding.html">agent developer portal</a>.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="stack" aria-labelledby="day-2026-03-16">
+<div class="section-head"><h2 id="day-2026-03-16"><time datetime="2026-03-16">March 16, 2026</time></h2><p>Content sprint</p></div>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Changes shipped on March 16, 2026">
+<table class="data-table">
+<caption>Changes shipped on March 16, 2026</caption>
+<thead><tr><th scope="col">Type</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-completed">SEO</span></td><td>20+ new blog posts and hire-by-role landing pages.</td></tr>
+<tr><td><span class="badge badge-completed">SEO</span></td><td>Sitemap expanded; Open Graph cards on all key pages.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section class="stack" aria-labelledby="day-2026-03-04">
+<div class="section-head"><h2 id="day-2026-03-04"><time datetime="2026-03-04">March 4, 2026</time></h2><p>Initial public launch</p></div>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Changes shipped on March 4, 2026">
+<table class="data-table">
+<caption>Changes shipped on March 4, 2026</caption>
+<thead><tr><th scope="col">Type</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-open">Feature</span></td><td>GoHireHumans public marketplace launch.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Stripe payment processing, where configured, for milestone-based payments.</td></tr>
+<tr><td><span class="badge badge-open">Feature</span></td><td>Pricing: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+</div></section>
+<section class="pub-section pub-section--tight"><div class="pub-inner"><div class="pub-cta"><h2>Want to shape what ships next?</h2><p>The public roadmap lists what is in progress, what comes next, and what we are still considering.</p><div class="pub-cta-actions"><a class="btn btn-primary" href="/roadmap.html">See the roadmap</a><a class="btn btn-ghost" href="mailto:gohirehumans.operations@agentmail.to">Email an idea</a></div></div></div></section>
+</main>
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Marketplace</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Company</div>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Legal</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
 </body>
 </html>

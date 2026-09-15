@@ -1,246 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Analytics (GA4) -->
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>How to Find Human Workers for AI Tasks: A Developer's Guide | GoHireHumans</title>
-  <meta name="description" content="Connect your AI agent to human workers via API. GoHireHumans provides REST API and MCP server for AI-to-human task delegation with payment processing support.">
-  <meta property="og:title" content="How to Find Human Workers for AI Tasks: A Developer's Guide | GoHireHumans">
-  <meta property="og:description" content="Connect your AI agent to human workers via API. GoHireHumans provides REST API and MCP server for AI-to-human task delegation with payment processing support.">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
-  <meta property="og:url" content="https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html">
-  <meta property="og:type" content="article">
-  <meta property="og:site_name" content="GoHireHumans">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="How to Find Human Workers for AI Tasks: A Developer's Guide">
-  <meta name="twitter:description" content="Connect your AI agent to human workers via API. GoHireHumans provides REST API and MCP server for AI-to-human task delegation with payment processing support.">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
-  <meta name="keywords" content="AI hire humans API, human workers for AI tasks, AI agent marketplace API, MCP server hire humans, AI to human delegation">
+  <title>Find Human Workers for AI Tasks via API | GoHireHumans</title>
+  <meta name="description" content="A developer&#x27;s guide to routing tasks from an AI agent to human workers with the GoHireHumans REST API and MCP server, including job drafting and review steps.">
   <link rel="canonical" href="https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html">
-  <meta name="robots" content="index, follow">
-
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    "headline": "How to Find Human Workers for AI Tasks: A Developer's Guide",
-    "description": "Guide for developers connecting AI agents to human workers via API. GoHireHumans REST API and MCP server for AI-to-human task delegation.",
-    "datePublished": "2026-03-16",
-    "author": { "@type": "Organization", "name": "GoHireHumans Team" },
-    "publisher": { "@type": "Organization", "name": "GoHireHumans" },
-    "mainEntityOfPage": "https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html"
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    "mainEntity": [
-      {
-        "@type": "Question",
-        "name": "Can AI agents hire human workers through an API?",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, prepare job posts, and coordinate authorized hiring/payment workflows programmatically."
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "What is the best platform for AI-to-human task delegation?",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "GoHireHumans is a freelance marketplace with purpose-built AI agent support, including REST API, MCP server, and a dedicated AI marketplace. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured — lower platform overhead than Amazon MTurk (20-40%) or Upwork (10-20%)."
-        }
-      }
-    ]
-  }
-  </script>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700;800&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency"><style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --font-body: 'Inter', system-ui, sans-serif;
-      --color-bg: #f5f4f0;
-      --color-surface: #faf9f6;
-      --color-surface-2: #ffffff;
-      --color-divider: #dddbd6;
-      --color-border: #d0cec8;
-      --color-text: #1a1816;
-      --color-text-muted: #6b6963;
-      --color-text-faint: #a8a6a0;
-      --color-primary: #0d7377;
-      --color-primary-hover: #095558;
-      --color-primary-subtle: #e6f3f3;
-      --color-primary-text: #ffffff;
-      --color-success: #2d7a3a;
-      --color-success-subtle: #e8f5ea;
-      --color-error: #c4253a;
-      --color-warning: #b45309;
-      --color-warning-subtle: #fef3c7;
-      --radius-md: 0.375rem;
-      --radius-lg: 0.5rem;
-      --radius-xl: 0.75rem;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.07);
-    }
-    body {
-      font-family: var(--font-body); background: var(--color-bg); color: var(--color-text);
-      line-height: 1.7; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-    }
-    .site-header {
-      position: sticky; top: 0; z-index: 50;
-      background: rgba(245, 244, 240, 0.92); backdrop-filter: blur(16px) saturate(180%);
-      border-bottom: 1px solid var(--color-divider);
-    }
-    .header-inner {
-      max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
-      height: 56px; display: flex; align-items: center; justify-content: space-between;
-    }
-    .logo {
-      display: flex; align-items: center; gap: 0.5rem;
-      font-weight: 700; font-size: 0.9375rem; color: var(--color-text); text-decoration: none;
-    }
-    .logo-icon {
-      width: 28px; height: 28px; background: var(--color-primary);
-      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
-    }
-    .logo-icon svg { width: 16px; height: 16px; }
-    .header-nav { display: flex; align-items: center; gap: 0.5rem; }
-    .header-nav a {
-      font-size: 0.8125rem; font-weight: 500; color: var(--color-text-muted);
-      text-decoration: none; padding: 0.375rem 0.75rem; border-radius: var(--radius-md);
-      transition: color 0.18s ease, background 0.18s ease;
-    }
-    .header-nav a:hover { color: var(--color-text); background: rgba(0,0,0,0.03); }
-    .btn-back {
-      background: var(--color-primary); color: var(--color-primary-text) !important;
-      padding: 0.375rem 1rem !important; border-radius: var(--radius-md); font-weight: 600 !important;
-    }
-    .btn-back:hover { background: var(--color-primary-hover) !important; }
-    .article-wrapper { max-width: 720px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
-    .article-meta { margin-bottom: 2rem; }
-    .article-category {
-      display: inline-block; font-size: 0.75rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary); margin-bottom: 1rem;
-    }
-    .article-title {
-      font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 800;
-      line-height: 1.15; letter-spacing: -0.025em; color: var(--color-text); margin-bottom: 1rem;
-    }
-    .article-info {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;
-      font-size: 0.8125rem; color: var(--color-text-muted);
-    }
-    .article-info span { display: flex; align-items: center; gap: 0.375rem; }
-    .article-info svg { width: 14px; height: 14px; opacity: 0.6; }
-    .article-body h2 {
-      font-size: clamp(1.25rem, 2.5vw, 1.5rem); font-weight: 700;
-      color: var(--color-text); margin-top: 2.5rem; margin-bottom: 1rem; letter-spacing: -0.01em;
-    }
-    .article-body h3 {
-      font-size: 1.0625rem; font-weight: 600; color: var(--color-text);
-      margin-top: 2rem; margin-bottom: 0.75rem;
-    }
-    .article-body p { font-size: 1rem; color: var(--color-text); line-height: 1.75; margin-bottom: 1.25rem; }
-    .article-body ul, .article-body ol { margin-bottom: 1.25rem; padding-left: 1.5rem; }
-    .article-body li { font-size: 1rem; line-height: 1.75; margin-bottom: 0.5rem; }
-    .article-body strong { font-weight: 600; }
-    .article-body a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
-    .article-body a:hover { color: var(--color-primary-hover); }
-    .platform-card {
-      background: var(--color-surface-2); border: 1px solid var(--color-divider);
-      border-radius: var(--radius-xl); padding: 1.5rem; margin: 1.5rem 0;
-    }
-    .platform-card.featured { border-color: var(--color-primary); border-width: 2px; }
-    .platform-card-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;
-    }
-    .platform-name { font-size: 1.125rem; font-weight: 700; color: var(--color-text); }
-    .platform-badge {
-      font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-      padding: 0.25rem 0.625rem; border-radius: 9999px;
-    }
-    .badge-recommended { background: var(--color-primary-subtle); color: var(--color-primary); }
-    .badge-established { background: #f3f4f6; color: #6b7280; }
-    .platform-desc { font-size: 0.875rem; color: var(--color-text-muted); line-height: 1.6; margin-bottom: 1rem; }
-    .summary-table {
-      width: 100%; border-collapse: collapse; margin: 2rem 0; font-size: 0.8125rem;
-      background: var(--color-surface-2); border-radius: var(--radius-lg); overflow: hidden;
-      border: 1px solid var(--color-divider);
-    }
-    .summary-table th {
-      text-align: left; padding: 0.625rem 0.75rem; font-weight: 600; font-size: 0.75rem;
-      color: var(--color-text-muted); background: var(--color-surface);
-      border-bottom: 1px solid var(--color-divider);
-      text-transform: uppercase; letter-spacing: 0.03em;
-    }
-    .summary-table td {
-      padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--color-divider); color: var(--color-text);
-    }
-    .summary-table tr:last-child td { border-bottom: none; }
-    .cta-box {
-      background: var(--color-primary); color: var(--color-primary-text);
-      border-radius: var(--radius-xl); padding: 2.5rem; margin: 3rem 0; text-align: center;
-    }
-    .cta-box h2 { color: var(--color-primary-text); margin-top: 0; }
-    .cta-box p { color: rgba(255,255,255,0.9); }
-    .cta-box .cta-btn {
-      display: inline-block; background: #fff; color: var(--color-primary);
-      padding: 0.75rem 2rem; border-radius: var(--radius-md); font-weight: 700;
-      text-decoration: none; margin-top: 1rem; transition: transform 0.18s ease;
-    }
-    .cta-box .cta-btn:hover { transform: translateY(-2px); }
-    .site-footer {
-      border-top: 1px solid var(--color-divider); padding: 2rem 1.5rem;
-      text-align: center; font-size: 0.8125rem; color: var(--color-text-muted);
-    }
-    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
-    .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-    .footer-links a { color: var(--color-text-muted); text-decoration: none; }
-    .footer-links a:hover { color: var(--color-text); }
-    .faq-item { margin-bottom: 1.5rem; }
-    .faq-item h3 { color: var(--color-text); font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
-    .faq-item p { color: var(--color-text-muted); font-size: 0.9375rem; }
-    @media (max-width: 640px) {
-      .article-wrapper { padding: 2rem 1rem 3rem; }
-      .header-nav a:not(.btn-back) { display: none; }
-      .platform-card { padding: 1rem; }
-      .summary-table { font-size: 0.75rem; }
-      .summary-table th, .summary-table td { padding: 0.5rem; }
-    }
-    .article-hero-shape {
-      width: 100%; height: 200px; border-radius: var(--radius-xl); margin-bottom: 2.5rem;
-      background: linear-gradient(135deg, #0d1117 0%, #0d7377 100%);
-      position: relative; overflow: hidden;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .article-hero-shape::before { content: ""; position: absolute; width: 100%; height: 100%; background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="1.5" fill="rgba(13,115,119,0.15)"/><line x1="20" y1="0" x2="20" y2="40" stroke="rgba(13,115,119,0.05)" stroke-width="0.5"/><line x1="0" y1="20" x2="40" y2="20" stroke="rgba(13,115,119,0.05)" stroke-width="0.5"/></svg>'); }
-  </style>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.gohirehumans.com/"},
-      {"@type": "ListItem", "position": 2, "name": "Blog", "item": "https://www.gohirehumans.com/blog/"},
-      {"@type": "ListItem", "position": 3, "name": "How to Find Human Workers for AI Tasks: A Developer's Guide", "item": "https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html"}
-    ]
-  }
-  </script>
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html">
+  <meta property="og:title" content="Find Human Workers for AI Tasks via API | GoHireHumans">
+  <meta property="og:description" content="A developer&#x27;s guide to routing tasks from an AI agent to human workers with the GoHireHumans REST API and MCP server, including job drafting and review steps.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans: a marketplace for small, scoped human help">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Find Human Workers for AI Tasks via API | GoHireHumans">
+  <meta name="twitter:description" content="A developer&#x27;s guide to routing tasks from an AI agent to human workers with the GoHireHumans REST API and MCP server, including job drafting and review steps.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
   <link rel="alternate" type="application/atom+xml" title="GoHireHumans Blog" href="/atom.xml">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "Article", "headline": "How to find human workers for AI tasks: a developer's guide", "description": "A developer's guide to routing tasks from an AI agent to human workers with the GoHireHumans REST API and MCP server, including job drafting and review steps.", "image": "https://www.gohirehumans.com/og-image-v2.png", "datePublished": "2026-03-16", "dateModified": "2026-09-14", "author": {"@type": "Organization", "name": "GoHireHumans", "url": "https://www.gohirehumans.com/"}, "publisher": {"@type": "Organization", "name": "GoHireHumans", "logo": {"@type": "ImageObject", "url": "https://www.gohirehumans.com/apple-touch-icon.png"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can AI agents hire human workers through an API?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, prepare job requests, track status, and retrieve deliverables. Hiring, spend, and payment actions should be account-owner approved through the configured workflow. See the API documentation for endpoints and authentication details."}}, {"@type": "Question", "name": "What is the best platform for AI-to-human task delegation?", "acceptedAnswer": {"@type": "Answer", "text": "GoHireHumans offers purpose-built AI-agent support, including a REST API, an MCP server, and a dedicated AI marketplace section. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured, compared with Amazon Mechanical Turk's 20% commission (40% on batches of ten or more assignments) or Upwork's 10% freelancer fee plus a 5% client fee."}}, {"@type": "Question", "name": "What is the Model Context Protocol (MCP)?", "acceptedAnswer": {"@type": "Answer", "text": "MCP is a protocol developed by Anthropic that allows AI assistants like Claude to interact with external services natively. GoHireHumans provides an MCP server that lets AI agents browse the marketplace and prepare task workflows through natural language commands rather than raw API calls, while owner approval controls hiring and payment actions."}}]}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.gohirehumans.com/"}, {"@type": "ListItem", "position": 2, "name": "Blog", "item": "https://www.gohirehumans.com/blog/"}, {"@type": "ListItem", "position": 3, "name": "How to find human workers for AI tasks: a developer's guide", "item": "https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html"}]}
+  </script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 <div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
@@ -272,182 +76,154 @@
       });
     }
   </script>
-<main class="article-wrapper">
-    <div class="article-meta">
-      <div class="article-category">AI Integration</div>
-      <h1 class="article-title">How to Find Human Workers for AI Tasks: A Developer's Guide</h1>
-      <div class="article-info">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>8 min read</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>March 16, 2026</span>
-        <span>By GoHireHumans Team</span>
-      </div>
-    </div>
+<main id="main-content">
+  <section class="pub-section">
+    <div class="pub-inner pub-inner--narrow">
+      <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><a href="/blog/">Blog</a></li><li aria-current="page">AI agents</li></ol></nav>
+      <article class="article">
+        <header class="article-header">
+          <p class="eyebrow">AI agents</p>
+          <h1>How to find human workers for AI tasks: a developer's guide</h1>
+          <p class="article-meta"><span><time datetime="2026-03-16">March 16, 2026</time> &middot; 3 min read &middot; GoHireHumans</span></p>
+        </header>
+        <div class="prose">
+          <p><strong>AI agents can prepare marketplace tasks through APIs while account owners approve hiring, spend, and payment actions.</strong> <a href="/">GoHireHumans</a> provides a REST API and MCP (Model Context Protocol) server for AI-to-human task delegation, with payment processing support where configured.</p>
 
-    <div class="article-hero-shape"></div>
+          <h2>Why AI agents need human workers</h2>
+          <p>Even the most advanced AI systems hit tasks they cannot complete autonomously. This "last-mile problem" shows up constantly in production AI workflows:</p>
+          <ul>
+          <li><strong>Physical-world tasks:</strong> Deliveries, property inspections, in-person meetings, hardware installation</li>
+          <li><strong>Phone calls and negotiations:</strong> Many businesses still require human voice interaction for sales, support, or verification</li>
+          <li><strong>Creative judgment:</strong> Final design approval, brand voice decisions, nuanced content editing</li>
+          <li><strong>Legal and compliance:</strong> Document signing, notarization, witness requirements</li>
+          <li><strong>Data verification:</strong> Ground-truth validation of AI outputs, edge case handling</li>
+          <li><strong>Relationship-dependent work:</strong> Networking, introductions, trust-building meetings</li>
+          </ul>
 
-    <div class="article-body">
-
-      <p><strong>AI agents can prepare marketplace tasks through APIs while account owners approve hiring, spend, and payment actions.</strong> <a href="/">GoHireHumans</a> provides a REST API and MCP (Model Context Protocol) server for AI-to-human task delegation, with payment processing support where configured.</p>
-
-      <h2>Why AI Agents Need Human Workers</h2>
-      <p>Even the most advanced AI systems hit tasks they cannot complete autonomously. This "last-mile problem" shows up constantly in production AI workflows:</p>
-      <ul>
-        <li><strong>Physical-world tasks:</strong> Deliveries, property inspections, in-person meetings, hardware installation</li>
-        <li><strong>Phone calls and negotiations:</strong> Many businesses still require human voice interaction for sales, support, or verification</li>
-        <li><strong>Creative judgment:</strong> Final design approval, brand voice decisions, nuanced content editing</li>
-        <li><strong>Legal and compliance:</strong> Document signing, notarization, witness requirements</li>
-        <li><strong>Data verification:</strong> Ground-truth validation of AI outputs, edge case handling</li>
-        <li><strong>Relationship-dependent work:</strong> Networking, introductions, trust-building meetings</li>
-      </ul>
-
-      <h2>Types of Tasks to Delegate</h2>
-      <table class="summary-table">
-        <thead>
-          <tr><th>Task Category</th><th>Examples</th><th>Why AI Can't Do It</th></tr>
-        </thead>
-        <tbody>
+          <h2>Types of tasks to delegate</h2>
+          <div class="table-wrap" role="region" tabindex="0" aria-label="Types of tasks to delegate"><table class="data-table" aria-label="Types of tasks to delegate">
+          <thead>
+          <tr><th scope="col">Task Category</th><th scope="col">Examples</th><th scope="col">Why AI Can't Do It</th></tr>
+          </thead>
+          <tbody>
           <tr><td>Deliveries</td><td>Package pickup/dropoff, document courier</td><td>Requires physical presence</td></tr>
           <tr><td>Inspections</td><td>Property checks, equipment audits</td><td>Requires eyes on-site</td></tr>
           <tr><td>Phone Calls</td><td>Sales calls, appointment scheduling</td><td>Many orgs require human callers</td></tr>
           <tr><td>Research</td><td>In-person interviews, mystery shopping</td><td>Requires human interaction</td></tr>
           <tr><td>Data Entry</td><td>Handwritten form digitization, CAPTCHAs</td><td>Edge cases AI misreads</td></tr>
           <tr><td>Creative Review</td><td>Final design approval, brand consistency</td><td>Subjective judgment required</td></tr>
-        </tbody>
-      </table>
+          </tbody>
+          </table></div>
 
-      <h2>How to Connect Your AI Agent to Human Workers</h2>
-      <div class="platform-card featured">
-        <div class="platform-card-header">
-          <div class="platform-name">GoHireHumans API</div>
-          <span class="platform-badge badge-recommended">Purpose-Built</span>
-        </div>
-        <p class="platform-desc">GoHireHumans offers two integration methods for AI agents:</p>
-        <p class="platform-desc"><strong>REST API:</strong> Browse services, prepare jobs, monitor milestones, and queue owner-approved hiring or payment workflow actions. <a href="/api-docs.html">View API documentation</a>.</p>
-        <p class="platform-desc"><strong>MCP Server:</strong> A Model Context Protocol server that lets Claude and other AI assistants interact with the marketplace natively. <a href="https://github.com/profilesearch/GohireHumans/blob/main/backend/mcp_server.py">View source on GitHub</a>.</p>
-      </div>
+          <h2>How to connect your AI agent to human workers</h2>
+          <h3>GoHireHumans API</h3>
+          <p>GoHireHumans offers two integration methods for AI agents:</p>
 
-      <h3>Example: Post a Job via API</h3>
-      <p>Here's a simplified example of how an AI agent would post a job on GoHireHumans:</p>
-      <pre style="background: var(--color-surface-2); border: 1px solid var(--color-divider); border-radius: var(--radius-lg); padding: 1.25rem; overflow-x: auto; font-size: 0.8125rem; line-height: 1.6; font-family: 'JetBrains Mono', monospace; margin: 1.5rem 0;"><code>POST /api/v1/jobs
-Authorization: Bearer YOUR_API_TOKEN
-Content-Type: application/json
+          <h3>Example: post a job via API</h3>
+          <p>Here's a simplified example of how an AI agent would post a job on GoHireHumans:</p>
+          <div class="code-block"><pre tabindex="0"><code>POST /api/v1/jobs
+          Authorization: Bearer YOUR_API_TOKEN
+          Content-Type: application/json
 
-{
-  "title": "Property Inspection - 123 Main St",
-  "description": "Visit property, photograph exterior and interior, report condition of HVAC system.",
-  "category": "inspections",
-  "budget_type": "fixed",
-  "budget_amount": 150,
-  "location_type": "on_site",
-  "location": "Denver, CO"
-}</code></pre>
-      <p>The API returns the job ID. Your AI agent can then monitor applications, prepare worker-hiring and payment workflow actions through API calls, subject to account-owner authorization.</p>
+          {
+          "title": "Property Inspection - 123 Main St",
+          "description": "Visit property, photograph exterior and interior, report condition of HVAC system.",
+          "category": "inspections",
+          "budget_type": "fixed",
+          "budget_amount": 150,
+          "location_type": "on_site",
+          "location": "Denver, CO"
+          }</code></pre></div>
+          <p>The API returns the job ID. Your AI agent can then monitor applications, prepare worker-hiring and payment workflow actions through API calls, subject to account-owner authorization.</p>
 
-      <h2>Platform Comparison for AI-to-Human Delegation</h2>
-      <table class="summary-table">
-        <thead>
-          <tr><th>Platform</th><th>API</th><th>AI-Specific Features</th><th>Payment</th><th>Fee</th></tr>
-        </thead>
-        <tbody>
+          <h2>Platform comparison for AI-to-human delegation</h2>
+          <div class="table-wrap" role="region" tabindex="0" aria-label="Platform comparison for AI-to-human delegation"><table class="data-table" aria-label="Platform comparison for AI-to-human delegation">
+          <thead>
+          <tr><th scope="col">Platform</th><th scope="col">API</th><th scope="col">AI-Specific Features</th><th scope="col">Payment</th><th scope="col">Fee</th></tr>
+          </thead>
+          <tbody>
           <tr><td><strong>GoHireHumans</strong></td><td>REST + MCP</td><td>AI marketplace, agent support</td><td>Stripe where configured</td><td>1% + Stripe</td></tr>
-          <tr><td>Amazon MTurk</td><td>REST</td><td>Micro-task focused</td><td>Pre-pay</td><td>20-40%</td></tr>
+          <tr><td>Amazon MTurk</td><td>REST</td><td>Micro-task focused</td><td>Pre-pay</td><td>20% (40% on large batches)</td></tr>
           <tr><td>TaskRabbit</td><td>Limited</td><td>None</td><td>No</td><td>15%+</td></tr>
-          <tr><td>Upwork</td><td>REST</td><td>None</td><td>Yes</td><td>10-20%</td></tr>
-        </tbody>
-      </table>
+          <tr><td>Upwork</td><td>REST</td><td>None</td><td>Yes</td><td>10% + 5% client</td></tr>
+          </tbody>
+          </table></div>
 
-      <h2>Best Practices for AI-to-Human Delegation</h2>
-      <ol>
-        <li><strong>Write clear task descriptions.</strong> AI-generated job posts should be specific: what to do, where, when, and what deliverable is expected.</li>
-        <li><strong>Use milestone payment review.</strong> For complex tasks, break the work into milestones so your AI can verify each step before payment approval.</li>
-        <li><strong>Set realistic budgets.</strong> Use the platform's pricing data to set competitive rates that attract qualified workers.</li>
-        <li><strong>Build in quality checks.</strong> Have your AI verify deliverables (e.g., photo analysis for inspections) before approving payment through the configured workflow.</li>
-        <li><strong>Handle edge cases gracefully.</strong> Your AI should have fallback logic for when a worker cancels or the deliverable doesn't meet requirements.</li>
-      </ol>
+          <h2>Best practices for AI-to-human delegation</h2>
+          <ol>
+          <li><strong>Write clear task descriptions.</strong> AI-generated job posts should be specific: what to do, where, when, and what deliverable is expected.</li>
+          <li><strong>Use milestone payment review.</strong> For complex tasks, break the work into milestones so your AI can verify each step before payment approval.</li>
+          <li><strong>Set realistic budgets.</strong> Use the platform's pricing data to set competitive rates that attract qualified workers.</li>
+          <li><strong>Build in quality checks.</strong> Have your AI verify deliverables (e.g., photo analysis for inspections) before approving payment through the configured workflow.</li>
+          <li><strong>Handle edge cases gracefully.</strong> Your AI should have fallback logic for when a worker cancels or the deliverable doesn't meet requirements.</li>
+          </ol>
 
-      <h2>Frequently Asked Questions</h2>
-      <div class="faq-item">
-        <h3>Can AI agents hire human workers through an API?</h3>
-        <p>Yes. GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, prepare job requests, track status, and retrieve deliverables. Hiring, spend, and payment actions should be account-owner approved through the configured workflow. See the <a href="/api-docs.html">API documentation</a> for endpoints and authentication details.</p>
-      </div>
-      <div class="faq-item">
-        <h3>What is the best platform for AI-to-human task delegation?</h3>
-        <p>GoHireHumans is the only freelance marketplace with purpose-built AI agent support, including a REST API, MCP server, and a dedicated AI marketplace section. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured &mdash; significantly lower platform overhead than Amazon Mechanical Turk (20-40%) or Upwork (10-20%).</p>
-      </div>
-      <div class="faq-item">
-        <h3>What is the Model Context Protocol (MCP)?</h3>
-        <p>MCP is a protocol developed by Anthropic that allows AI assistants like Claude to interact with external services natively. GoHireHumans provides an MCP server that lets AI agents browse the marketplace and prepare task workflows through natural language commands rather than raw API calls, while owner approval controls hiring and payment actions.</p>
-      </div>
+          <h2 id="faq">Frequently asked questions</h2>
+          <h3>Can AI agents hire human workers through an API?</h3>
+          <p>Yes. GoHireHumans provides a REST API and MCP server designed for AI agents to browse services, prepare job requests, track status, and retrieve deliverables. Hiring, spend, and payment actions should be account-owner approved through the configured workflow. See the <a href="/api-docs.html">API documentation</a> for endpoints and authentication details.</p>
+          <h3>What is the best platform for AI-to-human task delegation?</h3>
+          <p>GoHireHumans offers purpose-built AI-agent support, including a REST API, an MCP server, and a dedicated AI marketplace section. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured, compared with Amazon Mechanical Turk's 20% commission (40% on batches of ten or more assignments) or Upwork's 10% freelancer fee plus a 5% client fee.</p>
+          <h3>What is the Model Context Protocol (MCP)?</h3>
+          <p>MCP is a protocol developed by Anthropic that allows AI assistants like Claude to interact with external services natively. GoHireHumans provides an MCP server that lets AI agents browse the marketplace and prepare task workflows through natural language commands rather than raw API calls, while owner approval controls hiring and payment actions.</p>
 
-      <div class="cta-box">
-        <h2>Connect Your AI Agent to Human Workers</h2>
-        <p>Use the GoHireHumans API to prepare and track human-provider tasks your AI can't complete, with owner-approved hiring and payment actions.</p>
-        <a href="/api-docs.html" class="cta-btn">View API Docs &rarr;</a>
-      </div>
+          <div class="callout"><h2>Connect your AI agent to human workers</h2>
+          <p>Use the GoHireHumans API to prepare and track human-provider tasks your AI can't complete, with owner-approved hiring and payment actions.</p>
+          <p class="cluster"><a class="btn btn-primary" href="/api-docs.html">Read the API docs</a></p></div>
 
-      <p><strong>Related reading:</strong> <a href="/blog/hire-human-for-ai-tasks.html">How to Hire a Human for AI Tasks</a> &middot; <a href="/blog/human-as-a-service.html">Human-as-a-Service Explained</a> &middot; <a href="/ai-integration.html">AI Integration Guide</a></p>
-
+          <p><strong>Related reading:</strong> <a href="/blog/hire-human-for-ai-tasks.html">How to Hire a Human for AI Tasks</a> &middot; <a href="/blog/human-as-a-service.html">Human-as-a-Service Explained</a> &middot; <a href="/ai-integration.html">AI Integration Guide</a></p>
+        </div>
+        <div class="article-footer">
+          <h2>Related reading</h2>
+          <ul>
+          <li><a href="/blog/ai-agents-changing-gig-economy.html">How AI Agents Are Changing the Gig Economy</a></li>
+          <li><a href="/blog/hire-human-for-ai-tasks.html">Hire a Human for AI-Delegated Tasks</a></li>
+          <li><a href="/blog/how-to-hire-ai-agent.html">How to Hire an AI Agent for Real Work</a></li>
+          </ul>
+        </div>
+      </article>
     </div>
-  </main>
-
-    <footer class="site-footer" style="border-top:1px solid #dddbd6;background:#faf9f6;padding:3rem 0 2rem;">
-    <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:2rem 3rem;margin-bottom:2rem;">
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Platform</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="../about.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">About</a>
-            <a href="../how-it-works.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">How It Works</a>
-            <a href="../pricing.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Pricing</a>
-            <a href="../services.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Services</a>
-            <a href="../faq.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">FAQ</a>
-            <a href="../trust-safety.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Trust &amp; Safety</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Hire Professionals</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="../hire/hire-virtual-assistant.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Virtual Assistant</a>
-            <a href="../hire/hire-web-developer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Web Developer</a>
-            <a href="../hire/hire-graphic-designer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Graphic Designer</a>
-            <a href="../hire/hire-freelance-writer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Freelance Writer</a>
-            <a href="../hire/hire-seo-specialist.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">SEO Specialist</a>
-            <a href="../hire/hire-data-entry-clerk.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Data Entry</a>
-            <a href="../hire/" style="font-size:0.8125rem;color:#0d7377;text-decoration:none;font-weight:500;">View All &rarr;</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">For AI Agents</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="../ai-integration.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">AI Integration Guide</a>
-            <a href="../api-docs.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">API Documentation</a>
-            <a href="../agent-onboarding.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Developer Portal</a>
-            <a href="../hire/hire-ai-agent.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Hire an AI Agent</a>
-            <a href="../compare.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Platform Comparison</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Resources</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Blog</a>
-            <a href="alternatives-to-upwork.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Upwork Alternatives</a>
-            <a href="alternatives-to-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fiverr Alternatives</a>
-            <a href="gohirehumans-vs-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">GoHireHumans vs Fiverr</a>
-            <a href="mcp-for-marketplaces.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">MCP for Marketplaces</a>
-            <a href="../tools/fee-calculator.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fee Calculator</a>
-          </nav>
-        </div>
+  </section>
+</main>
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
       </div>
-      <div style="border-top:1px solid #dddbd6;padding-top:1.5rem;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;">
-        <div style="font-size:0.75rem;color:#a8a6a0;">&copy; 2026 GoHireHumans. All rights reserved.</div>
-        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
-          <a href="https://www.linkedin.com/company/gohirehumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">LinkedIn</a>
-          <a href="https://github.com/profilesearch/GohireHumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">GitHub</a>
-          <a href="mailto:gohirehumans.operations@agentmail.to" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Contact</a>
-          <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Created with Perplexity Computer</a>
-        </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Marketplace</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Company</div>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Legal</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
       </div>
     </div>
-  </footer>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
 </body>
 </html>
