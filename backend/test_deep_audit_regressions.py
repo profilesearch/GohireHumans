@@ -2020,7 +2020,7 @@ class BackendRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
             'data-simplified-home="true"',
-            "Describe the work. Hire the right human.",
+            "Some work still needs a person.",
             "What do you need help with?",
             "Clear scope, visible evidence, buyer approval.",
             "A clear route for workers and agents.",
@@ -2527,14 +2527,14 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         failures = self._assert_shared_landing_nav(use_case_pages)
         self.assertEqual(failures, [])
 
-    def test_public_nav_active_state_uses_light_pill_for_all_tabs(self):
+    def test_public_nav_active_state_uses_ink_text_and_red_rule_for_all_tabs(self):
         css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
         required_snippets = [
             ".lp-nav-link.lp-nav-link-active,",
             ".lp-nav-link.lp-nav-link-active:hover,",
             ".lp-mobile-link.lp-nav-link-active,",
-            "color: #0d7377 !important;",
-            "background: #e6f3f3 !important;",
+            "color: #1a1816 !important;",
+            "background: transparent !important;",
             "text-decoration: none !important;",
         ]
         missing = [snippet for snippet in required_snippets if snippet not in css]
@@ -2544,8 +2544,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         css = (REPO_ROOT / "frontend/style.css").read_text(encoding="utf-8", errors="ignore")
         required_css = [
             ".lp-nav-logo {",
-            "font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;",
-            "font-weight: 700 !important; font-size: 15px; line-height: 28px;",
+            "font-family: 'Newsreader', Georgia, 'Times New Roman', serif !important;",
+            "font-weight: 500 !important; font-size: 26px; line-height: 28px;",
             "color: #1a1816 !important; text-decoration: none !important;",
             ".lp-nav-logo svg {",
             "width: 28px; height: 28px; flex: 0 0 28px;",
@@ -2943,6 +2943,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
     def _nav_labels(self, nav):
         labels = []
         for anchor in re.findall(r"<a\b[^>]*>(.*?)</a>", nav, flags=re.S | re.I):
+            # Decorative, aria-hidden spans (the wordmark's red period) are not part of the label.
+            anchor = re.sub(r'<span\b[^>]*aria-hidden="true"[^>]*>.*?</span>', " ", anchor, flags=re.S | re.I)
             label = re.sub(r"<[^>]+>", " ", anchor)
             label = " ".join(label.split())
             if label:
@@ -3448,7 +3450,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         self.assertNotRegex(text, r"(?i)\bpublic beta listings\b")
         for snippet in [
-            "Describe the work. Hire the right human.",
+            "Some work still needs a person.",
             "Start with QA",
             "Agents can search public listings, recommend opportunities, and prepare requests for human approval.",
             "Employer pays Stripe processing + 1% where configured",

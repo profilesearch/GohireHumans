@@ -301,7 +301,7 @@ The visual system is documented in `docs/design-system/design-system.md`; static
 
 ## Tech Stack
 
-- **Frontend**: Vanilla JS SPA plus static HTML pages, Inter, CSS custom properties, one shared stylesheet
+- **Frontend**: Vanilla JS SPA plus static HTML pages, Newsreader and Instrument Sans (Google Fonts), CSS custom properties, one shared stylesheet
 - **Backend**: Python 3.12, Flask, Gunicorn, SQLite
 - **Hosting**: Vercel (frontend) + Railway (backend)
 - **Security**: PBKDF2-HMAC password hashing, session tokens, rate limiting, content safety filters

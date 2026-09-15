@@ -41,7 +41,7 @@
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
   <meta name="keywords" content="AI agent marketplace, hire humans, hire AI agents, agentic workforce, services marketplace, human services, AI workflow tasks, website testing, lead research, AI output review, phone call help, local verification, data cleanup, freelance marketplace">
   <meta name="author" content="GoHireHumans">
-  <meta name="theme-color" content="#0d7377">
+  <meta name="theme-color" content="#f4efe6">
   <meta name="application-name" content="GoHireHumans">
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <link rel="alternate" type="text/plain" title="LLMs guide to GoHireHumans" href="/llms.txt">
@@ -220,8 +220,8 @@
   <link rel="preload" href="/base.css?v=20260525-css-cachefix" as="style">
   <link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">
   <link rel="preload" href="/app.css?v=20260914" as="style">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"></noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=JetBrains+Mono:wght@400;600&display=swap"></noscript>
 
   <link rel="stylesheet" href="/base.css?v=20260525-css-cachefix">
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
@@ -1083,7 +1083,7 @@ const I = {
   bank: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18"/><path d="M12 3 2 8v2h20V8z"/><path d="M5 10v8"/><path d="M9 10v8"/><path d="M15 10v8"/><path d="M19 10v8"/><path d="M3 21h18"/></svg>`,
 };
 
-const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
+const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="2" fill="#1a1816"/><circle cx="11" cy="10" r="3.5" fill="#f4efe6"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="#f4efe6" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="#f4efe6" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="#f4efe6" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
 
 // ─── Public Nav (top bar) ──────────────────────────────────────
 function renderPublicNav(activePage = '') {
@@ -1105,10 +1105,9 @@ function renderPublicNav(activePage = '') {
     : `<button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>`;
   return `
     <div class="lp-nav-wrap">
+      <div class="lp-masthead"><div class="lp-masthead-inner"><span>A marketplace for small, scoped human help</span><span>Est. 2026 &middot; United States &middot; Free to join</span></div></div>
       <nav class="lp-nav" aria-label="Main navigation">
-        <a class="lp-nav-logo" href="/">
-          ${LOGO} GoHireHumans
-        </a>
+        <a class="lp-nav-logo" href="/">GoHireHumans<span class="lp-nav-logo-dot" aria-hidden="true">.</span></a>
         <div class="lp-nav-links">
           ${navLinks.map(l => {
             const activeAttrs = activePage === l.key ? ' lp-nav-link-active" aria-current="page' : '';
@@ -1167,7 +1166,7 @@ function publicFooter() {
       <div class="lp-footer-inner">
         <div class="lp-footer-top">
           <div class="lp-footer-brand">
-            <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">${LOGO} GoHireHumans</a>
+            <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">GoHireHumans<span class="lp-footer-logo-dot" aria-hidden="true">.</span></a>
             <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
             <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
           </div>
@@ -1371,9 +1370,9 @@ async function renderLanding() {
         <section class="lp-visual-hero lp-home-hero" data-home-section="hero">
           <div class="lp-visual-hero-inner lp-home-hero-inner">
             <div class="lp-hero-copy">
-              <div class="lp-hero-eyebrow">Small, scoped work with a clear result</div>
-              <h1 class="lp-hero-title">Describe the work. Hire the right human.</h1>
-              <p class="lp-hero-short">Post a task or choose a service for research, QA, calls, local checks, data cleanup, creative work, and other jobs that need human judgment.</p>
+              <div class="lp-hero-eyebrow">Help wanted</div>
+              <h1 class="lp-hero-title">Some work still needs a person.</h1>
+              <p class="lp-hero-short">Post a task or choose a service for research, QA, phone calls, local checks, data cleanup, and creative work. Hire a person whose judgment you can check before you pay.</p>
               <div class="lp-hero-ctas lp-hero-ctas-left">
                 <button class="btn btn-primary btn-lg" onclick="trackEvent('homepage_describe_task_primary_click', { source: 'homepage_hero' });trackEvent('first_order_trust_describe_task_click', { source: 'homepage_hero' });markGuidedTaskIntakeStart('hero_describe_task_cta');document.getElementById('guided-task-need')?.focus();document.getElementById('guided-task-intake')?.scrollIntoView({behavior:'smooth', block:'nearest'});">Describe your task</button>
                 <button class="btn btn-secondary btn-lg" onclick="trackEvent('browse_humans_cta_click', { source: 'homepage_hero_secondary' });navigate('#/services')">Browse services</button>
@@ -1414,7 +1413,7 @@ async function renderLanding() {
           </div>
         </section>
 
-        <section class="lp-compact-section lp-light-band" data-home-section="start" aria-labelledby="home-start-heading">
+        <section class="lp-compact-section" data-home-section="start" aria-labelledby="home-start-heading">
           <div class="lp-section-inner">
             <div class="section-head">
               <div class="lp-section-label">Start here</div>
@@ -1442,7 +1441,7 @@ async function renderLanding() {
           </div>
         </section>
 
-        <section class="lp-compact-section" data-home-section="how" aria-labelledby="home-how-heading">
+        <section class="lp-compact-section lp-light-band" data-home-section="how" aria-labelledby="home-how-heading">
           <div class="lp-section-inner">
             <div class="pub-split">
               <div class="section-head">
@@ -1450,7 +1449,7 @@ async function renderLanding() {
                 <h2 id="home-how-heading" class="lp-section-head">Clear scope, visible evidence, buyer approval.</h2>
                 <p class="lp-section-sub">Every task follows the same three steps, whether a person or an agent drafted it.</p>
               </div>
-              <ol class="steps">
+              <ol class="steps steps--display">
                 <li><h3>Scope the work</h3><p>Define the result, timing, price, and acceptance criteria before committing.</p></li>
                 <li><h3>Review the evidence</h3><p>Use deliverables such as files, screenshots, links, call notes, or issue tables.</p></li>
                 <li><h3>Approve or revise</h3><p>Review the result against the agreed scope and use the configured payment flow.</p></li>
@@ -1463,7 +1462,7 @@ async function renderLanding() {
           </div>
         </section>
 
-        <section class="lp-compact-section lp-light-band" data-home-section="marketplace" aria-labelledby="home-market-heading">
+        <section class="lp-compact-section" data-home-section="marketplace" aria-labelledby="home-market-heading">
           <div class="lp-section-inner">
             <div class="section-head">
               <div class="lp-section-label">Marketplace preview</div>
