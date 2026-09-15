@@ -6,7 +6,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const analyticsBootstrap = fs.readFileSync(path.join(__dirname, '..', 'analytics-bootstrap.js'), 'utf8');
 const routes = [
-  { path: '/', mustContain: 'Describe the work. Hire the right human.' },
+  { path: '/', mustContain: 'Some work still needs a person.' },
   { path: '/starter-offers.html', mustContain: 'Start small when the work needs proof.' },
   { path: '/pricing.html', mustContain: 'Simple pricing, shown before you commit' },
   { path: '/proof-packs.html', mustContain: 'Proof packs for human verification work' },
@@ -488,8 +488,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
           return { color: s.color, background: s.backgroundColor, textDecoration: s.textDecorationLine };
         });
         expect(active.textDecoration, `${item.path} active nav should not underline`).toBe('none');
-        expect(active.color, `${item.path} active nav color`).toBe('rgb(13, 115, 119)');
-        expect(active.background, `${item.path} active nav background`).toBe('rgb(230, 243, 243)');
+        expect(active.color, `${item.path} active nav color`).toBe('rgb(26, 24, 22)');
+        expect(active.background, `${item.path} active nav background`).toBe('rgba(0, 0, 0, 0)');
       } else {
         await expect(activeLinks, `${item.path} should not mark a section active`).toHaveCount(0);
       }
@@ -543,17 +543,14 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       });
       expect(normal.color, `${path} logo text color`).toBe('rgb(26, 24, 22)');
       expect(normal.textDecoration, `${path} logo text decoration`).toBe('none');
-      expect(normal.fontSize, `${path} logo font size`).toBe('15px');
-      expect(normal.fontWeight, `${path} logo weight`).toBe('700');
+      expect(normal.fontSize, `${path} logo font size`).toBe('26px');
+      expect(normal.fontWeight, `${path} logo weight`).toBe('500');
       expect(normal.lineHeight, `${path} logo line height`).toBe('28px');
       expect(normal.gap, `${path} logo gap`).toBe('8px');
       expect(normal.whiteSpace, `${path} logo nowrap`).toBe('nowrap');
-      expect(normal.svgWidth, `${path} logo svg width`).toBe(28);
-      expect(normal.svgHeight, `${path} logo svg height`).toBe(28);
-      expect(normal.svgDisplay, `${path} logo svg display`).toBe('block');
-      expect(normal.svgFlexShrink, `${path} logo svg flex shrink`).toBe('0');
-      expect(normal.width, `${path} logo width tolerance`).toBeGreaterThan(130);
-      expect(normal.width, `${path} logo width tolerance`).toBeLessThan(170);
+      expect(normal.svgWidth, `${path} logo is a wordmark without an svg mark`).toBe(0);
+      expect(normal.width, `${path} logo width tolerance`).toBeGreaterThan(120);
+      expect(normal.width, `${path} logo width tolerance`).toBeLessThan(240);
       await logo.hover();
       await page.waitForTimeout(180);
       const hover = await logo.evaluate(el => {
@@ -1184,7 +1181,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     await expect(page.locator('[data-simplified-home="true"]')).toBeVisible();
-    await expect(page.locator('h1')).toContainText('Describe the work. Hire the right human.');
+    await expect(page.locator('h1')).toContainText('Some work still needs a person.');
     await expect(page.locator('[data-home-section]')).toHaveCount(5);
     await expect(page.locator('.lp-start-card')).toHaveCount(4);
     expect(await page.locator('.lp-feed-card').count()).toBeLessThanOrEqual(3);

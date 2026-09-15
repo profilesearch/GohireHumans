@@ -30,15 +30,15 @@ h1, h2, h3, h4, h5, h6 { text-wrap: balance; }
 p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
 
 ::selection {
-  background: rgba(13, 115, 119, 0.25); /* fallback for older browsers */
-  background: color-mix(in oklab, var(--color-primary, #0d7377) 25%, transparent);
+  background: rgba(184, 50, 31, 0.22); /* fallback for older browsers */
+  background: color-mix(in oklab, var(--color-accent, #b8321f) 22%, transparent);
   color: var(--color-text, #1a1816);
 }
 
 :focus-visible {
   outline: 2px solid transparent;
   outline-offset: 2px;
-  box-shadow: var(--ring, 0 0 0 3px rgba(13, 115, 119, 0.3));
+  box-shadow: var(--ring, 0 0 0 3px rgba(184, 50, 31, 0.4));
 }
 
 @media (prefers-reduced-motion: reduce) {
