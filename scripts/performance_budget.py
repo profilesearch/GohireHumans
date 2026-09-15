@@ -5,9 +5,17 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / 'frontend'
 budgets = json.loads((FRONTEND / 'performance-budgets.json').read_text())
 failures = []
-checks = [('frontend/index.html', budgets['homepage_max_bytes']), ('frontend/style.css', budgets['style_css_max_bytes'])]
+checks = [
+    ('frontend/index.html', budgets['homepage_max_bytes']),
+    ('frontend/style.css', budgets['style_css_max_bytes']),
+    ('frontend/app.css', budgets['app_css_max_bytes']),
+]
 for rel, limit in checks:
-    size = (ROOT / rel).stat().st_size
+    path = ROOT / rel
+    if not path.exists():
+        failures.append(f'{rel} is missing')
+        continue
+    size = path.stat().st_size
     if size > limit:
         failures.append(f'{rel} is {size} bytes > budget {limit}')
 for path in FRONTEND.rglob('*.html'):

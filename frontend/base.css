@@ -1,4 +1,5 @@
-/* base.css */
+/* base.css — resets and typographic care shared by every page.
+   Tokens come from style.css; nothing here hardcodes a color. */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
@@ -14,30 +15,30 @@ html {
 
 body {
   min-height: 100dvh;
-  line-height: 1.6;
-  font-family: var(--font-body, sans-serif);
-  font-size: var(--text-sm);
-  color: var(--color-text);
-  background-color: var(--color-bg);
+  font-family: var(--font-body, system-ui, sans-serif);
+  font-size: var(--text-base, 0.9375rem);
+  line-height: var(--leading-normal, 1.55);
+  color: var(--color-text, #1a1816);
+  background-color: var(--color-bg, #f5f4f0);
 }
 
 img, picture, video, canvas, svg { display: block; max-width: 100%; height: auto; }
 ul[role="list"], ol[role="list"] { list-style: none; }
 input, button, textarea, select { font: inherit; color: inherit; }
 
-h1, h2, h3, h4, h5, h6 { text-wrap: balance; line-height: 1.15; }
+h1, h2, h3, h4, h5, h6 { text-wrap: balance; }
 p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
 
 ::selection {
   background: rgba(13, 115, 119, 0.25); /* fallback for older browsers */
-  background: oklch(from var(--color-primary) l c h / 0.25);
-  color: var(--color-text);
+  background: color-mix(in oklab, var(--color-primary, #0d7377) 25%, transparent);
+  color: var(--color-text, #1a1816);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 3px;
-  border-radius: var(--radius-sm);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--ring, 0 0 0 3px rgba(13, 115, 119, 0.3));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -52,7 +53,7 @@ p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
 button { cursor: pointer; background: none; border: none; }
 table { border-collapse: collapse; width: 100%; }
 
-.sr-only {
+.sr-only, .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
 }
