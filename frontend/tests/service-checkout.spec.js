@@ -16,7 +16,7 @@ async function fixture(page, options = {}) {
   });
   await page.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
-    if (url.origin !== 'http://127.0.0.1:4173') { evidence.external.push(req.url()); return route.abort(); }
+    if (url.origin !== `http://127.0.0.1:${process.env.PW_PORT || 4173}`) { evidence.external.push(req.url()); return route.abort(); }
     if (url.pathname === '/config.js') return route.fulfill({ contentType: 'application/javascript', body: "window.GOHIREHUMANS_API_URL=location.origin+'/fixture';" });
     if (url.pathname.startsWith('/fixture')) {
       const p = url.pathname.slice('/fixture'.length);

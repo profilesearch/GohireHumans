@@ -47,7 +47,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
   test('relative dates treat SQLite-space timestamps as UTC in every browser timezone', async ({ browser }) => {
     for (const timezoneId of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
       const context = await browser.newContext({
-        baseURL: 'http://127.0.0.1:4173',
+        baseURL: `http://127.0.0.1:${process.env.PW_PORT || 4173}`,
         timezoneId
       });
       const page = await context.newPage();
@@ -338,6 +338,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.locator('.auth2-toggle a').click();
     await expect(page).toHaveURL(new RegExp(`#\\/login\\?redirect=${encodeURIComponent(redirect).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}$`));
 
+    await page.evaluate(() => sessionStorage.setItem('ghh_guided_task_draft', JSON.stringify({ title: 'Check ten AI claims', description: 'Return a sourced issue table', budget_type: 'fixed' })));
     await page.goto('/#/login?redirect=post-job', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.auth2-title')).toHaveText('Your job draft is saved');
     await expect(page.locator('.auth2-sub')).toHaveText('Sign in or create a free account to review it. Nothing has been posted or charged.');
@@ -984,6 +985,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     let deadlineBody = null;
     const requestedPaths = [];
     await page.addInitScript(() => {
+      // Seed the employer only once: the test switches to an admin session before the admin half.
+      if (sessionStorage.getItem('ghh_token')) return;
       sessionStorage.setItem('ghh_token', 'employer-token');
       localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
     });
@@ -1060,7 +1063,6 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.addInitScript(() => {
       sessionStorage.setItem('ghh_token', 'admin-token');
       localStorage.setItem('ghh_user', JSON.stringify({ id: 9, name: 'Admin', is_admin: true }));
-      window.prompt = () => 'step-up-password';
     });
     await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
       const url = new URL(route.request().url());
@@ -1071,6 +1073,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.goto('/#/admin/disputes', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('Stripe processing and the 1% platform fee are not automatically refunded.')).toBeVisible();
     await page.getByRole('button',{name:'Issue task-amount refund'}).click();
+    await page.locator('#admin-password-confirm').fill('step-up-password');
     await page.getByRole('button',{name:'Issue refund'}).click();
     await expect.poll(() => body).not.toBeNull();
     expect(body).toEqual({order_id:88,resolution:'refund_to_employer',admin_password:'step-up-password'});
@@ -1180,7 +1183,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    await expect(page.locator('main[data-simplified-home="true"]')).toBeVisible();
+    await expect(page.locator('[data-simplified-home="true"]')).toBeVisible();
     await expect(page.locator('h1')).toContainText('Describe the work. Hire the right human.');
     await expect(page.locator('[data-home-section]')).toHaveCount(5);
     await expect(page.locator('.lp-start-card')).toHaveCount(4);
@@ -1364,11 +1367,11 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
     await page.route('https://gohirehumans-production.up.railway.app/**', route => {
       const url = new URL(route.request().url());
-      if (url.pathname === '/services') {
+      if (url.pathname === '/me/services') {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ services: [
+          body: JSON.stringify({ total: 2, page: 1, per_page: 20, total_pages: 1, services: [
             {
               id: 941,
               worker_id: 42,
@@ -1391,18 +1394,6 @@ test.describe('GoHireHumans public/browser regression suite', () => {
               delivery_time_days: 1,
               worker_rating: null,
               worker_review_count: 0,
-              status: 'active'
-            },
-            {
-              id: 943,
-              worker_id: 99,
-              title: 'Another owner listing',
-              category: 'testing',
-              pricing_type: 'fixed',
-              price: 50,
-              delivery_time_days: 2,
-              worker_rating: 5,
-              worker_review_count: 2,
               status: 'active'
             }
           ] })

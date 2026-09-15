@@ -13,7 +13,7 @@ async function openService(page) {
     if (!['GET', 'HEAD'].includes(req.method())) { writes.push(req.url()); return route.abort(); }
     if (/\/order(?:s|\/|$)|\/quote(?:\?|$)/.test(url.pathname)) { orders.push(req.url()); return route.abort(); }
     // No external traffic, including GA/tag-manager bootstrap or collection.
-    if (url.origin !== 'http://127.0.0.1:4173' || /google-analytics|googletagmanager|\/collect/.test(req.url())) return route.abort();
+    if (url.origin !== `http://127.0.0.1:${process.env.PW_PORT || 4173}` || /google-analytics|googletagmanager|\/collect/.test(req.url())) return route.abort();
     if (url.pathname === '/config.js') return route.fulfill({ contentType: 'application/javascript', body: "window.GOHIREHUMANS_API_URL=location.origin+'/fixture';" });
     if (url.pathname.startsWith('/fixture')) {
       const data = url.pathname === '/fixture/services/321' ? {
