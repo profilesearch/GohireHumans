@@ -68,13 +68,13 @@ Two families from one Google Fonts link on every page, plus JetBrains Mono where
 | `--text-display` | `clamp(2.75rem, 1.6rem + 4.2vw, 6rem)` — 44px to 96px | serif | home and #/ai-employers hero h1 (the home hero caps at 80px via app.css) |
 | `--text-lead` | `clamp(1.125rem, 1rem + 0.5vw, 1.375rem)` — 18px to 22px | serif | hero leads, prose lead |
 
-Line heights: `--leading-tight 0.98` (display), `--leading-snug 1.12` (serif headings), `--leading-normal 1.55` (UI), `--leading-relaxed 1.7` (prose). Tracking: `-0.025em` on display, `-0.02em` on 2xl/3xl, `-0.01em` on serif titles, `--tracking-label 0.14em` on small-caps labels. Serif headings are weight 400 (titles at lg/xl are 500); sans UI is 400/500/600. Weight 700 is retired everywhere except `<strong>` inside prose (600). Uppercase with tracking is allowed on labels (`.eyebrow` family), `.badge`, `th`, `.stat-label`, `.lp-footer-heading`, `.article-meta`, `.pub-hero-facts dt`, `.lp-masthead-inner`, and `.sidebar-label`.
+Line heights: `--leading-tight 0.98` (display), `--leading-snug 1.12` (serif headings), `--leading-normal 1.55` (UI), `--leading-relaxed 1.7` (prose). Tracking: `-0.025em` on display, `-0.02em` on 2xl/3xl, `-0.01em` on serif titles, `--tracking-label 0.14em` on small-caps labels. Serif headings are weight 400 (titles at lg/xl are 500); sans UI is 400/500/600. Weight 700 is retired everywhere except `<strong>` inside prose (600). Uppercase with tracking is allowed on labels (`.eyebrow` family), `.badge`, `th`, `.stat-label`, `.lp-footer-heading`, `.article-meta`, `.pub-hero-facts dt`, and `.sidebar-label`.
 
 Prose (`.prose`, blog posts) is set in Newsreader at 18px / 1.65; tables, callouts, badges, buttons and steps inside prose switch back to the sans.
 
 ### Spacing and layout
 
-`--space-1` 4px through `--space-24` 96px on a 4px scale. `--section-y: clamp(3.5rem, 8vw, 6rem)` for public-page sections. `--nav-h: 64px` is the sticky bar; `--masthead-h: 34px` is the strip above it that scrolls away (the wrap is `position: sticky; top: calc(-1 * var(--masthead-h))`). Content widths: `--content-prose 720px`, `--content-narrow 640px`, `--content-default 960px`, `--content-wide 1200px`. Public sections use `--content-wide` with `padding-inline: var(--space-6)`.
+`--space-1` 4px through `--space-24` 96px on a 4px scale. `--section-y: clamp(3.5rem, 8vw, 6rem)` for public-page sections. `--nav-h: 64px` is the sticky nav bar, and every sticky offset uses it. Content widths: `--content-prose 720px`, `--content-narrow 640px`, `--content-default 960px`, `--content-wide 1200px`. Public sections use `--content-wide` with `padding-inline: var(--space-6)`.
 
 ### Radius, shadow, motion
 
@@ -120,7 +120,7 @@ Everything in `app.css` consumes the tokens above, so the signed-in product re-s
 
 ## 5. Page patterns
 
-- Shell: a 34px masthead strip (`.lp-masthead` — "A marketplace for small, scoped human help" on the left, "Est. 2026 · United States · Free to join" on the right, hidden on phones) above a 64px nav; the wordmark `GoHireHumans.` (Newsreader 500, 26px, red aria-hidden period); sans nav links that turn red on hover, the active link underlined by a 2px red rule; ghost "Sign in" and ink "Post a task". Footer under a 4px double rule: serif wordmark, xs tagline, small-caps column headings, muted links that turn red on hover.
+- Shell: a 64px sticky nav on paper with a hairline below; the wordmark `GoHireHumans.` (Newsreader 500, 26px, red aria-hidden period); sans nav links that turn red on hover, the active link underlined by a 2px red rule; ghost "Sign in" and ink "Post a task". Footer under a 4px double rule: serif wordmark, xs tagline, small-caps column headings, muted links that turn red on hover.
 - Home (SPA landing): hero with the red "Help wanted" label, the serif display headline beside the task-draft form (`.lp-guided-intake`, paper form in an ink frame), serif lead, ink and outlined buttons, and the three facts as a ruled definition list. "Start here" as four ruled columns (`.lp-start-grid`, "No. 1" italic numerals, serif titles). "How it works" on the darker paper with `.steps--display` (01/02/03). Marketplace preview as three classified columns (`.lp-feed-grid`: red category label, serif title, meta, serif price). Workers and agents as two columns split by a rule (`.lp-home-route-grid`). Sections are separated by ink rules; only "How it works" uses the darker band.
 - Editorial static page (about, pricing, faq, trust, how-it-works, docs): `.pub-hero` (one column), then `.pub-section`s with `.pub-split` or `.pub-inner--narrow`, key facts as `.data-table`, FAQ as `.disclosure`, closing `.pub-cta`.
 - Hub page (hire, use-cases, ai-human-qa, blog, vs, tools, categories): `.pub-hero` + `.card-list` rows; `.pub-grid` of outlined boxes only when items are truly parallel and short.

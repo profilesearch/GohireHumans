@@ -4,7 +4,7 @@ The public shell is the navigation and footer every public page shares, plus the
 
 Canonical public shell components live in `frontend/partials/`:
 
-- `public-nav.html` — the `<div class="lp-nav-wrap">` block: the masthead strip (`.lp-masthead`, first child), the `<nav class="lp-nav">` bar with the serif wordmark `<a class="lp-nav-logo" href="/">GoHireHumans<span class="lp-nav-logo-dot" aria-hidden="true">.</span></a>`, and the mobile menu
+- `public-nav.html` — the `<div class="lp-nav-wrap">` block: the `<nav class="lp-nav">` bar with the serif wordmark `<a class="lp-nav-logo" href="/">GoHireHumans<span class="lp-nav-logo-dot" aria-hidden="true">.</span></a>`, and the mobile menu
 - `public-footer.html` — the `<footer class="lp-footer">` block (same wordmark pattern with `lp-footer-logo-dot`)
 
 ## Baseline for every public HTML page under `frontend/`

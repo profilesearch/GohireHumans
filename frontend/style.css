@@ -44,7 +44,6 @@
   --space-24: 6rem;
   --section-y: clamp(3.5rem, 8vw, 6rem);
   --nav-h: 64px;
-  --masthead-h: 34px;
 
   --content-prose: 720px;
   --content-narrow: 640px;
@@ -605,21 +604,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-primary)
 .auth2-terms-label:hover { color: var(--color-text); }
 .auth2-terms-label input[type="checkbox"] { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; }
 
-/* ─── 5. Public shell: masthead, nav, mobile menu, footer ───────────── */
-/* The wrap sticks with a negative top, so the masthead scrolls away and the nav bar stays. */
+/* ─── 5. Public shell: nav, mobile menu, footer ────────────────────── */
 .lp-nav-wrap {
-  position: sticky; top: calc(-1 * var(--masthead-h)); z-index: 50;
+  position: sticky; top: 0; z-index: 50;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-divider);
 }
-.lp-masthead { height: var(--masthead-h); border-bottom: 1px solid var(--color-border-strong); }
-.lp-masthead-inner {
-  max-width: var(--content-wide); height: 100%; margin: 0 auto; padding: 0 var(--space-6);
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
-  font-size: 0.6875rem; font-weight: 500; letter-spacing: var(--tracking-label); text-transform: uppercase;
-  color: var(--color-text); white-space: nowrap;
-}
-.lp-masthead-inner span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lp-nav {
   max-width: var(--content-wide); margin: 0 auto;
   padding: 0 var(--space-6);
@@ -1092,8 +1082,6 @@ main > .pub-section--alt:last-child { border-bottom: 0; }
   .lp-footer-brand { grid-column: 1 / -1; max-width: none; }
 }
 @media (max-width: 640px) {
-  .lp-masthead-inner { padding: 0 var(--space-4); letter-spacing: 0.1em; }
-  .lp-masthead-inner span:last-child { display: none; }
   .lp-nav { padding: 0 var(--space-4); }
   .lp-nav-logo { font-size: 24px; }
   .lp-nav-actions .btn-ghost { display: none; }
