@@ -7,7 +7,7 @@ Enzo chose direction A, "Broadsheet", from four mockups (canvas: https://claude.
 1. Fonts: Newsreader (serif, headlines and leads, optical sizing on) + Instrument Sans (UI and body). JetBrains Mono stays for code only.
 2. Palette: paper `#f4efe6`, darker paper `#ede6d8`, ink `#1a1816`, stamp red `#b8321f`. Ink is the action colour (buttons, links); red is a mark (labels, numerals, wordmark period, active nav rule, hover, focus ring). Teal is gone everywhere except the raster icons that still need regenerating (see task 2).
 3. Structure: rules and columns instead of cards, pills and tints. Every radius token is 2px. Nothing lifts on hover; titles turn red, borders turn ink.
-4. Shell: a 34px masthead strip above a 64px nav (the strip scrolls away, the bar sticks); serif wordmark `GoHireHumans.` with an `aria-hidden` red period; footer under a 4px double rule.
+4. Shell: a 64px sticky nav (a masthead strip shipped in the first pass and was removed the same day at Enzo's request: it read as clutter); serif wordmark `GoHireHumans.` with an `aria-hidden` red period; footer under a 4px double rule.
 5. Home hero keeps the task-draft form (a conversion surface with tests and analytics) on the right, restyled as a paper form in an ink frame. The classified "board" from the mockup became the marketplace-preview section (three ruled columns fed by the live `/services` API). Adding an open-tasks board to the hero is optional (task 5).
 6. Home hero copy changed to the mockup's: label "Help wanted", headline "Some work still needs a person.", lead rewritten. Tests were updated to match. Reverting to "Describe the work. Hire the right human." is a three-string change (index.html, `backend/test_deep_audit_regressions.py`, `frontend/tests/browser-regression.spec.js`).
 7. Every class name is unchanged; the redesign lives in `style.css` tokens and component rules, so all 135 static pages re-skin without page edits beyond the font link, theme-color and the synced shell.
@@ -16,7 +16,7 @@ Enzo chose direction A, "Broadsheet", from four mockups (canvas: https://claude.
 
 - `frontend/style.css` — rewritten (tokens, base, components, shell, layouts, landing). 72 KB of the 75 KB budget.
 - `frontend/app.css` — serif page titles and prices, red category labels, ochre stars, home hero title size, ink rule under the home hero.
-- `frontend/partials/public-nav.html`, `frontend/partials/public-footer.html` — masthead + wordmark; synced into 134 pages with `python3 scripts/sync_public_shell.py`.
+- `frontend/partials/public-nav.html`, `frontend/partials/public-footer.html` — wordmark; synced into 134 pages with `python3 scripts/sync_public_shell.py`.
 - `frontend/index.html` — fonts, theme-color, ink `LOGO` mark, JS nav/footer mirror the partials, hero copy, band classes (`How it works` is the darker band), `steps--display`.
 - All static pages — Google Fonts link swapped (Inter → Instrument Sans + Newsreader), `theme-color` → `#f4efe6`.
 - `frontend/favicon.svg`, `frontend/site.webmanifest` — ink and paper.
@@ -73,9 +73,9 @@ Start the backend (`cd backend && python server.py`), point `frontend/config.js`
 
 The approved mockup showed a "Today's board" with open tasks (help wanted) and services offered. To add it without disturbing the task-draft form, add a section between "Start here" and "How it works" that renders up to three open jobs from `GET /jobs?per_page=3` in the same ruled-column pattern as `.lp-feed-grid` (reuse the classes; label `Help wanted`, serif title, meta line `type · budget · posted by`, price right-aligned in `.lp-feed-price`). Fall back to the existing `.lp-preview-empty` when the API is unavailable. Keep the static regression pins (`Start with QA`, the agent sentence, the fee sentence) intact.
 
-### 6. Mobile menu and masthead polish (verified at 320px: wordmark 159px, no overflow; nothing to do unless copy changes)
+### 6. Mobile nav polish (verified at 320px: wordmark 159px, no overflow; nothing to do unless copy changes)
 
-On phones the masthead shows only the left line; the nav shows wordmark, "Post a task", and the hamburger. Check on a 320px viewport that the wordmark (24px) and the button do not collide; if they do, hide the masthead below 360px (`@media (max-width: 360px) { .lp-masthead { display: none; } }`) and add the same rule to `mobile-hardening.css` comments.
+On phones the nav shows the wordmark (24px), "Post a task", and the hamburger. Verified at 320px: nothing collides and there is no horizontal overflow. If copy or sizes change, re-check that viewport.
 
 ### 7. Commit
 
@@ -84,4 +84,4 @@ Committed on the `redesign/broadsheet` branch and opened as a pull request on 20
 ## Notes for reviewers
 
 - The style.css budget has 2.6 KB of headroom. If a task needs more CSS, remove the retired aliases block in the tokens section first (`--color-surface-alt`, `--color-surface-offset`, `--color-surface-dynamic`) after confirming with `grep -rn "color-surface-alt\|color-surface-offset\|color-surface-dynamic" frontend --include=*.html --include=*.css --include=*.js` that nothing references them.
-- The sync script only propagates the partials; `index.html` renders its nav and footer from JavaScript templates and must be edited by hand to match, byte for byte in spirit (same masthead text, same wordmark markup).
+- The sync script only propagates the partials; `index.html` renders its nav and footer from JavaScript templates and must be edited by hand to match, byte for byte in spirit (same wordmark markup, same links).
