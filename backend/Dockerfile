@@ -36,5 +36,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:'+__import__('os').environ.get('PORT','8080')+'/health',timeout=5); sys.exit(0 if r.status==200 else 1)" || exit 1
 
-# Start script fixes volume permissions at runtime, then launches gunicorn
+# Start script fixes volume permissions at runtime, then execs gunicorn
+# (server:app) with the same settings as the Procfile.
 CMD ["/app/start.sh"]

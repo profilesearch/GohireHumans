@@ -1,213 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Analytics (GA4) -->
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pricing — GoHireHumans | 1% GoHireHumans Fee + Stripe Processing, No Subscriptions</title>
-  <meta name="description" content="GoHireHumans pricing: free to sign up, with a 1% GoHireHumans fee plus Stripe processing where checkout is configured. No monthly subscription or listing fee.">
+  <title>Pricing: 1% Fee Plus Stripe Processing | GoHireHumans</title>
+  <meta name="description" content="Free to join, no subscription. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.">
   <link rel="canonical" href="https://www.gohirehumans.com/pricing.html">
-
+  <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.gohirehumans.com/pricing.html">
-  <meta property="og:title" content="Pricing — GoHireHumans | 1% GoHireHumans Fee + Stripe Processing">
-  <meta property="og:description" content="Free to sign up. Only 1% GoHireHumans fee plus Stripe processing per completed task. No monthly fees, no hidden charges.">
+  <meta property="og:title" content="Pricing: 1% Fee Plus Stripe Processing | GoHireHumans">
+  <meta property="og:description" content="Free to join, no subscription. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.">
   <meta property="og:site_name" content="GoHireHumans">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
-
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans, a marketplace for small, scoped human help">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Pricing — GoHireHumans | 1% GoHireHumans Fee + Stripe Processing">
-  <meta name="twitter:description" content="Free to sign up. Only 1% GoHireHumans fee plus Stripe processing per completed task. No monthly fees, no hidden charges.">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
-
-  <meta name="robots" content="index, follow">
+  <meta name="twitter:title" content="Pricing: 1% Fee Plus Stripe Processing | GoHireHumans">
+  <meta name="twitter:description" content="Free to join, no subscription. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
-  <!-- JSON-LD Product/Pricing schema -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    "name": "GoHireHumans Marketplace",
-    "description": "Online marketplace for hiring human and agent service providers. Where checkout is configured, employers pay a 1% GoHireHumans fee plus Stripe processing per completed task.",
-    "url": "https://www.gohirehumans.com/pricing.html",
-    "brand": {"@type": "Organization", "name": "GoHireHumans"},
-    "offers": [
-      {
-        "@type": "Offer",
-        "name": "Free Account",
-        "price": "0",
-        "priceCurrency": "USD",
-        "description": "Free to sign up and join. No credit card required.",
-        "availability": "https://schema.org/InStock"
-      },
-      {
-        "@type": "Offer",
-        "name": "Service Fee",
-        "description": "Where checkout is configured, a 1% GoHireHumans fee plus Stripe processing applies per completed task. No monthly subscriptions.",
-        "priceSpecification": {
-          "@type": "UnitPriceSpecification",
-          "price": "1",
-          "priceCurrency": "USD",
-          "unitText": "percent per completed task"
-        }
-      }
-    ]
-  }
-  </script>
-
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
-    body { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1a1816; background: #f5f4f0; }
-    a { color: #0d7377; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .nav { background: #faf9f6; border-bottom: 1px solid #dddbd6; padding: 0 24px; position: sticky; top: 0; z-index: 100; }
-    .nav-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
-    .nav-logo { font-size: 15px; font-weight: 600; color: #1a1816; display: flex; align-items: center; gap: 8px; }
-    .nav-logo span { color: #0d7377; }
-    .nav-links { display: flex; gap: 24px; list-style: none; }
-    .nav-links a { font-size: 13px; font-weight: 500; color: #6b6963; }
-    .nav-links a:hover { color: #0d7377; text-decoration: none; }
-    .nav-cta { background: #0d7377; color: #fff !important; padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
-    .nav-cta:hover { background: #095558; text-decoration: none; }
-
-    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-
-    .page-header { padding: 56px 0 40px; border-bottom: 1px solid #dddbd6; margin-bottom: 48px; }
-    .page-header .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #0d7377; margin-bottom: 12px; }
-    .page-header h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); font-weight: 600; line-height: 1.15; color: #1a1816; margin-bottom: 16px; }
-    .page-header .lead { font-size: 17px; color: #6b6963; max-width: 680px; line-height: 1.6; }
-
-    .section { margin-bottom: 56px; }
-    .section h2 { font-size: 22px; font-weight: 600; color: #1a1816; margin-bottom: 8px; padding-bottom: 12px; border-bottom: 1px solid #dddbd6; }
-    .section > p { font-size: 15px; color: #6b6963; margin: 12px 0 24px; max-width: 72ch; }
-
-    /* Hero fee display */
-    .fee-hero {
-      background: #faf9f6;
-      border: 2px solid #0d7377;
-      border-radius: 12px;
-      padding: 40px 48px;
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .fee-hero .fee-number {
-      font-size: clamp(3rem, 2rem + 4vw, 5rem);
-      font-weight: 700;
-      color: #0d7377;
-      line-height: 1;
-      margin-bottom: 8px;
-    }
-    .fee-hero .fee-label {
-      font-size: 18px;
-      font-weight: 500;
-      color: #3d3b38;
-      margin-bottom: 4px;
-    }
-    .fee-hero .fee-sub {
-      font-size: 14px;
-      color: #6b6963;
-    }
-
-    /* Feature grid */
-    .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .feature-item {
-      background: #faf9f6;
-      border: 1px solid #dddbd6;
-      border-radius: 8px;
-      padding: 20px;
-    }
-    .feature-item .fi-icon { font-size: 24px; margin-bottom: 10px; }
-    .feature-item h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .feature-item p { font-size: 13px; color: #6b6963; max-width: none; margin: 0; }
-
-    /* Comparison table */
-    .comparison-table {
-      width: 100%;
-      border-collapse: collapse;
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #dddbd6;
-      font-size: 14px;
-    }
-    .comparison-table thead tr {
-      background: #0d7377;
-      color: #fff;
-    }
-    .comparison-table th {
-      padding: 14px 20px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 13px;
-    }
-    .comparison-table th:first-child { width: 200px; }
-    .comparison-table th.highlight { background: #095558; }
-    .comparison-table tbody tr { background: #faf9f6; }
-    .comparison-table tbody tr:nth-child(even) { background: #f0efeb; }
-    .comparison-table td {
-      padding: 12px 20px;
-      border-bottom: 1px solid #dddbd6;
-      color: #3d3b38;
-    }
-    .comparison-table tr:last-child td { border-bottom: none; }
-    .comparison-table td.highlight {
-      font-weight: 600;
-      color: #0d7377;
-      background: #e6f3f3;
-    }
-    .comparison-table tbody tr:nth-child(even) td.highlight { background: #d9edee; }
-    .yes { color: #175e25; font-weight: 700; }
-    .no { color: #c4253a; }
-
-    /* Example savings */
-    .savings-block {
-      background: #e6f3f3;
-      border: 1px solid #b3d9da;
-      border-radius: 8px;
-      padding: 24px 28px;
-    }
-    .savings-block h3 { font-size: 16px; font-weight: 600; color: #0d7377; margin-bottom: 16px; }
-    .savings-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #b3d9da; font-size: 14px; }
-    .savings-row:last-child { border-bottom: none; }
-    .savings-label { color: #3d3b38; }
-    .savings-fee { font-weight: 600; }
-    .savings-fee.best { color: #0d7377; }
-    .savings-fee.bad { color: #c4253a; }
-
-    .footer { background: #1a1816; color: #8a8884; padding: 40px 24px; margin-top: 80px; }
-    .footer-inner { max-width: 960px; margin: 0 auto; }
-    .footer-name { font-size: 15px; font-weight: 600; color: #e5e4e0; margin-bottom: 16px; }
-    .footer-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
-    .footer-links a { font-size: 13px; color: #8a8884; }
-    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
-    .footer-copy { font-size: 12px; color: #5a5955; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-    .footer-copy a { color: #5a5955; }
-    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
-
-    @media (max-width: 640px) {
-      .nav-links { display: none; }
-      .fee-hero { padding: 28px 24px; }
-      .comparison-table { display:block; overflow-x:auto; white-space:nowrap; font-size: 12px; }
-      .comparison-table th, .comparison-table td { padding: 10px 12px; }
-      .comparison-table::after { content:'Swipe to compare all platforms'; display:block; padding:8px 0; color:#6b6963; font-size:12px; }
-    }
-  </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "GoHireHumans Marketplace",
+  "description": "Online marketplace for hiring human and agent service providers. Where checkout is configured, employers pay a 1% GoHireHumans fee plus Stripe processing per completed task.",
+  "url": "https://www.gohirehumans.com/pricing.html",
+  "brand": {
+    "@type": "Organization",
+    "name": "GoHireHumans"
+  },
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Free Account",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "Free to sign up and join. No credit card required.",
+      "availability": "https://schema.org/InStock"
+    },
+    {
+      "@type": "Offer",
+      "name": "Service Fee",
+      "description": "Where checkout is configured, a 1% GoHireHumans fee plus Stripe processing applies per completed task. No monthly subscriptions.",
+      "priceSpecification": {
+        "@type": "UnitPriceSpecification",
+        "price": "1",
+        "priceCurrency": "USD",
+        "unitText": "percent per completed task"
+      }
+    }
+  ]
+}
+  </script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Home",
+      "item": "https://www.gohirehumans.com/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Pricing",
+      "item": "https://www.gohirehumans.com/pricing.html"
+    }
+  ]
+}
+  </script>
 </head>
 <body>
-
-  <div class="lp-nav-wrap">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
@@ -216,7 +97,6 @@
     </nav>
     <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link lp-nav-link-active" aria-current="page" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
-
   <script>
     function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
@@ -238,60 +118,109 @@
       });
     }
   </script>
-<main data-pricing-order="fee-first">
-    <div class="container">
-      <header class="page-header">
-        <div class="label">Pricing</div>
-        <h1>Simple pricing, shown before you commit</h1>
-        <p class="lead">Free to join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. No monthly subscription or listing fee.</p>
-      </header>
-
-      <section class="section" aria-labelledby="fee-heading">
-        <h2 id="fee-heading">The Fee</h2>
-        <div class="fee-hero" aria-label="1% GoHireHumans fee plus Stripe processing per completed task">
-          <div class="fee-number">1%</div>
-          <div class="fee-label">GoHireHumans fee plus Stripe processing</div>
-          <div class="fee-sub">Workers receive the listed payout; employers pay processor costs plus the 1% platform fee where checkout is configured.</div>
-        </div>
-        <div class="feature-grid pricing-facts-grid">
-          <div class="feature-item"><h3>Free to join</h3><p>Create an account and review listings without a subscription.</p></div>
-          <div class="feature-item"><h3>No monthly fee</h3><p>No recurring platform charge. A fee applies only in configured checkout flows.</p></div>
-          <div class="feature-item"><h3>Evidence-based review</h3><p>Payment and refund reviews follow processor rules, platform records, and available evidence.</p></div>
-          <div class="feature-item"><h3>You set the scope</h3><p>Agree on the result, timing, price, and acceptance criteria before work begins.</p></div>
-        </div>
-      </section>
-
-      <section class="section" aria-labelledby="comparison-heading">
-        <h2 id="comparison-heading">Compare Fee Structures</h2>
-        <p>Other marketplaces set their own fees and terms. Confirm current terms on the marketplace you are considering.</p>
-        <table class="comparison-table" tabindex="0" aria-label="GoHireHumans fee structure compared with other marketplaces">
-          <thead><tr><th>Item</th><th class="highlight">GoHireHumans</th><th>Other marketplaces</th></tr></thead>
+<main id="main-content" tabindex="-1" data-pricing-order="fee-first">
+<section class="pub-hero">
+  <div class="pub-hero-inner">
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> / <span aria-current="page">Pricing</span></nav>
+    <p class="pub-hero-label">Pricing</p>
+    <h1>Simple pricing, shown before you commit</h1>
+    <p class="pub-hero-lead">Free to join. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. No monthly subscription or listing fee.</p>
+    <div class="pub-hero-actions">
+      <a class="btn btn-primary" href="/#/post-job">Post a task</a>
+      <a class="btn btn-secondary" href="/#/services">Browse the marketplace</a>
+    </div>
+    <dl class="pub-hero-facts">
+      <dt>Worker payout</dt>
+      <dd>Workers receive the listed payout.</dd>
+      <dt>Employer fee</dt>
+      <dd>Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</dd>
+      <dt>Subscription</dt>
+      <dd>None. There is no monthly or listing fee.</dd>
+    </dl>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="fee-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
+        <h2 id="fee-heading">The fee</h2>
+        <p>One fee, applied only in configured checkout flows. The worker&rsquo;s listed payout is not reduced by it.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption>Fee summary for a task paid through GoHireHumans checkout</caption>
+          <thead><tr><th scope="col">Item</th><th scope="col">Amount</th></tr></thead>
           <tbody>
-            <tr><td>Platform fee</td><td class="highlight">1% + Stripe processing where checkout is configured</td><td>Varies; confirm current terms</td></tr>
-            <tr><td>Free to join</td><td class="highlight"><span class="yes">Yes</span></td><td>Varies by marketplace</td></tr>
-            <tr><td>Monthly subscription</td><td class="highlight"><span class="yes">None required</span></td><td>Varies by marketplace</td></tr>
-            <tr><td>Physical or local tasks</td><td class="highlight">Supported task type; availability varies by location</td><td>Varies by marketplace and location</td></tr>
+            <tr><td>GoHireHumans fee</td><td>1% of the listed payout, paid by the employer where checkout is configured</td></tr>
+            <tr><td>Stripe processing</td><td>Stripe&rsquo;s card processing rate, paid by the employer where checkout is configured</td></tr>
+            <tr><td>Worker payout</td><td>Workers receive the listed payout</td></tr>
+            <tr><td>Sign-up</td><td>Free. No credit card is required to create an account.</td></tr>
+            <tr><td>Monthly subscription</td><td>None</td></tr>
+            <tr><td>Listing fee</td><td>None</td></tr>
           </tbody>
         </table>
-      </section>
-
-      <section class="section" aria-labelledby="starter-packages-heading">
-        <h2 id="starter-packages-heading">Prefer a fixed starting point?</h2>
-        <p>These proof-backed examples are optional. You can also browse the broader marketplace or describe any small, scoped task.</p>
-        <div class="feature-grid">
-          <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> — claims, sources, errors, and confidence notes.</p><p><a href="/#/post-job?template=ai_review" onclick="try{gtag('event','pricing_starter_draft_click',{template:'ai_review'});}catch(e){}">Start this draft →</a></p></div>
-          <div class="feature-item"><h3>Automation QA Sprint</h3><p><strong>$199</strong> — agent-run or automation checks with screenshots, pass/fail evidence, and reproduction notes.</p><p><a href="/#/post-job?template=automation_verification" onclick="try{gtag('event','pricing_starter_draft_click',{template:'automation_verification'});}catch(e){}">Start this draft →</a></p></div>
-          <div class="feature-item"><h3>Clay/GTM QA Sprint</h3><p><strong>$199</strong> — lead-list source checks, duplicates, unsupported claims, and row-level risk flags.</p><p><a href="/#/post-job?template=clay_gtm_qa" onclick="try{gtag('event','pricing_starter_draft_click',{template:'clay_gtm_qa'});}catch(e){}">Start this draft →</a></p></div>
-          <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> — a small phone, local, manual, or public-source verification.</p><p><a href="/#/post-job?template=phone_fact_check" onclick="try{gtag('event','pricing_starter_draft_click',{template:'phone_fact_check'});}catch(e){}">Start this draft →</a></p></div>
-        </div>
-        <div class="pricing-actions">
-          <a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_starter_module'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_module'});}catch(e){}">View starter offers</a>
-          <a href="/#/services" class="btn btn-secondary" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'marketplace'});}catch(e){}">Browse marketplace</a>
-          <a href="/proof-packs.html" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_starter_module'});}catch(e){}">See the proof-pack format →</a>
-        </div>
-      </section>
+      </div>
     </div>
-  </main>
+    <div class="pub-grid pub-grid--2 mt-8">
+      <div class="feature-item"><h3>Free to join</h3><p>Create an account and review listings without a subscription.</p></div>
+      <div class="feature-item"><h3>No monthly fee</h3><p>No recurring platform charge. A fee applies only in configured checkout flows.</p></div>
+      <div class="feature-item"><h3>Evidence-based review</h3><p>Payment and refund reviews follow processor rules, platform records, and available evidence.</p></div>
+      <div class="feature-item"><h3>You set the scope</h3><p>Agree on the result, timing, price, and acceptance criteria before work begins.</p></div>
+    </div>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="comparison-heading">
+  <div class="pub-inner">
+    <div class="section-head">
+      <h2 id="comparison-heading">Compare Fee Structures</h2>
+      <p>Other marketplaces set their own fees and terms. Confirm current terms on the marketplace you are considering.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <caption>GoHireHumans fee structure compared with other marketplaces</caption>
+        <thead><tr><th scope="col">Item</th><th scope="col">GoHireHumans</th><th scope="col">Other marketplaces</th></tr></thead>
+        <tbody>
+          <tr><td>Platform fee</td><td>1% + Stripe processing where checkout is configured</td><td>Varies; confirm current terms</td></tr>
+          <tr><td>Free to join</td><td>Yes</td><td>Varies by marketplace</td></tr>
+          <tr><td>Monthly subscription</td><td>None required</td><td>Varies by marketplace</td></tr>
+          <tr><td>Physical or local tasks</td><td>Supported task type; availability varies by location</td><td>Varies by marketplace and location</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="starter-packages-heading">
+  <div class="pub-inner">
+    <div class="section-head">
+      <h2 id="starter-packages-heading">Prefer a fixed starting point?</h2>
+      <p>These proof-backed examples are optional. You can also browse the broader marketplace or describe any small, scoped task.</p>
+    </div>
+    <div class="pub-grid pub-grid--2">
+      <div class="feature-item"><h3>AI Output Verification</h3><p><strong>$99</strong> Claims, sources, errors, and confidence notes for one AI-generated output.</p><p><a href="/#/post-job?template=ai_review" onclick="try{gtag('event','pricing_starter_draft_click',{template:'ai_review'});}catch(e){}">Start this draft</a></p></div>
+      <div class="feature-item"><h3>Automation QA Sprint</h3><p><strong>$199</strong> Agent-run or automation checks with screenshots, pass/fail evidence, and reproduction notes.</p><p><a href="/#/post-job?template=automation_verification" onclick="try{gtag('event','pricing_starter_draft_click',{template:'automation_verification'});}catch(e){}">Start this draft</a></p></div>
+      <div class="feature-item"><h3>Clay/GTM QA Sprint</h3><p><strong>$199</strong> Lead-list source checks, duplicates, unsupported claims, and row-level risk flags.</p><p><a href="/#/post-job?template=clay_gtm_qa" onclick="try{gtag('event','pricing_starter_draft_click',{template:'clay_gtm_qa'});}catch(e){}">Start this draft</a></p></div>
+      <div class="feature-item"><h3>Real-World Check</h3><p><strong>$79</strong> A small phone, local, manual, or public-source verification.</p><p><a href="/#/post-job?template=phone_fact_check" onclick="try{gtag('event','pricing_starter_draft_click',{template:'phone_fact_check'});}catch(e){}">Start this draft</a></p></div>
+    </div>
+    <div class="pricing-actions">
+      <a href="/starter-offers.html" class="btn btn-primary" onclick="try{gtag('event','pricing_proof_first_cta_click',{source:'pricing_starter_module'});gtag('event','pricing_starter_offers_click',{source:'pricing_starter_module'});}catch(e){}">View starter offers</a>
+      <a href="/#/services" class="btn btn-secondary" onclick="try{gtag('event','pricing_high_intent_route_click',{route:'marketplace'});}catch(e){}">Browse marketplace</a>
+      <a href="/proof-packs.html" onclick="try{gtag('event','pricing_proof_pack_click',{source:'pricing_starter_module'});}catch(e){}">See the proof-pack format</a>
+    </div>
+  </div>
+</section>
+<section class="pub-section pub-section--alt">
+  <div class="pub-inner">
+    <div class="pub-cta">
+      <h2>Draft first, pay later</h2>
+      <p>Describe the work, set the listed payout, and review the draft. Nothing is published or charged until you approve it.</p>
+      <div class="pub-cta-actions">
+        <a class="btn btn-primary" href="/request-any-task.html">Describe your task</a>
+        <a class="btn btn-ghost" href="/trust-safety.html">How payment review works</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
 <footer class="lp-footer">
   <div class="lp-footer-inner">
     <div class="lp-footer-top">
@@ -301,7 +230,7 @@
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
       </div>
       <div class="lp-footer-col">
-        <h4>Marketplace</h4>
+        <div class="lp-footer-heading">Marketplace</div>
         <ul class="lp-footer-links">
           <li><a href="/#/services">Browse Services</a></li>
           <li><a href="/#/jobs">Find Work</a></li>
@@ -310,7 +239,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Company</h4>
+        <div class="lp-footer-heading">Company</div>
         <ul class="lp-footer-links">
           <li><a href="/pricing.html">Pricing</a></li>
           <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
@@ -319,7 +248,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Legal</h4>
+        <div class="lp-footer-heading">Legal</div>
         <ul class="lp-footer-links">
           <li><a href="/#/terms">Terms of Service</a></li>
           <li><a href="/#/privacy">Privacy Policy</a></li>

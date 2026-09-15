@@ -1426,6 +1426,10 @@ class NotificationReliabilityTests(unittest.TestCase):
                 db, "private-owner-token", now=datetime.now(timezone.utc),
                 lease_seconds=120,
             )
+        # The legacy stale row (no validity window) is terminalized by the schema
+        # migration, which runs once per process (not per request) — run it the
+        # way a deploy would before reading the health report.
+        self.api.init_db()
 
         denied, _ = self.request("GET", "/admin/notification-health", token="owner")
         self.assertEqual(denied, 403)

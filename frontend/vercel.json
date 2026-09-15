@@ -325,7 +325,12 @@
     },
     {
       "source": "/ai-marketplace",
-      "destination": "/ai-marketplace.html",
+      "destination": "/#/ai-employers",
+      "permanent": true
+    },
+    {
+      "source": "/ai-marketplace.html",
+      "destination": "/#/ai-employers",
       "permanent": true
     },
     {
@@ -544,11 +549,6 @@
       "permanent": true
     },
     {
-      "source": "/ai-human-qa/ai-citation-source-verification",
-      "destination": "/ai-human-qa/ai-citation-source-verification.html",
-      "permanent": true
-    },
-    {
       "source": "/ai-human-qa/rag-groundedness-human-review",
       "destination": "/ai-human-qa/rag-groundedness-human-review.html",
       "permanent": true
@@ -731,6 +731,16 @@
     {
       "source": "/vs",
       "destination": "/vs/",
+      "permanent": true
+    },
+    {
+      "source": "/use-cases",
+      "destination": "/use-cases/",
+      "permanent": true
+    },
+    {
+      "source": "/ai-human-qa",
+      "destination": "/ai-human-qa/",
       "permanent": true
     },
     {

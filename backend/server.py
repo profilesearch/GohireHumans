@@ -71,6 +71,8 @@ def add_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    # JSON API responses never need to load or embed anything.
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -81,6 +83,31 @@ spec = importlib.util.spec_from_file_location(
 )
 api_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api_module)
+
+
+def _running_on_railway():
+    return bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+
+
+def _production_mode():
+    """Reuse api_core's ENVIRONMENT/RAILWAY_ENVIRONMENT production detection."""
+    return bool(getattr(api_module, "PRODUCTION_MODE", False))
+
+
+def _trust_x_forwarded_for():
+    """Decide whether X-Forwarded-For identifies the client for rate limiting.
+
+    Behind Railway's edge proxy (and any PRODUCTION_MODE deployment) the socket
+    peer is always the proxy, so trusting only request.remote_addr would put
+    every visitor into one shared rate-limit bucket. An explicit
+    TRUST_X_FORWARDED_FOR=0/1 always wins over the environment default.
+    """
+    explicit = os.environ.get("TRUST_X_FORWARDED_FOR", "").strip().lower()
+    if explicit in {"1", "true", "yes"}:
+        return True
+    if explicit in {"0", "false", "no"}:
+        return False
+    return _running_on_railway() or _production_mode()
 
 # ─── One-time database initialization at startup ────────────────────────────
 # api_core.py exposes init_db(); previously it was called per-request, which
@@ -132,9 +159,10 @@ def _init_db_once():
 _init_db_once()
 
 # ─── Bounded notification maintenance worker ────────────────────────────────
-# Railway currently launches this module through start.sh -> python server.py.
-# A durable database lease and per-row claim token keep delivery safe if a
-# second process, replica, or future Gunicorn worker starts concurrently.
+# Railway launches this module through start.sh -> gunicorn (server:app), so
+# this worker starts at import time rather than under __main__. A durable
+# database lease and per-row claim token keep delivery safe if a second
+# process, replica, or additional Gunicorn worker starts concurrently.
 _NOTIFICATION_WORKER_STOP = threading.Event()
 _NOTIFICATION_WORKER_THREAD = None
 
@@ -231,13 +259,13 @@ def proxy(path):
     body_bytes = request.get_data() if request.method in ("POST", "PUT", "PATCH") else b""
     body = body_bytes.decode("utf-8", errors="replace") if body_bytes else ""
 
-    # Do not trust client-supplied X-Forwarded-For by default. Enable only when
-    # the app is known to be behind a trusted proxy chain that overwrites it.
-    trust_forwarded = os.environ.get("TRUST_X_FORWARDED_FOR", "").strip().lower() in {"1", "true", "yes"}
-    forwarded = request.headers.get("X-Forwarded-For", "") if trust_forwarded else ""
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
+    # Only trust client-supplied X-Forwarded-For behind a known edge proxy
+    # (Railway / production) or when explicitly enabled; see _trust_x_forwarded_for.
+    forwarded = request.headers.get("X-Forwarded-For", "") if _trust_x_forwarded_for() else ""
+    # Rightmost hop: the trusted edge proxy appends the real peer address last,
+    # so a client-supplied leftmost value cannot spoof its rate-limit bucket.
+    client_ip = forwarded.split(",")[-1].strip() if forwarded else ""
+    if not client_ip:
         client_ip = request.remote_addr or "127.0.0.1"
 
     # ── Set thread-local request context (read by api_core.py) ──
@@ -383,7 +411,22 @@ def _method_not_allowed(_):
     )
 
 
+@app.errorhandler(413)
+def _request_too_large(_):
+    return Response(
+        json.dumps({"error": "Request body too large", "max_bytes": app.config["MAX_CONTENT_LENGTH"]}),
+        status=413,
+        content_type="application/json",
+    )
+
+
 if __name__ == "__main__":
+    # Local development entrypoint only. Production (start.sh / Procfile) runs
+    # gunicorn against server:app, which executes the import-time init above.
     port = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    if debug and (_production_mode() or _running_on_railway()):
+        # The Werkzeug debugger allows arbitrary code execution from the browser.
+        log.warning(json.dumps({"event": "flask_debug_refused_in_production"}))
+        debug = False
     app.run(host="0.0.0.0", port=port, debug=debug)

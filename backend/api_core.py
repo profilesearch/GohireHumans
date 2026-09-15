@@ -1862,6 +1862,9 @@ def _init_db_connection_steps(db):
         ("api_endpoint", "ALTER TABLE services ADD COLUMN api_endpoint TEXT DEFAULT ''"),
         ("ai_model", "ALTER TABLE services ADD COLUMN ai_model TEXT DEFAULT ''"),
         ("avg_response_time", "ALTER TABLE services ADD COLUMN avg_response_time TEXT DEFAULT ''"),
+        # Completed-order counter; order completion previously (wrongly) bumped
+        # total_reviews, which review creation already maintains.
+        ("total_orders", "ALTER TABLE services ADD COLUMN total_orders INTEGER DEFAULT 0"),
     ]:
         ensure_column(db, "services", column_name, col_sql)
     ensure_column(
@@ -2601,6 +2604,33 @@ def init_db():
         raise
     finally:
         db.close()
+    _mark_db_initialized(_db_path_resolved)
+
+
+# Schema initialization is idempotent but not free: it used to run on every
+# request. It now runs once per resolved database path per process. Keying the
+# guard by path (rather than a bare boolean) keeps first-request initialization
+# working for tests that swap DATABASE_PATH and reset _db_path_resolved.
+_INITIALIZED_DB_PATHS = set()
+_INIT_DB_GUARD_LOCK = threading.Lock()
+
+
+def _mark_db_initialized(path):
+    if path and path != ":memory:":
+        with _INIT_DB_GUARD_LOCK:
+            _INITIALIZED_DB_PATHS.add(path)
+
+
+def ensure_db_initialized():
+    """Run init_db() for the current database path unless it already succeeded."""
+    path = _get_db_path()
+    if path in _INITIALIZED_DB_PATHS:
+        return False
+    with _INIT_DB_GUARD_LOCK:
+        if path in _INITIALIZED_DB_PATHS:
+            return False
+    init_db()
+    return True
 
 
 SEEDED_SAMPLE_EMAILS = {
@@ -2829,6 +2859,19 @@ def auto_seed_if_empty():
 _rate_limit_store = {}
 _login_failure_store = {}
 _rate_limit_lock = threading.Lock()
+# Both stores are per-process dicts keyed by client address. Without eviction a
+# long-lived worker would keep one entry per distinct visitor forever.
+_RATE_LIMIT_STORE_MAX_KEYS = 5000
+
+
+def _prune_rate_limit_store(store, now, window, max_keys=_RATE_LIMIT_STORE_MAX_KEYS):
+    """Evict keys whose newest timestamp fell out of the window (caller holds the lock)."""
+    if len(store) <= max_keys:
+        return 0
+    stale = [key for key, stamps in store.items() if not stamps or now - stamps[-1] >= window]
+    for key in stale:
+        store.pop(key, None)
+    return len(stale)
 
 
 def check_rate_limit() -> bool:
@@ -2838,6 +2881,7 @@ def check_rate_limit() -> bool:
     limit = 120
 
     with _rate_limit_lock:
+        _prune_rate_limit_store(_rate_limit_store, now, window)
         if ip in _rate_limit_store:
             _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if now - t < window]
         else:
@@ -2868,6 +2912,7 @@ def record_login_failure(email):
     now = time.time()
     window = 15 * 60
     with _rate_limit_lock:
+        _prune_rate_limit_store(_login_failure_store, now, window)
         failures = [t for t in _login_failure_store.get(key, []) if now - t < window]
         failures.append(now)
         _login_failure_store[key] = failures
@@ -2885,7 +2930,7 @@ def clear_login_failures(email):
 BLOCKED_KEYWORDS = [
     'illegal', 'weapon', 'gun', 'firearm', 'knife', 'ammunition', 'explosive',
     'bomb', 'arson', 'assault', 'attack', 'murder', 'kill', 'violent',
-    'drug', 'narcotic', 'cocaine', 'heroin', 'meth', 'fentanyl',
+    'drug', 'narcotic', 'cocaine', 'heroin', 'meth', 'methamphetamine', 'fentanyl',
     'controlled substance',
     'self-harm', 'suicide', 'self harm', 'end my life',
     'hate speech', 'racial slur', 'racist', 'sexist', 'homophobic', 'nazi',
@@ -2972,15 +3017,84 @@ VALID_CATEGORIES = [
     'other'
 ]
 
+# Lifecycle states enforced by the services/jobs CHECK constraints in init_db().
+# The owner-scoped /me/* listings validate ?status= against these so a typo
+# returns 400 instead of a silently empty page.
+SERVICE_STATUSES = ('active', 'paused', 'removed')
+JOB_STATUSES = ('open', 'reviewing', 'hired', 'in_progress', 'completed', 'canceled')
+
+
+# Single-word keywords are matched on word boundaries so ordinary words that
+# merely contain a keyword ("skills", "methodology", "hackathon", "forget",
+# "explicitly", "begun") no longer trip the filter the way substring matching
+# did. Entries listed here are deliberately truncated stems (e.g. "terroris"
+# covers terrorism/terrorist) and match any word that starts with the stem.
+BLOCKED_KEYWORD_STEMS = {
+    'terroris', 'extremis', 'radicali', 'dominat', 'intimidat',
+    'impersonat', 'prostitut', 'pornograph',
+}
+# Bounded inflections keep "killer", "scammers", "hacking", "forgery" and
+# "extortion" blocked while leaving unrelated longer words alone.
+_BLOCKED_KEYWORD_INFLECTIONS = (
+    r"(?:s|es|ed|d|r|rs|ry|y|a|ing|er|ers|ist|ists|ism|isms|ion|ions|"
+    r"ation|ations|ment|ments)?"
+)
+# "anti-scam training" or "counter-terrorism" name a prohibited topic in order
+# to oppose it; hyphenated negations are not prohibited content.
+_BLOCKED_KEYWORD_NEGATION_GUARD = r"(?<!anti-)(?<!counter-)(?<!non-)"
+_CONTENT_NOT_APPROVED_MESSAGE = (
+    "Content was not approved. GoHireHumans is a professional marketplace — "
+    "please review our Acceptable Use Policy."
+)
+_blocked_keyword_matcher_cache = {}
+
+
+def _blocked_keyword_matchers():
+    """Compile BLOCKED_KEYWORDS once (recompiled only if the list changes)."""
+    key = tuple(BLOCKED_KEYWORDS)
+    cached = _blocked_keyword_matcher_cache.get(key)
+    if cached is not None:
+        return cached
+    matchers = []
+    for keyword in key:
+        normalized = str(keyword).strip().lower()
+        if not normalized:
+            continue
+        if not re.fullmatch(r"[a-z0-9]+", normalized):
+            # Multi-word or hyphenated entries keep plain phrase matching.
+            matchers.append((normalized, None))
+            continue
+        if normalized in BLOCKED_KEYWORD_STEMS:
+            pattern = r"\b" + re.escape(normalized) + r"\w*"
+        else:
+            doubled = ""
+            if normalized[-1] not in "aeiou":
+                # "scam" -> "scammer", "drug" -> "drugged"
+                doubled = "(?:" + re.escape(normalized[-1]) + ")?"
+            pattern = (
+                r"\b" + re.escape(normalized) + doubled
+                + _BLOCKED_KEYWORD_INFLECTIONS + r"\b"
+            )
+        matchers.append((
+            normalized,
+            re.compile(_BLOCKED_KEYWORD_NEGATION_GUARD + pattern, re.IGNORECASE),
+        ))
+    _blocked_keyword_matcher_cache.clear()
+    _blocked_keyword_matcher_cache[key] = matchers
+    return matchers
+
 
 def check_content_safety(text):
-    lower = text.lower()
-    for kw in BLOCKED_KEYWORDS:
-        if kw in lower:
-            return False, "Content was not approved. GoHireHumans is a professional marketplace — please review our Acceptable Use Policy."
+    lower = (text if isinstance(text, str) else str(text or "")).lower()
+    for keyword, matcher in _blocked_keyword_matchers():
+        if matcher is None:
+            if keyword in lower:
+                return False, _CONTENT_NOT_APPROVED_MESSAGE
+        elif matcher.search(lower):
+            return False, _CONTENT_NOT_APPROVED_MESSAGE
     for phrase in BLOCKED_PHRASES:
         if phrase in lower:
-            return False, "Content was not approved. GoHireHumans is a professional marketplace — please review our Acceptable Use Policy."
+            return False, _CONTENT_NOT_APPROVED_MESSAGE
     return True, None
 
 
@@ -3003,6 +3117,14 @@ def verify_password(password, stored):
 
 def generate_session_token():
     return secrets.token_hex(32)
+
+
+SESSION_LIFETIME = timedelta(days=30)
+
+
+def session_expiry_timestamp(now=None):
+    """UTC expiry in SQLite's canonical 'YYYY-MM-DD HH:MM:SS' text format."""
+    return ((now or datetime.now(timezone.utc)) + SESSION_LIFETIME).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def json_response(data, status=200):
@@ -3501,7 +3623,10 @@ def authenticate_session(db):
         return None
 
     row = db.execute(
-        "SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')",
+        # datetime() normalizes both the canonical 'YYYY-MM-DD HH:MM:SS' rows and
+        # legacy ISO-8601 rows ('...T...+00:00'), which a plain string comparison
+        # against datetime('now') would misorder for same-day expiries.
+        "SELECT user_id FROM sessions WHERE token = ? AND datetime(expires_at) > datetime('now')",
         [token]
     ).fetchone()
     if row:
@@ -3509,6 +3634,23 @@ def authenticate_session(db):
         if user and user['is_active'] and not user['is_banned'] and not user['is_suspended']:
             return row_to_dict(user)
     return None
+
+
+def api_key_expired(expires_at):
+    """Timezone-aware expiry check shared by header auth and /api-keys/verify.
+
+    Unparseable values fail closed; naive timestamps are treated as UTC so a
+    naive/aware comparison can never raise (and turn into a 500).
+    """
+    if not expires_at:
+        return False
+    try:
+        expiry = datetime.fromisoformat(str(expires_at).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return expiry < datetime.now(timezone.utc)
 
 
 def authenticate_api_key(db):
@@ -3526,12 +3668,8 @@ def authenticate_api_key(db):
     ).fetchone()
     if not row:
         return None
-    if row['expires_at']:
-        try:
-            if datetime.fromisoformat(row['expires_at']) < datetime.now(timezone.utc):
-                return None
-        except ValueError:
-            return None
+    if api_key_expired(row['expires_at']):
+        return None
     if not row['is_active'] or row['is_banned'] or row['is_suspended']:
         return None
     user = row_to_dict(row)
@@ -3636,6 +3774,10 @@ ALLOWED_API_KEY_SCOPES = {
 
 
 def _api_key_route_scope(method, path):
+    # Admin routes require an interactive admin session (plus password step-up);
+    # no API-key scope can ever grant them.
+    if path.startswith("/admin"):
+        return None
     if path.startswith("/api-keys"):
         return None
     if re.match(r"^/orders/\d+/(approve|complete|dispute)$", path):
@@ -3684,15 +3826,25 @@ def audit(db, user_id, action, entity_type=None, entity_id=None, details=None):
 def require_admin_step_up(db, admin_user, body, action):
     """Require password re-auth before sensitive admin account operations."""
     password = (body or {}).get("admin_password", "")
-    if not password:
+    if not password or not isinstance(password, str):
         audit(db, admin_user['id'], f"{action}_step_up_missing", "user", admin_user['id'])
         db.commit()
         return "Admin password confirmation required", 403
+    # Reuse the login throttle (keyed by client IP + admin email) so a stolen
+    # admin session cannot brute-force the step-up password any faster than
+    # the login form allows.
+    throttle_key = (admin_user.get('email') if hasattr(admin_user, 'get') else None) or f"admin:{admin_user['id']}"
+    if not login_attempt_allowed(throttle_key):
+        audit(db, admin_user['id'], f"{action}_step_up_rate_limited", "user", admin_user['id'])
+        db.commit()
+        return "Too many failed admin password confirmations. Try again later.", 429
     current = db.execute("SELECT password_hash FROM users WHERE id=?", [admin_user['id']]).fetchone()
     if not current or not verify_password(password, current['password_hash']):
+        record_login_failure(throttle_key)
         audit(db, admin_user['id'], f"{action}_step_up_failed", "user", admin_user['id'])
         db.commit()
         return "Admin password confirmation failed", 403
+    clear_login_failures(throttle_key)
     return None, None
 
 
@@ -9240,7 +9392,7 @@ def handle_request():
     _request_ctx.request_started_monotonic = time.monotonic()
 
     try:
-        init_db()
+        ensure_db_initialized()
     except Exception as e:
         import traceback
         print(f"[GoHireHumans] DB init failed: {e} (path={_db_path_resolved})", file=sys.stderr)
@@ -9341,7 +9493,6 @@ def _handle_routes(db):
                 db_size = os.path.getsize(_db_path_resolved)
             except Exception:
                 pass
-        db = get_db()
         user_count = db.execute("SELECT COUNT(*) as c FROM users").fetchone()['c']
         svc_count = db.execute("SELECT COUNT(*) as c FROM services").fetchone()['c']
         job_count = db.execute("SELECT COUNT(*) as c FROM jobs").fetchone()['c']
@@ -9418,7 +9569,6 @@ def _handle_routes(db):
 
     # ── Public platform stats (no auth) ────────────────────────────────
     if path == "/platform/stats" and method == "GET":
-        db = get_db()
         seeded_user_subquery = public_non_seeded_user_subquery()
         seeded_values = seeded_sample_email_values()
         services_count = db.execute(
@@ -9528,7 +9678,7 @@ def _handle_routes(db):
                 pass  # referral columns may not exist yet
 
         token = generate_session_token()
-        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        expires = session_expiry_timestamp()
         db.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (?,?,?)", [user_id, token, expires])
         audit(db, user_id, "register", "user", user_id)
         db.commit()
@@ -9585,7 +9735,7 @@ def _handle_routes(db):
 
         clear_login_failures(email)
         token = generate_session_token()
-        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        expires = session_expiry_timestamp()
         db.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (?,?,?)", [user['id'], token, expires])
         audit(db, user['id'], "login", "user", user['id'])
         db.commit()
@@ -9657,7 +9807,7 @@ def _handle_routes(db):
             is_new_google_user = True
 
         token = generate_session_token()
-        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        expires = session_expiry_timestamp()
         db.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (?,?,?)",
                    [user_id, token, expires])
         audit(db, user_id, "login_google", "user", user_id)
@@ -9699,7 +9849,9 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         ud = dict(user)
-        del ud['password_hash']
+        # API-key principals never carry password_hash (authenticate_api_key
+        # strips it), so a hard `del` turned GET /profile into a 500 for them.
+        ud.pop('password_hash', None)
         wp = db.execute("SELECT * FROM worker_profiles WHERE user_id = ?", [user['id']]).fetchone()
         ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user['id']]).fetchone()
         ud['worker_profile'] = row_to_dict(wp)
@@ -9750,7 +9902,24 @@ def _handle_routes(db):
 
         updates = []
         vals = []
-        for field in ['bio', 'hourly_rate', 'payout_method', 'timezone', 'location', 'portfolio_url']:
+        # payout_method is processor-owned state (Stripe Connect onboarding and
+        # account.updated webhooks set it); clients can never mark themselves
+        # payout-ready by sending it here.
+        if 'hourly_rate' in body:
+            raw_rate = body['hourly_rate']
+            if raw_rate in (None, ""):
+                hourly_rate_value = None
+            else:
+                try:
+                    rate_cents = money_to_cents(raw_rate, "hourly_rate")
+                except ValueError as exc:
+                    return error_response(str(exc), 400)
+                if rate_cents < 0:
+                    return error_response("hourly_rate must be a non-negative amount", 400)
+                hourly_rate_value = rate_cents / 100
+            updates.append("hourly_rate = ?")
+            vals.append(hourly_rate_value)
+        for field in ['bio', 'timezone', 'location', 'portfolio_url']:
             if field in body:
                 updates.append(f"{field} = ?")
                 vals.append(body[field])
@@ -9825,25 +9994,9 @@ def _handle_routes(db):
             "converted_referrals": stats['converted'] if stats else 0
         })
 
-    elif path == "/referral/track" and method == "POST":
-        # Called during registration to track a referral
-        body = get_body()
-        ref_code = body.get("ref_code", "").strip()
-        new_user_id = body.get("user_id")
-        if not ref_code or not new_user_id:
-            return error_response("ref_code and user_id required")
-        referrer = db.execute("SELECT id FROM users WHERE referral_code = ?", [ref_code]).fetchone()
-        if not referrer or referrer['id'] == new_user_id:
-            return json_response({"ok": False, "reason": "invalid_code"})
-        # Prevent duplicates
-        existing = db.execute("SELECT id FROM referrals WHERE referred_id = ?", [new_user_id]).fetchone()
-        if existing:
-            return json_response({"ok": False, "reason": "already_tracked"})
-        db.execute("UPDATE users SET referred_by = ? WHERE id = ?", [referrer['id'], new_user_id])
-        db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?,?)",
-                   [referrer['id'], new_user_id])
-        db.commit()
-        return json_response({"ok": True})
+    # NOTE: POST /referral/track was removed. It accepted an arbitrary user_id
+    # without authentication; referrals are attributed during registration via
+    # the ref_code field on POST /auth/register instead.
 
     elif path == "/referral/leaderboard" and method == "GET":
         rows = db.execute("""
@@ -9917,6 +10070,60 @@ def _handle_routes(db):
                 LEFT JOIN worker_profiles wp ON s.worker_id = wp.user_id
                 WHERE {where}
                 ORDER BY s.avg_rating DESC, s.total_reviews DESC, s.created_at DESC
+                LIMIT ? OFFSET ?""",
+            values + [per_page, offset]
+        ).fetchall()
+
+        return json_response({
+            "services": [row_to_dict(r) for r in rows],
+            "total": count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": (count + per_page - 1) // per_page
+        })
+
+    elif path == "/me/services" and method == "GET":
+        # Owner-scoped listing. The public /services browse hard-filters
+        # status='active' and hides seeded sample accounts, so the SPA's
+        # "My Services" page could never show paused rows and page 1 capped at
+        # 20 rows platform-wide. Here the caller only ever sees their own rows,
+        # in every status; 'removed' (soft-deleted) rows stay hidden unless
+        # include_removed=1 or status=removed is requested explicitly. There is
+        # deliberately no seeded-sample exclusion: an owner always sees their rows.
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        offset = (page - 1) * per_page
+        status_filter = (params.get("status") or "").strip()
+        include_removed = (params.get("include_removed") or "").strip().lower() in ('1', 'true', 'yes')
+
+        conditions = ["s.worker_id = ?"]
+        values = [user['id']]
+        if status_filter:
+            if status_filter not in SERVICE_STATUSES:
+                return error_response(f"Invalid status. Must be one of: {', '.join(SERVICE_STATUSES)}", 400)
+            conditions.append("s.status = ?")
+            values.append(status_filter)
+        elif not include_removed:
+            conditions.append("s.status != 'removed'")
+
+        where = " AND ".join(conditions)
+        count = db.execute(f"SELECT COUNT(*) as c FROM services s WHERE {where}", values).fetchone()['c']
+        # Same projection as the public list so the SPA card renderer is unchanged.
+        rows = db.execute(
+            f"""SELECT s.*, u.name as worker_name, u.avatar_url as worker_avatar,
+                wp.avg_rating as worker_rating, wp.total_reviews as worker_review_count,
+                wp.is_verified as worker_is_verified
+                FROM services s
+                JOIN users u ON s.worker_id = u.id
+                LEFT JOIN worker_profiles wp ON s.worker_id = wp.user_id
+                WHERE {where}
+                ORDER BY s.created_at DESC, s.id DESC
                 LIMIT ? OFFSET ?""",
             values + [per_page, offset]
         ).fetchall()
@@ -10229,6 +10436,57 @@ def _handle_routes(db):
                 LEFT JOIN employer_profiles ep ON j.employer_id = ep.user_id
                 WHERE {where}
                 ORDER BY j.created_at DESC
+                LIMIT ? OFFSET ?""",
+            values + [per_page, offset]
+        ).fetchall()
+
+        return json_response({
+            "jobs": [row_to_dict(r) for r in rows],
+            "total": count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": (count + per_page - 1) // per_page
+        })
+
+    elif path == "/me/jobs" and method == "GET":
+        # Owner-scoped listing: every job the caller posted, in every status.
+        # The public /jobs browse only returns open/reviewing rows and hides
+        # seeded sample accounts, so "My Jobs" lost hired/completed/canceled
+        # postings when it client-filtered that list. No seeded-sample
+        # exclusion here: an owner always sees their own rows.
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        offset = (page - 1) * per_page
+        status_filter = (params.get("status") or "").strip()
+
+        conditions = ["j.employer_id = ?"]
+        values = [user['id']]
+        if status_filter:
+            if status_filter not in JOB_STATUSES:
+                return error_response(f"Invalid status. Must be one of: {', '.join(JOB_STATUSES)}", 400)
+            conditions.append("j.status = ?")
+            values.append(status_filter)
+
+        where = " AND ".join(conditions)
+        count = db.execute(f"SELECT COUNT(*) as c FROM jobs j WHERE {where}", values).fetchone()['c']
+        # Same projection as the public list plus application_count (which the
+        # public browse omits but GET /jobs/{id} returns) so "My Jobs" can show
+        # applicant counts without one detail request per row.
+        rows = db.execute(
+            f"""SELECT j.*, u.name as employer_name, u.avatar_url as employer_avatar,
+                ep.company_name, ep.avg_rating as employer_rating,
+                (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) as application_count
+                FROM jobs j
+                JOIN users u ON j.employer_id = u.id
+                LEFT JOIN employer_profiles ep ON j.employer_id = ep.user_id
+                WHERE {where}
+                ORDER BY j.created_at DESC, j.id DESC
                 LIMIT ? OFFSET ?""",
             values + [per_page, offset]
         ).fetchall()
@@ -11091,8 +11349,11 @@ def _handle_routes(db):
         role_filter = params.get("role")  # "worker" or "employer"
         status_filter = params.get("status")
         overdue_only = params.get("overdue", "").lower() in ('true', '1')
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 20)), 100)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
 
         conditions = ["(o.worker_id = ? OR o.employer_id = ?)"]
@@ -11757,10 +12018,11 @@ def _handle_routes(db):
                 "UPDATE employer_profiles SET total_orders = total_orders + 1 WHERE user_id=?",
                 [order['employer_id']]
             )
-            # Update service stats if applicable
+            # Update service stats if applicable (reviews are counted when a
+            # review is created, not when an order completes)
             if order['service_id']:
                 db.execute(
-                    "UPDATE services SET total_reviews = total_reviews + 1 WHERE id=?",
+                    "UPDATE services SET total_orders = total_orders + 1 WHERE id=?",
                     [order['service_id']]
                 )
             push_notification(db, order['worker_id'], "order_completed",
@@ -12116,13 +12378,26 @@ def _handle_routes(db):
         if not hc or hc['status'] != 'active':
             return error_response("No active hourly contract found for this order", 404)
 
-        body = get_body()
-        date_str = body.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-        hours = float(body.get("hours", 0))
+        body = get_body() or {}
+        date_str = body.get("date")
+        if date_str in (None, ""):
+            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        elif not isinstance(date_str, str):
+            return error_response("Invalid date format, use YYYY-MM-DD", 400)
+        try:
+            # Canonical decimal parsing rejects NaN/inf, non-numeric strings,
+            # negatives and zero; the helper's maximum enforces the 24h ceiling.
+            hours_quantity = canonical_decimal_quantity(
+                body.get("hours", 0), "hours", maximum=Decimal("24")
+            )
+        except ValueError:
+            return error_response("hours must be a number greater than 0 and at most 24", 400)
+        hours = float(hours_quantity)
         description = body.get("description", "")
-
-        if hours <= 0 or hours > 24:
-            return error_response("hours must be between 0 and 24")
+        if description is None:
+            description = ""
+        if not isinstance(description, str):
+            return error_response("description must be a string", 400)
 
         # Determine week_of (Monday of the week)
         try:
@@ -12268,8 +12543,11 @@ def _handle_routes(db):
 
     elif re.match(r"^/users/(\d+)/reviews$", path) and method == "GET":
         target_id = int(re.match(r"^/users/(\d+)/reviews$", path).group(1))
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 20)), 100)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
 
         count = db.execute(
@@ -12944,8 +13222,11 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
 
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 50)), 100)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 50, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
 
         # Escrow holds for this user (as worker or employer)
@@ -12981,7 +13262,7 @@ def _handle_routes(db):
     elif path == "/webhooks/resend" and method == "POST":
         body_raw = get_body_raw()
         if not RESEND_WEBHOOK_SECRET:
-            return error_response("Webhook secret not configured", 500)
+            return error_response("Webhook secret not configured", 503)
         message_id = getattr(_request_ctx, "http_svix_id", "")
         timestamp = getattr(_request_ctx, "http_svix_timestamp", "")
         signature = getattr(_request_ctx, "http_svix_signature", "")
@@ -13049,7 +13330,7 @@ def _handle_routes(db):
             return json_response({"received": True, "mode": "simulated"})
 
         if not STRIPE_WEBHOOK_SECRET:
-            return error_response("Webhook secret not configured", 500)
+            return error_response("Webhook secret not configured", 503)
 
         try:
             event = stripe.Webhook.construct_event(body_raw, sig_header, STRIPE_WEBHOOK_SECRET)
@@ -13115,14 +13396,23 @@ def _handle_routes(db):
                 db.commit()
 
         elif event_type == 'transfer.paid':
-            transfer_id = data['id']
-            metadata = data.get('metadata', {})
-            order_id = metadata.get('order_id')
-            if order_id:
-                push_notification(db, 0, "transfer_paid",
+            transfer_id = data.get('id')
+            metadata = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
+            order_id = str(metadata.get('order_id') or '').strip()
+            # notifications.user_id is a NOT NULL foreign key, so the recipient
+            # must be the order's worker (the payout destination). An event whose
+            # metadata cannot be mapped is acknowledged without a notification;
+            # a 500 here would make Stripe retry the same event indefinitely.
+            recipient = None
+            if order_id.isdigit():
+                recipient = db.execute(
+                    "SELECT worker_id FROM orders WHERE id=?", [int(order_id)]
+                ).fetchone()
+            if recipient and recipient['worker_id']:
+                push_notification(db, int(recipient['worker_id']), "transfer_paid",
                     "Transfer completed",
-                    f"Payment transfer {transfer_id} completed.",
-                    "")
+                    f"Payment transfer {transfer_id} for order #{int(order_id)} completed.",
+                    f"/orders/{int(order_id)}")
                 db.commit()
 
         return json_response({"received": True})
@@ -13137,7 +13427,10 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
 
         unread_only = params.get("unread_only", "").lower() in ('true', '1')
-        limit = min(int(params.get("limit", 50)), 100)
+        try:
+            limit = parse_int_param(params, "limit", 50, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
 
         # The interactive notification feed is the existing in-app polling surface.
         # Materialize durable reminders before reading it so no external scheduler or
@@ -13191,7 +13484,10 @@ def _handle_routes(db):
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
 
-        limit = min(max(1, int(params.get("limit", 20))), 100)
+        try:
+            limit = parse_int_param(params, "limit", 20, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         job_rows = db.execute(
             """SELECT j.*, u.name as employer_name,
                       COUNT(DISTINCT a.id) as application_count
@@ -13293,7 +13589,10 @@ def _handle_routes(db):
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
 
-        limit = min(max(1, int(params.get("limit", 50))), 100)
+        try:
+            limit = parse_int_param(params, "limit", 50, min_value=1, max_value=100)
+        except ValueError as e:
+            return error_response(str(e), 400)
         rows = db.execute(
             """SELECT a.id, a.job_id, a.worker_id, a.status, a.cover_message, a.portfolio_url,
                       a.created_at,
@@ -13448,8 +13747,11 @@ def _handle_routes(db):
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
 
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 50)), 200)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 50, min_value=1, max_value=200)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
         search = params.get("search", "").strip()
 
@@ -13547,8 +13849,11 @@ def _handle_routes(db):
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
 
-        page = max(1, int(params.get("page", 1)))
-        per_page = min(int(params.get("per_page", 50)), 200)
+        try:
+            page = parse_int_param(params, "page", 1, min_value=1)
+            per_page = parse_int_param(params, "per_page", 50, min_value=1, max_value=200)
+        except ValueError as e:
+            return error_response(str(e), 400)
         offset = (page - 1) * per_page
         status_filter = params.get("status")
         overdue_only = params.get("overdue", "").lower() in ('true', '1')
@@ -13711,7 +14016,10 @@ def _handle_routes(db):
         if not user or not user['is_admin']:
             return error_response("Admin access required", 403)
 
-        limit = min(int(params.get("limit", 100)), 500)
+        try:
+            limit = parse_int_param(params, "limit", 100, min_value=1, max_value=500)
+        except ValueError as e:
+            return error_response(str(e), 400)
         logs = db.execute(
             """SELECT al.*, u.name, u.email FROM audit_log al
                LEFT JOIN users u ON al.user_id = u.id
@@ -14297,11 +14605,9 @@ def _handle_routes(db):
         if not key_row:
             return error_response("Invalid or revoked API key", 401)
 
-        # Check expiry
-        if key_row['expires_at']:
-            from datetime import datetime as dt
-            if dt.fromisoformat(key_row['expires_at']) < dt.utcnow():
-                return error_response("API key expired", 401)
+        # Check expiry (same timezone-aware rule as header authentication)
+        if api_key_expired(key_row['expires_at']):
+            return error_response("API key expired", 401)
 
         # Update usage stats
         db.execute(

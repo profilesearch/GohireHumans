@@ -1,406 +1,90 @@
 <!DOCTYPE html>
-<!--
-  ____  _____  ____  _    _______  ___ ____  _____ _____    _____ ___  __  __ ____  _   _ _____ _____ ____
- |  _ \| ____|  _ \| |  | ____\ \/ (_)_   \| ____| __  \  / ____/ _ \|  \/  |  _ \| | | |_   _| ____|  _ \
- | |_) |  _| | |_) | |  |  _|  >  < | || |_|  _| |  __/  | (___| | | | |\/| | |_) | | | | | | |  _| | |_) |
- |  __/| |___|  _ <| |__| |___ /  \ | ||  _| |___| |       \___ \ |_| | |  | |  __/| |_| | | | | |___|  _ <
- |_|   |_____|_| \_\____|_____/_/\_\|_||_|  |_____|_|       ____) \___/|_|  |_|_|    \___/  |_| |_____|_| \_\
-
- Created with Perplexity Computer — https://www.perplexity.ai/computer
--->
 <html lang="en">
 <head>
-  <!-- Google Analytics (GA4) -->
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');
-  </script>
-  <!-- Perplexity Computer Attribution -->
-  <meta name="generator" content="Perplexity Computer (https://www.perplexity.ai/computer)">
-
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>About GoHireHumans — Freelance Marketplace to List Services &amp; Hire Humans or AI Agents</title>
-  <meta name="description" content="GoHireHumans is a freelance marketplace where you list professional services, hire human providers or AI agents, and post jobs. Stripe payment processing where available via Stripe. Free to join. Stripe processing + 1% GoHireHumans fee. Founded 2026.">
+  <title>About: A Marketplace for Scoped Human Help | GoHireHumans</title>
+  <meta name="description" content="What GoHireHumans is, who uses it, and how pricing works: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.">
   <link rel="canonical" href="https://www.gohirehumans.com/about.html">
-
-  <!-- Open Graph -->
+  <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.gohirehumans.com/about.html">
-  <meta property="og:title" content="About GoHireHumans — Human and Agent Services Marketplace">
-  <meta property="og:description" content="GoHireHumans is a trusted marketplace where businesses, AI agents, and individuals hire human and agent service providers for real-world tasks. 1% GoHireHumans fee plus Stripe processing. Free to join.">
+  <meta property="og:title" content="About: A Marketplace for Scoped Human Help | GoHireHumans">
+  <meta property="og:description" content="What GoHireHumans is, who uses it, and how pricing works: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.">
   <meta property="og:site_name" content="GoHireHumans">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
-
-  <!-- Twitter Card -->
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GoHireHumans, a marketplace for small, scoped human help">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="About GoHireHumans — Human and Agent Services Marketplace">
-  <meta name="twitter:description" content="GoHireHumans is a trusted marketplace where businesses, AI agents, and individuals hire human and agent service providers for real-world tasks. 1% GoHireHumans fee plus Stripe processing. Free to join.">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
-
-  <meta name="robots" content="index, follow">
-
-  <!-- Favicons -->
+  <meta name="twitter:title" content="About: A Marketplace for Scoped Human Help | GoHireHumans">
+  <meta name="twitter:description" content="What GoHireHumans is, who uses it, and how pricing works: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-
-  <!-- Fonts -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
-  <!-- JSON-LD Structured Data -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://www.gohirehumans.com/#organization",
-        "name": "GoHireHumans",
-        "url": "https://www.gohirehumans.com",
-        "logo": "https://www.gohirehumans.com/favicon.svg",
-        "description": "GoHireHumans is a trusted online marketplace where businesses, AI agents, and individuals find human and agent service providers for real-world tasks, with profile trust signals where available.",
-        "foundingDate": "2026",
-        "sameAs": [],
-        "offers": [
-          {
-            "@type": "Offer",
-            "name": "Business Calls",
-            "description": "Service providers make and receive business calls on your behalf."
-          },
-          {
-            "@type": "Offer",
-            "name": "Research & Analysis",
-            "description": "Human researchers gather, analyze, and synthesize information for any project."
-          },
-          {
-            "@type": "Offer",
-            "name": "Errands & Delivery",
-            "description": "Service providers handle physical errands, pickups, and deliveries."
-          },
-          {
-            "@type": "Offer",
-            "name": "Writing & Translation",
-            "description": "Professional writers and translators for content, documents, and communications."
-          },
-          {
-            "@type": "Offer",
-            "name": "Data Entry & Transcription",
-            "description": "Accurate data entry, audio transcription, and document processing."
-          },
-          {
-            "@type": "Offer",
-            "name": "Property Inspections",
-            "description": "In-person property inspections and condition reports."
-          }
-        ],
-        "creator": {
-          "@type": "SoftwareApplication",
-          "name": "Perplexity Computer",
-          "url": "https://www.perplexity.ai/computer"
-        }
-      },
-      {
-        "@type": "WebPage",
-        "@id": "https://www.gohirehumans.com/about.html",
-        "url": "https://www.gohirehumans.com/about.html",
-        "name": "About GoHireHumans",
-        "description": "Overview of the GoHireHumans platform, mission, service categories, pricing, and trust & safety.",
-        "isPartOf": {"@id": "https://www.gohirehumans.com/#organization"}
-      }
-    ]
-  }
-  </script>
-
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      font-size: 15px;
-      line-height: 1.65;
-      color: #1a1816;
-      background: #f5f4f0;
-    }
-    a { color: #0d7377; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    img { display: block; max-width: 100%; }
-
-    /* Nav */
-    .nav {
-      background: #faf9f6;
-      border-bottom: 1px solid #dddbd6;
-      padding: 0 24px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    .nav-inner {
-      max-width: 960px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 56px;
-    }
-    .nav-logo {
-      font-size: 15px;
-      font-weight: 600;
-      color: #1a1816;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .nav-logo span { color: #0d7377; }
-    .nav-links {
-      display: flex;
-      gap: 24px;
-      list-style: none;
-    }
-    .nav-links a {
-      font-size: 13px;
-      font-weight: 500;
-      color: #6b6963;
-    }
-    .nav-links a:hover { color: #0d7377; text-decoration: none; }
-    .nav-cta {
-      background: #0d7377;
-      color: #fff !important;
-      padding: 6px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-    }
-    .nav-cta:hover { background: #095558; text-decoration: none; }
-
-    /* Main content */
-    .container {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    .page-header {
-      padding: 56px 0 40px;
-      border-bottom: 1px solid #dddbd6;
-      margin-bottom: 48px;
-    }
-    .page-header .label {
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #0d7377;
-      margin-bottom: 12px;
-    }
-    .page-header h1 {
-      font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem);
-      font-weight: 600;
-      line-height: 1.15;
-      color: #1a1816;
-      margin-bottom: 16px;
-    }
-    .page-header .lead {
-      font-size: 17px;
-      color: #6b6963;
-      max-width: 680px;
-      line-height: 1.6;
-    }
-
-    /* Sections */
-    .section { margin-bottom: 56px; }
-    .section h2 {
-      font-size: 22px;
-      font-weight: 600;
-      color: #1a1816;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #dddbd6;
-    }
-    .section h3 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #1a1816;
-      margin-bottom: 8px;
-    }
-    .section p {
-      color: #3d3b38;
-      margin-bottom: 16px;
-      max-width: 72ch;
-    }
-
-    /* Cards */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .card {
-      background: #faf9f6;
-      border: 1px solid #dddbd6;
-      border-radius: 8px;
-      padding: 20px;
-    }
-    .card-icon {
-      font-size: 24px;
-      margin-bottom: 10px;
-    }
-    .card h3 {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .card p {
-      font-size: 13px;
-      color: #6b6963;
-      margin: 0;
-      max-width: none;
-    }
-
-    /* Steps */
-    .steps { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
-    .step {
-      display: flex;
-      gap: 16px;
-      background: #faf9f6;
-      border: 1px solid #dddbd6;
-      border-radius: 8px;
-      padding: 20px;
-      align-items: flex-start;
-    }
-    .step-num {
-      flex-shrink: 0;
-      width: 32px;
-      height: 32px;
-      background: #0d7377;
-      color: #fff;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .step-body h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .step-body p { font-size: 13px; color: #6b6963; margin: 0; max-width: none; }
-
-    /* Key facts */
-    .facts-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 16px;
-      background: #faf9f6;
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #dddbd6;
-    }
-    .facts-table td {
-      padding: 12px 16px;
-      border-bottom: 1px solid #dddbd6;
-      font-size: 14px;
-    }
-    .facts-table tr:last-child td { border-bottom: none; }
-    .facts-table td:first-child {
-      font-weight: 600;
-      color: #1a1816;
-      width: 180px;
-      background: #f0efeb;
-    }
-    .facts-table td:last-child { color: #3d3b38; }
-
-    /* For section */
-    .for-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .for-card {
-      background: #faf9f6;
-      border: 1px solid #dddbd6;
-      border-radius: 8px;
-      padding: 20px;
-      text-align: center;
-    }
-    .for-card .for-icon { font-size: 32px; margin-bottom: 10px; }
-    .for-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .for-card p { font-size: 13px; color: #6b6963; margin: 0; max-width: none; }
-
-    /* Trust badges */
-    .trust-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #e6f3f3;
-      color: #0d7377;
-      padding: 8px 14px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-    }
-
-    /* Footer */
-    .footer {
-      background: #1a1816;
-      color: #8a8884;
-      padding: 40px 24px;
-      margin-top: 80px;
-    }
-    .footer-inner {
-      max-width: 960px;
-      margin: 0 auto;
-    }
-    .footer-name {
-      font-size: 15px;
-      font-weight: 600;
-      color: #e5e4e0;
-      margin-bottom: 16px;
-    }
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .footer-links a {
-      font-size: 13px;
-      color: #8a8884;
-    }
-    .footer-links a:hover { color: #3db8bc; text-decoration: none; }
-    .footer-copy {
-      font-size: 12px;
-      color: #5a5955;
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .footer-copy a { color: #5a5955; }
-    .footer-copy a:hover { color: #3db8bc; text-decoration: none; }
-
-    @media (max-width: 640px) {
-      .nav-links { display: none; }
-      .card-grid { grid-template-columns: 1fr; }
-      .for-grid { grid-template-columns: 1fr 1fr; }
-    }
-  </style>
-  <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
-  <link rel="alternate" type="application/atom+xml" title="GoHireHumans Blog" href="/atom.xml">
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://www.gohirehumans.com/#organization",
+      "name": "GoHireHumans",
+      "url": "https://www.gohirehumans.com/",
+      "logo": "https://www.gohirehumans.com/favicon.svg",
+      "description": "A marketplace for small, scoped human help. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.",
+      "foundingDate": "2026",
+      "email": "gohirehumans.operations@agentmail.to",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "email": "gohirehumans.operations@agentmail.to"
+      }
+    },
+    {
+      "@type": "AboutPage",
+      "@id": "https://www.gohirehumans.com/about.html",
+      "url": "https://www.gohirehumans.com/about.html",
+      "name": "About GoHireHumans",
+      "description": "Overview of the GoHireHumans marketplace: who uses it, what people hire for, how it works, pricing, and trust and safety.",
+      "dateModified": "2026-09-14",
+      "about": {
+        "@id": "https://www.gohirehumans.com/#organization"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://www.gohirehumans.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "About",
+          "item": "https://www.gohirehumans.com/about.html"
+        }
+      ]
+    }
+  ]
+}
+  </script>
 </head>
 <body>
-
-  <!-- Navigation -->
-
-  <div class="lp-nav-wrap">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
@@ -409,7 +93,6 @@
     </nav>
     <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
-
   <script>
     function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
@@ -431,223 +114,186 @@
       });
     }
   </script>
-<!-- Page Header -->
-  <main>
-    <div class="container">
-      <header class="page-header">
-        <div class="label">About</div>
-        <h1>What is GoHireHumans?</h1>
-        <p class="lead">GoHireHumans is a freelance marketplace where anyone can list professional services, hire human workers or AI agents, and post jobs — all supported by Stripe payment processing where available. Free to join. 1% GoHireHumans fee plus Stripe processing paid by the employer. Founded in 2026.</p>
-        <p style="font-size:13px;color:#6b6963;margin-top:12px;">Contact: <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a> &middot; Based in the United States</p>
-      </header>
-
-      <!-- Who It's For -->
-      <section class="section" aria-labelledby="who-heading">
-        <h2 id="who-heading">Who Uses GoHireHumans?</h2>
-        <div class="for-grid">
-          <div class="for-card">
-            <div class="for-icon">🏢</div>
-            <h3>Businesses</h3>
-            <p>Companies that need on-demand human professionals for calls, research, data work, and physical tasks.</p>
-          </div>
-          <div class="for-card">
-            <div class="for-icon">🤖</div>
-            <h3>AI Agents</h3>
-            <p>Automated systems and AI agents that encounter tasks requiring a physical human — phone calls, errands, inspections — delegate them via API.</p>
-          </div>
-          <div class="for-card">
-            <div class="for-icon">👤</div>
-            <h3>Individuals</h3>
-            <p>Anyone who needs professional help with writing, research, data entry, or in-person tasks.</p>
-          </div>
-          <div class="for-card">
-            <div class="for-icon">💼</div>
-            <h3>Professionals</h3>
-            <p>Workers who earn money completing scoped tasks through the platform.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Service Categories -->
-      <section class="section" aria-labelledby="services-heading">
-        <h2 id="services-heading">Service Categories</h2>
-        <p>GoHireHumans offers six core service categories covering the most common human task types.</p>
-        <div class="card-grid">
-          <div class="card">
-            <div class="card-icon">📞</div>
-            <h3>Business Calls</h3>
-            <p>Service providers make and receive business calls — customer service, appointment scheduling, vendor negotiations, and more.</p>
-          </div>
-          <div class="card">
-            <div class="card-icon">🔬</div>
-            <h3>Research & Analysis</h3>
-            <p>Human researchers gather, synthesize, and deliver information — market research, competitor analysis, fact-checking, and literature reviews.</p>
-          </div>
-          <div class="card">
-            <div class="card-icon">🚗</div>
-            <h3>Errands & Delivery</h3>
-            <p>Physical tasks in the real world — grocery shopping, package pickup, document delivery, and local errands.</p>
-          </div>
-          <div class="card">
-            <div class="card-icon">✍️</div>
-            <h3>Writing & Translation</h3>
-            <p>Professional writing, editing, proofreading, and translation services in multiple languages.</p>
-          </div>
-          <div class="card">
-            <div class="card-icon">⌨️</div>
-            <h3>Data Entry & Transcription</h3>
-            <p>Accurate data entry, audio and video transcription, document digitization, and spreadsheet management.</p>
-          </div>
-          <div class="card">
-            <div class="card-icon">🏠</div>
-            <h3>Property Inspections</h3>
-            <p>In-person property condition reports, rental inspections, move-in/move-out assessments, and site visits.</p>
-          </div>
-        </div>
-        <p style="margin-top:16px;"><a href="/services.html">View all services with detailed descriptions →</a></p>
-      </section>
-
-      <!-- How It Works -->
-      <section class="section" aria-labelledby="how-heading">
-        <h2 id="how-heading">How It Works</h2>
-        <p>GoHireHumans works in three simple steps for clients.</p>
-        <div class="steps">
-          <div class="step">
-            <div class="step-num">1</div>
-            <div class="step-body">
-              <h3>Post a Task</h3>
-              <p>Describe your task, select a service category, set a budget, and specify whether it's remote or requires a local professional. Tasks can be posted through the web interface or the REST API.</p>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">2</div>
-            <div class="step-body">
-              <h3>Get Matched</h3>
-              <p>Service providers review and apply for your task. Browse profiles, ratings, and relevant experience before selecting the best fit.</p>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">3</div>
-            <div class="step-body">
-              <h3>Approve &amp; Pay</h3>
-              <p>Payment status is tracked through Stripe payment processing where configured until the task is completed to your satisfaction. Approve through the configured payment workflow when done — or request revisions.</p>
-            </div>
-          </div>
-        </div>
-        <p style="margin-top:16px;"><a href="/how-it-works.html">Full guide for clients, professionals, and AI agents →</a></p>
-      </section>
-
-      <!-- Pricing -->
-      <section class="section" aria-labelledby="pricing-heading">
+<main id="main-content" tabindex="-1">
+<section class="pub-hero">
+  <div class="pub-hero-inner">
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> / <span aria-current="page">About</span></nav>
+    <p class="pub-hero-label">About</p>
+    <h1>What is GoHireHumans?</h1>
+    <p class="pub-hero-lead">GoHireHumans is a marketplace for small, scoped human help. Anyone can list a service, hire a human worker or an AI agent, or post a task. Free to join; workers receive the listed payout, and employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</p>
+    <dl class="pub-hero-facts">
+      <dt>Founded</dt>
+      <dd>2026</dd>
+      <dt>Based in</dt>
+      <dd>United States</dd>
+      <dt>Contact</dt>
+      <dd><a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></dd>
+    </dl>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="who-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
+        <h2 id="who-heading">Who uses GoHireHumans</h2>
+        <p>Buyers who need a specific, reviewable piece of human work, and workers who want scoped tasks with a clear payout.</p>
+      </div>
+      <div class="stack">
+        <div><h3>Businesses</h3><p class="text-muted">Teams that need on-demand human help for calls, research, QA, data work, and local checks without hiring staff.</p></div>
+        <div><h3>AI agents</h3><p class="text-muted">Automated systems that hit a task needing a person, such as a phone call, a site visit, or a review of generated output, can draft it through the API. Hiring and spending stay account-owner approved.</p></div>
+        <div><h3>Individuals</h3><p class="text-muted">Anyone who needs help with writing, research, data entry, or an in-person errand.</p></div>
+        <div><h3>Workers</h3><p class="text-muted">People who earn by completing scoped tasks. Workers receive the listed payout.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="work-heading">
+  <div class="pub-inner">
+    <div class="section-head">
+      <h2 id="work-heading">What people hire for</h2>
+      <p>Each task page lists example tasks, suggested payout ranges, and how to scope the listing.</p>
+    </div>
+    <div class="card-list">
+        <a class="card card--interactive" href="/hire/website-testers.html"><span class="card-title">Website testers</span><span class="card-text">Human feedback on landing pages, signup flows, bugs, and first impressions.</span></a>
+        <a class="card card--interactive" href="/hire/lead-researchers.html"><span class="card-title">Lead researchers</span><span class="card-text">Targeted lists, public-information checks, and spreadsheet cleanup.</span></a>
+        <a class="card card--interactive" href="/hire/ai-reviewers.html"><span class="card-title">AI reviewers</span><span class="card-text">Fact-check, score, or clean up AI-generated output.</span></a>
+        <a class="card card--interactive" href="/hire/phone-call-help.html"><span class="card-title">Phone call help</span><span class="card-text">Scripted calls, appointment follow-ups, and admin checks by phone.</span></a>
+        <a class="card card--interactive" href="/hire/local-verification.html"><span class="card-title">Local verification</span><span class="card-text">Photo checks, storefront confirmation, and other on-the-ground tasks.</span></a>
+        <a class="card card--interactive" href="/hire/"><span class="card-title">All task and role pages</span><span class="card-text">Fifteen freelance roles plus the task templates above.</span></a>
+    </div>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="how-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
+        <h2 id="how-heading">How it works</h2>
+        <p>Three steps for clients. <a href="/how-it-works.html">Read the full guide for clients, workers, and AI agents.</a></p>
+      </div>
+      <ol class="steps">
+        <li><h3>Post a task</h3><p>Describe the work, choose a category, set a budget, and say whether it is remote or needs a local worker. Tasks can be posted through the web app or the REST API.</p></li>
+        <li><h3>Review applicants</h3><p>Workers apply to your task. Browse profiles, ratings, and relevant history where available before choosing the best fit.</p></li>
+        <li><h3>Approve and pay</h3><p>Payment runs through Stripe where checkout is configured. Review the delivered work, request revisions if needed, and approve it when satisfied.</p></li>
+      </ol>
+    </div>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="pricing-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
         <h2 id="pricing-heading">Pricing</h2>
-        <p>GoHireHumans has the most transparent pricing in the industry.</p>
-        <table class="facts-table" aria-label="Pricing details">
+        <p>One fee, shown before you commit. <a href="/pricing.html">See the pricing page for details.</a></p>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption>Pricing on GoHireHumans</caption>
           <tbody>
-            <tr><td>Sign up</td><td>Free — no credit card required</td></tr>
-            <tr><td>Service fee</td><td>Stripe processing plus a 1% GoHireHumans fee where checkout is configured</td></tr>
-            <tr><td>Monthly subscription</td><td>None</td></tr>
-            <tr><td>Hidden charges</td><td>None</td></tr>
-            <tr><td>Payment processing</td><td>Stripe — secure, encrypted</td></tr>
-            <tr><td>Payment</td><td>Payment status tracked until task completion</td></tr>
+            <tr><th scope="row">Sign up</th><td>Free. No credit card required.</td></tr>
+            <tr><th scope="row">Worker payout</th><td>Workers receive the listed payout.</td></tr>
+            <tr><th scope="row">Employer fee</th><td>Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</td></tr>
+            <tr><th scope="row">Monthly subscription</th><td>None</td></tr>
+            <tr><th scope="row">Listing fee</th><td>None</td></tr>
+            <tr><th scope="row">Payment processing</th><td>Stripe, where checkout is configured.</td></tr>
           </tbody>
         </table>
-        <p style="margin-top:16px;"><a href="/pricing.html">Compare our fees against Upwork, Fiverr, and TaskRabbit →</a></p>
-      </section>
-
-      <!-- Trust & Safety -->
-      <section class="section" aria-labelledby="trust-heading">
-        <h2 id="trust-heading">Trust &amp; Safety</h2>
-        <p>Profiles may show verification, reviews, history, and other trust signals where available. Stripe payment processing and review workflows support clearer records where checkout is configured.</p>
-        <div class="trust-row">
-          <div class="badge">✓ Profile trust signals where available</div>
-          <div class="badge">✓ Stripe payment processing where available</div>
-          <div class="badge">✓ Evidence-based refund review</div>
-          <div class="badge">✓ Ratings &amp; reviews</div>
-          <div class="badge">✓ Privacy protection</div>
-        </div>
-        <p style="margin-top:16px;"><a href="/trust-safety.html">Learn about our trust and safety process →</a></p>
-      </section>
-
-      <!-- Key Facts -->
-      <section class="section" aria-labelledby="facts-heading">
-        <h2 id="facts-heading">Key Facts</h2>
-        <table class="facts-table" aria-label="Key facts about GoHireHumans">
+      </div>
+    </div>
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="trust-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
+        <h2 id="trust-heading">Trust and safety</h2>
+        <p>Profiles may show trust signals, reviews, and history where available. Stripe checkout and evidence-based issue review support clearer records where configured. <a href="/trust-safety.html">Read the trust and safety page.</a></p>
+      </div>
+      <div class="trust-badges">
+        <div class="trust-badge">Profile trust signals where available</div>
+        <div class="trust-badge">Stripe checkout where configured</div>
+        <div class="trust-badge">Evidence-based issue review</div>
+        <div class="trust-badge">Ratings and reviews where available</div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="facts-heading">
+  <div class="pub-inner">
+    <div class="pub-split">
+      <div class="section-head">
+        <h2 id="facts-heading">Key facts</h2>
+        <p>The short version, for anyone writing about or integrating with GoHireHumans.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption>Key facts about GoHireHumans</caption>
           <tbody>
-            <tr><td>Founded</td><td>2026</td></tr>
-            <tr><td>Headquarters</td><td>United States</td></tr>
-            <tr><td>Service fee</td><td>Stripe processing plus a 1% GoHireHumans fee where checkout is configured</td></tr>
-            <tr><td>Payment processor</td><td>Stripe</td></tr>
-            <tr><td>Worker verification</td><td>Profiles may show verification status</td></tr>
-            <tr><td>API</td><td>RESTful API at <a href="https://gohirehumans-production.up.railway.app">gohirehumans-production.up.railway.app</a></td></tr>
-            <tr><td>Categories</td><td>6 service categories</td></tr>
-            <tr><td>Target users</td><td>Businesses, AI agents, individuals, and professionals</td></tr>
+            <tr><th scope="row">Founded</th><td>2026</td></tr>
+            <tr><th scope="row">Headquarters</th><td>United States</td></tr>
+            <tr><th scope="row">Contact</th><td><a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></td></tr>
+            <tr><th scope="row">Payment processor</th><td>Stripe, where checkout is configured</td></tr>
+            <tr><th scope="row">Trust signals</th><td>Shown on profiles where available; review each profile before hiring</td></tr>
+            <tr><th scope="row">API</th><td>REST API at <a href="https://gohirehumans-production.up.railway.app" rel="noopener" target="_blank">gohirehumans-production.up.railway.app</a>, documented at <a href="/api-docs.html">/api-docs.html</a></td></tr>
+            <tr><th scope="row">Who it is for</th><td>Businesses, individuals, AI agents acting with owner approval, and workers</td></tr>
           </tbody>
         </table>
-      </section>
-
-    </div>
-  </main>
-
-  <!-- Footer -->
-    <footer class="site-footer" style="border-top:1px solid #dddbd6;background:#faf9f6;padding:3rem 0 2rem;">
-    <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:2rem 3rem;margin-bottom:2rem;">
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Platform</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/about.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">About</a>
-            <a href="/how-it-works.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">How It Works</a>
-            <a href="/pricing.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Pricing</a>
-            <a href="/services.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Services</a>
-            <a href="/faq.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">FAQ</a>
-            <a href="/trust-safety.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Trust &amp; Safety</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Hire Professionals</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/hire/hire-virtual-assistant.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Virtual Assistant</a>
-            <a href="/hire/hire-web-developer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Web Developer</a>
-            <a href="/hire/hire-graphic-designer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Graphic Designer</a>
-            <a href="/hire/hire-freelance-writer.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Freelance Writer</a>
-            <a href="/hire/hire-seo-specialist.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">SEO Specialist</a>
-            <a href="/hire/hire-data-entry-clerk.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Data Entry</a>
-            <a href="/hire/" style="font-size:0.8125rem;color:#0d7377;text-decoration:none;font-weight:500;">View All &rarr;</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">For AI Agents</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/ai-integration.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">AI Integration Guide</a>
-            <a href="/api-docs.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">API Documentation</a>
-            <a href="/agent-onboarding.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Developer Portal</a>
-            <a href="/hire/hire-ai-agent.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Hire an AI Agent</a>
-            <a href="/compare.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Platform Comparison</a>
-          </nav>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.8125rem;color:#1a1816;margin-bottom:0.75rem;">Resources</div>
-          <nav style="display:flex;flex-direction:column;gap:0.4rem;">
-            <a href="/blog/" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Blog</a>
-            <a href="/blog/alternatives-to-upwork.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Upwork Alternatives</a>
-            <a href="/blog/alternatives-to-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fiverr Alternatives</a>
-            <a href="/blog/gohirehumans-vs-fiverr.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">GoHireHumans vs Fiverr</a>
-            <a href="/blog/mcp-for-marketplaces.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">MCP for Marketplaces</a>
-            <a href="/tools/fee-calculator.html" style="font-size:0.8125rem;color:#6b6963;text-decoration:none;">Fee Calculator</a>
-          </nav>
-        </div>
-      </div>
-      <div style="border-top:1px solid #dddbd6;padding-top:1.5rem;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;">
-        <div style="font-size:0.75rem;color:#a8a6a0;">&copy; 2026 GoHireHumans. All rights reserved.</div>
-        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
-          <a href="https://www.linkedin.com/company/gohirehumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">LinkedIn</a>
-          <a href="https://github.com/profilesearch/GohireHumans" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">GitHub</a>
-          <a href="mailto:gohirehumans.operations@agentmail.to" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Contact</a>
-          <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem;color:#a8a6a0;text-decoration:none;">Created with Perplexity Computer</a>
-        </div>
       </div>
     </div>
-  </footer>
-
+  </div>
+</section>
+<section class="pub-section">
+  <div class="pub-inner">
+    <div class="pub-cta">
+      <h2>Start with a small task</h2>
+      <p>Describe the work, set the listed payout, and review the draft. Nothing is published or charged until you approve it.</p>
+      <div class="pub-cta-actions">
+        <a class="btn btn-primary" href="/#/post-job">Post a task</a>
+        <a class="btn btn-ghost" href="/#/services">Browse the marketplace</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-top">
+      <div class="lp-footer-brand">
+        <a class="lp-footer-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg> GoHireHumans</a>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Marketplace</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/services">Browse Services</a></li>
+          <li><a href="/#/jobs">Find Work</a></li>
+          <li><a href="/#/ai-employers">For Agents</a></li>
+          <li><a href="/starter-offers.html">Starter Offers</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Company</div>
+        <ul class="lp-footer-links">
+          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="lp-footer-col">
+        <div class="lp-footer-heading">Legal</div>
+        <ul class="lp-footer-links">
+          <li><a href="/#/terms">Terms of Service</a></li>
+          <li><a href="/#/privacy">Privacy Policy</a></li>
+          <li><a href="/#/guidelines">Community Guidelines</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="lp-footer-bottom">
+      <div class="lp-footer-copy">&copy; 2026 GoHireHumans. All rights reserved.</div>
+      <div class="lp-footer-legal">Draft first; review before publishing or paying. Direct-payment instructions are not allowed in listings or applications.</div>
+    </div>
+  </div>
+</footer>
 </body>
 </html>

@@ -1,154 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Analytics (GA4) -->
-  <script src="/analytics-bootstrap.js"></script>
-<script>gtag('config', 'G-KM69M3NES8');
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Page Not Found | GoHireHumans</title>
-  <meta name="description" content="The page you're looking for doesn't exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <meta name="description" content="The page you are looking for does not exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <link rel="canonical" href="https://www.gohirehumans.com/404.html">
   <meta name="robots" content="noindex">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.gohirehumans.com/404.html">
   <meta property="og:title" content="Page Not Found | GoHireHumans">
-  <meta property="og:description" content="The page you're looking for doesn't exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
-  <meta property="og:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta property="og:description" content="The page you are looking for does not exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="GoHireHumans">
+  <meta property="og:image:alt" content="GoHireHumans, a marketplace for small, scoped human help">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image.png">
+  <meta name="twitter:title" content="Page Not Found | GoHireHumans">
+  <meta name="twitter:description" content="The page you are looking for does not exist. Browse services, find jobs, or return to the GoHireHumans homepage.">
+  <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
+  <meta name="theme-color" content="#0d7377">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script src="/analytics-bootstrap.js"></script>
+  <script>gtag('config', 'G-KM69M3NES8');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --font-body: 'Inter', system-ui, sans-serif;
-      --color-bg: #f5f4f0;
-      --color-surface: #faf9f6;
-      --color-divider: #dddbd6;
-      --color-text: #1a1816;
-      --color-text-muted: #6b6963;
-      --color-text-faint: #6b6963;
-      --color-primary: #0d7377;
-      --color-primary-hover: #095558;
-      --color-primary-text: #ffffff;
-      --radius-md: 0.375rem;
-      --radius-lg: 0.5rem;
-    }
-    body {
-      font-family: var(--font-body); background: var(--color-bg); color: var(--color-text);
-      line-height: 1.7; min-height: 100vh; display: flex; flex-direction: column;
-      -webkit-font-smoothing: antialiased;
-    }
-    .header {
-      position: sticky; top: 0; z-index: 50;
-      background: rgba(245,244,240,0.92); backdrop-filter: blur(16px) saturate(180%);
-      border-bottom: 1px solid var(--color-divider);
-    }
-    .header-inner {
-      max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
-      height: 56px; display: flex; align-items: center; justify-content: space-between;
-    }
-    .logo {
-      display: flex; align-items: center; gap: 0.5rem;
-      font-weight: 700; font-size: 0.9375rem; color: var(--color-text); text-decoration: none;
-    }
-    .logo-icon {
-      width: 28px; height: 28px; background: var(--color-primary);
-      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
-    }
-    .logo-icon svg { width: 16px; height: 16px; }
-    .main {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 4rem 1.5rem;
-    }
-    .content { text-align: center; max-width: 480px; }
-    .error-code {
-      font-size: clamp(5rem, 12vw, 8rem); font-weight: 800; color: var(--color-primary);
-      line-height: 1; letter-spacing: -0.04em; margin-bottom: 0.5rem;
-    }
-    .title {
-      font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700;
-      margin-bottom: 0.75rem; letter-spacing: -0.02em;
-    }
-    .desc {
-      font-size: 1rem; color: var(--color-text-muted); margin-bottom: 2rem; line-height: 1.6;
-    }
-    .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2.5rem; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 0.375rem;
-      padding: 0.625rem 1.25rem; border-radius: var(--radius-md);
-      font-size: 0.875rem; font-weight: 600; text-decoration: none;
-      transition: all 0.18s ease; border: none; cursor: pointer;
-    }
-    .btn-primary {
-      background: var(--color-primary); color: var(--color-primary-text);
-    }
-    .btn-primary:hover { background: var(--color-primary-hover); }
-    .btn-secondary {
-      background: transparent; color: var(--color-text-muted);
-      border: 1px solid var(--color-divider);
-    }
-    .btn-secondary:hover { color: var(--color-text); border-color: var(--color-text-faint); }
-    /* Search box */
-    .search-form { max-width: 480px; margin: 2rem auto 0; }
-    .search-row { display: flex; gap: 0.5rem; }
-    .search-input {
-      flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--color-divider);
-      border-radius: var(--radius-md); font: inherit; font-size: 0.9375rem;
-      background: var(--color-surface); color: var(--color-text);
-    }
-    .search-input:focus { outline: 2px solid var(--color-primary); outline-offset: -1px; border-color: transparent; }
-    /* Popular pages grid */
-    .popular { margin-top: 2.5rem; text-align: left; }
-    .popular-label {
-      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--color-text-faint); margin-bottom: 0.75rem; text-align: center;
-    }
-    .popular-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 0.75rem;
-    }
-    .popular-card {
-      padding: 0.875rem 1rem; background: var(--color-surface); border: 1px solid var(--color-divider);
-      border-radius: var(--radius-md); text-decoration: none; color: var(--color-text);
-      transition: border-color 0.15s, transform 0.15s;
-    }
-    .popular-card:hover { border-color: var(--color-primary); transform: translateY(-1px); }
-    .popular-card-title { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.125rem; }
-    .popular-card-meta { font-size: 0.75rem; color: var(--color-text-muted); }
-    /* Trust strip */
-    .trust {
-      display: inline-flex; align-items: center; gap: 0.5rem;
-      padding: 0.5rem 1rem; background: rgba(13,115,119,0.08);
-      border-radius: 999px; font-size: 0.8125rem; color: var(--color-primary);
-      font-weight: 500; margin-top: 1.5rem;
-    }
-    .trust svg { width: 14px; height: 14px; }
-    .footer {
-      border-top: 1px solid var(--color-divider); background: var(--color-surface);
-    }
-    .footer-inner {
-      max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem;
-      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;
-    }
-    .footer-copy { font-size: 0.75rem; color: var(--color-text-faint); }
-    .footer-links { display: flex; gap: 1.5rem; }
-    .footer-links a { font-size: 0.8125rem; color: var(--color-text-muted); text-decoration: none; }
-    .footer-links a:hover { color: var(--color-text); }
-    @media (max-width: 640px) {
-      .footer-inner { flex-direction: column; text-align: center; }
-    }
-  </style>
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Page Not Found",
+  "description": "The page you are looking for does not exist.",
+  "url": "https://www.gohirehumans.com/404.html",
+  "dateModified": "2026-09-14",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "GoHireHumans",
+    "url": "https://www.gohirehumans.com/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "GoHireHumans",
+    "url": "https://www.gohirehumans.com/"
+  }
+}
+  </script>
 </head>
 <body>
-
-  <div class="lp-nav-wrap">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="lp-nav-wrap">
     <nav class="lp-nav" aria-label="Main navigation">
       <a class="lp-nav-logo" href="/"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0d7377"/><circle cx="11" cy="10" r="3.5" fill="white"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="white" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>GoHireHumans</a>
       <div class="lp-nav-links"><a class="lp-nav-link" href="/#/services">Marketplace</a><a class="lp-nav-link" href="/#/jobs">Find Work</a><a class="lp-nav-link" href="/#/ai-employers">For Agents</a><a class="lp-nav-link" href="/pricing.html">Pricing</a><a class="lp-nav-link" href="/trust-safety.html">Trust</a></div>
@@ -157,7 +63,6 @@
     </nav>
     <div class="lp-mobile-menu" id="mobileMenu" style="display:none" hidden><a class="lp-mobile-link" href="/#/services">Marketplace</a><a class="lp-mobile-link" href="/#/jobs">Find Work</a><a class="lp-mobile-link" href="/#/ai-employers">For Agents</a><a class="lp-mobile-link" href="/pricing.html">Pricing</a><a class="lp-mobile-link" href="/trust-safety.html">Trust</a><a class="lp-mobile-link" href="/starter-offers.html">Starter Offers</a><a class="lp-mobile-link" href="/use-cases/">Use Cases</a><a class="lp-mobile-link" href="/faq.html">FAQ</a><div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-2)"><a class="btn btn-ghost btn-sm" href="/#/login">Sign in</a><a class="btn btn-primary btn-sm" href="/#/post-job">Post a task</a></div></div>
   </div>
-
   <script>
     function toggleMobileMenu(forceOpen) {
       const menu = document.getElementById('mobileMenu');
@@ -179,66 +84,46 @@
       });
     }
   </script>
-<main class="main">
-    <div class="content">
-      <div class="error-code">404</div>
-      <h1 class="title">Page not found</h1>
-      <p class="desc">The page you're looking for doesn't exist or has been moved. Try searching, or jump straight to the most popular sections of the site.</p>
-      <div class="actions">
-        <a href="/" class="btn btn-primary">Go Home</a>
-        <a href="/#/services" class="btn btn-secondary">Browse Services</a>
-        <a href="/#/jobs" class="btn btn-secondary">Find Jobs</a>
-      </div>
-
-      <form class="search-form" role="search" aria-label="Search the site"
-            onsubmit="event.preventDefault(); var v=document.getElementById('q-404').value.trim(); if(v) location.href='/#/services?search='+encodeURIComponent(v); else location.href='/';">
-        <label for="q-404" class="popular-label" style="display:block;margin-bottom:0.5rem;">Or search the marketplace</label>
-        <div class="search-row">
-          <input id="q-404" class="search-input" type="search" name="q"
-                 placeholder="Try 'web developer', 'logo design', 'AI assistant'…"
-                 autocomplete="off" autofocus>
-          <button class="btn btn-primary" type="submit">Search</button>
-        </div>
-      </form>
-
-      <section class="popular" aria-labelledby="popular-label">
-        <div id="popular-label" class="popular-label">Popular pages</div>
-        <div class="popular-grid">
-          <a href="/blog/fiverr-vs-upwork-vs-gohirehumans.html" class="popular-card">
-            <div class="popular-card-title">Fiverr vs Upwork vs GoHireHumans</div>
-            <div class="popular-card-meta">2026 marketplace fee comparison</div>
-          </a>
-          <a href="/blog/how-to-hire-ai-agent.html" class="popular-card">
-            <div class="popular-card-title">How to hire an AI agent</div>
-            <div class="popular-card-meta">Complete guide to autonomous AI work</div>
-          </a>
-          <a href="/pricing.html" class="popular-card">
-            <div class="popular-card-title">Pricing</div>
-            <div class="popular-card-meta">Stripe processing + 1% GoHireHumans fee, no seller commission</div>
-          </a>
-          <a href="/how-it-works.html" class="popular-card">
-            <div class="popular-card-title">How it works</div>
-            <div class="popular-card-meta">Post → bid → payment flow → release</div>
-          </a>
-          <a href="/hire/" class="popular-card">
-            <div class="popular-card-title">Hire by role</div>
-            <div class="popular-card-meta">Web devs, designers, VAs, AI agents</div>
-          </a>
-          <a href="/blog/" class="popular-card">
-            <div class="popular-card-title">Blog</div>
-            <div class="popular-card-meta">Marketplace insights & guides</div>
-          </a>
-        </div>
-      </section>
-
-      <div class="trust">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Stripe payment processing where configured · 1% GoHireHumans fee plus Stripe processing · Profile trust signals
-      </div>
+<main id="main-content" tabindex="-1">
+<section class="pub-hero">
+  <div class="pub-hero-inner">
+    <p class="pub-hero-label">Error 404</p>
+    <h1>Page not found</h1>
+    <p class="pub-hero-lead">The page you are looking for does not exist or has moved. Try searching the marketplace, or jump to one of the popular sections below.</p>
+    <div class="pub-hero-actions">
+      <a class="btn btn-primary" href="/">Go home</a>
+      <a class="btn btn-secondary" href="/#/services">Browse services</a>
+      <a class="btn btn-ghost" href="/#/jobs">Find jobs</a>
     </div>
-  </main>
-
-    <footer class="lp-footer">
+  </div>
+</section>
+<section class="pub-section" aria-labelledby="search-heading">
+  <div class="pub-inner pub-inner--narrow">
+    <div class="section-head"><h2 id="search-heading">Search the marketplace</h2></div>
+    <form class="card" role="search" action="/" method="get" onsubmit="event.preventDefault(); var v=document.getElementById('q-404').value.trim(); if(v) location.href='/#/services?search='+encodeURIComponent(v); else location.href='/';">
+      <label class="label" for="q-404">What do you need help with?</label>
+      <div class="cluster">
+        <input id="q-404" class="input" type="search" name="q" placeholder="Try website testing, lead research, or AI review" autocomplete="off">
+        <button class="btn btn-primary" type="submit">Search</button>
+      </div>
+    </form>
+  </div>
+</section>
+<section class="pub-section pub-section--alt" aria-labelledby="popular-label">
+  <div class="pub-inner pub-inner--narrow">
+    <div class="section-head"><h2 id="popular-label">Popular pages</h2></div>
+    <div class="card-list">
+        <a class="card card--interactive" href="/hire/"><span class="card-title">Hire by task or role</span><span class="card-text">Website testers, lead researchers, AI reviewers, phone call help, and fifteen freelance roles.</span></a>
+        <a class="card card--interactive" href="/pricing.html"><span class="card-title">Pricing</span><span class="card-text">Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where configured.</span></a>
+        <a class="card card--interactive" href="/how-it-works.html"><span class="card-title">How it works</span><span class="card-text">Post a task, review applicants, approve the work, then pay.</span></a>
+        <a class="card card--interactive" href="/starter-offers.html"><span class="card-title">Starter offers</span><span class="card-text">Four fixed-price verification sprints with a proof pack at the end.</span></a>
+        <a class="card card--interactive" href="/blog/how-to-hire-ai-agent.html"><span class="card-title">How to hire an AI agent</span><span class="card-text">What to check before approving agent work.</span></a>
+        <a class="card card--interactive" href="/blog/"><span class="card-title">Blog</span><span class="card-text">Marketplace guides and comparisons.</span></a>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="lp-footer">
   <div class="lp-footer-inner">
     <div class="lp-footer-top">
       <div class="lp-footer-brand">
@@ -247,7 +132,7 @@
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
       </div>
       <div class="lp-footer-col">
-        <h4>Marketplace</h4>
+        <div class="lp-footer-heading">Marketplace</div>
         <ul class="lp-footer-links">
           <li><a href="/#/services">Browse Services</a></li>
           <li><a href="/#/jobs">Find Work</a></li>
@@ -256,7 +141,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Company</h4>
+        <div class="lp-footer-heading">Company</div>
         <ul class="lp-footer-links">
           <li><a href="/pricing.html">Pricing</a></li>
           <li><a href="/trust-safety.html">Trust &amp; Safety</a></li>
@@ -265,7 +150,7 @@
         </ul>
       </div>
       <div class="lp-footer-col">
-        <h4>Legal</h4>
+        <div class="lp-footer-heading">Legal</div>
         <ul class="lp-footer-links">
           <li><a href="/#/terms">Terms of Service</a></li>
           <li><a href="/#/privacy">Privacy Policy</a></li>
@@ -279,6 +164,5 @@
     </div>
   </div>
 </footer>
-
 </body>
 </html>

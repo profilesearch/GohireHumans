@@ -174,25 +174,50 @@ railway domain
 ## Project Structure
 
 ```
-gohirehumans-deploy/
+GohireHumans/
 ├── backend/
 │   ├── server.py          # Flask server (production wrapper)
-│   ├── api_core.py        # Core API logic (2600+ lines)
+│   ├── api_core.py        # Core API logic (~14,000 lines, single route dispatcher)
+│   ├── mcp_server.py      # MCP server for AI agents (mirrored in mcp-package/)
+│   ├── test_*.py          # unittest suites (run with discover -s backend)
 │   ├── requirements.txt   # Python dependencies
 │   ├── Dockerfile         # Container config for Railway
 │   ├── railway.toml       # Railway deployment config
 │   ├── Procfile           # Process file (Heroku/Railway)
-│   ├── .env.example       # Environment variable template
-│   └── .gitignore
+│   ├── start.sh           # Container entrypoint (execs gunicorn)
+│   ├── .dockerignore      # Keeps tests/tools/local DBs out of the image
+│   └── .env.example       # Environment variable template
 │
 ├── frontend/
-│   ├── index.html         # Single Page Application
-│   ├── style.css          # Main stylesheet
-│   ├── base.css           # CSS reset/base
+│   ├── index.html         # Single Page Application (hash routes under /#/)
+│   ├── style.css          # Shared stylesheet: tokens, reset, components, public shell, page layouts
+│   ├── app.css            # Signed-in app surfaces (loaded by index.html only)
+│   ├── base.css           # Reset mirror for the SPA
+│   ├── mobile-hardening.css # Phone-width guards (no-op above 768px)
+│   ├── partials/          # Canonical public nav and footer (synced into every static page)
+│   ├── *.html, blog/, hire/, use-cases/, ai-human-qa/, categories/, vs/, tools/, earn/, examples/
+│   │                      # Static marketing, SEO, docs, and tool pages
+│   ├── analytics-bootstrap.js # Fail-closed GA loader (production origins only)
 │   ├── config.js          # API URL configuration ← EDIT THIS
-│   ├── vercel.json        # Vercel routing/headers config
-│   └── .gitignore
+│   ├── sitemap.xml, feed.xml, atom.xml, robots.txt, llms.txt, .well-known/
+│   ├── performance-budgets.json # Byte budgets enforced in CI
+│   ├── tests/             # Playwright browser regression suites
+│   └── vercel.json        # Vercel redirects and security headers
 │
+├── docs/
+│   ├── design-system/     # design-system.md (tokens, components, page patterns) and public-shell.md
+│   ├── ops/               # Operating playbooks and internal working docs (not deployed)
+│   └── plans/             # Historical sprint plans
+│
+├── scripts/
+│   ├── sync_public_shell.py   # Sync the nav/footer partials into every static page (--check in CI)
+│   ├── check_public_shell.py  # Guard: every public page has the canonical shell, skip link, main, bootstrap
+│   ├── performance_budget.py  # Enforce performance-budgets.json
+│   ├── generate_feeds.py      # Rebuild feed.xml and atom.xml from blog page metadata
+│   └── generate-marketplace-pulse.py
+│
+├── .github/workflows/ci.yml # Backend tests, static checks, Playwright suites
+├── .gitignore
 └── README.md              # This file
 ```
 
@@ -209,6 +234,8 @@ gohirehumans-deploy/
 | `GET` | `/services` | List service listings |
 | `POST` | `/services` | Create a service listing |
 | `GET` | `/jobs` | List jobs |
+| `GET` | `/me/services` | The caller's own services in every status (auth required; `page`, `per_page`, `status`, `include_removed`) |
+| `GET` | `/me/jobs` | The caller's own jobs in every status, with `application_count` (auth required) |
 | `POST` | `/jobs` | Create a job |
 | `POST` | `/jobs/{id}/apply` | Apply to a job |
 | `POST` | `/jobs/{id}/hire` | Hire an applicant |
@@ -217,7 +244,7 @@ gohirehumans-deploy/
 | `POST` | `/orders/{id}/approve` | Approve submitted work and release payment |
 | `POST` | `/orders/{id}/review` | Leave a review |
 | `POST` | `/seed` | Secret-gated local/demo seeding |
-| `GET` | `/admin/stats` | Admin statistics |
+| `GET` | `/admin/dashboard` | Admin statistics |
 
 ---
 
@@ -248,10 +275,34 @@ If data disappears between deploys, make sure you've attached a persistent volum
 
 ---
 
+## Frontend checks
+
+The static checks CI runs, in order:
+
+```bash
+python3 scripts/check_public_shell.py
+python3 scripts/sync_public_shell.py --check
+python3 scripts/performance_budget.py
+python3 backend/security_static_checks.py
+python3 -m unittest discover -s backend -p 'test_deep_audit_regressions.py'
+```
+
+Browser suites (Playwright, desktop and Pixel 5 projects):
+
+```bash
+cd frontend && npm ci && npx playwright install chromium && npm run test:browser
+```
+
+Set `PW_PORT=<port>` if 4173 is taken on your machine; the config and specs honor it. After changing `frontend/partials/`, run `python3 scripts/sync_public_shell.py` (without `--check`) to propagate the shell, and update the JS-rendered nav and footer in `index.html` by hand. After adding a blog post, run `python3 scripts/generate_feeds.py`.
+
+The visual system is documented in `docs/design-system/design-system.md`; static pages build on its classes instead of page-local styles.
+
+---
+
 ## Tech Stack
 
-- **Frontend**: Vanilla JS SPA, Inter font, CSS custom properties
+- **Frontend**: Vanilla JS SPA plus static HTML pages, Inter, CSS custom properties, one shared stylesheet
 - **Backend**: Python 3.12, Flask, Gunicorn, SQLite
 - **Hosting**: Vercel (frontend) + Railway (backend)
-- **Security**: HMAC password hashing, session tokens, rate limiting, content safety filters
+- **Security**: PBKDF2-HMAC password hashing, session tokens, rate limiting, content safety filters
 - **Domain**: gohirehumans.com
