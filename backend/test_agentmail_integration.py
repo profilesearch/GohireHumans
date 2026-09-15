@@ -10,7 +10,11 @@ from test_deep_audit_regressions import load_api_core
 
 class AgentMailIntegrationTests(unittest.TestCase):
     def setUp(self):
+        # Cleanups (not tearDown) restore state even when setUp itself fails:
+        # a leaked EMAIL_PROVIDER=agentmail would otherwise poison every later
+        # notification test in the same process.
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.env = mock.patch.dict(os.environ, {
             'DATABASE_PATH': self.tmp.name + '/mail.db', 'DISABLE_AUTO_SEED': '1',
             'EMAIL_PROVIDER': 'agentmail', 'AGENTMAIL_API_KEY': 'offline-test-key',
@@ -21,19 +25,19 @@ class AgentMailIntegrationTests(unittest.TestCase):
             'AGENTMAIL_TOTAL_SEND_CAP': '1', 'AGENTMAIL_EXPIRES_AT': '',
         })
         self.env.start()
+        self.addCleanup(self.env.stop)
         self.api = load_api_core()
         self.api._db_path_resolved = self.tmp.name + '/mail.db'
         self.api.init_db()
         self.db = self.api.get_db()
-        self.assertEqual(self.db.execute('PRAGMA database_list').fetchone()[2], self.tmp.name + '/mail.db')
+        self.addCleanup(self.db.close)
+        # SQLite reports the canonical path; macOS temp dirs live under the
+        # /var -> /private/var symlink, so compare resolved paths.
+        self.assertEqual(os.path.realpath(self.db.execute('PRAGMA database_list').fetchone()[2]),
+                         os.path.realpath(self.tmp.name + '/mail.db'))
         self.db.execute("INSERT INTO users(id,email,name,password_hash) VALUES(1,'canary@example.com','Private name','x')")
         self.db.commit()
         self.api.RESEND_API_KEY = 'offline-resend-key'
-
-    def tearDown(self):
-        self.db.close()
-        self.env.stop()
-        self.tmp.cleanup()
 
     def activate(self):
         start = datetime.now(timezone.utc) - timedelta(seconds=1)

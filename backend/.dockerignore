@@ -1,0 +1,12 @@
+# Keep the production image to runtime code only.
+test_*.py
+tools/
+design/
+mcp-package/
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc

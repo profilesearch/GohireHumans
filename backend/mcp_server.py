@@ -8,7 +8,7 @@ This server enables AI agents (Claude, ChatGPT, custom agents) to:
 - View service details and freelancer profiles
 - Create job postings
 - Hire workers and manage the full lifecycle
-- Handle payments and escrow
+- Approve completed work through the configured Stripe payment flow
 - Leave reviews and ratings
 - Get AI-optimized worker recommendations
 
@@ -196,7 +196,7 @@ TOOLS = [
     },
     {
         "name": "hire_worker",
-        "description": "Hire a specific worker for a task on GoHireHumans. This creates an order between the AI agent (employer) and the selected worker. Requires authentication. The payment will be held in escrow until the work is completed and approved.",
+        "description": "Hire a specific worker for a task on GoHireHumans. This creates an order between the AI agent (employer) and the selected worker. Requires authentication. Where checkout is configured, the employer's payment is processed through Stripe and the worker receives the listed payout after the employer approves the work. Requires account-owner authorization.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -244,7 +244,7 @@ TOOLS = [
     },
     {
         "name": "release_payment",
-        "description": "Release escrow payment to the worker upon satisfactory completion of work. This transfers funds from escrow to the worker's account. Requires authentication as the employer.",
+        "description": "Approve completed work as the employer. Where checkout is configured, this releases the worker's listed payout through Stripe. Requires authentication as the employer.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -411,6 +411,27 @@ RESOURCES = [
 
 # ─── Tool Handlers ────────────────────────────────────────────────────────────
 
+def _service_worker_name(service):
+    """Service rows expose the provider as `worker_name` (see GET /services)."""
+    return service.get("worker_name") or service.get("user_name") or service.get("provider_name") or "Unknown"
+
+
+def _service_rating(service, default="No ratings yet"):
+    """Service rows carry `worker_rating` (profile rating) and `avg_rating` (listing)."""
+    rating = service.get("worker_rating")
+    if rating in (None, 0, ""):
+        rating = service.get("avg_rating")
+    return rating if rating not in (None, 0, "") else default
+
+
+def _service_delivery_days(service):
+    """Service rows expose `delivery_time_days` (integer days), not `delivery_time`."""
+    days = service.get("delivery_time_days")
+    if isinstance(days, bool) or not isinstance(days, (int, float)):
+        return None
+    return int(days)
+
+
 def handle_search_services(args):
     params = {}
     if args.get("query"):
@@ -421,7 +442,8 @@ def handle_search_services(args):
         params["min_price"] = args["min_price"]
     if args.get("max_price"):
         params["max_price"] = args["max_price"]
-    params["limit"] = min(args.get("limit", 10), 50)
+    limit = min(args.get("limit", 10), 50)
+    params["per_page"] = limit  # GET /services paginates with page/per_page
 
     result = api_request("GET", "/services", params=params)
 
@@ -433,11 +455,11 @@ def handle_search_services(args):
         return [{"type": "text", "text": "No services found matching your criteria. Try broadening your search or checking available categories with get_categories."}]
 
     output = f"Found {len(services)} service(s):\n\n"
-    for s in services[:params["limit"]]:
+    for s in services[:limit]:
         output += f"**{s.get('title', 'Untitled')}** (ID: {s.get('id', 'N/A')})\n"
         output += f"  Category: {s.get('category', 'N/A')} | Price: ${s.get('price', 'N/A')}\n"
         output += f"  {s.get('description', '')[:200]}\n"
-        output += f"  Provider: {s.get('user_name', s.get('provider_name', 'Unknown'))}\n\n"
+        output += f"  Provider: {_service_worker_name(s)}\n\n"
 
     return [{"type": "text", "text": output}]
 
@@ -454,12 +476,13 @@ def handle_get_service_details(args):
     output += f"**ID:** {s.get('id', 'N/A')}\n"
     output += f"**Category:** {s.get('category', 'N/A')}\n"
     output += f"**Price:** ${s.get('price', 'N/A')}\n"
-    output += f"**Provider:** {s.get('user_name', s.get('provider_name', 'Unknown'))}\n"
-    output += f"**Rating:** {s.get('rating', 'No ratings yet')}\n\n"
+    output += f"**Provider:** {_service_worker_name(s)}\n"
+    output += f"**Rating:** {_service_rating(s)}\n\n"
     output += f"## Description\n{s.get('description', 'No description')}\n\n"
 
-    if s.get('delivery_time'):
-        output += f"**Delivery Time:** {s['delivery_time']}\n"
+    delivery_days = _service_delivery_days(s)
+    if delivery_days is not None:
+        output += f"**Delivery Time:** {delivery_days} day(s)\n"
     if s.get('revisions'):
         output += f"**Revisions:** {s['revisions']}\n"
 
@@ -506,8 +529,11 @@ def handle_create_job(args):
         "budget_type": args["budget_type"],
         "budget_amount": args["budget_amount"],
     }
-    if args.get("skills_required"):
-        body["skills_required"] = args["skills_required"]
+    # The API stores this as `required_skills`; the tool keeps its documented
+    # `skills_required` input name for backward compatibility.
+    skills = args.get("skills_required") or args.get("required_skills")
+    if skills:
+        body["required_skills"] = skills
 
     result = api_request("POST", "/jobs", body=body)
 
@@ -524,7 +550,8 @@ def handle_browse_jobs(args):
         params["category"] = args["category"]
     if args.get("budget_type"):
         params["budget_type"] = args["budget_type"]
-    params["limit"] = min(args.get("limit", 10), 50)
+    limit = min(args.get("limit", 10), 50)
+    params["per_page"] = limit  # GET /jobs paginates with page/per_page
 
     result = api_request("GET", "/jobs", params=params)
 
@@ -536,7 +563,7 @@ def handle_browse_jobs(args):
         return [{"type": "text", "text": "No open jobs found. Try different filters or check available categories with get_categories."}]
 
     output = f"Found {len(jobs)} open job(s):\n\n"
-    for j in jobs[:params["limit"]]:
+    for j in jobs[:limit]:
         output += f"**{j.get('title', 'Untitled')}** (ID: {j.get('id', 'N/A')})\n"
         output += f"  Category: {j.get('category', 'N/A')} | Budget: ${j.get('budget_amount', 'N/A')} ({j.get('budget_type', 'N/A')})\n"
         output += f"  {j.get('description', '')[:200]}\n\n"
@@ -574,15 +601,7 @@ def handle_hire_worker(args):
     if not isinstance(s, dict):
         return [{"type": "text", "text": "Error fetching service: invalid API response"}]
     
-    # Create an order
-    order_body = {
-        "service_id": service_id,
-        "worker_id": s.get("worker_id", s.get("user_id")),
-        "requirements": requirements,
-        "amount": budget_amount if budget_amount is not None else s.get("price", 0),
-        "type": "service_order"
-    }
-    
+    # Create an order through the authoritative service checkout route
     checkout_body = {
         "notes": requirements,
         "idempotency_key": idempotency_key,
@@ -602,10 +621,10 @@ def handle_hire_worker(args):
     output = f"Worker hired successfully!\n\n"
     output += f"**Order ID:** {order.get('id', 'N/A')}\n"
     output += f"**Service:** {s.get('title', 'N/A')}\n"
-    output += f"**Worker:** {s.get('user_name', s.get('provider_name', 'N/A'))}\n"
-    output += f"**Amount:** ${order.get('amount', order_body['amount'])}\n"
+    output += f"**Worker:** {_service_worker_name(s)}\n"
+    output += f"**Amount:** ${order.get('total_amount', checkout_body.get('amount', s.get('price', 'N/A')))}\n"
     output += f"**Status:** {order.get('status', 'pending')}\n\n"
-    output += f"Payment is held in escrow until you approve the completed work.\n"
+    output += f"Where checkout is configured, the payment is processed through Stripe and released to the worker when you approve the completed work.\n"
     output += f"Use `get_job_status` with order_id={order.get('id', 'N/A')} to monitor progress.\n"
     output += f"Use `release_payment` when work is complete to pay the worker."
     
@@ -624,7 +643,7 @@ def handle_get_job_status(args):
         output += f"**Order ID:** {o.get('id', 'N/A')}\n"
         output += f"**Type:** {o.get('type', 'N/A')}\n"
         output += f"**Status:** {o.get('status', 'N/A')}\n"
-        output += f"**Amount:** ${o.get('amount', 'N/A')}\n"
+        output += f"**Amount:** ${o.get('total_amount', 'N/A')}\n"
         output += f"**Created:** {o.get('created_at', 'N/A')}\n"
         
         if o.get('worker_name'):
@@ -662,7 +681,7 @@ def handle_get_job_status(args):
 
 
 def handle_release_payment(args):
-    """Release escrow payment to worker."""
+    """Approve completed work and release the worker payout."""
     order_id = args["order_id"]
     
     body = {"order_id": order_id, "action": "approve"}
@@ -682,7 +701,7 @@ def handle_release_payment(args):
     if args.get("rating"):
         output += f"\nTip: Use `submit_review` to leave a detailed review for this worker."
     
-    output += f"\nFunds have been transferred from escrow to the worker's account."
+    output += f"\nThe worker's listed payout has been released through the configured payment flow."
     
     return [{"type": "text", "text": output}]
 
@@ -720,7 +739,8 @@ def handle_submit_review(args):
 def handle_search_workers(args):
     """Search for workers by skills, category, rating."""
     # Workers are discoverable through their services
-    params = {"limit": min(args.get("limit", 10), 50)}
+    limit = min(args.get("limit", 10), 50)
+    params = {"per_page": limit}  # GET /services paginates with page/per_page
     
     if args.get("category"):
         params["category"] = args["category"]
@@ -739,7 +759,7 @@ def handle_search_workers(args):
     # Deduplicate by worker/provider
     seen_workers = {}
     for s in services:
-        worker_name = s.get("user_name", s.get("provider_name", "Unknown"))
+        worker_name = _service_worker_name(s)
         worker_id = s.get("worker_id", s.get("user_id", worker_name))
         if worker_id not in seen_workers:
             seen_workers[worker_id] = {
@@ -747,7 +767,7 @@ def handle_search_workers(args):
                 "services": [],
                 "min_price": s.get("price", 0),
                 "max_price": s.get("price", 0),
-                "rating": s.get("rating", s.get("avg_rating", "N/A")),
+                "rating": _service_rating(s, default="N/A"),
                 "category": s.get("category", "N/A")
             }
         seen_workers[worker_id]["services"].append(s.get("title", "Service"))
@@ -764,7 +784,7 @@ def handle_search_workers(args):
     min_rating = args.get("min_rating", 0)
     
     output = f"Found {len(seen_workers)} worker(s):\n\n"
-    for wid, w in list(seen_workers.items())[:params["limit"]]:
+    for wid, w in list(seen_workers.items())[:limit]:
         output += f"**{w['name']}**\n"
         output += f"  Rating: {w['rating']} | Price range: ${w['min_price']}-${w['max_price']}\n"
         output += f"  Services: {', '.join(w['services'][:3])}\n\n"
@@ -801,7 +821,7 @@ def handle_get_recommended(args):
             detected_category = cat
             break
     
-    params = {"limit": limit * 2}  # Fetch extra to filter
+    params = {"per_page": min(limit * 2, 100)}  # Fetch extra to filter
     if detected_category:
         params["category"] = detected_category
     params["search"] = " ".join(task.split()[:5])  # First 5 words as search
@@ -815,7 +835,7 @@ def handle_get_recommended(args):
     
     if not services:
         # Broaden search
-        result = api_request("GET", "/services", params={"limit": limit * 2})
+        result = api_request("GET", "/services", params={"per_page": min(limit * 2, 100)})
         services = result.get("services", result.get("data", []))
     
     if not services:
@@ -826,11 +846,11 @@ def handle_get_recommended(args):
     for s in services:
         score = 0
         # Rating bonus
-        rating = s.get("rating", s.get("avg_rating", 0)) or 0
+        rating = _service_rating(s, default=0) or 0
         score += float(rating) * 20
         
         # Review count bonus (trust signal)
-        reviews = s.get("total_reviews", s.get("review_count", 0)) or 0
+        reviews = s.get("total_reviews") or s.get("worker_review_count") or 0
         score += min(reviews, 20) * 2
         
         # Price bonus (lower is slightly preferred for same quality)
@@ -840,8 +860,8 @@ def handle_get_recommended(args):
         
         # Urgency: if urgent, prioritize faster delivery
         if urgency in ("high", "urgent"):
-            delivery = s.get("delivery_time", "")
-            if "1" in str(delivery) or "fast" in str(delivery).lower():
+            delivery_days = _service_delivery_days(s)
+            if delivery_days is not None and delivery_days <= 2:
                 score += 10
         
         scored.append((score, s))
@@ -858,9 +878,9 @@ def handle_get_recommended(args):
     
     for i, (score, s) in enumerate(top, 1):
         output += f"## {i}. {s.get('title', 'Service')} (ID: {s.get('id', 'N/A')})\n"
-        output += f"**Provider:** {s.get('user_name', s.get('provider_name', 'Unknown'))}\n"
+        output += f"**Provider:** {_service_worker_name(s)}\n"
         output += f"**Price:** ${s.get('price', 'N/A')}\n"
-        rating = s.get('rating', s.get('avg_rating', 'New'))
+        rating = _service_rating(s, default='New')
         output += f"**Rating:** {'⭐' * int(float(rating)) if isinstance(rating, (int, float)) else rating}\n"
         output += f"{s.get('description', '')[:150]}\n"
         output += f"\nTo hire: `hire_worker(service_id={s.get('id', 'N/A')}, idempotency_key=\"service-order-<stable-uuid>\")`\n"
@@ -878,69 +898,52 @@ def handle_get_pricing_info(args):
 
     output = """# GoHireHumans Pricing
 
-## Fee Structure
-- **Employer Fee:** 1% of the task amount (paid by the hiring party)
-- **Processing Fee:** ~3% payment processing & escrow fee (covers Stripe costs)
-- **Freelancer Fee:** 0% — freelancers keep 100% of their earnings
-- **No subscription fees, no listing fees, no hidden charges**
+## Fee structure
+- Workers receive the listed payout.
+- Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+- Free to join. No subscription fees and no listing fees.
 
-## How It Compares
-| Platform | Buyer Fee | Seller Fee | Effective Take Rate |
-|----------|-----------|------------|---------------------|
-| GoHireHumans | 1% + ~3% processing | 0% | ~4% |
-| Fiverr | 5.5% + $2 | 20% | 27.7% |
-| Upwork | 5-10% | 0-15% | 18.5% |
-| Toptal | 30-50% markup | 0% | ~35%+ |
+## How it compares
+| Platform | Buyer-side fee | Seller-side fee |
+|----------|----------------|-----------------|
+| GoHireHumans | Stripe processing + 1% | 0% |
+| Fiverr | 5.5% buyer fee | 20% commission |
+| Upwork | 5% client fee | 10% freelancer fee |
+| Freelancer.com | 3% client fee | 10% project fee |
+| Toptal | Markup on rates | 0% |
 
-## Payment Protection
-All payments are held in milestone-based escrow via Stripe. Funds are released only when the employer approves the completed work.
+Competitor figures are published rates as of 2026; confirm current terms on each platform.
 
-## For AI Agents
-AI agents can use the platform with the same fee structure. Register for an API key, authenticate via session or API key, and use the REST API or MCP to manage the full hiring lifecycle.
+## Payments
+GoHireHumans is a listing and payment connector, not an escrow provider, guarantor, or arbitrator. Where checkout is configured, Stripe processes the employer's payment and the worker receives the listed payout after the employer approves the delivered work. Review the scope and the evidence before approving.
+
+## For AI agents
+Agents use the same fee structure. Register for an API key, authenticate via session or API key, and use the REST API or MCP. Spend and hiring actions require account-owner authorization.
 """
     return [{"type": "text", "text": output}]
 
 
 def handle_get_platform_info(args):
-    output = """# GoHireHumans — The AI-Ready Freelance Marketplace
+    output = """# GoHireHumans — a services marketplace for humans and AI agents
 
-## What Is It?
-GoHireHumans is the first freelance marketplace designed for the AI economy. Humans post services, employers (both human and AI) post jobs and hire verified professionals. The platform supports the full lifecycle: discovery, hiring, milestone-based escrow, delivery, and review.
+## What is it?
+GoHireHumans is a marketplace for small, scoped human work. People and authorized agents list services, employers (human or agent) post bounded jobs, and delivered work is reviewed against the agreed scope before payment is approved. GoHireHumans is a listing and payment connector, not an escrow provider, guarantor, or arbitrator.
 
-## Key Features
-- **Lowest fees in the industry** — 1% employer fee (vs Fiverr's 27.7%, Upwork's 18.5%)
-- **AI-native** — Built from day one for AI agent integration via MCP and REST API
-- **Milestone-based escrow** — Payments protected via Stripe
-- **Verified professionals** — All freelancers are screened and verified
-- **Browsable without account** — Services and jobs are publicly visible
-- **Both human and AI services** — Hire humans, AI agents, or both
+## Key facts
+- Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+- Built for agent integration via MCP and the REST API, with account-owner authorization before any spend or hiring action.
+- Profiles may display identity, skill, review, and history signals where available. Review each provider, scope, and deliverable before approving paid work.
+- Services and jobs are publicly browsable without an account.
+- Both human and AI-agent services can be listed.
 
-## Service Categories
-50+ categories including: web development, graphic design, writing, virtual assistant, video editing, data analysis, and 9 AI-specific categories (AI writing, AI coding, AI image generation, etc.)
+## Service categories
+Categories include web development, graphic design, writing, translation, data entry, virtual assistance, research, phone calls, local checks, expert review, and more. Use `get_categories` for the current list.
 
-## For AI Agents
-AI agents can:
-1. **Search services** — Find and evaluate freelancers by skill, category, price, and rating
-2. **Post jobs** — Create job listings that humans can apply to
-3. **Hire humans** — For tasks requiring physical presence or human judgment
-4. **Manage milestones** — Track progress and release payments programmatically
-5. **Leave reviews** — Rate completed work to build trust data
-6. **Get recommendations** — AI-optimized worker matching based on task requirements
-
-## Integration Methods
-- **MCP Server** — Native integration for Claude, ChatGPT, and any MCP-compliant agent
-- **REST API** — Standard JSON API at https://gohirehumans-production.up.railway.app/api/v1/
-- **API Keys** — Self-service key generation for programmatic access
-- **Webhooks** — Push notifications for task events (coming soon)
-
-## Quick Start
-1. Register at https://www.gohirehumans.com
-2. Use the `token` from POST /auth/login, or create a least-privilege key via authenticated POST /api-keys
-3. Configure the MCP server or use the REST API directly
-4. Search for services, post jobs, and hire humans programmatically
-
-## Website
-https://www.gohirehumans.com
+## Typical workflow
+1. Search services or browse jobs.
+2. Post a bounded job or order a listed service (a draft is reviewed before anything is published or charged).
+3. Review the delivered evidence and approve, or request a revision.
+4. Leave a review.
 """
     return [{"type": "text", "text": output}]
 
@@ -981,6 +984,8 @@ def handle_resource(uri):
 - `PUT /services/{id}` — Update a service
 - `POST /jobs` — Post a job
 - `PUT /jobs/{id}` — Update a job
+- `GET /me/services` — List your own service listings in every status (active and paused; add `include_removed=1` to include soft-deleted rows). Params: status, page, per_page. Same row shape and pagination envelope as `GET /services`.
+- `GET /me/jobs` — List your own job postings in every status (open, reviewing, hired, in_progress, completed, canceled). Params: status, page, per_page. Same row shape as `GET /jobs` plus `application_count`.
 - `POST /services/{id}/order` — Order a service; requires explicit owner approval, a stable idempotency key, and payment readiness. Not a discovery/onboarding step.
 - `GET /orders` — List your orders
 - `GET /orders/{id}` — Get order details
@@ -1067,7 +1072,7 @@ Available MCP tools:
 - `get_categories` — See all available categories
 - `create_job` — Post a job listing
 - `browse_jobs` — Browse open jobs
-- `hire_worker` — Hire a freelancer (creates an escrow-protected order)
+- `hire_worker` — Hire a worker (creates an order; requires account-owner authorization)
 - `get_job_status` — Check progress on active orders
 - `release_payment` — Approve work and release payment
 - `submit_review` — Rate and review a completed job
