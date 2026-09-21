@@ -3333,9 +3333,7 @@ async function handleHire(jobId, applicationId, budgetType, budgetAmount) {
       </div>
       <div class="app-notice app-notice--boxed">
         ${I.card}
-        <span>${window.GOHIREHUMANS_PAYMENTS_LIVE
-          ? 'Payments secured by <strong>Stripe</strong> &bull; 256-bit encryption &bull; PCI-DSS compliant'
-          : 'Card processing is simulated in this environment; no card is charged.'}</span>
+        <span>Payment availability and status are confirmed by the payment service.</span>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
@@ -3906,12 +3904,15 @@ async function leaveReview(id) {
 // PAYMENTS
 // ═══════════════════════════════════════════════════════════════
 async function renderPayments() {
-  const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'payments');
-  // Handle Stripe return params
-  const h = window.location.hash;
-  if (h.includes('setup=success')) { toast('Payment method set up!', 'success'); window.location.hash = '#/payments'; return; }
-  if (h.includes('connect=success')) { toast('Bank account connected!', 'success'); window.location.hash = '#/payments'; return; }
+  // Return parameters trigger a status check, never a completion claim.
+  const query = getQuery();
+  const returnRole = query.has('connect') ? 'worker' : query.has('setup') ? 'employer' : null;
+  if (returnRole) {
+    paymentSetupEvent(returnRole, 'return');
+    clearHashQueryParam(returnRole === 'worker' ? 'connect' : 'setup');
+  }
+  const isCurrent = currentRenderGuard();
 
   try {
     // A failed status request is not the same as "not set up": it gets its own error state.
@@ -3920,6 +3921,13 @@ async function renderPayments() {
       api('/payments/history').catch(() => null)
     ]);
     if (!isCurrent()) return;
+    const workerMode = paymentSetupMode(statusData.worker_payout_status || {});
+    const employerMode = /^pm_sim_/.test(statusData.employer_payment_status?.payment_method_id || '')
+      ? 'simulated' : paymentSetupMode(statusData.employer_payment_status || {});
+    const employerReady = statusData.employer_ready === true && !['simulated', 'test', 'disabled'].includes(employerMode);
+    const workerReady = statusData.worker_ready === true && !['simulated', 'test', 'disabled'].includes(workerMode);
+    if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
+      (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
     const historyUnavailable = historyData === null;
     const history = Array.isArray(historyData) ? historyData : (historyData?.transactions || []);
 
@@ -3937,17 +3945,17 @@ async function renderPayments() {
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">Employer payment</div>
-          <div class="mt-2">${statusData.employer_ready
+          <div class="mt-2">${employerReady
             ? `<span class="badge badge-completed">${I.check} Ready</span>`
             : `<span class="badge badge-submitted">Not set up</span>`}</div>
-          <div class="stat-sub">${statusData.employer_ready ? 'A saved card can fund jobs and service orders.' : 'Needed before you hire or order a service.'}</div>
+          <div class="stat-sub">${employerReady ? 'A saved card can fund jobs and service orders.' : 'Needed before you hire or order a service.'}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Worker payout</div>
-          <div class="mt-2">${statusData.worker_ready
+          <div class="mt-2">${workerReady
             ? `<span class="badge badge-completed">${I.check} Connected</span>`
             : `<span class="badge badge-submitted">Not connected</span>`}</div>
-          <div class="stat-sub">${statusData.worker_ready ? 'Payouts go to your connected bank account.' : 'Needed before a payout can be sent to you.'}</div>
+          <div class="stat-sub">${workerReady ? 'Payouts go to your connected bank account.' : 'Needed before a payout can be sent to you.'}</div>
         </div>
       </div>
 
@@ -3956,22 +3964,22 @@ async function renderPayments() {
           <div class="empty-state-icon" aria-hidden="true">${I.card}</div>
           <div class="card-title">Pay for Services &amp; Jobs</div>
           <p class="card-text mt-1 mb-4">Set up a payment method to hire workers and order services.</p>
-          ${statusData.employer_ready
+          ${employerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Payment method active</span></div>`
             : ''}
           <button class="btn btn-primary btn-sm" onclick="setupEmployerPayment(this)">
-            ${statusData.employer_ready ? 'Update Payment Method' : 'Set Up Payment Method'}
+            ${employerReady ? 'Update Payment Method' : 'Set Up Payment Method'}
           </button>
         </div>
         <div class="card">
           <div class="empty-state-icon" aria-hidden="true">${I.bank}</div>
           <div class="card-title">Receive Payments</div>
           <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. You can apply to jobs before connecting payouts.</p>
-          ${statusData.worker_ready
+          ${workerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
             : ''}
           <button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
-            ${statusData.worker_ready ? 'Update Bank Account' : 'Connect Bank Account'}
+            ${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
           </button>
         </div>
       </div>
@@ -3994,8 +4002,34 @@ async function renderPayments() {
     `, 'payments');
   } catch(err) {
     if (!isCurrent() || err.handled) return;
+    if (returnRole) paymentSetupEvent(returnRole, 'failed', 'unknown', 'status_request_error');
     appShell(`<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">${I.alert}</div><h2>Payment status is unavailable</h2><p>We could not load your payment setup right now: ${esc(err.message)}</p><button class="btn btn-primary" onclick="renderPayments()">Retry</button></div>`, 'payments');
   }
+}
+
+// Diagnostic-only browser observations, never ledger events or conversions.
+// Do not enrich these with attribution/user input or processor identifiers.
+function paymentSetupEvent(role, stage, mode = 'unknown', reason = 'none') {
+  const stages = ['attempted', 'api_succeeded', 'form_opened', 'validation_failed', 'submit_clicked', 'processor_succeeded', 'completed', 'cancelled', 'failed', 'redirect_started', 'return', 'status_observed'];
+  const reasons = ['none', 'card_validation', 'stripe_confirm_error', 'confirmation_incomplete', 'confirm_request_error', 'setup_request_error', 'missing_setup_flow', 'non_live', 'loader_error', 'user_cancelled', 'context_changed', 'ready', 'not_ready', 'status_request_error'];
+  if (!['employer', 'worker'].includes(role) || !stages.includes(stage)) return;
+  const params = {
+    stage,
+    mode: ['live', 'test', 'simulated', 'disabled'].includes(mode) ? mode : 'unknown',
+    reason: reasons.includes(reason) ? reason : 'none'
+  };
+  // The full processor_succeeded suffix would exceed GA4's 40-character limit.
+  const suffix = stage === 'processor_succeeded' ? 'proc_succeeded' : stage;
+  const name = `${role === 'employer' ? 'employer_payment_setup' : 'worker_payout_setup'}_${suffix}`;
+  try {
+    if (typeof window.gtag === 'function') window.gtag('event', name, params);
+  } catch (_) { /* Measurement must not interrupt setup. */ }
+}
+function paymentSetupMode(result = {}) {
+  if (result.mode === 'simulated' || result.mode === 'disabled') return result.mode;
+  if (/^pk_test_/.test(result.publishable_key || '') || result.mode === 'test') return 'test';
+  if (/^pk_live_/.test(result.publishable_key || '') || result.mode === 'live') return 'live';
+  return 'unknown';
 }
 
 function loadStripeJs() {
@@ -4011,7 +4045,7 @@ function loadStripeJs() {
     script.src = 'https://js.stripe.com/v3/';
     script.async = true;
     script.onload = resolve;
-    script.onerror = () => reject(new Error('Could not load Stripe payment setup.'));
+    script.onerror = () => { script.remove(); reject(new Error('Could not load Stripe payment setup.')); };
     document.head.appendChild(script);
   });
 }
@@ -4021,12 +4055,20 @@ function closePaymentSetupModal() {
   if (modal) modal.remove();
 }
 
-async function showEmployerSetupIntentModal(result) {
+async function showEmployerSetupIntentModal(result, isCurrent = currentRenderGuard()) {
+  const mode = paymentSetupMode(result);
+  const owner = state.token;
+  let finished = false;
   if (!result.client_secret || !result.publishable_key) {
     toast('Payment setup response is missing Stripe details.', 'error');
     return;
   }
-  await loadStripeJs();
+  try { await loadStripeJs(); } catch (_) {
+    paymentSetupEvent('employer', 'failed', mode, 'loader_error');
+    toast('Could not load payment setup. Please try again.', 'error');
+    return;
+  }
+  if (!isCurrent() || state.token !== owner) { paymentSetupEvent('employer', 'cancelled', mode, 'context_changed'); return; }
   const stripe = Stripe(result.publishable_key);
   const elements = stripe.elements();
   const overlay = document.createElement('div');
@@ -4038,7 +4080,7 @@ async function showEmployerSetupIntentModal(result) {
         <h2>Add payment method</h2>
         <button class="modal-close" onclick="closePaymentSetupModal()" aria-label="Close">&times;</button>
       </div>
-      <p class="modal-intro">Save a card so this employer account can fund jobs and services through the normal workflow. No job is hired by this step alone.</p>
+      <p class="modal-intro">Save a card for future jobs and services. Saving a card does not charge it, hire anyone, or place an order.</p>
       <div id="employer-card-element" class="card-element"></div>
       <div id="employer-card-error" class="form-error card-element-error"></div>
       <div class="modal-actions">
@@ -4047,72 +4089,99 @@ async function showEmployerSetupIntentModal(result) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  openModalOverlay(overlay);
   const card = elements.create('card');
+  const active = () => !finished && overlay.isConnected && isCurrent() && state.token === owner;
+  openModalOverlay(overlay, { onClose: () => {
+    if (!finished) paymentSetupEvent('employer', 'cancelled', mode, isCurrent() && state.token === owner ? 'user_cancelled' : 'context_changed');
+    finished = true;
+    card.destroy?.();
+  } });
+  let opened = false;
+  card.on('ready', () => {
+    if (active() && !opened) { opened = true; paymentSetupEvent('employer', 'form_opened', mode); }
+  });
   card.mount('#employer-card-element');
   card.on('change', event => {
+    if (!active()) return;
     const err = document.getElementById('employer-card-error');
     if (err) err.textContent = event.error ? event.error.message : '';
+    if (event.error) paymentSetupEvent('employer', 'validation_failed', mode, 'card_validation');
   });
   document.getElementById('confirmEmployerPaymentBtn').onclick = async () => {
+    if (!active()) return;
     const btn = document.getElementById('confirmEmployerPaymentBtn');
     const err = document.getElementById('employer-card-error');
     btn.disabled = true;
     btn.textContent = 'Saving...';
     if (err) err.textContent = '';
+    paymentSetupEvent('employer', 'submit_clicked', mode);
+    let failureReason = 'stripe_confirm_error';
     try {
       const confirmation = await stripe.confirmCardSetup(result.client_secret, { payment_method: { card } });
-      if (confirmation.error) {
+      if (!active()) return;
+      if (confirmation?.error) {
         if (err) err.textContent = confirmation.error.message || 'Payment setup failed.';
         btn.disabled = false;
         btn.textContent = 'Save payment method';
-        trackEvent('payment_setup_failed', { role: 'employer', reason: 'stripe_confirm_error' });
+        paymentSetupEvent('employer', 'failed', mode, 'stripe_confirm_error');
         return;
       }
-      await api('/payments/confirm-setup-employer', {
+      const setupIntent = confirmation?.setupIntent;
+      const paymentMethodId = setupIntent?.payment_method;
+      if (setupIntent?.status !== 'succeeded' || typeof paymentMethodId !== 'string' ||
+          !paymentMethodId.startsWith('pm_') || paymentMethodId.length <= 3 || paymentMethodId.length > 255 ||
+          /[^A-Za-z0-9_]/.test(paymentMethodId)) {
+        failureReason = 'confirmation_incomplete';
+        throw new Error('Payment setup is not complete. Please try again.');
+      }
+      paymentSetupEvent('employer', 'processor_succeeded', mode);
+      failureReason = 'confirm_request_error';
+      const confirmed = await api('/payments/confirm-setup-employer', {
         method: 'POST',
-        body: { payment_method_id: confirmation.setupIntent.payment_method }
+        body: { payment_method_id: paymentMethodId }
       });
-      trackEvent('payment_setup_completed', { role: 'employer' });
+      if (!active()) return;
+      if (confirmed?.ok !== true) throw new Error('Payment setup could not be confirmed. Please try again.');
+      finished = true;
+      if (mode === 'live') paymentSetupEvent('employer', 'completed', mode);
+      else paymentSetupEvent('employer', 'status_observed', mode, 'non_live');
       closePaymentSetupModal();
-      toast('Payment method saved.', 'success');
+      toast(mode === 'live' ? 'Payment method saved. No charge or hire was made.' : 'Test setup recorded; not ready for real payments.', mode === 'live' ? 'success' : 'info');
       renderPayments();
     } catch (error) {
+      if (!active()) return;
       const message = error?.message || 'Payment setup could not be confirmed. Please try again.';
       if (err) err.textContent = message;
       btn.disabled = false;
       btn.textContent = 'Save payment method';
-      trackEvent('payment_setup_failed', {
-        role: 'employer',
-        reason: 'confirm_request_error'
-      });
+      paymentSetupEvent('employer', 'failed', mode, failureReason);
     }
   };
 }
 
 async function setupEmployerPayment(trigger = null) {
+  const isCurrent = currentRenderGuard();
+  const owner = state.token;
   await withBusy(trigger, async () => {
   try {
-    trackEvent('payment_setup_attempted', { role: 'employer' });
+    paymentSetupEvent('employer', 'attempted');
     const result = await api('/payments/setup-employer', { method: 'POST', body: {} });
-    if (result.url || result.setup_url) {
+    if (!isCurrent() || state.token !== owner) { paymentSetupEvent('employer', 'cancelled', paymentSetupMode(result), 'context_changed'); return; }
+    paymentSetupEvent('employer', 'api_succeeded', paymentSetupMode(result));
+    if (['simulated', 'disabled'].includes(paymentSetupMode(result))) {
+      paymentSetupEvent('employer', 'status_observed', paymentSetupMode(result), 'non_live');
+      toast('Simulated setup only; not ready for real payments.', 'info');
+    } else if (result.url || result.setup_url) {
       window.location.href = result.url || result.setup_url;
     } else if (result.client_secret && result.publishable_key) {
-      await showEmployerSetupIntentModal(result);
-    } else if (result.payment_method_id || result.mode === 'simulated') {
-      trackEvent('payment_setup_completed', { role: 'employer', mode: result.mode || 'simulated' });
-      toast(result.message || 'Payment method set up successfully.', 'success');
-      renderPayments();
+      await showEmployerSetupIntentModal(result, isCurrent);
     } else {
-      trackEvent('payment_setup_failed', { role: 'employer', reason: 'missing_setup_flow' });
+      paymentSetupEvent('employer', 'failed', paymentSetupMode(result), 'missing_setup_flow');
       toast('Payment method setup started, but no setup flow was returned.', 'info');
     }
   } catch(err) {
     const message = err?.message || 'Payment setup could not be started. Please try again.';
-    trackEvent('payment_setup_failed', {
-      role: 'employer',
-      reason: 'setup_request_error'
-    });
+    paymentSetupEvent('employer', 'failed', 'unknown', 'setup_request_error');
     toastError(err, message);
   }
   }, 'Opening secure setup...');
@@ -4121,14 +4190,24 @@ async function setupEmployerPayment(trigger = null) {
 async function setupWorkerPayment(trigger = null) {
   await withBusy(trigger, async () => {
     try {
-      trackEvent('payment_setup_attempted', { role: 'worker' });
+      paymentSetupEvent('worker', 'attempted');
       const result = await api('/payments/setup-worker', { method: 'POST', body: {} });
-      if (result.url || result.onboarding_url) {
+      const mode = paymentSetupMode(result);
+      paymentSetupEvent('worker', 'api_succeeded', mode);
+      if (['simulated', 'test', 'disabled'].includes(mode)) {
+        paymentSetupEvent('worker', 'status_observed', mode, 'non_live');
+        toast('Test payout setup only; not ready for real payouts.', 'info');
+      } else if (result.url || result.onboarding_url) {
+        paymentSetupEvent('worker', 'redirect_started', mode);
         window.location.href = result.url || result.onboarding_url;
       } else {
-        toast('Bank account setup initiated. Check your email.', 'info');
+        paymentSetupEvent('worker', 'failed', mode, 'missing_setup_flow');
+        toast('No bank account setup flow was returned. Please try again.', 'error');
       }
-    } catch(err) { toastError(err); }
+    } catch(err) {
+      paymentSetupEvent('worker', 'failed', 'unknown', 'setup_request_error');
+      toastError(err);
+    }
   }, 'Opening secure setup...');
 }
 
