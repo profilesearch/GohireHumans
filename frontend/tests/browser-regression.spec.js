@@ -381,7 +381,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       window.gtag = (...args) => window.__testAnalyticsEvents.push(args);
       window.Stripe = () => ({
         elements: () => ({ create: () => ({ mount: () => {}, on: () => {} }) }),
-        confirmCardSetup: async () => ({ setupIntent: { payment_method: 'pm_test' } })
+        confirmCardSetup: async () => ({ setupIntent: { status: 'succeeded', payment_method: 'pm_test' } })
       });
       window.api = async () => { throw new Error('Confirmation service unavailable'); };
       await showEmployerSetupIntentModal({ client_secret: 'seti_test_secret', publishable_key: 'pk_test' });
@@ -391,7 +391,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.locator('#confirmEmployerPaymentBtn')).toBeEnabled();
     await expect(page.locator('#confirmEmployerPaymentBtn')).toHaveText('Save payment method');
     const failed = await page.evaluate(() => window.__testAnalyticsEvents.some(args =>
-      args[1] === 'payment_setup_failed' && args[2]?.reason === 'confirm_request_error'
+      args[1] === 'employer_payment_setup_failed' && args[2]?.reason === 'confirm_request_error'
     ));
     expect(failed).toBe(true);
   });

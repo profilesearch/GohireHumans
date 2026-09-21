@@ -14,11 +14,8 @@
 
 window.GOHIREHUMANS_API_URL = 'https://gohirehumans-production.up.railway.app';
 
-// REPLACE BEFORE GOING LIVE:
-//   pk_test_... for Stripe test mode
-//   pk_live_... for production (real payments)
-// While empty, the backend falls back to simulated payments and the UI should
-// hide / disable real-money CTAs.
+// Optional static public key. Setup responses supply the authoritative key.
+// An empty static key does not imply simulated backend payments.
 window.STRIPE_PUBLISHABLE_KEY = '';
 
 // ── Runtime sanity checks ──
@@ -30,11 +27,7 @@ window.GOHIREHUMANS_CONFIG_OK = (() => {
     } else if (window.GOHIREHUMANS_API_URL.endsWith('/')) {
         issues.push('GOHIREHUMANS_API_URL must not have a trailing slash');
     }
-    if (!window.STRIPE_PUBLISHABLE_KEY) {
-        if (location.hostname === 'www.gohirehumans.com' || location.hostname === 'gohirehumans.com') {
-            console.warn('[GoHireHumans] STRIPE_PUBLISHABLE_KEY not set — payments are SIMULATED.');
-        }
-    }
+
     if (issues.length) {
         console.error('[GoHireHumans] Config issues:', issues);
         return false;
@@ -42,5 +35,6 @@ window.GOHIREHUMANS_CONFIG_OK = (() => {
     return true;
 })();
 
-window.GOHIREHUMANS_PAYMENTS_LIVE = !!window.STRIPE_PUBLISHABLE_KEY &&
-    /^pk_(live|test)_/.test(window.STRIPE_PUBLISHABLE_KEY);
+// Legacy display hint only, never payment authorization; null means unknown.
+window.GOHIREHUMANS_PAYMENTS_LIVE = window.STRIPE_PUBLISHABLE_KEY
+    ? /^pk_live_/.test(window.STRIPE_PUBLISHABLE_KEY) : null;

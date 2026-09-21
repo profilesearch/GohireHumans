@@ -1421,7 +1421,8 @@ class BackendRegressionTests(unittest.TestCase):
             'id="postJobFormError"',
             'id="postJobSubmitBtn"',
             "Posting...",
-            "payment_setup_failed",
+            "paymentSetupEvent('employer', 'failed'",
+            "'employer_payment_setup' : 'worker_payout_setup'",
             "confirm_request_error",
             "setup_request_error",
         ]
@@ -1656,8 +1657,8 @@ class BackendRegressionTests(unittest.TestCase):
             "showEmployerSetupIntentModal",
             "stripe.confirmCardSetup",
             "/payments/confirm-setup-employer",
-            "payment_setup_completed",
-            "No job is hired by this step alone",
+            "paymentSetupEvent('employer', 'completed'",
+            "Saving a card does not charge it, hire anyone, or place an order.",
         ]
         missing = [snippet for snippet in required if snippet not in text]
         self.assertEqual(missing, [])
