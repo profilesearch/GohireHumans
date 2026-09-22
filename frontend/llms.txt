@@ -114,6 +114,7 @@ GoHireHumans is not only a low-fee freelance marketplace. The intended wedge is 
 ## First Completed Orders Entry Points
 
 - Starter fixed-budget offers: https://www.gohirehumans.com/starter-offers.html
+- Pre-handoff automation QA for agencies (illustrative sample, $199 starter offer): https://www.gohirehumans.com/pre-handoff-qa.html
 - Sample deliverables: https://www.gohirehumans.com/examples/sample-deliverables.html
 - Use these to scope small, verifiable work before posting a job.
 

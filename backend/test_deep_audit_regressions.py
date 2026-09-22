@@ -3285,7 +3285,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 if internal and re.search(r'(?:\?|&)utm_(?:source|medium|campaign|content|term)=', url, re.IGNORECASE):
                     failures.append(f"{rel}: internal UTM link {url}")
         self.assertEqual(failures, [])
-        self.assertEqual(bootstrap_count, 135)
+        self.assertEqual(bootstrap_count, 136)
 
         bootstrap = (REPO_ROOT / "frontend/analytics-bootstrap.js").read_text(encoding="utf-8")
         for snippet in [

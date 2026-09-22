@@ -619,6 +619,11 @@
       "permanent": true
     },
     {
+      "source": "/pre-handoff-qa",
+      "destination": "/pre-handoff-qa.html",
+      "permanent": true
+    },
+    {
       "source": "/examples/sample-deliverables",
       "destination": "/examples/sample-deliverables.html",
       "permanent": true
