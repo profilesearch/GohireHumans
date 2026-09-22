@@ -2986,6 +2986,10 @@ async function handleHire(jobId, applicationId, budgetType, budgetAmount) {
         <label class="label">Milestone Amount ($)</label>
         <input class="input" type="number" id="milestone-amount" value="${Number(budgetAmount||0).toFixed(2)}" readonly>
       </div>
+      <div class="form-group">
+        <label class="label">Delivery Deadline</label>
+        <input class="input" type="datetime-local" id="hire-deadline" value="${defaultDeadlineInput(3)}" min="${minimumDeadlineInput()}">
+      </div>
       <div id="hire-fee-breakdown" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-3);padding:var(--space-3);background:var(--color-surface-alt,#f8f7f4);border-radius:var(--radius-md);border:1px solid var(--color-border);display:none">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Service amount</span><span id="hire-base">$0.00</span></div>
         <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>GoHireHumans fee (1%)</span><span id="hire-platform-fee">$0.00</span></div>
@@ -3116,10 +3120,11 @@ async function confirmHire(jobId, applicationId) {
   const amount = parseFloat(document.getElementById('milestone-amount')?.value || '0');
   const overlay = document.querySelector('.modal-overlay');
   try {
+    const deadlineAt = canonicalDeadlineInput(document.getElementById('hire-deadline')?.value || '');
     trackEvent('hire_attempted', { job_id: String(jobId), application_id: String(applicationId) });
     await api(`/jobs/${jobId}/hire`, {
       method: 'POST',
-      body: { application_id: applicationId, milestones: [{ description: desc, amount }] }
+      body: { application_id: applicationId, milestones: [{ description: desc, amount }], deadline_at: deadlineAt }
     });
     overlay?.remove();
     trackEvent('hire_completed', { job_id: String(jobId), application_id: String(applicationId) });

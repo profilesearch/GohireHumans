@@ -163,8 +163,10 @@ DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
 BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
 ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
-# Deliberate code-level release gate for fixed-price hiring.
+# Deliberate code-level release gates for fixed-price hiring.
 JOB_HIRING_ENABLED = False
+# Narrow first-hire authorization; keep empty until an exact applicant is approved.
+JOB_HIRING_APPROVED_APPLICATION_IDS = frozenset()
 MAX_MONEY_INPUT_CHARS = 96
 MAX_MONEY_ABS = Decimal("999999.99")
 PLATFORM_FEE_BPS = 100
@@ -2588,23 +2590,33 @@ def validated_order_notes(value, field_name="notes"):
     return notes
 
 
-def validated_order_deadline(value, now=None):
-    """Validate an aware ISO-8601 deadline and persist it in canonical UTC."""
+def canonical_order_deadline(value):
+    """Normalize an aware ISO-8601 deadline to canonical UTC without a freshness check."""
     if not isinstance(value, str) or value != value.strip() or not value:
         raise ValueError("deadline_at must be an ISO-8601 timestamp with a timezone")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("deadline_at must be an ISO-8601 timestamp with a timezone") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("deadline_at must include a timezone")
-    parsed = parsed.astimezone(timezone.utc).replace(microsecond=0)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("deadline_at must include a timezone")
+        return parsed.astimezone(timezone.utc).replace(microsecond=0).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(
+            "deadline_at must be an ISO-8601 timestamp with a timezone"
+        ) from exc
+
+
+def validated_order_deadline(value, now=None):
+    """Validate an aware future ISO-8601 deadline and persist it in canonical UTC."""
+    canonical = canonical_order_deadline(value)
+    parsed = datetime.fromisoformat(canonical.replace("Z", "+00:00"))
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     if parsed < current + timedelta(hours=1):
         raise ValueError("deadline_at must be at least one hour in the future")
     if parsed > current + timedelta(days=365):
         raise ValueError("deadline_at must be no more than 365 days in the future")
-    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return canonical
 
 
 DEFAULT_FIXED_SERVICE_DELIVERY_DAYS = 7
@@ -2725,8 +2737,12 @@ def service_order_creation_request_fingerprint(employer_id, service_id, body):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+_JOB_HIRE_DEADLINE_UNSET = object()
+
+
 def job_hire_creation_request_fingerprint(
-    employer_id, job_id, application_id, worker_id, budget_type, budget_amount, body
+    employer_id, job_id, application_id, worker_id, budget_type, budget_amount, body,
+    deadline_at=_JOB_HIRE_DEADLINE_UNSET,
 ):
     """Bind the one-job hire identity to the selected application and terms."""
     budget_cents = money_to_cents(budget_amount, "job budget")
@@ -2778,9 +2794,11 @@ def job_hire_creation_request_fingerprint(
         "employer_id": int(employer_id),
         "job_id": int(job_id),
         "terms": terms,
-        "version": 1,
+        "version": 1 if deadline_at is _JOB_HIRE_DEADLINE_UNSET else 2,
         "worker_id": int(worker_id),
     }
+    if deadline_at is not _JOB_HIRE_DEADLINE_UNSET:
+        payload["deadline_at"] = deadline_at
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -6620,7 +6638,7 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
     ):
         raise FundingConflict("Existing job hire is not eligible for lifecycle recovery.")
     try:
-        expected_creation_fingerprint = job_hire_creation_request_fingerprint(
+        legacy_creation_fingerprint = job_hire_creation_request_fingerprint(
             user["id"],
             job["id"],
             application["id"],
@@ -6629,6 +6647,32 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
             job["budget_amount"],
             body,
         )
+        if order["creation_request_fingerprint"] == legacy_creation_fingerprint:
+            # A v1 hire can acquire a deadline later through the one-time deadline route.
+            # The durable creation fingerprint remains authoritative for the original terms.
+            if body.get("deadline_at") not in (None, ""):
+                if not order["deadline_at"]:
+                    raise ValueError("legacy hire has no durable deadline")
+                supplied_deadline = canonical_order_deadline(body.get("deadline_at"))
+                if supplied_deadline != order["deadline_at"]:
+                    raise ValueError("deadline mismatch")
+            expected_creation_fingerprint = legacy_creation_fingerprint
+        else:
+            if not order["deadline_at"]:
+                raise ValueError("v2 hire has no durable deadline")
+            supplied_deadline = canonical_order_deadline(body.get("deadline_at"))
+            if supplied_deadline != order["deadline_at"]:
+                raise ValueError("deadline mismatch")
+            expected_creation_fingerprint = job_hire_creation_request_fingerprint(
+                user["id"],
+                job["id"],
+                application["id"],
+                application["worker_id"],
+                job["budget_type"],
+                job["budget_amount"],
+                body,
+                deadline_at=supplied_deadline,
+            )
     except (TypeError, ValueError) as exc:
         raise FundingConflict(
             "Job-hire retry inputs conflict with the durable hire request."
@@ -8976,7 +9020,7 @@ def _handle_routes(db):
         if not existing_job_hire:
             if job['status'] not in ('open', 'reviewing'):
                 return error_response("Job must be open or reviewing to hire", 409)
-            if not JOB_HIRING_ENABLED:
+            if not JOB_HIRING_ENABLED and not JOB_HIRING_APPROVED_APPLICATION_IDS:
                 return error_response(
                     "New job hiring is temporarily paused while payment safeguards are finalized",
                     503,
@@ -9014,10 +9058,22 @@ def _handle_routes(db):
         # recovery/replay above remains local and processor-free.
         if job['status'] not in ('open', 'reviewing'):
             return error_response("Job must be open or reviewing to hire", 409)
-        if not JOB_HIRING_ENABLED:
+        if not JOB_HIRING_ENABLED and application_id not in JOB_HIRING_APPROVED_APPLICATION_IDS:
             return error_response("New job hiring is temporarily paused while payment safeguards are finalized", 503)
         if app["status"] not in ("pending", "shortlisted"):
             return error_response("Eligible application not found for this job", 404)
+        worker_id = int(app['worker_id'])
+        worker_account = db.execute(
+            "SELECT is_active,is_banned,is_suspended FROM users WHERE id=?",
+            [worker_id],
+        ).fetchone()
+        if (
+            not worker_account
+            or not bool(worker_account["is_active"])
+            or bool(worker_account["is_banned"])
+            or bool(worker_account["is_suspended"])
+        ):
+            return error_response("Worker account is not eligible for a new hire", 409)
 
         # New funding requires an active payment setup. Exact committed fixed-hire
         # lifecycle recovery above is deliberately processor-configuration-free.
@@ -9025,7 +9081,6 @@ def _handle_routes(db):
         if not employer_has_payment_setup(db, user['id']):
             return error_response("You must set up a payment method before hiring. Use /payments/setup-employer.", 402)
 
-        worker_id = int(app['worker_id'])
         try:
             total_cents = money_to_cents(job['budget_amount'], "job budget")
         except ValueError as e:
@@ -9033,6 +9088,10 @@ def _handle_routes(db):
         if total_cents <= 0:
             return error_response("job budget must be greater than zero", 400)
         total_amount = total_cents / 100
+        try:
+            deadline_at = validated_order_deadline(body.get("deadline_at"))
+        except (TypeError, ValueError) as e:
+            return error_response(str(e), 400)
         try:
             hire_request_fingerprint = job_hire_creation_request_fingerprint(
                 user["id"],
@@ -9042,6 +9101,7 @@ def _handle_routes(db):
                 job["budget_type"],
                 job["budget_amount"],
                 body,
+                deadline_at=deadline_at,
             )
         except ValueError as e:
             return error_response(str(e), 400)
@@ -9052,13 +9112,14 @@ def _handle_routes(db):
             cursor = db.execute(
                 """INSERT INTO orders
                    (type, job_id, worker_id, employer_id, status, total_amount,
-                    creation_idempotency_key, creation_request_fingerprint)
-                   VALUES ('job_hire', ?, ?, ?, 'in_progress', ?, ?, ?)""",
+                    deadline_at, creation_idempotency_key, creation_request_fingerprint)
+                   VALUES ('job_hire', ?, ?, ?, 'in_progress', ?, ?, ?, ?)""",
                 [
                     job_id,
                     worker_id,
                     user['id'],
                     total_amount,
+                    deadline_at,
                     hire_operation_key,
                     hire_request_fingerprint,
                 ]
@@ -9575,6 +9636,26 @@ def _handle_routes(db):
             funding_summary["processing_fee_cents"] = None
             funding_summary["charged_total_cents"] = None
         result['funding_summary'] = funding_summary
+        if order['type'] == 'job_hire':
+            notification_rows = db.execute(
+                """SELECT id FROM notifications
+                   WHERE user_id=? AND type='job_hired' AND link=?
+                   ORDER BY id""",
+                [order['worker_id'], f"/orders/{order_id}"],
+            ).fetchall()
+            outbox_rows = db.execute(
+                """SELECT teo.state
+                   FROM transactional_email_outbox teo
+                   JOIN notifications n ON n.id=teo.notification_id
+                   WHERE n.user_id=? AND n.type='job_hired' AND n.link=?
+                   ORDER BY teo.id""",
+                [order['worker_id'], f"/orders/{order_id}"],
+            ).fetchall()
+            result['hire_notification_summary'] = {
+                "notification_count": len(notification_rows),
+                "email_outbox_count": len(outbox_rows),
+                "email_outbox_states": [row['state'] for row in outbox_rows],
+            }
         reviews = db.execute("SELECT * FROM reviews WHERE order_id = ?", [order_id]).fetchall()
         result['reviews'] = [row_to_dict(r) for r in reviews]
         return json_response(result)

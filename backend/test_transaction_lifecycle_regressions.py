@@ -11,6 +11,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
@@ -40,6 +41,9 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.api.STRIPE_AVAILABLE = True
         self.api.STRIPE_SECRET_KEY = "configured-test-key"
         self._payment_sequence = 0
+        self.fixed_deadline = (
+            datetime.now(timezone.utc) + timedelta(days=2)
+        ).replace(microsecond=0).isoformat()
 
         def create_payment_intent(**kwargs):
             self._payment_sequence += 1
@@ -152,6 +156,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
     def hire_job_one(self):
         return self.request("POST", "/jobs/1/hire", payload={
             "application_id": 14,
+            "deadline_at": self.fixed_deadline,
             "milestones": [{"description": "Delivery", "amount": 25}],
         })
 
@@ -537,6 +542,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "/jobs/1/hire",
             payload={
                 "application_id": 14,
+                "deadline_at": self.fixed_deadline,
                 "milestones": [{"description": "Changed scope", "amount": 25}],
             },
         )
@@ -648,6 +654,9 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
 
         self.api.JOB_HIRING_ENABLED = False
         self.api.STRIPE_SECRET_KEY = ""
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET is_banned=1 WHERE id=1")
+            db.commit()
         with mock.patch.object(
             self.api.stripe.PaymentIntent,
             "retrieve",
@@ -669,6 +678,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             "/jobs/1/hire",
             payload={
                 "application_id": 14,
+                "deadline_at": self.fixed_deadline,
                 "milestones": [{"description": "Changed scope", "amount": 25}],
             },
         )
@@ -689,6 +699,74 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
                 ).fetchone()
             )
         self.assertEqual(after, before)
+
+    def test_fixed_job_hire_legacy_v1_no_deadline_exact_replay_remains_recoverable(self):
+        legacy_payload = {
+            "application_id": 14,
+            "milestones": [{"description": "Delivery", "amount": 25}],
+        }
+        original_fingerprint = self.api.job_hire_creation_request_fingerprint
+
+        def legacy_fingerprint(*args, **_kwargs):
+            return original_fingerprint(*args)
+
+        with mock.patch.object(
+            self.api, "validated_order_deadline", return_value=None
+        ), mock.patch.object(
+            self.api,
+            "job_hire_creation_request_fingerprint",
+            side_effect=legacy_fingerprint,
+        ):
+            first_status, first = self.request(
+                "POST", "/jobs/1/hire", payload=legacy_payload
+            )
+        self.assertEqual(first_status, 201, first)
+        self.payment_create.assert_called_once()
+        with self.api.get_db() as db:
+            durable = db.execute(
+                "SELECT deadline_at,creation_request_fingerprint FROM orders WHERE id=?",
+                [first["id"]],
+            ).fetchone()
+        self.assertIsNone(durable["deadline_at"])
+        self.assertEqual(
+            durable["creation_request_fingerprint"],
+            original_fingerprint(2, 1, 14, 1, "fixed", 25, legacy_payload),
+        )
+
+        deadline_status, deadline_result = self.request(
+            "PUT",
+            f"/orders/{first['id']}/deadline",
+            payload={"deadline_at": self.fixed_deadline},
+        )
+        self.assertEqual(deadline_status, 200, deadline_result)
+        self.assertEqual(
+            deadline_result["deadline_at"], self.fixed_deadline.replace("+00:00", "Z")
+        )
+
+        self.api.JOB_HIRING_ENABLED = False
+        retry_status, retry = self.request(
+            "POST", "/jobs/1/hire", payload=legacy_payload
+        )
+        self.assertEqual(retry_status, 200, retry)
+        self.assertTrue(retry["idempotent_replay"])
+        retry_with_deadline_status, retry_with_deadline = self.request(
+            "POST",
+            "/jobs/1/hire",
+            payload={**legacy_payload, "deadline_at": self.fixed_deadline},
+        )
+        self.assertEqual(retry_with_deadline_status, 200, retry_with_deadline)
+        self.assertTrue(retry_with_deadline["idempotent_replay"])
+        mismatch_deadline = (
+            datetime.now(timezone.utc) + timedelta(days=3)
+        ).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mismatch_status, mismatch = self.request(
+            "POST",
+            "/jobs/1/hire",
+            payload={**legacy_payload, "deadline_at": mismatch_deadline},
+        )
+        self.assertEqual(mismatch_status, 409, mismatch)
+        self.assertIn("conflict", mismatch["error"].lower())
+        self.payment_create.assert_called_once()
 
     def test_fixed_job_hire_recovery_rejects_newer_conflict_attempt(self):
         with mock.patch.object(
@@ -2389,6 +2467,7 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
     def test_order_detail_reports_authoritative_funded_charge_not_contract_total(self):
         status, result = self.request("POST", "/jobs/5/hire", payload={
             "application_id": 19,
+            "deadline_at": self.fixed_deadline,
             "milestones": [
                 {"description": "First", "amount": 10},
                 {"description": "Second", "amount": 15.55},
@@ -2435,9 +2514,9 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
 
     def test_stripe_charge_uses_same_component_rounded_cent_policy_as_ui(self):
         scenarios = [
-            (5, 19, {"milestones": [{"description": "Delivery", "amount": 25.55}]}, 2658),
+            (5, 19, {"deadline_at": self.fixed_deadline, "milestones": [{"description": "Delivery", "amount": 25.55}]}, 2658),
             (6, 20, {"weekly_hour_cap": 1}, 2658),
-            (7, 21, {"milestones": [{"description": "Delivery", "amount": 0.01}]}, 3),
+            (7, 21, {"deadline_at": self.fixed_deadline, "milestones": [{"description": "Delivery", "amount": 0.01}]}, 3),
         ]
         for job_id, application_id, extra, expected_charge in scenarios:
             calls_before = self.payment_create.call_count
@@ -2581,6 +2660,161 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT status FROM hourly_contracts WHERE order_id=88").fetchone()[0], "active")
         finally:
             db.close()
+
+    def test_new_hire_rejects_inactive_banned_or_suspended_worker_before_stripe(self):
+        scenarios = [
+            ("is_active", 0),
+            ("is_banned", 1),
+            ("is_suspended", 1),
+        ]
+        for column, value in scenarios:
+            with self.subTest(column=column):
+                with self.api.get_db() as db:
+                    db.execute(
+                        "UPDATE users SET is_active=1,is_banned=0,is_suspended=0 WHERE id=1"
+                    )
+                    db.execute(f"UPDATE users SET {column}=? WHERE id=1", [value])
+                    db.commit()
+                status, result = self.hire_job_one()
+                self.assertEqual(status, 409, result)
+                self.assertIn("not eligible", result["error"])
+                self.payment_create.assert_not_called()
+                with self.api.get_db() as db:
+                    self.assertEqual(
+                        db.execute("SELECT COUNT(*) FROM orders WHERE job_id=1").fetchone()[0],
+                        0,
+                    )
+
+    def test_closed_hire_gate_can_authorize_one_application_without_opening_broad_hiring(self):
+        self.api.JOB_HIRING_ENABLED = False
+        self.api.JOB_HIRING_APPROVED_APPLICATION_IDS = frozenset()
+        blocked_status, blocked = self.hire_job_one()
+        self.assertEqual(blocked_status, 503, blocked)
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders WHERE job_id=1").fetchone()[0], 0)
+
+        self.api.JOB_HIRING_APPROVED_APPLICATION_IDS = frozenset({14})
+        unapproved_status, unapproved = self.request(
+            "POST",
+            "/jobs/1/hire",
+            payload={
+                "application_id": 16,
+                "deadline_at": self.fixed_deadline,
+                "milestones": [{"description": "Delivery", "amount": 25}],
+            },
+        )
+        self.assertEqual(unapproved_status, 503, unapproved)
+        self.payment_create.assert_not_called()
+
+        wrong_owner_status, wrong_owner = self.request(
+            "POST",
+            "/jobs/1/hire",
+            token="tok-worker",
+            payload={
+                "application_id": 14,
+                "deadline_at": self.fixed_deadline,
+                "milestones": [{"description": "Delivery", "amount": 25}],
+            },
+        )
+        self.assertEqual(wrong_owner_status, 403, wrong_owner)
+        self.payment_create.assert_not_called()
+
+        with self.api.get_db() as db:
+            db.execute(
+                "UPDATE employer_profiles SET payment_method_id=NULL WHERE user_id=2"
+            )
+            db.commit()
+        no_payment_status, no_payment = self.hire_job_one()
+        self.assertEqual(no_payment_status, 402, no_payment)
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            db.execute(
+                "UPDATE employer_profiles SET payment_method_id='pm_test' WHERE user_id=2"
+            )
+            db.commit()
+
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 201, result)
+        self.assertEqual(result["job_id"], 1)
+        self.assertEqual(result["worker_id"], 1)
+        self.assertEqual(self.payment_create.call_count, 1)
+
+    def test_fixed_hire_rejects_deadline_timezone_overflow_without_funding(self):
+        for deadline in (
+            "0001-01-01T00:00:00+14:00",
+            "9999-12-31T23:59:59-14:00",
+        ):
+            with self.subTest(deadline=deadline):
+                status, result = self.request(
+                    "POST",
+                    "/jobs/1/hire",
+                    payload={
+                        "application_id": 14,
+                        "deadline_at": deadline,
+                        "milestones": [{"description": "Delivery", "amount": 25}],
+                    },
+                )
+                self.assertEqual(status, 400, result)
+                self.assertIn("deadline_at", result["error"])
+                self.payment_create.assert_not_called()
+                with self.api.get_db() as db:
+                    self.assertEqual(
+                        db.execute("SELECT COUNT(*) FROM orders WHERE job_id=1").fetchone()[0],
+                        0,
+                    )
+                    self.assertEqual(
+                        db.execute("SELECT COUNT(*) FROM funding_attempts").fetchone()[0],
+                        0,
+                    )
+
+    def test_fixed_hire_requires_and_persists_canonical_deadline(self):
+        status, result = self.request("POST", "/jobs/1/hire", payload={
+            "application_id": 14,
+            "milestones": [{"description": "Delivery", "amount": 25}],
+        })
+        self.assertEqual(status, 400, result)
+        self.assertIn("deadline_at", result["error"])
+        self.payment_create.assert_not_called()
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders WHERE job_id=1").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM funding_attempts").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds").fetchone()[0], 0)
+
+        payload = {
+            "application_id": 14,
+            "deadline_at": self.fixed_deadline,
+            "milestones": [{"description": "Delivery", "amount": 25}],
+        }
+        status, result = self.request("POST", "/jobs/1/hire", payload=payload)
+        self.assertEqual(status, 201, result)
+        expected = self.fixed_deadline.replace("+00:00", "Z")
+        self.assertEqual(result["deadline_at"], expected)
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT deadline_at FROM orders WHERE id=?", [result["id"]]).fetchone()[0],
+                expected,
+            )
+
+        detail_status, detail = self.request("GET", f"/orders/{result['id']}")
+        self.assertEqual(detail_status, 200, detail)
+        self.assertEqual(detail["hire_notification_summary"]["notification_count"], 1)
+        self.assertEqual(detail["hire_notification_summary"]["email_outbox_count"], 1)
+        self.assertEqual(len(detail["hire_notification_summary"]["email_outbox_states"]), 1)
+
+        replay_status, replay = self.request("POST", "/jobs/1/hire", payload=payload)
+        self.assertEqual(replay_status, 200, replay)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(self.payment_create.call_count, 1)
+
+        changed = dict(payload)
+        changed["deadline_at"] = (
+            datetime.now(timezone.utc) + timedelta(days=3)
+        ).replace(microsecond=0).isoformat()
+        conflict_status, conflict = self.request("POST", "/jobs/1/hire", payload=changed)
+        self.assertEqual(conflict_status, 409, conflict)
+        self.assertIn("durable hire request", conflict["error"])
+        self.assertEqual(self.payment_create.call_count, 1)
 
     def test_hire_uses_application_identity_and_enforces_one_order_per_job(self):
         status, result = self.request("POST", "/jobs/1/hire", payload={

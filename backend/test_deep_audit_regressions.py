@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -3729,6 +3730,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "async function confirmHourlyHire(jobId, applicationId)",
             "body: { application_id: applicationId, weekly_hour_cap: weeklyCap }",
             "body: { application_id: applicationId, milestones:",
+            "id=\"hire-deadline\"",
+            "deadline_at: deadlineAt",
             "body: { notes: fd.get('note') }",
             "body: { notes: form.get('message'), deadline_at: deadlineAt }",
             "['in_progress','revision_requested'].includes(order.status)",
@@ -3828,6 +3831,9 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 "tok-employer",
                 {
                     "application_id": 14,
+                    "deadline_at": (
+                        datetime.now(timezone.utc) + timedelta(days=2)
+                    ).replace(microsecond=0).isoformat(),
                     "milestones": [
                         {
                             "description": "Test mobile navigation and attach evidence",
