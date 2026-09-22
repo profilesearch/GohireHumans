@@ -105,16 +105,16 @@
       <div class="table-wrap" id="sample-report" tabindex="0" aria-label="Illustrative automation QA evidence table (scrollable)">
         <table class="data-table">
           <caption>Illustrative lead-intake automation: expected behavior, observed result, and status</caption>
-          <thead><tr><th scope="col">Case</th><th scope="col">Expected</th><th scope="col">Illustrative observation / evidence</th><th scope="col">Status</th></tr></thead>
+          <thead><tr><th scope="col">Case</th><th scope="col">Status</th><th scope="col">Expected</th><th scope="col">Illustrative observation / evidence</th></tr></thead>
           <tbody>
-            <tr><th scope="row">01 · Standard North lead</th><td>Contact created, North queue, one email</td><td>CRM record L-01 and confirmation preview match the input.</td><td>Pass</td></tr>
-            <tr><th scope="row">02 · Standard South lead</th><td>Contact created, South queue, one email</td><td>CRM record L-02 shows South owner; one queued email.</td><td>Pass</td></tr>
-            <tr><th scope="row">03 · Missing email</th><td>Form rejects input; no CRM record</td><td>Required-field message displayed; no record in test CRM search.</td><td>Pass</td></tr>
-            <tr><th scope="row">04 · Same email, second submit</th><td>Existing contact updated, no duplicate</td><td>Two records L-04a/L-04b appear for the same address. See repro A.</td><td>Fail</td></tr>
-            <tr><th scope="row">05 · Unsupported region</th><td>Route to manual-review queue</td><td>Contact created without an owner; no review queue entry. See repro B.</td><td>Fail</td></tr>
-            <tr><th scope="row">06 · Accented name</th><td>Name retained in CRM and email</td><td>“José” displays correctly in record L-06 and mail preview.</td><td>Pass</td></tr>
-            <tr><th scope="row">07 · CRM timeout</th><td>Retry or alert; avoid silent loss</td><td>Recorded run ends at timeout; retry and alert logs were not provided.</td><td>Uncertain</td></tr>
-            <tr><th scope="row">08 · Rapid repeat submit</th><td>One contact and one confirmation</td><td>One contact visible; email provider delivery log unavailable.</td><td>Uncertain</td></tr>
+            <tr><th scope="row">01 · Standard North lead</th><td>Pass</td><td>Contact created, North queue, one email</td><td>CRM record L-01 and confirmation preview match the input.</td></tr>
+            <tr><th scope="row">02 · Standard South lead</th><td>Pass</td><td>Contact created, South queue, one email</td><td>CRM record L-02 shows South owner; one queued email.</td></tr>
+            <tr><th scope="row">03 · Missing email</th><td>Pass</td><td>Form rejects input; no CRM record</td><td>Required-field message displayed; no record in test CRM search.</td></tr>
+            <tr><th scope="row">04 · Same email, second submit</th><td>Fail</td><td>Existing contact updated, no duplicate</td><td>Two records L-04a/L-04b appear for the same address. See repro A.</td></tr>
+            <tr><th scope="row">05 · Unsupported region</th><td>Fail</td><td>Route to manual-review queue</td><td>Contact created without an owner; no review queue entry. See repro B.</td></tr>
+            <tr><th scope="row">06 · Accented name</th><td>Pass</td><td>Name retained in CRM and email</td><td>“José” displays correctly in record L-06 and mail preview.</td></tr>
+            <tr><th scope="row">07 · CRM timeout</th><td>Uncertain</td><td>Retry or alert; avoid silent loss</td><td>Recorded run ends at timeout; retry and alert logs were not provided.</td></tr>
+            <tr><th scope="row">08 · Rapid repeat submit</th><td>Uncertain</td><td>One contact and one confirmation</td><td>One contact visible; email provider delivery log unavailable.</td></tr>
           </tbody>
         </table>
       </div>
