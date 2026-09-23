@@ -324,6 +324,48 @@ def retrieve_live_connect_account(account_id):
     return stripe.Account.retrieve(account_id)
 
 
+def sync_worker_payout_readiness(db, user_id, account_id, acct):
+    """Persist a retrieved/signed live account's readiness against its current binding.
+
+    Stripe I/O must finish before entry. Serialize the read/change/notification so
+    concurrent status polls and webhooks cannot double-notify or audit a no-op.
+    """
+    if (not isinstance(account_id, str) or not account_id.startswith('acct_')
+            or account_id.startswith('acct_sim_') or not acct):
+        return False
+    actual_id = stripe_attr(acct, 'id')
+    if actual_id and actual_id != account_id:
+        return False
+    new_method = ('stripe_connect_active' if is_live_connect_account_ready(acct)
+                  else 'stripe_connect_pending')
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        row = db.execute(
+            'SELECT payout_method FROM worker_profiles WHERE user_id=? AND payout_account_id=?',
+            [user_id, account_id],
+        ).fetchone()
+        if not row or row['payout_method'] == new_method:
+            db.commit()
+            return False
+        changed = db.execute(
+            'UPDATE worker_profiles SET payout_method=? WHERE user_id=? AND payout_account_id=? AND payout_method IS ?',
+            [new_method, user_id, account_id, row['payout_method']],
+        ).rowcount
+        if changed:
+            audit(db, user_id, 'sync_worker_payout_readiness', 'worker_profile', user_id,
+                  {'old_method': row['payout_method'], 'new_method': new_method})
+            if new_method == 'stripe_connect_active':
+                push_notification(db, user_id, 'payout_ready',
+                                  'Payout account ready!',
+                                  'Your bank account is connected and you can now receive payments.',
+                                  '/payments')
+        db.commit()
+        return bool(changed)
+    except Exception:
+        db.rollback()
+        raise
+
+
 def record_payout_transfer(db, order_id, milestone_id, worker_id, amount, transfer_type, idempotency_key, destination_account_id, stripe_transfer=None, status='recorded', error_message='', release_attempt_id=None):
     transfer_id = ''
     if stripe_transfer is not None:
@@ -13118,6 +13160,10 @@ def _handle_routes(db):
                 if stripe_configured() and not wp['payout_account_id'].startswith('acct_sim_'):
                     try:
                         acct = retrieve_live_connect_account(wp['payout_account_id'])
+                        # A read-scoped API key must not create domain writes.
+                        # Interactive worker polls can reconcile the durable gate.
+                        if acct and not getattr(_request_ctx, 'authenticated_api_key_id', None):
+                            sync_worker_payout_readiness(db, user['id'], wp['payout_account_id'], acct)
                         connected = bool(acct) and is_live_connect_account_ready(acct)
                         worker_status = {
                             "connected": connected,
@@ -13629,19 +13675,16 @@ def _handle_routes(db):
                 reconcile_refund_attempt(db,attempt,apply=True,evidence=data,evidence_source='signed_webhook')
 
         elif event_type == 'account.updated':
-            # Worker Connect account updated
-            account_id = data['id']
-            wp = db.execute("SELECT user_id,payout_method FROM worker_profiles WHERE payout_account_id=?", [account_id]).fetchone()
-            if wp:
-                is_active = is_live_connect_account_ready(data)
-                new_method = 'stripe_connect_active' if is_active else 'stripe_connect_pending'
-                db.execute("UPDATE worker_profiles SET payout_method=? WHERE user_id=?", [new_method, wp['user_id']])
-                if is_active and wp['payout_method'] != 'stripe_connect_active':
-                    push_notification(db, wp['user_id'], "payout_ready",
-                        "Payout account ready!",
-                        "Your bank account is connected and you can now receive payments.",
-                        "/payments")
-                db.commit()
+            # Signed classic account snapshots and live status polls share the
+            # same account-binding CAS, audit and first-activation notification.
+            account_id = data.get('id')
+            if isinstance(account_id, str):
+                workers = db.execute(
+                    'SELECT user_id FROM worker_profiles WHERE payout_account_id=?',
+                    [account_id],
+                ).fetchall()
+                for wp in workers:
+                    sync_worker_payout_readiness(db, wp['user_id'], account_id, data)
 
         elif event_type == 'transfer.paid':
             transfer_id = data.get('id')
@@ -14039,6 +14082,63 @@ def _handle_routes(db):
             "page": page,
             "per_page": per_page
         })
+
+    elif path == '/admin/payout-readiness/sync' and method == 'POST':
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response('Admin access required', 403)
+        body = get_body() or {}
+        step_error, step_status = require_admin_step_up(
+            db, user, body, 'admin_payout_readiness_sync')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        if not isinstance(dry_run, bool):
+            return error_response('dry_run must be a boolean', 400)
+        try:
+            limit = bounded_integer(body.get('limit', 500), 'limit', 1, 500)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if not stripe_configured():
+            return error_response('Stripe is not configured', 503)
+
+        # Snapshot bindings and release the read before any Stripe network I/O.
+        # GLOB treats underscores literally; never inspect simulated accounts.
+        profiles = db.execute(
+            """SELECT user_id,payout_account_id,payout_method FROM worker_profiles
+               WHERE payout_account_id GLOB 'acct_*'
+                 AND payout_account_id NOT GLOB 'acct_sim_*'
+               ORDER BY user_id LIMIT ?""", [limit],
+        ).fetchall()
+        result = {'dry_run': dry_run, 'checked': 0, 'errors': 0,
+                  'promote': [], 'demote': [], 'unchanged': 0}
+        for profile in profiles:
+            account_id = profile['payout_account_id']
+            result['checked'] += 1
+            try:
+                acct = retrieve_live_connect_account(account_id)
+            except STRIPE_ERROR:
+                result['errors'] += 1
+                continue
+            if not acct or (stripe_attr(acct, 'id') and stripe_attr(acct, 'id') != account_id):
+                result['errors'] += 1
+                continue
+            target = ('stripe_connect_active' if is_live_connect_account_ready(acct)
+                      else 'stripe_connect_pending')
+            if dry_run:
+                changed = profile['payout_method'] != target
+            else:
+                # Always recheck the current row; its method may have changed
+                # during retrieval even if the snapshot already matched.
+                changed = sync_worker_payout_readiness(
+                    db, profile['user_id'], account_id, acct)
+            if not changed:
+                result['unchanged'] += 1
+                continue
+            category = 'promote' if target == 'stripe_connect_active' else 'demote'
+            result[category].append({'user_id': profile['user_id'],
+                                     'account_id_suffix': account_id[-6:]})
+        return json_response(result)
 
     elif re.match(r"^/admin/users/(\d+)/password$", path) and method == "PUT":
         user = authenticate(db)
