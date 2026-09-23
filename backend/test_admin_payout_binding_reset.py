@@ -457,3 +457,67 @@ class AdminPayoutBindingResetRaceRegressions(AdminPayoutBindingResetTests):
                     self.assertEqual(status, 409, body)
                     self.assertIn('nonzero_balance', body['blockers'])
                     delete.assert_not_called()
+
+
+class AdminPayoutBindingResetSecondReviewRegressions(AdminPayoutBindingResetTests):
+    """Blockers from independent review of 0820d06."""
+
+    def seed_link(self):
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create',
+                               return_value=SimpleNamespace(url='https://example.invalid/seed', expires_at=9999999999)):
+            self.assertEqual(self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')[0], 200)
+
+    def test_second_reset_cannot_remove_in_flight_lock(self):
+        self.prepare()
+        self.seed_link()
+        seen = {}
+        def first_delete(*args):
+            # A second admin reset and a worker setup arrive while delete is in flight.
+            seen['second'] = self.reset(dry_run=False, confirm_account_suffix='123456')
+            with mock.patch.object(self.core.stripe.AccountLink, 'create') as link:
+                seen['setup'] = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+                seen['link_calls'] = link.call_count
+            return {'deleted': True}
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = first_delete
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(delete.call_count, 1)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(seen['second'][0], 409, seen['second'])
+        self.assertIn('reset_in_progress', seen['second'][1]['blockers'])
+        self.assertEqual(seen['setup'][0], 409, seen['setup'])
+        self.assertEqual(seen['link_calls'], 0)
+
+    def test_replay_started_before_reset_cannot_return_deleted_account(self):
+        self.prepare()
+        self.seed_link()
+        seen = {}
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        def replay_link(**kwargs):
+            if 'reset' not in seen:
+                # The reset completes while this replayed Stripe call is in flight.
+                seen['reset'] = self.reset(dry_run=False, confirm_account_suffix='123456')
+            return SimpleNamespace(url='https://example.invalid/stale', expires_at=9999999999)
+        with p_config, p_retrieve, p_balance, p_delete, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', side_effect=replay_link):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+        self.assertEqual(seen['reset'][0], 200, seen['reset'])
+        self.assertEqual(status, 409, body)
+        self.assertNotIn('stale', json.dumps(body))
+        with self.core.get_db() as db:
+            self.assertIsNone(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0])
+
+    def test_unknown_outcome_lock_blocks_later_resets(self):
+        self.prepare()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = stripe.APIConnectionError('network')
+            self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 503)
+            delete.side_effect = None
+            delete.return_value = {'deleted': True}
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+            self.assertIn('reset_in_progress', body['blockers'])
+            self.assertEqual(delete.call_count, 1)

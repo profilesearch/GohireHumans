@@ -5392,6 +5392,13 @@ def _payment_setup_operation_serialized(
             raise PaymentSetupReconciliationRequired(
                 "Payout setup is being reset by support; try again shortly."
             )
+        # Reset rows use AUTOINCREMENT ids, so any reset that locks after this
+        # point raises the marker; replayed processor results are then discarded.
+        reset_marker = db.execute(
+            "SELECT COALESCE(MAX(id),0) FROM payment_setup_operations "
+            "WHERE user_id=? AND operation_kind='admin_payout_binding_reset'",
+            [user_id],
+        ).fetchone()[0]
         if operation_kind == "account_create":
             # A different country has a different fingerprint. Reject it while
             # holding the short writer lock, before either request reaches Stripe.
@@ -5446,6 +5453,14 @@ def _payment_setup_operation_serialized(
                         != existing["processor_object_id"]
                     ):
                         raise RuntimeError("processor replay returned a different object")
+                    if db.execute(
+                        "SELECT COALESCE(MAX(id),0) FROM payment_setup_operations "
+                        "WHERE user_id=? AND operation_kind='admin_payout_binding_reset'",
+                        [user_id],
+                    ).fetchone()[0] != reset_marker:
+                        # A binding reset started during this replay; its result may
+                        # reference an account that is being or has been deleted.
+                        raise RuntimeError("payout binding reset during replay")
                     return {**durable_result, **transient_result}, "replayed"
                 except Exception:
                     raise PaymentSetupReconciliationRequired(
@@ -14344,8 +14359,17 @@ def _handle_routes(db):
         if not stripe_configured():
             return error_response('Stripe is not configured', 503)
 
-        def local_blockers():
+        def local_blockers(own_lock_id=None):
             blockers = []
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind='admin_payout_binding_reset' AND status='unknown'
+                   AND id IS NOT ? LIMIT 1""",
+                [target_id, own_lock_id],
+            ).fetchone():
+                # Another reset is in flight, or a prior delete outcome is unknown
+                # and needs manual reconciliation. Never take over its lock.
+                blockers.append('reset_in_progress')
             # Canceled orders are allowed only without any money-related child;
             # paid/active orders, holds, transfers and attempts always block.
             financial = db.execute(
@@ -14450,9 +14474,6 @@ def _handle_routes(db):
                     db.rollback()
                     result.update({'eligible': False, 'blockers': late_blockers or ['binding_changed']})
                     return json_response(result, 409)
-                db.execute("""DELETE FROM payment_setup_operations WHERE user_id=?
-                              AND operation_kind='admin_payout_binding_reset' AND status='unknown'""",
-                           [target_id])
                 lock_key = f"admin-payout-binding-reset:{target_id}:{secrets.token_hex(12)}"
                 lock_id = db.execute(
                     """INSERT INTO payment_setup_operations
@@ -14494,7 +14515,7 @@ def _handle_routes(db):
                    WHERE user_id=? AND payout_account_id=?""",
                 [target_id, account_id],
             )
-            if changed.rowcount != 1 or local_blockers():
+            if changed.rowcount != 1 or local_blockers(own_lock_id=lock_id):
                 db.rollback()
                 audit(db, admin['id'], 'admin_payout_binding_reset_binding_changed', 'user', target_id,
                       {'old_account_suffix': suffix, 'stripe_deleted': stripe_deleted})
