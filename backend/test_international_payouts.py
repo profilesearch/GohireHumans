@@ -51,6 +51,45 @@ class InternationalPayoutTests(unittest.TestCase):
         self.assertEqual(status, 400, result)
         self.assertEqual(self.calls, [])
 
+    def assert_non_us_full_agreement_capabilities(self, country):
+        self.api.CONNECT_INTERNATIONAL_ENABLED = True
+        status, result = self.request('/payments/setup-worker', 'worker-token', {'country': country})
+        self.assertEqual(status, 200, result)
+        call = next(c for c in self.calls if c[0] == 'account_create')
+        self.assertEqual(call[2]['capabilities'], {
+            'card_payments': {'requested': True}, 'transfers': {'requested': True},
+        })
+        self.assertNotIn('tos_acceptance', call[2])
+        with self.api.get_db() as db:
+            binding = json.loads(db.execute(
+                "SELECT request_binding_json FROM payment_setup_operations WHERE operation_kind='account_create'"
+            ).fetchone()[0])
+        self.assertEqual(binding['country'], country)
+        self.assertEqual(binding['agreement'], 'full')
+        self.assertEqual(binding['capabilities'], call[2]['capabilities'])
+
+    def test_de_full_agreement_requests_both_capabilities(self):
+        self.assert_non_us_full_agreement_capabilities('DE')
+
+    def test_gb_full_agreement_requests_both_capabilities(self):
+        self.assert_non_us_full_agreement_capabilities('GB')
+
+    def test_enabled_us_still_requests_only_transfers_and_keeps_operation_binding(self):
+        self.api.CONNECT_INTERNATIONAL_ENABLED = True
+        status, result = self.request('/payments/setup-worker', 'worker-token', {'country': 'US'})
+        self.assertEqual(status, 200, result)
+        call = next(c for c in self.calls if c[0] == 'account_create')
+        self.assertEqual(call[2]['capabilities'], {'transfers': {'requested': True}})
+        self.assertNotIn('tos_acceptance', call[2])
+        with self.api.get_db() as db:
+            binding = json.loads(db.execute(
+                "SELECT request_binding_json FROM payment_setup_operations WHERE operation_kind='account_create'"
+            ).fetchone()[0])
+        self.assertEqual(binding, {
+            'country': 'US', 'agreement': 'full', 'email': 'worker@example.com',
+            'type': 'express', 'user_id': 2,
+        })
+
     def test_enabled_full_agreement_and_durable_country_fingerprint(self):
         self.api.CONNECT_INTERNATIONAL_ENABLED = True
         status, result = self.request('/payments/setup-worker', 'worker-token', {'country': 'DE'})
