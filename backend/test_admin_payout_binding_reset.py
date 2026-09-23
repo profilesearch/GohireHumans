@@ -576,7 +576,8 @@ class AdminPayoutBindingResetSessionRegressions(AdminPayoutBindingResetTests):
         self.assertEqual(seen['setup'][0], 200, seen['setup'])
         with self.core.get_db() as db:
             self.assertEqual(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0], self.ACCOUNT)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='payout_setup_session'").fetchone()[0], 0)
+            pass
+        self.assert_setup_lock_free(3)
 
     def test_reset_between_account_create_and_link_is_refused(self):
         self.prepare()
@@ -596,28 +597,73 @@ class AdminPayoutBindingResetSessionRegressions(AdminPayoutBindingResetTests):
             status, _ = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
         self.assertNotEqual(status, 200)
         with self.core.get_db() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='payout_setup_session'").fetchone()[0], 0)
+            pass
+        self.assert_setup_lock_free(3)
 
-    def test_stale_session_from_crashed_request_does_not_block_reset(self):
+    def assert_setup_lock_free(self, user_id):
+        lock = self.core._PayoutBindingLock(user_id)
+        self.assertTrue(lock.acquire(exclusive=True), 'setup lock still held')
+        lock.release()
+
+    def test_long_running_setup_is_never_treated_as_stale(self):
+        # Review of 1560162: a time-based stale rule let a slow live setup be
+        # ignored. The OS lock has no expiry; a held shared lock always blocks.
         self.prepare()
-        with self.core.get_db() as db:
-            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
-                          request_binding_json,processor_idempotency_key,status,created_at)
-                          VALUES ('stale-s','payout_setup_session',3,'x','{}','stale-s:session','prepared',datetime('now','-30 minutes'))""")
-            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
-                          request_binding_json,processor_idempotency_key,status)
-                          VALUES ('live-s','payout_setup_session',4,'x','{}','live-s:session','prepared')""")
-            db.commit()
+        held = self.core._payout_setup_session_begin(self.core.get_db(), 3)
+        self.assertIsNotNone(held)
+        try:
+            p_config, p_retrieve, p_balance, p_delete = self.mocks()
+            with p_config, p_retrieve, p_balance, p_delete as delete, \
+                 mock.patch.object(self.core.time, 'time', return_value=self.core.time.time() + 86400):
+                status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+                dry_status, dry_body = self.reset(dry_run=True)
+            self.assertEqual(status, 409, body)
+            self.assertIn('setup_operation_pending', body['blockers'])
+            self.assertIn('setup_operation_pending', dry_body['blockers'])
+            self.assertEqual(delete.call_count, 0)
+        finally:
+            held.release()
         p_config, p_retrieve, p_balance, p_delete = self.mocks()
         with p_config, p_retrieve, p_balance, p_delete:
             status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
         self.assertEqual(status, 200, body)
-        with self.core.get_db() as db:
-            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
-                          request_binding_json,processor_idempotency_key,status)
-                          VALUES ('live-3','payout_setup_session',3,'x','{}','live-3:session','prepared')""")
-            db.execute("UPDATE worker_profiles SET payout_account_id=? WHERE user_id=3", (self.ACCOUNT,))
-            db.commit()
-        with p_config, p_retrieve, p_balance, p_delete:
-            status, body = self.reset(dry_run=True)
-        self.assertIn('setup_operation_pending', body['blockers'])
+
+    def test_setup_refused_while_reset_holds_lock(self):
+        self.prepare()
+        lock = self.core._PayoutBindingLock(3)
+        self.assertTrue(lock.acquire(exclusive=True))
+        try:
+            with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+                 mock.patch.object(self.core.stripe.AccountLink, 'create') as link:
+                status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+            self.assertEqual(status, 409, body)
+            self.assertEqual(link.call_count, 0)
+        finally:
+            lock.release()
+        # Other workers are unaffected by worker 3's lock.
+        other = self.core._PayoutBindingLock(4)
+        self.assertTrue(other.acquire(exclusive=False))
+        other.release()
+
+    def test_lock_released_when_holding_process_dies(self):
+        import subprocess, sys, textwrap
+        self.prepare()
+        child = subprocess.Popen([sys.executable, '-c', textwrap.dedent(f"""
+            import fcntl, os, sys, time
+            fd = os.open({self.core._PayoutBindingLock(3)._path()!r}, os.O_RDWR | os.O_CREAT, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            print('held', flush=True)
+            time.sleep(60)
+        """)], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), 'held')
+            lock = self.core._PayoutBindingLock(3)
+            self.assertFalse(lock.acquire(exclusive=True))
+            child.kill()
+            child.wait(10)
+            self.assertTrue(lock.acquire(exclusive=True))
+            lock.release()
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.stdout.close()
