@@ -4091,6 +4091,125 @@ def require_admin_step_up(db, admin_user, body, action):
     return None, None
 
 
+# Predicates mirror _init_db_connection_steps and _REQUIRED_*_TABLE_SQL.
+# ?1 is the target id and ?2 is the target's current email.
+_ERASURE_ORDER = 'SELECT id FROM orders WHERE worker_id=?1 OR employer_id=?1'
+_ERASURE_DELETIONS = {
+    'transactional_email_delivery_events': 'provider_email_id IN (SELECT provider_email_id FROM transactional_email_outbox WHERE user_id=?1 OR lower(email_to)=lower(?2)) AND provider_email_id IS NOT NULL',
+    'transactional_email_outbox': 'user_id=?1 OR lower(email_to)=lower(?2)',
+    'order_reminders': 'recipient_user_id=?1',
+    'job_application_reminders': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'job_application_views': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'notifications': 'user_id=?1',
+    'api_key_usage': 'api_key_id IN (SELECT id FROM api_keys WHERE user_id=?1)',
+    'api_keys': 'user_id=?1',
+    'sessions': 'user_id=?1',
+    'password_reset_tokens': 'user_id=?1',
+    'referrals': 'referrer_id=?1 OR referred_id=?1',
+    'applications': 'worker_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'services': 'worker_id=?1',
+    'jobs': 'employer_id=?1',
+    'worker_profiles': 'user_id=?1',
+    'employer_profiles': 'user_id=?1',
+}
+_ERASURE_RETAINED = {
+    'orders': 'worker_id=?1 OR employer_id=?1 OR service_id IN (SELECT id FROM services WHERE worker_id=?1) OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'milestones': f'order_id IN ({_ERASURE_ORDER})',
+    'hourly_contracts': f'order_id IN ({_ERASURE_ORDER})',
+    'time_entries': f'contract_id IN (SELECT id FROM hourly_contracts WHERE order_id IN ({_ERASURE_ORDER}))',
+    'escrow_holds': f'order_id IN ({_ERASURE_ORDER})',
+    'funding_attempts': f'employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'funding_attempt_conflict_evidence': f'attempt_id IN (SELECT id FROM funding_attempts WHERE employer_id=?1 OR order_id IN ({_ERASURE_ORDER})) OR expected_order_id IN ({_ERASURE_ORDER})',
+    'payment_setup_operations': 'user_id=?1',
+    'order_completion_operations': f'employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'platform_revenue': f'order_id IN ({_ERASURE_ORDER})',
+    'payout_transfers': f'worker_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'reviews': f'from_user_id=?1 OR to_user_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'payout_release_attempts': f'worker_id=?1 OR employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'payout_release_conflict_evidence': f'attempt_id IN (SELECT id FROM payout_release_attempts WHERE worker_id=?1 OR employer_id=?1 OR order_id IN ({_ERASURE_ORDER}))',
+    'disputes': f'opened_by=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'refund_attempts': f'admin_id=?1 OR employer_id=?1 OR worker_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'refund_attempt_conflict_evidence': f'attempt_id IN (SELECT id FROM refund_attempts WHERE admin_id=?1 OR employer_id=?1 OR worker_id=?1 OR order_id IN ({_ERASURE_ORDER}))',
+}
+
+
+def _erasure_audit_rows(db, target):
+    """Retain security records while identifying rows needing PII redaction."""
+    email = target['email'].casefold()
+    rows = []
+    for row in db.execute('SELECT id,user_id,entity_type,entity_id,details FROM audit_log WHERE details IS NOT NULL'):
+        details = row['details'] or ''
+        try:
+            searchable = json.dumps(json.loads(details), ensure_ascii=False)
+        except (ValueError, TypeError):
+            searchable = details
+        if (row['user_id'] == target['id'] or
+                (row['entity_type'] == 'user' and row['entity_id'] == target['id']) or
+                email in searchable.casefold()):
+            rows.append((row['id'], details))
+    return rows
+
+
+def _erase_audit_identity(details, target):
+    # Work on decoded JSON values: literals can contain escaped @, Unicode or
+    # quotation marks. Keep malformed legacy details with a literal fallback.
+    def scrub(value):
+        if isinstance(value, str):
+            for identity in (target['email'], target['name']):
+                if identity:
+                    value = re.sub(re.escape(identity), '[REDACTED]', value, flags=re.IGNORECASE)
+            return value
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if isinstance(value, dict):
+            return {scrub(key): scrub(item) for key, item in value.items()}
+        return value
+
+    try:
+        original = json.loads(details)
+    except (ValueError, TypeError):
+        return scrub(details)
+    redacted = scrub(original)
+    return json.dumps(redacted, ensure_ascii=False) if redacted != original else details
+
+
+def _erasure_plan(db, target):
+    target_id, values = target['id'], (target['id'], target['email'])
+    deleted = {table: db.execute(f'SELECT count(*) FROM {table} WHERE {where}',
+                                 values if '?2' in where else values[:1]).fetchone()[0]
+               for table, where in _ERASURE_DELETIONS.items()}
+    retained = {table: db.execute(f'SELECT count(*) FROM {table} WHERE {where}',
+                                  values if '?2' in where else values[:1]).fetchone()[0]
+                for table, where in _ERASURE_RETAINED.items()}
+    audit_rows = _erasure_audit_rows(db, target)
+    anonymized = {
+        'users': 1,
+        'users_referred_by': db.execute('SELECT count(*) FROM users WHERE referred_by=?', [target_id]).fetchone()[0],
+        'audit_log': sum(_erase_audit_identity(details, target) != details for _, details in audit_rows),
+    }
+    blockers = []
+    if target['is_admin']:
+        blockers.append('admin_target')
+    if target['is_active']:
+        blockers.append('active_user')
+    if target['email'] == f'erased-user-{target_id}@erased.invalid':
+        blockers.append('already_erased')
+    account = db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=?', [target_id]).fetchone()
+    if account and (account['payout_account_id'] or '').startswith('acct_') and not account['payout_account_id'].startswith('acct_sim_'):
+        blockers.append('stripe_account_present')
+    blockers.extend(table for table, count in retained.items() if count)
+    if db.execute('SELECT 1 FROM referrals WHERE (referrer_id=? OR referred_id=?) AND reward_amount!=0 LIMIT 1', [target_id, target_id]).fetchone():
+        blockers.append('referral_reward_present')
+    # Opaque send intents (hashes, provider ids, no address or content) are kept
+    # so erasure cannot free email send budget. Outbox ids use AUTOINCREMENT, so
+    # an orphaned intent can never be re-bound to a later message. Not a blocker.
+    retained['agentmail_send_ledger'] = db.execute(
+        'SELECT count(*) FROM agentmail_send_ledger WHERE outbox_id IN '
+        '(SELECT id FROM transactional_email_outbox WHERE user_id=?1 OR lower(email_to)=lower(?2))',
+        values).fetchone()[0]
+    return deleted, anonymized, retained, blockers, audit_rows
+
+
 def send_email(to_email, subject, html_body, idempotency_key=None):
     """Legacy Resend entrypoint; AgentMail requires a durable approved outbox."""
     if os.environ.get("EMAIL_PROVIDER", "resend") != "resend":
@@ -14407,6 +14526,68 @@ def _handle_routes(db):
         audit(db, user['id'], "admin_update_user", "user", target_id, audit_details)
         db.commit()
         return json_response({"ok": True})
+
+    elif re.fullmatch(r"/admin/users/\d+/erase", path) and method == "POST":
+        admin = authenticate(db)
+        if not admin or not admin['is_admin']:
+            return error_response('Admin access required', 403)
+        target_id = int(path.split('/')[3])
+        body = get_body() or {}
+        if not isinstance(body, dict) or type(body.get('dry_run', True)) is not bool:
+            return error_response('dry_run must be a boolean', 400)
+        step_error, step_status = require_admin_step_up(db, admin, body, 'admin_erase_user')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        if not dry_run and (not isinstance(body.get('confirm_email'), str) or not body['confirm_email']):
+            return error_response('confirm_email is required', 400)
+
+        # The apply preflight and all mutations share one serialized writer
+        # transaction; dry-run never opens a writer or appends an audit row.
+        if not dry_run:
+            db.execute('BEGIN IMMEDIATE')
+        try:
+            target = db.execute('SELECT * FROM users WHERE id=?', [target_id]).fetchone()
+            if not target:
+                if not dry_run:
+                    db.rollback()
+                return error_response('user_not_found', 409)
+            deleted, anonymized, retained, blockers, audit_rows = _erasure_plan(db, target)
+            result = {'dry_run': dry_run, 'user_id': target_id, 'eligible': not blockers,
+                      'blockers': blockers, 'will_delete': deleted,
+                      'will_anonymize': anonymized, 'retained': retained}
+            if dry_run:
+                return json_response(result)
+            if blockers:
+                db.rollback()
+                return error_response(', '.join(blockers), 409)
+            if body['confirm_email'].casefold() != target['email'].casefold():
+                db.rollback()
+                return error_response('confirm_email does not match current email', 400)
+            values = (target_id, target['email'])
+            for table, where in _ERASURE_DELETIONS.items():
+                affected = db.execute(f'DELETE FROM {table} WHERE {where}',
+                                      values if '?2' in where else values[:1]).rowcount
+                if affected != deleted[table]:
+                    raise RuntimeError(f'Account erasure count changed: {table}')
+            db.execute('UPDATE users SET referred_by=NULL WHERE referred_by=?', [target_id])
+            for audit_id, details in audit_rows:
+                redacted = _erase_audit_identity(details, target)
+                if redacted != details:
+                    db.execute('UPDATE audit_log SET details=? WHERE id=?', [redacted, audit_id])
+            db.execute("""UPDATE users SET email=?, name='Deleted user', password_hash='',
+                avatar_url=NULL, google_sub=NULL, referral_code=NULL, referred_by=NULL,
+                is_active=0, updated_at=datetime('now') WHERE id=?""",
+                [f'erased-user-{target_id}@erased.invalid', target_id])
+            audit(db, admin['id'], 'admin_erase_user', 'user', target_id,
+                  {'deleted': deleted, 'anonymized': [key for key, count in anonymized.items() if count]})
+            db.commit()
+            result.update({'erased': True, 'deleted': deleted, 'anonymized': anonymized})
+            return json_response(result)
+        except Exception:
+            if db.in_transaction:
+                db.rollback()
+            raise
 
     elif path == "/admin/orders" and method == "GET":
         user = authenticate(db)
