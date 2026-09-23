@@ -21,6 +21,10 @@ import tempfile
 import time
 import re
 import threading
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - production is Linux
+    fcntl = None
 import logging
 import urllib.error
 import urllib.parse
@@ -5585,6 +5589,75 @@ def _payment_setup_operation(
                 del _payment_setup_inflight_operations[operation_key]
 
 
+class _PayoutBindingLock:
+    """Per-worker lock that serializes worker payout setup against admin binding reset.
+
+    A setup request holds it shared for its whole duration (every Stripe call,
+    the local binding and the response); a live reset holds it exclusive from its
+    first local check until after the local clear. The lock is an OS file lock
+    (flock) on a per-worker file next to the database, so it lives exactly as
+    long as the request holding it: it is released on normal exit, on any
+    exception, and by the kernel if the thread's process dies. There is no
+    time-based expiry that a slow live request could outlast. Non-blocking:
+    callers refuse with 409 instead of waiting.
+    """
+
+    def __init__(self, user_id):
+        self.user_id = int(user_id)
+        self._fd = None
+
+    def _path(self):
+        directory = os.path.join(os.path.dirname(os.path.abspath(_get_db_path())), 'payout-binding-locks')
+        os.makedirs(directory, exist_ok=True)
+        return os.path.join(directory, f'worker-{self.user_id}.lock')
+
+    def acquire(self, exclusive):
+        if fcntl is None:
+            raise RuntimeError('payout binding lock requires fcntl')
+        fd = os.open(self._path(), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            return False
+        except Exception:
+            os.close(fd)
+            raise
+        self._fd = fd
+        return True
+
+    def release(self):
+        fd, self._fd = self._fd, None
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+
+def _payout_setup_session_begin(db, user_id):
+    """Hold the worker's setup lock (shared) or return None if a reset owns it."""
+    lock = _PayoutBindingLock(user_id)
+    if not lock.acquire(exclusive=False):
+        return None
+    try:
+        if db.execute(
+            "SELECT 1 FROM payment_setup_operations WHERE user_id=? "
+            "AND operation_kind='admin_payout_binding_reset' AND status='unknown' LIMIT 1",
+            [user_id],
+        ).fetchone():
+            lock.release()
+            return None
+    except Exception:
+        lock.release()
+        raise
+    return lock
+
+
+def _payout_setup_session_end(db, lock):
+    lock.release()
+
+
 def _payment_setup_operation_serialized(
     db, user_id, operation_kind, binding, processor_call, result_builder,
     apply_result=None, replay_processor_call=None, replay_result_builder=None,
@@ -5599,12 +5672,32 @@ def _payment_setup_operation_serialized(
         db.commit()
     db.execute("BEGIN IMMEDIATE")
     try:
+        if db.execute(
+            "SELECT 1 FROM payment_setup_operations WHERE user_id=? "
+            "AND operation_kind='admin_payout_binding_reset' AND status='unknown' LIMIT 1",
+            [user_id],
+        ).fetchone():
+            # An admin binding reset is deleting the Stripe account; no setup
+            # operation may start until it commits or is reconciled.
+            db.rollback()
+            raise PaymentSetupReconciliationRequired(
+                "Payout setup is being reset by support; try again shortly."
+            )
+        # Reset rows use AUTOINCREMENT ids, so any reset that locks after this
+        # point raises the marker; replayed processor results are then discarded.
+        reset_marker = db.execute(
+            "SELECT COALESCE(MAX(id),0) FROM payment_setup_operations "
+            "WHERE user_id=? AND operation_kind='admin_payout_binding_reset'",
+            [user_id],
+        ).fetchone()[0]
         if operation_kind == "account_create":
             # A different country has a different fingerprint. Reject it while
             # holding the short writer lock, before either request reaches Stripe.
             prior = db.execute(
                 "SELECT request_binding_json FROM payment_setup_operations "
-                "WHERE user_id=? AND operation_kind='account_create' ORDER BY id DESC LIMIT 1",
+                "WHERE user_id=? AND operation_kind='account_create' "
+                "AND COALESCE(error_code,'')!='admin_payout_binding_reset' "
+                "ORDER BY id DESC LIMIT 1",
                 [user_id],
             ).fetchone()
             if prior:
@@ -5651,6 +5744,14 @@ def _payment_setup_operation_serialized(
                         != existing["processor_object_id"]
                     ):
                         raise RuntimeError("processor replay returned a different object")
+                    if db.execute(
+                        "SELECT COALESCE(MAX(id),0) FROM payment_setup_operations "
+                        "WHERE user_id=? AND operation_kind='admin_payout_binding_reset'",
+                        [user_id],
+                    ).fetchone()[0] != reset_marker:
+                        # A binding reset started during this replay; its result may
+                        # reference an account that is being or has been deleted.
+                        raise RuntimeError("payout binding reset during replay")
                     return {**durable_result, **transient_result}, "replayed"
                 except Exception:
                     raise PaymentSetupReconciliationRequired(
@@ -13408,171 +13509,192 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         body = get_body() or {}
-        allowed = {item["code"]: item for item in connect_countries()}
-        existing = db.execute(
-            "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
-            [user["id"]],
-        ).fetchone()
-        existing_account = (existing["payout_account_id"] if existing else "") or ""
-        bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
-        if "country" in body:
-            country = body.get("country")
-        elif bound_live_account:
-            # Returning workers (bank updates, re-onboarding) keep their bound country
-            # even if the international flag or allowlist has since changed.
-            country = (existing["payout_account_country"] or "US")
-        elif len(allowed) == 1:
-            country = next(iter(allowed))
-        else:
-            country = "US"
-        if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
-            return error_response("Unsupported payout country; select an available ISO country code.", 400)
-        if bound_live_account and country == (existing["payout_account_country"] or "US"):
-            # Existing accounts were validated when created; never strand them on rollback.
-            agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
-        elif country in allowed:
-            agreement = allowed[country]["agreement"]
-        else:
-            return error_response("Unsupported payout country; select an available country.", 400)
-        if _payment_setup_profile_is_frozen(db, user["id"]):
-            return error_response("Payment setup is frozen for manual reconciliation.", 409)
-
-        ensure_worker_profile(db, user['id'])
-
+        # Hold the worker's setup lock before reading any payout state, so the
+        # country/agreement decision and every later step see post-reset state.
+        setup_lock = None
         if stripe_configured():
-            try:
-                # Profile creation is committed before Account.create.
-                db.commit()
-                wp = db.execute(
-                    "SELECT payout_account_id,payout_account_country,payout_service_agreement "
-                    "FROM worker_profiles WHERE user_id=?",
-                    [user["id"]],
-                ).fetchone()
-                account_id = (wp["payout_account_id"] if wp else "") or ""
-                if account_id and not account_id.startswith("acct_sim_"):
-                    existing_country = wp["payout_account_country"] or "US"
-                    existing_agreement = wp["payout_service_agreement"] or "full"
-                    if existing_country != country or existing_agreement != agreement:
-                        return error_response(
-                            "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+            setup_lock = _payout_setup_session_begin(db, user["id"])
+            if setup_lock is None:
+                return error_response("Payout setup is being reset by support; try again shortly.", 409)
+        try:
+            allowed = {item["code"]: item for item in connect_countries()}
+            existing = db.execute(
+                "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
+                [user["id"]],
+            ).fetchone()
+            existing_account = (existing["payout_account_id"] if existing else "") or ""
+            bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
+            if "country" in body:
+                country = body.get("country")
+            elif bound_live_account:
+                # Returning workers (bank updates, re-onboarding) keep their bound country
+                # even if the international flag or allowlist has since changed.
+                country = (existing["payout_account_country"] or "US")
+            elif len(allowed) == 1:
+                country = next(iter(allowed))
+            else:
+                country = "US"
+            if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
+                return error_response("Unsupported payout country; select an available ISO country code.", 400)
+            if bound_live_account and country == (existing["payout_account_country"] or "US"):
+                # Existing accounts were validated when created; never strand them on rollback.
+                agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
+            elif country in allowed:
+                agreement = allowed[country]["agreement"]
+            else:
+                return error_response("Unsupported payout country; select an available country.", 400)
+            if _payment_setup_profile_is_frozen(db, user["id"]):
+                return error_response("Payment setup is frozen for manual reconciliation.", 409)
+
+            ensure_worker_profile(db, user['id'])
+
+            if stripe_configured():
+                try:
+                    # Profile creation is committed before Account.create.
+                    db.commit()
+                    wp = db.execute(
+                        "SELECT payout_account_id,payout_account_country,payout_service_agreement "
+                        "FROM worker_profiles WHERE user_id=?",
+                        [user["id"]],
+                    ).fetchone()
+                    account_id = (wp["payout_account_id"] if wp else "") or ""
+                    if account_id and not account_id.startswith("acct_sim_"):
+                        existing_country = wp["payout_account_country"] or "US"
+                        existing_agreement = wp["payout_service_agreement"] or "full"
+                        if existing_country != country or existing_agreement != agreement:
+                            return error_response(
+                                "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+                            )
+                    if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
+                        capabilities = {"transfers": {"requested": True}}
+                        account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
+                        retired_count = db.execute(
+                            """SELECT COUNT(*) FROM payment_setup_operations WHERE user_id=?
+                               AND operation_kind='account_create'
+                               AND error_code='admin_payout_binding_reset'""", [user['id']]
+                        ).fetchone()[0]
+                        if retired_count:
+                            # A reset must not replay the old account-create fingerprint
+                            # or reuse its Stripe idempotency key (including same-country).
+                            account_binding['reset_generation'] = retired_count
+                        if country != "US" and agreement == "full":
+                            capabilities = {"card_payments": {"requested": True}, **capabilities}
+                            account_binding["capabilities"] = capabilities
+                        account_result, _ = _payment_setup_operation(
+                            db,
+                            user["id"],
+                            "account_create",
+                            account_binding,
+                            lambda key: stripe.Account.create(
+                                type="express", country=country, email=user["email"],
+                                capabilities=capabilities,
+                                metadata={"user_id": str(user["id"])}, idempotency_key=key,
+                                **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
+                            ),
+                            lambda value: {
+                                "processor_object_id": stripe_attr(value, "id", ""),
+                                "account_id": stripe_attr(value, "id", ""),
+                            },
+                            lambda conn, result: conn.execute(
+                                """UPDATE worker_profiles
+                                   SET payout_account_id=?,payout_method='stripe_connect',
+                                       payout_account_country=?,payout_service_agreement=?
+                                   WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
+                                [result["account_id"], country, agreement, user["id"], result["account_id"]],
+                            ),
                         )
-                if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
-                    capabilities = {"transfers": {"requested": True}}
-                    account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
-                    if country != "US" and agreement == "full":
-                        capabilities = {"card_payments": {"requested": True}, **capabilities}
-                        account_binding["capabilities"] = capabilities
-                    account_result, _ = _payment_setup_operation(
+                        account_id = account_result["account_id"]
+                    body = get_body()
+                    refresh_requested = bool(body.get("refresh") or body.get("consumed"))
+                    generation = 1
+                    previous_link = db.execute(
+                        """SELECT request_binding_json,result_json FROM payment_setup_operations
+                           WHERE user_id=? AND operation_kind='account_link_create'
+                             AND status='committed' AND manual_review_required=0
+                             AND COALESCE(error_code,'')!='admin_payout_binding_reset'
+                           ORDER BY id DESC LIMIT 1""", [user["id"]]
+                    ).fetchone()
+                    if previous_link:
+                        previous_binding = json.loads(previous_link["request_binding_json"] or "{}")
+                        previous_result = json.loads(previous_link["result_json"] or "{}")
+                        generation = int(previous_binding.get("generation", 1))
+                        if refresh_requested or int(previous_result.get("expires_at", 0) or 0) <= int(time.time()):
+                            generation += 1
+                    capability_id = f"account-link-capability:{user['id']}:{account_id}:{generation}"
+
+                    def build_link_result(value):
+                        onboarding_url = stripe_attr(value, "url", None)
+                        if not isinstance(onboarding_url, str) or not onboarding_url.startswith("https://"):
+                            raise ValueError("Stripe AccountLink response lacks a valid HTTPS URL")
+                        expires_at = stripe_attr(value, "expires_at", None)
+                        if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+                            raise ValueError("Stripe AccountLink response lacks a valid expiration")
+                        return {
+                            # AccountLink has no durable id. This synthetic identity binds the
+                            # non-secret capability generation without persisting its URL.
+                            "processor_object_id": capability_id,
+                            "account_id": account_id,
+                            "generation": generation,
+                            "expires_at": int(expires_at),
+                            "url": onboarding_url,
+                        }
+                    link_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
-                        "account_create",
-                        account_binding,
-                        lambda key: stripe.Account.create(
-                            type="express", country=country, email=user["email"],
-                            capabilities=capabilities,
-                            metadata={"user_id": str(user["id"])}, idempotency_key=key,
-                            **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
-                        ),
-                        lambda value: {
-                            "processor_object_id": stripe_attr(value, "id", ""),
-                            "account_id": stripe_attr(value, "id", ""),
+                        "account_link_create",
+                        {
+                            "account_id": account_id,
+                            "generation": generation,
+                            "purpose": "account_onboarding",
+                            "refresh_url": f"{FRONTEND_URL}/payments?connect=refresh",
+                            "return_url": f"{FRONTEND_URL}/payments?connect=complete",
                         },
-                        lambda conn, result: conn.execute(
-                            """UPDATE worker_profiles
-                               SET payout_account_id=?,payout_method='stripe_connect',
-                                   payout_account_country=?,payout_service_agreement=?
-                               WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
-                            [result["account_id"], country, agreement, user["id"], result["account_id"]],
+                        lambda key: stripe.AccountLink.create(
+                            account=account_id,
+                            refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
+                            return_url=f"{FRONTEND_URL}/payments?connect=complete",
+                            type="account_onboarding", idempotency_key=key,
                         ),
+                        build_link_result,
+                        replay_processor_call=lambda _object_id, key: stripe.AccountLink.create(
+                            account=account_id,
+                            refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
+                            return_url=f"{FRONTEND_URL}/payments?connect=complete",
+                            type="account_onboarding", idempotency_key=key,
+                        ),
+                        replay_result_builder=build_link_result,
                     )
-                    account_id = account_result["account_id"]
+                    audit(db, user['id'], "setup_worker_payout", "worker_profile", user['id'])
+                    db.commit()
+                    return json_response({
+                        "ok": True,
+                        "onboarding_url": link_result["url"],
+                        "account_id": account_id,
+                        "mode": "live",
+                    })
+                except PaymentSetupReconciliationRequired as e:
+                    return error_response(str(e), 409)
+            else:
+                if PRODUCTION_MODE:
+                    return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
+                # Simulation
                 body = get_body()
-                refresh_requested = bool(body.get("refresh") or body.get("consumed"))
-                generation = 1
-                previous_link = db.execute(
-                    """SELECT request_binding_json,result_json FROM payment_setup_operations
-                       WHERE user_id=? AND operation_kind='account_link_create'
-                         AND status='committed' AND manual_review_required=0
-                       ORDER BY id DESC LIMIT 1""", [user["id"]]
-                ).fetchone()
-                if previous_link:
-                    previous_binding = json.loads(previous_link["request_binding_json"] or "{}")
-                    previous_result = json.loads(previous_link["result_json"] or "{}")
-                    generation = int(previous_binding.get("generation", 1))
-                    if refresh_requested or int(previous_result.get("expires_at", 0) or 0) <= int(time.time()):
-                        generation += 1
-                capability_id = f"account-link-capability:{user['id']}:{account_id}:{generation}"
-
-                def build_link_result(value):
-                    onboarding_url = stripe_attr(value, "url", None)
-                    if not isinstance(onboarding_url, str) or not onboarding_url.startswith("https://"):
-                        raise ValueError("Stripe AccountLink response lacks a valid HTTPS URL")
-                    expires_at = stripe_attr(value, "expires_at", None)
-                    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
-                        raise ValueError("Stripe AccountLink response lacks a valid expiration")
-                    return {
-                        # AccountLink has no durable id. This synthetic identity binds the
-                        # non-secret capability generation without persisting its URL.
-                        "processor_object_id": capability_id,
-                        "account_id": account_id,
-                        "generation": generation,
-                        "expires_at": int(expires_at),
-                        "url": onboarding_url,
-                    }
-                link_result, _ = _payment_setup_operation(
-                    db,
-                    user["id"],
-                    "account_link_create",
-                    {
-                        "account_id": account_id,
-                        "generation": generation,
-                        "purpose": "account_onboarding",
-                        "refresh_url": f"{FRONTEND_URL}/payments?connect=refresh",
-                        "return_url": f"{FRONTEND_URL}/payments?connect=complete",
-                    },
-                    lambda key: stripe.AccountLink.create(
-                        account=account_id,
-                        refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
-                        return_url=f"{FRONTEND_URL}/payments?connect=complete",
-                        type="account_onboarding", idempotency_key=key,
-                    ),
-                    build_link_result,
-                    replay_processor_call=lambda _object_id, key: stripe.AccountLink.create(
-                        account=account_id,
-                        refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
-                        return_url=f"{FRONTEND_URL}/payments?connect=complete",
-                        type="account_onboarding", idempotency_key=key,
-                    ),
-                    replay_result_builder=build_link_result,
+                payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
+                db.execute(
+                    "UPDATE worker_profiles SET payout_account_id=?, payout_method='stripe_connect_active', payout_method_details=? WHERE user_id=?",
+                    [payout_account_id, json.dumps({"bank_name": body.get("bank_name", "Demo Bank"), "last4": body.get("last4", "0000")}), user['id']]
                 )
-                audit(db, user['id'], "setup_worker_payout", "worker_profile", user['id'])
+                audit(db, user['id'], "setup_worker_payout_sim", "worker_profile", user['id'])
                 db.commit()
                 return json_response({
                     "ok": True,
-                    "onboarding_url": link_result["url"],
-                    "account_id": account_id,
-                    "mode": "live",
+                    "onboarding_url": f"{FRONTEND_URL}/payments?connect=complete&simulated=true",
+                    "account_id": payout_account_id,
+                    "mode": "simulated"
                 })
-            except PaymentSetupReconciliationRequired as e:
-                return error_response(str(e), 409)
-        else:
-            if PRODUCTION_MODE:
-                return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
-            # Simulation
-            body = get_body()
-            payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
-            db.execute(
-                "UPDATE worker_profiles SET payout_account_id=?, payout_method='stripe_connect_active', payout_method_details=? WHERE user_id=?",
-                [payout_account_id, json.dumps({"bank_name": body.get("bank_name", "Demo Bank"), "last4": body.get("last4", "0000")}), user['id']]
-            )
-            audit(db, user['id'], "setup_worker_payout_sim", "worker_profile", user['id'])
-            db.commit()
-            return json_response({
-                "ok": True,
-                "onboarding_url": f"{FRONTEND_URL}/payments?connect=complete&simulated=true",
-                "account_id": payout_account_id,
-                "mode": "simulated"
-            })
+        finally:
+            if setup_lock is not None:
+                _payout_setup_session_end(db, setup_lock)
 
     elif path == "/payments/status" and method == "GET":
         user = authenticate(db)
@@ -14512,6 +14634,235 @@ def _handle_routes(db):
             "page": page,
             "per_page": per_page
         })
+
+    elif re.fullmatch(r'/admin/users/\d+/payout-binding/reset', path) and method == 'POST':
+        admin = authenticate(db)
+        if not admin or not admin['is_admin']:
+            return error_response('Admin access required', 403)
+        target_id = int(path.split('/')[3])
+        body = get_body() or {}
+        step_error, step_status = require_admin_step_up(db, admin, body, 'admin_payout_binding_reset')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        delete_stripe_account = body.get('delete_stripe_account', True)
+        if not isinstance(dry_run, bool) or not isinstance(delete_stripe_account, bool):
+            return error_response('dry_run and delete_stripe_account must be booleans', 400)
+        profile = db.execute(
+            'SELECT payout_account_id,payout_account_country FROM worker_profiles WHERE user_id=?',
+            [target_id],
+        ).fetchone()
+        account_id = (profile['payout_account_id'] if profile else None) or ''
+        if not account_id.startswith('acct_') or account_id.startswith('acct_sim_'):
+            return error_response('No live payout binding to reset', 409)
+        suffix = account_id[-6:]
+        if not dry_run and body.get('confirm_account_suffix') != suffix:
+            return error_response('confirm_account_suffix does not match the bound account', 409)
+        if not stripe_configured():
+            return error_response('Stripe is not configured', 503)
+
+        def local_blockers(own_lock_id=None):
+            blockers = []
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind='admin_payout_binding_reset' AND status='unknown'
+                   AND id IS NOT ? LIMIT 1""",
+                [target_id, own_lock_id],
+            ).fetchone():
+                # Another reset is in flight, or a prior delete outcome is unknown
+                # and needs manual reconciliation. Never take over its lock.
+                blockers.append('reset_in_progress')
+            # Canceled orders are allowed only without any money-related child;
+            # paid/active orders, holds, transfers and attempts always block.
+            financial = db.execute(
+                """SELECT (EXISTS(SELECT 1 FROM orders WHERE worker_id=? AND status!='canceled')
+                        OR EXISTS(SELECT 1 FROM payout_transfers WHERE worker_id=? OR destination_account_id=?)
+                        OR EXISTS(SELECT 1 FROM payout_release_attempts WHERE worker_id=? OR destination_account_id=?)
+                        OR EXISTS(SELECT 1 FROM refund_attempts WHERE worker_id=?)
+                        OR EXISTS(SELECT 1 FROM milestones m JOIN orders o ON o.id=m.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM escrow_holds h JOIN orders o ON o.id=h.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM funding_attempts f JOIN orders o ON o.id=f.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM hourly_contracts h JOIN orders o ON o.id=h.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM platform_revenue r JOIN orders o ON o.id=r.order_id WHERE o.worker_id=?))""",
+                [target_id, target_id, account_id, target_id, account_id,
+                 target_id, target_id, target_id, target_id, target_id, target_id],
+            ).fetchone()[0]
+            if financial:
+                blockers.append('financial_history')
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind!='admin_payout_binding_reset'
+                   AND (status='unknown' OR manual_review_required=1) LIMIT 1""",
+                [target_id],
+            ).fetchone():
+                blockers.append('setup_frozen')
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind!='admin_payout_binding_reset'
+                   AND status IN ('prepared','unknown') LIMIT 1""",
+                [target_id],
+            ).fetchone():
+                blockers.append('setup_operation_pending')
+            return blockers
+
+        # A live reset holds the worker's setup lock exclusive from its first check
+        # until after the local clear, so no setup request can be running at any
+        # point of it (see _PayoutBindingLock). A dry run never touches the lock, so
+        # it can never turn a worker's setup away; the live run re-checks under it.
+        binding_lock = _PayoutBindingLock(target_id)
+        setup_in_progress = False
+        if not dry_run:
+            setup_in_progress = not binding_lock.acquire(exclusive=True)
+        try:
+            blockers = local_blockers()
+            if setup_in_progress and 'setup_operation_pending' not in blockers:
+                blockers.append('setup_operation_pending')
+            result = {'dry_run': dry_run, 'eligible': False, 'blockers': blockers,
+                      'account_id_suffix': suffix, 'account_country': profile['payout_account_country'],
+                      'details_submitted': None, 'payouts_enabled': None,
+                      'will_delete_stripe_account': delete_stripe_account}
+            # No Stripe I/O when local evidence alone disqualifies the binding.
+            if not blockers:
+                db.commit()  # Authentication/step-up must not hold a writer across Stripe I/O.
+                try:
+                    acct = retrieve_live_connect_account(account_id)
+                except STRIPE_ERROR:
+                    acct = None
+                if not acct:
+                    blockers.append('account_unverified')
+                else:
+                    result['details_submitted'] = stripe_attr(acct, 'details_submitted')
+                    result['payouts_enabled'] = stripe_attr(acct, 'payouts_enabled')
+                    result['account_country'] = stripe_attr(acct, 'country')
+                    if stripe_attr(acct, 'id') != account_id:
+                        blockers.append('account_id_mismatch')
+                    if result['account_country'] != (profile['payout_account_country'] or 'US'):
+                        blockers.append('account_country_mismatch')
+                    if stripe_attr(stripe_attr(acct, 'metadata', {}), 'user_id') != str(target_id):
+                        blockers.append('account_owner_mismatch')
+                    for field in ('details_submitted', 'payouts_enabled', 'charges_enabled'):
+                        if stripe_attr(acct, field) is not False:
+                            blockers.append(field)
+                    capabilities = stripe_attr(acct, 'capabilities', {}) or {}
+                    if stripe_attr(capabilities, 'transfers') == 'active':
+                        blockers.append('transfers_active')
+                    try:
+                        balance = stripe.Balance.retrieve(stripe_account=account_id)
+                        buckets = [stripe_attr(balance, key) for key in ('available', 'pending')]
+                        if any(not isinstance(bucket, list) for bucket in buckets):
+                            raise ValueError('missing balance bucket')
+                        for optional in ('instant_available', 'connect_reserved'):
+                            extra = stripe_attr(balance, optional)
+                            if extra is not None:
+                                if not isinstance(extra, list):
+                                    raise ValueError('malformed balance bucket')
+                                buckets.append(extra)
+                        amounts = [stripe_attr(item, 'amount') for bucket in buckets for item in bucket]
+                        if any(type(amount) is not int for amount in amounts):
+                            raise ValueError('missing balance amount')
+                        if any(amount != 0 for amount in amounts):
+                            blockers.append('nonzero_balance')
+                    except Exception:
+                        # Unexpected SDK/response failures cannot prove zero balance.
+                        blockers.append('balance_unverified')
+            result['eligible'] = not blockers
+            if dry_run:
+                return json_response(result)
+            if blockers:
+                return json_response(result, 409)
+
+            stripe_deleted = False
+            lock_id = None
+            if delete_stripe_account:
+                # Serialize against /payments/setup-worker: re-check under the writer
+                # lock and record an unresolved lock row that setup operations refuse
+                # on, so no setup can start between this check and the local clear.
+                db.execute('BEGIN IMMEDIATE')
+                try:
+                    still_bound = db.execute(
+                        'SELECT 1 FROM worker_profiles WHERE user_id=? AND payout_account_id=?',
+                        [target_id, account_id]).fetchone()
+                    late_blockers = local_blockers()
+                    if not still_bound or late_blockers:
+                        db.rollback()
+                        result.update({'eligible': False, 'blockers': late_blockers or ['binding_changed']})
+                        return json_response(result, 409)
+                    lock_key = f"admin-payout-binding-reset:{target_id}:{secrets.token_hex(12)}"
+                    lock_id = db.execute(
+                        """INSERT INTO payment_setup_operations
+                           (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                            processor_idempotency_key,status,processor_object_id,manual_review_required,error_code)
+                           VALUES (?,'admin_payout_binding_reset',?,?,?,?,'unknown',?,1,'admin_payout_binding_reset_in_progress')""",
+                        [lock_key, target_id, hashlib.sha256(account_id.encode()).hexdigest(),
+                         json.dumps({'account_id_suffix': suffix}), lock_key + ':v1', account_id],
+                    ).lastrowid
+                    db.commit()
+                except Exception:
+                    if db.in_transaction:
+                        db.rollback()
+                    raise
+
+                def release_lock():
+                    # Stripe definitively did not delete: nothing changed, drop the lock.
+                    db.execute('DELETE FROM payment_setup_operations WHERE id=? AND status=?', [lock_id, 'unknown'])
+                    db.commit()
+
+                try:
+                    deleted = stripe.Account.delete(account_id)
+                except stripe.InvalidRequestError:
+                    release_lock()
+                    return error_response('Stripe account could not be deleted; binding unchanged', 409)
+                except STRIPE_ERROR:
+                    # Outcome unknown: the lock row stays unresolved, freezing setup for review.
+                    return error_response('Stripe account deletion could not be verified; binding unchanged', 503)
+                if stripe_attr(deleted, 'deleted') is not True:
+                    release_lock()
+                    return error_response('Stripe account deletion could not be verified; binding unchanged', 409)
+                stripe_deleted = True
+
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                changed = db.execute(
+                    """UPDATE worker_profiles SET payout_account_id=NULL,payout_method='pending_setup',
+                           payout_account_country=NULL,payout_service_agreement=NULL,payout_method_details=NULL
+                       WHERE user_id=? AND payout_account_id=?""",
+                    [target_id, account_id],
+                )
+                if changed.rowcount != 1 or local_blockers(own_lock_id=lock_id):
+                    db.rollback()
+                    audit(db, admin['id'], 'admin_payout_binding_reset_binding_changed', 'user', target_id,
+                          {'old_account_suffix': suffix, 'stripe_deleted': stripe_deleted})
+                    db.commit()
+                    return json_response({'error': 'binding_changed', 'stripe_deleted': stripe_deleted}, 409)
+                # Preserve the historical ledger, but exclude retired identities from
+                # account-create country checks, replay and prior AccountLink generation.
+                db.execute(
+                    """UPDATE payment_setup_operations SET error_code='admin_payout_binding_reset',
+                           updated_at=datetime('now') WHERE user_id=? AND status IN ('committed','failed')
+                           AND ((operation_kind='account_create' AND processor_object_id=?)
+                             OR (operation_kind='account_link_create'
+                                 AND CASE WHEN json_valid(request_binding_json)
+                                          THEN json_extract(request_binding_json,'$.account_id')=?
+                                          ELSE 0 END))""",
+                    [target_id, account_id, account_id],
+                )
+                if lock_id is not None:
+                    db.execute("""UPDATE payment_setup_operations SET status='committed',manual_review_required=0,
+                                      error_code='admin_payout_binding_reset',committed_at=datetime('now'),
+                                      updated_at=datetime('now')
+                                  WHERE id=? AND status='unknown'""", [lock_id])
+                audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id,
+                      {'old_account_suffix': suffix, 'old_country': profile['payout_account_country'],
+                       'stripe_deleted': stripe_deleted})
+                db.commit()
+            except Exception:
+                if db.in_transaction:
+                    db.rollback()
+                raise
+            return json_response({'ok': True, 'dry_run': False, 'stripe_deleted': stripe_deleted,
+                                  'account_id_suffix': suffix})
+        finally:
+            binding_lock.release()
 
     elif path == '/admin/payout-readiness/sync' and method == 'POST':
         user = authenticate(db)
