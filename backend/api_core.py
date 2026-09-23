@@ -5367,6 +5367,53 @@ def _payment_setup_operation(
                 del _payment_setup_inflight_operations[operation_key]
 
 
+# A worker payout-setup request holds a short-lived session row for its whole
+# duration (account create, link create, local binding and response). An admin
+# binding reset refuses while a live session exists, and a session cannot start
+# while a reset lock exists. Rows older than the stale window cannot belong to a
+# live request (gunicorn --timeout 120) and are ignored.
+_PAYOUT_SETUP_SESSION_KIND = "payout_setup_session"
+_PAYOUT_SETUP_SESSION_STALE_SQL = "datetime('now','-10 minutes')"
+
+
+def _payout_setup_session_begin(db, user_id):
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if db.execute(
+            "SELECT 1 FROM payment_setup_operations WHERE user_id=? "
+            "AND operation_kind='admin_payout_binding_reset' AND status='unknown' LIMIT 1",
+            [user_id],
+        ).fetchone():
+            db.rollback()
+            return None
+        key = f"payout-setup-session:{user_id}:{secrets.token_hex(16)}"
+        session_id = db.execute(
+            """INSERT INTO payment_setup_operations
+               (operation_key,operation_kind,user_id,request_fingerprint,
+                request_binding_json,processor_idempotency_key,status)
+               VALUES (?,?,?,?,'{}',?,'prepared')""",
+            [key, _PAYOUT_SETUP_SESSION_KIND, user_id, hashlib.sha256(key.encode()).hexdigest(), key + ":session"],
+        ).lastrowid
+        db.commit()
+        return session_id
+    except Exception:
+        if db.in_transaction:
+            db.rollback()
+        raise
+
+
+def _payout_setup_session_end(db, session_id):
+    # Uncommitted route work would be discarded by close(); discard it explicitly
+    # so the session row is removed in its own short transaction.
+    if db.in_transaction:
+        db.rollback()
+    db.execute("DELETE FROM payment_setup_operations WHERE id=? AND operation_kind=?",
+               [session_id, _PAYOUT_SETUP_SESSION_KIND])
+    db.commit()
+
+
 def _payment_setup_operation_serialized(
     db, user_id, operation_kind, binding, processor_call, result_builder,
     apply_result=None, replay_processor_call=None, replay_result_builder=None,
@@ -13250,131 +13297,137 @@ def _handle_routes(db):
         ensure_worker_profile(db, user['id'])
 
         if stripe_configured():
+            session_id = _payout_setup_session_begin(db, user["id"])
+            if session_id is None:
+                return error_response("Payout setup is being reset by support; try again shortly.", 409)
             try:
-                # Profile creation is committed before Account.create.
-                db.commit()
-                wp = db.execute(
-                    "SELECT payout_account_id,payout_account_country,payout_service_agreement "
-                    "FROM worker_profiles WHERE user_id=?",
-                    [user["id"]],
-                ).fetchone()
-                account_id = (wp["payout_account_id"] if wp else "") or ""
-                if account_id and not account_id.startswith("acct_sim_"):
-                    existing_country = wp["payout_account_country"] or "US"
-                    existing_agreement = wp["payout_service_agreement"] or "full"
-                    if existing_country != country or existing_agreement != agreement:
-                        return error_response(
-                            "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+                try:
+                    # Profile creation is committed before Account.create.
+                    db.commit()
+                    wp = db.execute(
+                        "SELECT payout_account_id,payout_account_country,payout_service_agreement "
+                        "FROM worker_profiles WHERE user_id=?",
+                        [user["id"]],
+                    ).fetchone()
+                    account_id = (wp["payout_account_id"] if wp else "") or ""
+                    if account_id and not account_id.startswith("acct_sim_"):
+                        existing_country = wp["payout_account_country"] or "US"
+                        existing_agreement = wp["payout_service_agreement"] or "full"
+                        if existing_country != country or existing_agreement != agreement:
+                            return error_response(
+                                "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+                            )
+                    if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
+                        capabilities = {"transfers": {"requested": True}}
+                        account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
+                        retired_count = db.execute(
+                            """SELECT COUNT(*) FROM payment_setup_operations WHERE user_id=?
+                               AND operation_kind='account_create'
+                               AND error_code='admin_payout_binding_reset'""", [user['id']]
+                        ).fetchone()[0]
+                        if retired_count:
+                            # A reset must not replay the old account-create fingerprint
+                            # or reuse its Stripe idempotency key (including same-country).
+                            account_binding['reset_generation'] = retired_count
+                        if country != "US" and agreement == "full":
+                            capabilities = {"card_payments": {"requested": True}, **capabilities}
+                            account_binding["capabilities"] = capabilities
+                        account_result, _ = _payment_setup_operation(
+                            db,
+                            user["id"],
+                            "account_create",
+                            account_binding,
+                            lambda key: stripe.Account.create(
+                                type="express", country=country, email=user["email"],
+                                capabilities=capabilities,
+                                metadata={"user_id": str(user["id"])}, idempotency_key=key,
+                                **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
+                            ),
+                            lambda value: {
+                                "processor_object_id": stripe_attr(value, "id", ""),
+                                "account_id": stripe_attr(value, "id", ""),
+                            },
+                            lambda conn, result: conn.execute(
+                                """UPDATE worker_profiles
+                                   SET payout_account_id=?,payout_method='stripe_connect',
+                                       payout_account_country=?,payout_service_agreement=?
+                                   WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
+                                [result["account_id"], country, agreement, user["id"], result["account_id"]],
+                            ),
                         )
-                if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
-                    capabilities = {"transfers": {"requested": True}}
-                    account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
-                    retired_count = db.execute(
-                        """SELECT COUNT(*) FROM payment_setup_operations WHERE user_id=?
-                           AND operation_kind='account_create'
-                           AND error_code='admin_payout_binding_reset'""", [user['id']]
-                    ).fetchone()[0]
-                    if retired_count:
-                        # A reset must not replay the old account-create fingerprint
-                        # or reuse its Stripe idempotency key (including same-country).
-                        account_binding['reset_generation'] = retired_count
-                    if country != "US" and agreement == "full":
-                        capabilities = {"card_payments": {"requested": True}, **capabilities}
-                        account_binding["capabilities"] = capabilities
-                    account_result, _ = _payment_setup_operation(
+                        account_id = account_result["account_id"]
+                    body = get_body()
+                    refresh_requested = bool(body.get("refresh") or body.get("consumed"))
+                    generation = 1
+                    previous_link = db.execute(
+                        """SELECT request_binding_json,result_json FROM payment_setup_operations
+                           WHERE user_id=? AND operation_kind='account_link_create'
+                             AND status='committed' AND manual_review_required=0
+                             AND COALESCE(error_code,'')!='admin_payout_binding_reset'
+                           ORDER BY id DESC LIMIT 1""", [user["id"]]
+                    ).fetchone()
+                    if previous_link:
+                        previous_binding = json.loads(previous_link["request_binding_json"] or "{}")
+                        previous_result = json.loads(previous_link["result_json"] or "{}")
+                        generation = int(previous_binding.get("generation", 1))
+                        if refresh_requested or int(previous_result.get("expires_at", 0) or 0) <= int(time.time()):
+                            generation += 1
+                    capability_id = f"account-link-capability:{user['id']}:{account_id}:{generation}"
+
+                    def build_link_result(value):
+                        onboarding_url = stripe_attr(value, "url", None)
+                        if not isinstance(onboarding_url, str) or not onboarding_url.startswith("https://"):
+                            raise ValueError("Stripe AccountLink response lacks a valid HTTPS URL")
+                        expires_at = stripe_attr(value, "expires_at", None)
+                        if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+                            raise ValueError("Stripe AccountLink response lacks a valid expiration")
+                        return {
+                            # AccountLink has no durable id. This synthetic identity binds the
+                            # non-secret capability generation without persisting its URL.
+                            "processor_object_id": capability_id,
+                            "account_id": account_id,
+                            "generation": generation,
+                            "expires_at": int(expires_at),
+                            "url": onboarding_url,
+                        }
+                    link_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
-                        "account_create",
-                        account_binding,
-                        lambda key: stripe.Account.create(
-                            type="express", country=country, email=user["email"],
-                            capabilities=capabilities,
-                            metadata={"user_id": str(user["id"])}, idempotency_key=key,
-                            **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
-                        ),
-                        lambda value: {
-                            "processor_object_id": stripe_attr(value, "id", ""),
-                            "account_id": stripe_attr(value, "id", ""),
+                        "account_link_create",
+                        {
+                            "account_id": account_id,
+                            "generation": generation,
+                            "purpose": "account_onboarding",
+                            "refresh_url": f"{FRONTEND_URL}/payments?connect=refresh",
+                            "return_url": f"{FRONTEND_URL}/payments?connect=complete",
                         },
-                        lambda conn, result: conn.execute(
-                            """UPDATE worker_profiles
-                               SET payout_account_id=?,payout_method='stripe_connect',
-                                   payout_account_country=?,payout_service_agreement=?
-                               WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
-                            [result["account_id"], country, agreement, user["id"], result["account_id"]],
+                        lambda key: stripe.AccountLink.create(
+                            account=account_id,
+                            refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
+                            return_url=f"{FRONTEND_URL}/payments?connect=complete",
+                            type="account_onboarding", idempotency_key=key,
                         ),
+                        build_link_result,
+                        replay_processor_call=lambda _object_id, key: stripe.AccountLink.create(
+                            account=account_id,
+                            refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
+                            return_url=f"{FRONTEND_URL}/payments?connect=complete",
+                            type="account_onboarding", idempotency_key=key,
+                        ),
+                        replay_result_builder=build_link_result,
                     )
-                    account_id = account_result["account_id"]
-                body = get_body()
-                refresh_requested = bool(body.get("refresh") or body.get("consumed"))
-                generation = 1
-                previous_link = db.execute(
-                    """SELECT request_binding_json,result_json FROM payment_setup_operations
-                       WHERE user_id=? AND operation_kind='account_link_create'
-                         AND status='committed' AND manual_review_required=0
-                         AND COALESCE(error_code,'')!='admin_payout_binding_reset'
-                       ORDER BY id DESC LIMIT 1""", [user["id"]]
-                ).fetchone()
-                if previous_link:
-                    previous_binding = json.loads(previous_link["request_binding_json"] or "{}")
-                    previous_result = json.loads(previous_link["result_json"] or "{}")
-                    generation = int(previous_binding.get("generation", 1))
-                    if refresh_requested or int(previous_result.get("expires_at", 0) or 0) <= int(time.time()):
-                        generation += 1
-                capability_id = f"account-link-capability:{user['id']}:{account_id}:{generation}"
-
-                def build_link_result(value):
-                    onboarding_url = stripe_attr(value, "url", None)
-                    if not isinstance(onboarding_url, str) or not onboarding_url.startswith("https://"):
-                        raise ValueError("Stripe AccountLink response lacks a valid HTTPS URL")
-                    expires_at = stripe_attr(value, "expires_at", None)
-                    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
-                        raise ValueError("Stripe AccountLink response lacks a valid expiration")
-                    return {
-                        # AccountLink has no durable id. This synthetic identity binds the
-                        # non-secret capability generation without persisting its URL.
-                        "processor_object_id": capability_id,
+                    audit(db, user['id'], "setup_worker_payout", "worker_profile", user['id'])
+                    db.commit()
+                    return json_response({
+                        "ok": True,
+                        "onboarding_url": link_result["url"],
                         "account_id": account_id,
-                        "generation": generation,
-                        "expires_at": int(expires_at),
-                        "url": onboarding_url,
-                    }
-                link_result, _ = _payment_setup_operation(
-                    db,
-                    user["id"],
-                    "account_link_create",
-                    {
-                        "account_id": account_id,
-                        "generation": generation,
-                        "purpose": "account_onboarding",
-                        "refresh_url": f"{FRONTEND_URL}/payments?connect=refresh",
-                        "return_url": f"{FRONTEND_URL}/payments?connect=complete",
-                    },
-                    lambda key: stripe.AccountLink.create(
-                        account=account_id,
-                        refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
-                        return_url=f"{FRONTEND_URL}/payments?connect=complete",
-                        type="account_onboarding", idempotency_key=key,
-                    ),
-                    build_link_result,
-                    replay_processor_call=lambda _object_id, key: stripe.AccountLink.create(
-                        account=account_id,
-                        refresh_url=f"{FRONTEND_URL}/payments?connect=refresh",
-                        return_url=f"{FRONTEND_URL}/payments?connect=complete",
-                        type="account_onboarding", idempotency_key=key,
-                    ),
-                    replay_result_builder=build_link_result,
-                )
-                audit(db, user['id'], "setup_worker_payout", "worker_profile", user['id'])
-                db.commit()
-                return json_response({
-                    "ok": True,
-                    "onboarding_url": link_result["url"],
-                    "account_id": account_id,
-                    "mode": "live",
-                })
-            except PaymentSetupReconciliationRequired as e:
-                return error_response(str(e), 409)
+                        "mode": "live",
+                    })
+                except PaymentSetupReconciliationRequired as e:
+                    return error_response(str(e), 409)
+            finally:
+                _payout_setup_session_end(db, session_id)
         else:
             if PRODUCTION_MODE:
                 return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
@@ -14395,9 +14448,11 @@ def _handle_routes(db):
             ).fetchone():
                 blockers.append('setup_frozen')
             if db.execute(
-                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                f"""SELECT 1 FROM payment_setup_operations WHERE user_id=?
                    AND operation_kind!='admin_payout_binding_reset'
-                   AND status IN ('prepared','unknown') LIMIT 1""",
+                   AND status IN ('prepared','unknown')
+                   AND NOT (operation_kind='{_PAYOUT_SETUP_SESSION_KIND}'
+                            AND created_at < {_PAYOUT_SETUP_SESSION_STALE_SQL}) LIMIT 1""",
                 [target_id],
             ).fetchone():
                 blockers.append('setup_operation_pending')

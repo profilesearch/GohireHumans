@@ -503,11 +503,31 @@ class AdminPayoutBindingResetSecondReviewRegressions(AdminPayoutBindingResetTest
         with p_config, p_retrieve, p_balance, p_delete, \
              mock.patch.object(self.core.stripe.AccountLink, 'create', side_effect=replay_link):
             status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
-        self.assertEqual(seen['reset'][0], 200, seen['reset'])
+        # Since the setup-session fence, a reset during any setup request is refused
+        # before deletion; the replay then completes normally for the still-bound account.
+        self.assertEqual(seen['reset'][0], 409, seen['reset'])
+        self.assertIn('setup_operation_pending', seen['reset'][1]['blockers'])
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0], self.ACCOUNT)
+
+    def test_replay_marker_fence_discards_result_if_reset_row_appears(self):
+        # Defense in depth: the marker check in _payment_setup_operation_serialized
+        # still discards a replay result if a reset row appears during the call.
+        self.prepare()
+        self.seed_link()
+        def replay_link(**kwargs):
+            with self.core.get_db() as db:
+                db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
+                              request_binding_json,processor_idempotency_key,status,manual_review_required)
+                              VALUES ('r-lock','admin_payout_binding_reset',3,'x','{}','r-lock:v1','unknown',1)""")
+                db.commit()
+            return SimpleNamespace(url='https://example.invalid/stale', expires_at=9999999999)
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', side_effect=replay_link):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
         self.assertEqual(status, 409, body)
         self.assertNotIn('stale', json.dumps(body))
-        with self.core.get_db() as db:
-            self.assertIsNone(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0])
 
     def test_unknown_outcome_lock_blocks_later_resets(self):
         self.prepare()
@@ -521,3 +541,83 @@ class AdminPayoutBindingResetSecondReviewRegressions(AdminPayoutBindingResetTest
             self.assertEqual(status, 409, body)
             self.assertIn('reset_in_progress', body['blockers'])
             self.assertEqual(delete.call_count, 1)
+
+
+class AdminPayoutBindingResetSessionRegressions(AdminPayoutBindingResetTests):
+    """Blockers from independent review of d7ff75c: gaps inside the setup route."""
+
+    def run_setup_with_reset_at(self, hook):
+        seen = {}
+        real_op = self.core._payment_setup_operation
+        real_audit = self.core.audit
+        def op(db, user_id, kind, *a, **kw):
+            if hook == 'before_link' and kind == 'account_link_create' and 'reset' not in seen:
+                seen['reset'] = self.reset(dry_run=False, confirm_account_suffix='123456')
+            return real_op(db, user_id, kind, *a, **kw)
+        def audit(db, uid, action, *a, **kw):
+            if hook == 'before_response' and action == 'setup_worker_payout' and 'reset' not in seen:
+                seen['reset'] = self.reset(dry_run=False, confirm_account_suffix='123456')
+            return real_audit(db, uid, action, *a, **kw)
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, \
+             mock.patch.object(self.core, '_payment_setup_operation', side_effect=op), \
+             mock.patch.object(self.core, 'audit', side_effect=audit), \
+             mock.patch.object(self.core.stripe.Account, 'create', return_value=SimpleNamespace(id=self.ACCOUNT)), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create',
+                               return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            seen['setup'] = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+            seen['delete_calls'] = delete.call_count
+        return seen
+
+    def assert_reset_refused_and_setup_intact(self, seen):
+        self.assertEqual(seen['reset'][0], 409, seen['reset'])
+        self.assertIn('setup_operation_pending', seen['reset'][1]['blockers'])
+        self.assertEqual(seen['delete_calls'], 0)
+        self.assertEqual(seen['setup'][0], 200, seen['setup'])
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0], self.ACCOUNT)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='payout_setup_session'").fetchone()[0], 0)
+
+    def test_reset_between_account_create_and_link_is_refused(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute('UPDATE worker_profiles SET payout_account_id=NULL WHERE user_id=3')
+            db.commit()
+        self.assert_reset_refused_and_setup_intact(self.run_setup_with_reset_at('before_link'))
+
+    def test_reset_between_link_commit_and_response_is_refused(self):
+        self.prepare()
+        self.assert_reset_refused_and_setup_intact(self.run_setup_with_reset_at('before_response'))
+
+    def test_session_removed_after_failed_setup(self):
+        self.prepare()
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', side_effect=stripe.InvalidRequestError('bad', param='x')):
+            status, _ = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+        self.assertNotEqual(status, 200)
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='payout_setup_session'").fetchone()[0], 0)
+
+    def test_stale_session_from_crashed_request_does_not_block_reset(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
+                          request_binding_json,processor_idempotency_key,status,created_at)
+                          VALUES ('stale-s','payout_setup_session',3,'x','{}','stale-s:session','prepared',datetime('now','-30 minutes'))""")
+            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
+                          request_binding_json,processor_idempotency_key,status)
+                          VALUES ('live-s','payout_setup_session',4,'x','{}','live-s:session','prepared')""")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete:
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            db.execute("""INSERT INTO payment_setup_operations(operation_key,operation_kind,user_id,request_fingerprint,
+                          request_binding_json,processor_idempotency_key,status)
+                          VALUES ('live-3','payout_setup_session',3,'x','{}','live-3:session','prepared')""")
+            db.execute("UPDATE worker_profiles SET payout_account_id=? WHERE user_id=3", (self.ACCOUNT,))
+            db.commit()
+        with p_config, p_retrieve, p_balance, p_delete:
+            status, body = self.reset(dry_run=True)
+        self.assertIn('setup_operation_pending', body['blockers'])
