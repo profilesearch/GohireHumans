@@ -4091,6 +4091,224 @@ def require_admin_step_up(db, admin_user, body, action):
     return None, None
 
 
+# Predicates mirror _init_db_connection_steps and _REQUIRED_*_TABLE_SQL.
+# ?1 is the target id and ?2 is the target's current email.
+_ERASURE_ORDER = 'SELECT id FROM orders WHERE worker_id=?1 OR employer_id=?1'
+_ERASURE_DELETIONS = {
+    'transactional_email_delivery_events': 'provider_email_id IN (SELECT provider_email_id FROM transactional_email_outbox WHERE user_id=?1) AND provider_email_id IS NOT NULL',
+    'transactional_email_outbox': 'user_id=?1 AND id NOT IN (SELECT outbox_id FROM agentmail_send_ledger)',
+    'order_reminders': 'recipient_user_id=?1',
+    'job_application_reminders': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'job_application_views': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'notifications': 'user_id=?1',
+    'api_key_usage': 'api_key_id IN (SELECT id FROM api_keys WHERE user_id=?1)',
+    'api_keys': 'user_id=?1',
+    'sessions': 'user_id=?1',
+    'password_reset_tokens': 'user_id=?1',
+    'referrals': 'referrer_id=?1 OR referred_id=?1',
+    'applications': 'worker_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'services': 'worker_id=?1',
+    'jobs': 'employer_id=?1',
+    'worker_profiles': 'user_id=?1',
+    'employer_profiles': 'user_id=?1',
+}
+_ERASURE_RETAINED = {
+    'orders': 'worker_id=?1 OR employer_id=?1 OR service_id IN (SELECT id FROM services WHERE worker_id=?1) OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
+    'milestones': f'order_id IN ({_ERASURE_ORDER})',
+    'hourly_contracts': f'order_id IN ({_ERASURE_ORDER})',
+    'time_entries': f'contract_id IN (SELECT id FROM hourly_contracts WHERE order_id IN ({_ERASURE_ORDER}))',
+    'escrow_holds': f'order_id IN ({_ERASURE_ORDER})',
+    'funding_attempts': f'employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'funding_attempt_conflict_evidence': f'attempt_id IN (SELECT id FROM funding_attempts WHERE employer_id=?1 OR order_id IN ({_ERASURE_ORDER})) OR expected_order_id IN ({_ERASURE_ORDER})',
+    'payment_setup_operations': 'user_id=?1',
+    'order_completion_operations': f'employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'platform_revenue': f'order_id IN ({_ERASURE_ORDER})',
+    'payout_transfers': f'worker_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'reviews': f'from_user_id=?1 OR to_user_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'payout_release_attempts': f'worker_id=?1 OR employer_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'payout_release_conflict_evidence': f'attempt_id IN (SELECT id FROM payout_release_attempts WHERE worker_id=?1 OR employer_id=?1 OR order_id IN ({_ERASURE_ORDER}))',
+    'disputes': f'opened_by=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'refund_attempts': f'admin_id=?1 OR employer_id=?1 OR worker_id=?1 OR order_id IN ({_ERASURE_ORDER})',
+    'refund_attempt_conflict_evidence': f'attempt_id IN (SELECT id FROM refund_attempts WHERE admin_id=?1 OR employer_id=?1 OR worker_id=?1 OR order_id IN ({_ERASURE_ORDER}))',
+}
+
+
+def _erasure_audit_rows(db, target):
+    """Retain security records while identifying rows needing PII redaction."""
+    email = target['email'].casefold()
+    rows = []
+    for row in db.execute('SELECT id,user_id,entity_type,entity_id,details FROM audit_log WHERE details IS NOT NULL'):
+        details = row['details'] or ''
+        try:
+            searchable = json.dumps(json.loads(details), ensure_ascii=False)
+        except (ValueError, TypeError):
+            searchable = details
+        linked = (row['user_id'] == target['id'] or
+                  (row['entity_type'] == 'user' and row['entity_id'] == target['id']))
+        if linked or email in searchable.casefold():
+            rows.append((row['id'], details, linked))
+    return rows
+
+
+_ERASURE_NETWORK_KEYS = {'ip', 'ip_address', 'remote_addr', 'user_agent', 'client_ip', 'x_forwarded_for'}
+
+
+def _erase_audit_identity(details, target, linked):
+    # Only rows reliably tied to the target are selected: the target is the actor
+    # or subject, or the row contains the target's exact email. Name-only matches
+    # are never selected, so a common-word name cannot rewrite unrelated evidence.
+    # Values lose the name/email; JSON keys are never modified. Network identifiers
+    # are dropped only when the target is the actor or subject. Malformed legacy
+    # details use a literal fallback.
+    pattern = _erasure_identity_pattern(target)
+
+    email_pattern = re.compile(re.escape(target['email']), re.IGNORECASE) if target['email'] else None
+
+    def scrub_key(key):
+        if not isinstance(key, str):
+            return key
+        if email_pattern:
+            key = email_pattern.sub('[REDACTED]', key)
+        # Field-name style keys ("payment", "status") are schema, not identity.
+        if linked and pattern and not re.fullmatch(r'[a-z_][a-z0-9_]*', key):
+            key = pattern.sub('[REDACTED]', key)
+        return key
+
+    def scrub(value):
+        if isinstance(value, str):
+            return pattern.sub('[REDACTED]', value) if pattern else value
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if isinstance(value, dict):
+            out = {}
+            for key, item in value.items():
+                new_key = scrub_key(key)
+                suffix = 2
+                while new_key in out:
+                    new_key = f"{scrub_key(key)}#{suffix}"
+                    suffix += 1
+                out[new_key] = ('[REDACTED]' if linked and str(key).lower() in _ERASURE_NETWORK_KEYS
+                                else scrub(item))
+            return out
+        return value
+
+    try:
+        original = json.loads(details)
+    except (ValueError, TypeError):
+        return scrub(details)
+    redacted = scrub(original)
+    return json.dumps(redacted, ensure_ascii=False) if redacted != original else details
+
+
+# Outbox rows bound to an AgentMail send intent are kept (rows only, contents
+# scrubbed) so erasure cannot free or distort per-type send budgets.
+_ERASURE_OUTBOX_SCRUB = 'user_id=?1 AND id IN (SELECT outbox_id FROM agentmail_send_ledger)'
+# Messages other users received that name the erased person.
+_ERASURE_PEER_TABLES = ('notifications', 'transactional_email_outbox')
+
+
+def _erasure_identity_pattern(target):
+    parts = [re.escape(target['email'])] if target['email'] else []
+    if target['name'] and len(target['name'].strip()) >= 3:
+        parts.append(r'(?<!\w)' + re.escape(target['name'].strip()) + r'(?!\w)')
+    return re.compile('|'.join(parts), re.IGNORECASE) if parts else None
+
+
+_ERASURE_APPLICATION_NOTICE_SUFFIX = ' applied to your job.'
+_ERASURE_APPLICATION_NOTICE_REPLACEMENT = 'A former user applied to your job.'
+
+
+def _erasure_peer_rows(db, target):
+    """Employer notices created by the target's own job applications.
+
+    The only first-party template that writes one user's name into another
+    user's message is the job-application notice ("<name> applied to your
+    job."). Rows are bound to the target's applications, never matched by name,
+    so a later rename cannot hide them and a common-word name cannot select
+    unrelated rows. Email notices carry dedupe_context 'application:<id>' and
+    the notification id; in-app-only notices are matched by employer, job link,
+    template and creation time. Ambiguity blocks the erasure instead of guessing.
+    Returns ({table: [(row_id, planned_message)]}, blockers).
+    """
+    outbox, notices, blockers = {}, {}, []
+    applications = db.execute(
+        """SELECT a.id, a.job_id, a.created_at, j.employer_id FROM applications a
+           JOIN jobs j ON j.id=a.job_id WHERE a.worker_id=? AND j.employer_id!=?""",
+        [target['id'], target['id']]).fetchall()
+    for app in applications:
+        linked_notification = None
+        for row in db.execute(
+                """SELECT id, message, notification_id FROM transactional_email_outbox
+                   WHERE user_id=? AND notification_type='new_application' AND dedupe_context=?""",
+                [app['employer_id'], f"application:{app['id']}"]):
+            if (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+                outbox[row['id']] = row['message']
+            linked_notification = row['notification_id'] or linked_notification
+        if linked_notification is not None:
+            row = db.execute("SELECT id, message FROM notifications WHERE id=? AND user_id=? AND type='new_application'",
+                             [linked_notification, app['employer_id']]).fetchone()
+            if row and (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+                notices[row['id']] = row['message']
+            continue
+        candidates = [r for r in db.execute(
+            """SELECT id, message FROM notifications
+               WHERE user_id=? AND type='new_application' AND link=?
+                 AND created_at >= ? AND created_at <= datetime(?, '+5 seconds')
+                 AND id NOT IN (SELECT notification_id FROM transactional_email_outbox
+                                WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
+            [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
+            if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
+        if len(candidates) > 1:
+            blockers.append('ambiguous_peer_notice')
+        elif candidates:
+            notices[candidates[0]['id']] = candidates[0]['message']
+    found = {'notifications': sorted(notices.items()), 'transactional_email_outbox': sorted(outbox.items())}
+    return found, sorted(set(blockers))
+
+
+def _erasure_plan(db, target):
+    target_id, values = target['id'], (target['id'], target['email'])
+    deleted = {table: db.execute(f'SELECT count(*) FROM {table} WHERE {where}',
+                                 values if '?2' in where else values[:1]).fetchone()[0]
+               for table, where in _ERASURE_DELETIONS.items()}
+    retained = {table: db.execute(f'SELECT count(*) FROM {table} WHERE {where}',
+                                  values if '?2' in where else values[:1]).fetchone()[0]
+                for table, where in _ERASURE_RETAINED.items()}
+    audit_rows = _erasure_audit_rows(db, target)
+    anonymized = {
+        'users': 1,
+        'users_referred_by': db.execute('SELECT count(*) FROM users WHERE referred_by=?', [target_id]).fetchone()[0],
+        'audit_log': sum(_erase_audit_identity(details, target, linked) != details
+                         for _, details, linked in audit_rows),
+    }
+    blockers = []
+    if target['is_admin']:
+        blockers.append('admin_target')
+    if target['is_active']:
+        blockers.append('active_user')
+    if target['email'] == f'erased-user-{target_id}@erased.invalid':
+        blockers.append('already_erased')
+    account = db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=?', [target_id]).fetchone()
+    if account and (account['payout_account_id'] or '').startswith('acct_') and not account['payout_account_id'].startswith('acct_sim_'):
+        blockers.append('stripe_account_present')
+    blockers.extend(table for table, count in retained.items() if count)
+    if db.execute('SELECT 1 FROM referrals WHERE (referrer_id=? OR referred_id=?) AND reward_amount!=0 LIMIT 1', [target_id, target_id]).fetchone():
+        blockers.append('referral_reward_present')
+    # Opaque send intents (hashes, provider ids, no address or content) are kept
+    # so erasure cannot free email send budget. Outbox ids use AUTOINCREMENT, so
+    # an orphaned intent can never be re-bound to a later message. Not a blocker.
+    retained['agentmail_send_ledger'] = db.execute(
+        'SELECT count(*) FROM agentmail_send_ledger WHERE outbox_id IN '
+        '(SELECT id FROM transactional_email_outbox WHERE user_id=?1)', values[:1]).fetchone()[0]
+    anonymized['transactional_email_outbox'] = db.execute(
+        f'SELECT count(*) FROM transactional_email_outbox WHERE {_ERASURE_OUTBOX_SCRUB}', values[:1]).fetchone()[0]
+    peer_rows, peer_blockers = _erasure_peer_rows(db, target)
+    blockers.extend(peer_blockers)
+    for table, rows in peer_rows.items():
+        anonymized[f'peer_{table}'] = len(rows)
+    return deleted, anonymized, retained, blockers, audit_rows, peer_rows
+
+
 def send_email(to_email, subject, html_body, idempotency_key=None):
     """Legacy Resend entrypoint; AgentMail requires a durable approved outbox."""
     if os.environ.get("EMAIL_PROVIDER", "resend") != "resend":
@@ -14403,10 +14621,86 @@ def _handle_routes(db):
             vals.append(target_id)
             db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", vals)
 
-        audit_details = {k: v for k, v in body.items() if k != 'admin_password'}
+        # Only fields this route acts on are recorded; arbitrary keys are not echoed.
+        audit_details = {k: bool(body[k]) for k in ('is_active', 'is_suspended', 'is_banned', 'is_admin') if k in body}
         audit(db, user['id'], "admin_update_user", "user", target_id, audit_details)
         db.commit()
         return json_response({"ok": True})
+
+    elif re.fullmatch(r"/admin/users/\d+/erase", path) and method == "POST":
+        admin = authenticate(db)
+        if not admin or not admin['is_admin']:
+            return error_response('Admin access required', 403)
+        target_id = int(path.split('/')[3])
+        body = get_body() or {}
+        if not isinstance(body, dict) or type(body.get('dry_run', True)) is not bool:
+            return error_response('dry_run must be a boolean', 400)
+        step_error, step_status = require_admin_step_up(db, admin, body, 'admin_erase_user')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        if not dry_run and (not isinstance(body.get('confirm_email'), str) or not body['confirm_email']):
+            return error_response('confirm_email is required', 400)
+
+        # The apply preflight and all mutations share one serialized writer
+        # transaction; dry-run never opens a writer or appends an audit row.
+        if not dry_run:
+            db.execute('BEGIN IMMEDIATE')
+        try:
+            target = db.execute('SELECT * FROM users WHERE id=?', [target_id]).fetchone()
+            if not target:
+                if not dry_run:
+                    db.rollback()
+                return error_response('user_not_found', 409)
+            deleted, anonymized, retained, blockers, audit_rows, peer_rows = _erasure_plan(db, target)
+            result = {'dry_run': dry_run, 'user_id': target_id, 'eligible': not blockers,
+                      'blockers': blockers, 'will_delete': deleted,
+                      'will_anonymize': anonymized, 'retained': retained}
+            if dry_run:
+                return json_response(result)
+            if blockers:
+                db.rollback()
+                return error_response(', '.join(blockers), 409)
+            if body['confirm_email'].casefold() != target['email'].casefold():
+                db.rollback()
+                return error_response('confirm_email does not match current email', 400)
+            values = (target_id, target['email'])
+            erased_email = f'erased-user-{target_id}@erased.invalid'
+            scrubbed = db.execute(
+                f"""UPDATE transactional_email_outbox SET email_to=?2, title='[erased]', message='[erased]',
+                    link='', dedupe_context='[erased]', last_error=NULL, notification_id=NULL
+                    WHERE {_ERASURE_OUTBOX_SCRUB}""", [target_id, erased_email]).rowcount
+            if scrubbed != anonymized['transactional_email_outbox']:
+                raise RuntimeError('Account erasure count changed: transactional_email_outbox scrub')
+            for table, rows in peer_rows.items():
+                for row_id, planned_message in rows:
+                    if db.execute(f'UPDATE {table} SET message=? WHERE id=? AND message=?',
+                                  [_ERASURE_APPLICATION_NOTICE_REPLACEMENT, row_id,
+                                   planned_message]).rowcount != 1:
+                        raise RuntimeError(f'Account erasure count changed: peer {table}')
+            for table, where in _ERASURE_DELETIONS.items():
+                affected = db.execute(f'DELETE FROM {table} WHERE {where}',
+                                      values if '?2' in where else values[:1]).rowcount
+                if affected != deleted[table]:
+                    raise RuntimeError(f'Account erasure count changed: {table}')
+            db.execute('UPDATE users SET referred_by=NULL WHERE referred_by=?', [target_id])
+            for audit_id, details, linked in audit_rows:
+                redacted = _erase_audit_identity(details, target, linked)
+                if redacted != details:
+                    db.execute('UPDATE audit_log SET details=? WHERE id=?', [redacted, audit_id])
+            db.execute("""UPDATE users SET email=?, name='Deleted user', password_hash='',
+                avatar_url=NULL, google_sub=NULL, referral_code=NULL, referred_by=NULL,
+                is_active=0, updated_at=datetime('now') WHERE id=?""",
+                [f'erased-user-{target_id}@erased.invalid', target_id])
+            audit(db, admin['id'], 'admin_erase_user', 'user', target_id,
+                  {'deleted': deleted, 'anonymized': [key for key, count in anonymized.items() if count]})
+            db.commit()
+            result.update({'erased': True, 'deleted': deleted, 'anonymized': anonymized})
+            return json_response(result)
+        except Exception:
+            if db.in_transaction:
+                db.rollback()
+            raise
 
     elif path == "/admin/orders" and method == "GET":
         user = authenticate(db)
