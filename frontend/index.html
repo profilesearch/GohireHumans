@@ -274,6 +274,21 @@
 // ============================================================
 const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
 
+// Reset links carry a single-use capability in the fragment. Capture it and strip it from
+// the address bar before analytics, attribution, or routing can read location.
+let pendingResetToken = '';
+function captureResetCapability() {
+  const h = location.hash || '';
+  if (!/^#\/reset-password(?:\?|$)/.test(h)) return;
+  const q = h.indexOf('?');
+  if (q === -1) return;
+  const token = new URLSearchParams(h.slice(q + 1)).get('token');
+  if (token) pendingResetToken = token;
+  history.replaceState(null, '', location.pathname + location.search + '#/reset-password');
+}
+captureResetCapability();
+window.addEventListener('hashchange', captureResetCapability, true);
+
 // ─── State ───────────────────────────────────────────────────
 let storedUser = null, storedToken = null;
 try {
@@ -745,6 +760,7 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
 }
 let lastTrackedSpaPath = '';
 function trackSpaPageView(path) {
+  captureResetCapability();
   const pagePath = location.pathname + location.search + location.hash;
   if (lastTrackedSpaPath === pagePath) return;
   lastTrackedSpaPath = pagePath;
@@ -753,7 +769,7 @@ function trackSpaPageView(path) {
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'page_view', {
         page_title: document.title,
-        page_location: location.href,
+        page_location: location.origin + pagePath,
         page_path: pagePath,
         spa_route: path
       });
@@ -2636,14 +2652,8 @@ function renderAuth(mode) {
   }
 }
 
-let pendingResetToken = '';
 function renderPasswordRecovery(mode) {
-  if (mode === 'reset') {
-    const params = new URLSearchParams(location.hash.split('?')[1] || '');
-    pendingResetToken = params.get('token') || '';
-    // Fragment parameters still leak into history, screenshots, and copied URLs.
-    history.replaceState(null, '', location.pathname + location.search + '#/reset-password');
-  }
+  if (mode === 'reset') captureResetCapability();
   document.getElementById('app').innerHTML = `
     <div class="auth2-page"><div class="auth2-wrap">
       <a class="auth2-logo" href="#/">${LOGO} GoHireHumans</a>
@@ -5073,6 +5083,7 @@ function routeTitle(path, segments) {
 let lastRoutedPath = null;
 let lastRoutedPage = '';
 function render() {
+  captureResetCapability();
   const rawHash = location.hash;
   if (!isRouteHash(rawHash)) {
     // The skip link (#main-content) and other in-page anchors only move focus.

@@ -19,7 +19,7 @@ class PasswordResetTests(unittest.TestCase):
         self.stack.enter_context(mock.patch.dict(os.environ, {
             'DATABASE_PATH': str(Path(tmp) / 'test.db'), 'DISABLE_AUTO_SEED': '1',
             'EMAIL_PROVIDER': 'agentmail', 'AGENTMAIL_SEND_ENABLED': 'false',
-            'PASSWORD_RESET_ENCRYPTION_KEY': 'a' * 64,
+            'PASSWORD_RESET_ENCRYPTION_KEY': 'a' * 64, 'PASSWORD_RESET_RESPONSE_FLOOR_SECONDS': '0',
         }, clear=True))
         self.api = load_api_core()
         self.api._db_path_resolved = None
@@ -145,6 +145,23 @@ class PasswordResetTests(unittest.TestCase):
             self.assertEqual(self.forgot(ip=update)[0], 200)
             self.assertEqual(self.db.execute('SELECT COUNT(*) FROM password_reset_tokens').fetchone()[0], 0)
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM transactional_email_outbox').fetchone()[0], 0)
+
+    def test_forgot_response_time_does_not_reveal_account_existence(self):
+        import statistics, time as _t
+        self.api.PASSWORD_RESET_RESPONSE_FLOOR_SECONDS = 0.25
+        samples = {'known': [], 'unknown': []}
+        for i in range(8):
+            for kind, email in (('known', 'a@example.com'), ('unknown', 'absent@example.com')):
+                self.api._rate_limit_store.clear()
+                start = _t.perf_counter()
+                status, _ = self.forgot(email, ip=f'timing-{i}')
+                samples[kind].append(_t.perf_counter() - start)
+                self.assertEqual(status, 200)
+        known, unknown = statistics.median(samples['known']), statistics.median(samples['unknown'])
+        self.assertGreaterEqual(min(samples['known'] + samples['unknown']), 0.25)
+        self.assertLess(abs(known - unknown), 0.004, samples)
+        # Unknown-email requests never create tokens, outbox rows or user-linked audit rows.
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM audit_log WHERE action='password_reset_requested' AND user_id IS NULL").fetchone()[0], 8)
 
     def test_limits_email_and_ip_and_invalid_password(self):
         self.assertEqual(self.reset('nonsense', 'short')[0], 400)

@@ -2947,6 +2947,16 @@ def clear_login_failures(email):
         _login_failure_store.pop(key, None)
 
 
+def _reset_floor_seconds():
+    try:
+        return min(max(float(os.environ.get('PASSWORD_RESET_RESPONSE_FLOOR_SECONDS', '0.4')), 0.0), 2.0)
+    except ValueError:
+        return 0.4
+
+
+PASSWORD_RESET_RESPONSE_FLOOR_SECONDS = _reset_floor_seconds()
+
+
 def password_reset_rate_allowed(email, *, reset=False):
     """Bound requests across both email and IP, not just their combination."""
     ip = str(getattr(_request_ctx, 'remote_addr', 'unknown'))
@@ -9783,13 +9793,29 @@ def _handle_routes(db):
         raw_email = body.get('email', '')
         email = raw_email.strip().lower()[:320] if isinstance(raw_email, str) else ''
         generic = {'message': 'If an eligible account exists, a password reset link will be emailed.'}
+        # Every response is held to a fixed floor so request timing does not reveal
+        # whether an account exists (work differs by a few ms between paths).
+        reset_response_deadline = time.monotonic() + PASSWORD_RESET_RESPONSE_FLOOR_SECONDS
         # Equalize the dominant CPU work for registered and unknown addresses.
         hashlib.pbkdf2_hmac('sha256', email.encode(), b'password-reset-request', 100000)
         allowed = password_reset_rate_allowed(email)
         user = db.execute("SELECT id,password_hash,is_active,is_banned,is_suspended FROM users WHERE email=?", [email]).fetchone()
-        if (allowed and password_reset_crypto.configured() and user and user['password_hash']
-                and user['is_active'] and not user['is_banned'] and not user['is_suspended']
-                and not is_seeded_sample_email(email)):
+        eligible = bool(allowed and password_reset_crypto.configured() and user and user['password_hash']
+                        and user['is_active'] and not user['is_banned'] and not user['is_suspended']
+                        and not is_seeded_sample_email(email))
+        if not eligible:
+            # Same lock, sealing work and single committed write as the eligible
+            # path, so response timing does not reveal whether an account exists.
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+                password_reset_crypto.decoy_seal()
+                audit(db, None, 'password_reset_requested', 'user', None)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        if eligible:
             db.execute('BEGIN IMMEDIATE')
             try:
                 # The write lock serializes simultaneous requests for the same user.
@@ -9806,6 +9832,9 @@ def _handle_routes(db):
             except Exception:
                 db.rollback()
                 raise
+        remaining = reset_response_deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
         return json_response(generic)
 
     elif path == "/auth/reset-password" and method == "POST":

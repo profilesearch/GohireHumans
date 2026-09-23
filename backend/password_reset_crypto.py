@@ -58,3 +58,9 @@ def active_token(db, sealed, user_id):
              AND expires_at > datetime('now')""", [user_id, digest],
     ).fetchone()
     return token if row else None
+
+
+def decoy_seal():
+    """Perform sealing-equivalent work for ineligible requests (timing parity)."""
+    cipher = _cipher() or AESGCM(bytes(32))
+    cipher.encrypt(secrets.token_bytes(12), secrets.token_bytes(43), b'0')
