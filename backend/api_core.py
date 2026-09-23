@@ -2662,15 +2662,21 @@ def agent_email_domain_sql(user_alias='u'):
     if not domains:
         return '0'
     # Domains have been restricted to alphanumerics, dots and hyphens.
-    literals = ','.join("'" + d + "'" for d in domains)
-    return f"LOWER(SUBSTR({user_alias}.email, INSTR({user_alias}.email,'@')+1)) IN ({literals})"
+    host = f"LOWER(TRIM(SUBSTR({user_alias}.email, INSTR({user_alias}.email,'@')+1)))"
+    # Exact domain or a true subdomain ("team.ilands.app"), never suffix look-alikes
+    # ("evil-ilands.app"): the character before the domain must be a dot.
+    clauses = []
+    for d in domains:
+        clauses.append(f"{host} = '{d}'")
+        clauses.append(f"SUBSTR({host}, -{len(d) + 1}) = '.{d}'")
+    return "(COALESCE(" + " OR ".join(clauses) + ", 0))"
 
 
 def agent_seller_sql(service_alias='s', user_alias='u'):
     # Account flags/domains apply to every listing; an AI service on an
     # otherwise-human account does not turn its other human services into AI.
     return (f"(COALESCE({user_alias}.is_ai_agent,0)=1 OR {agent_email_domain_sql(user_alias)} "
-            f"OR {service_alias}.provider_type='ai')")
+            f"OR COALESCE({service_alias}.provider_type,'')='ai')")
 
 
 def agent_account_sql(user_alias='u'):
@@ -2678,8 +2684,11 @@ def agent_account_sql(user_alias='u'):
 
 
 def public_service_visibility_sql(service_alias='s', user_alias='u', profile_alias='wp'):
+    # COALESCE keeps the predicate two-valued: a missing worker profile or NULL
+    # payout_method must mean "not verified", never SQL NULL (which NOT would
+    # also treat as not-hidden).
     return (f"(NOT {agent_seller_sql(service_alias, user_alias)} "
-            f"OR {profile_alias}.payout_method='stripe_connect_active')")
+            f"OR COALESCE({profile_alias}.payout_method,'')='stripe_connect_active')")
 
 
 def is_agent_seller(db, user_id):
@@ -2693,9 +2702,11 @@ def is_agent_account(db, user_id):
 
 
 def service_hidden_for_unverified_agent(db, service_id):
-    return db.execute(f"""SELECT 1 FROM services s JOIN users u ON s.worker_id=u.id
-        LEFT JOIN worker_profiles wp ON wp.user_id=u.id WHERE s.id=?
-        AND NOT {public_service_visibility_sql()}""", [service_id]).fetchone() is not None
+    """Fail closed: hidden unless the service is positively visible."""
+    row = db.execute(f"""SELECT CASE WHEN {public_service_visibility_sql()} THEN 1 ELSE 0 END AS visible
+        FROM services s JOIN users u ON s.worker_id=u.id
+        LEFT JOIN worker_profiles wp ON wp.user_id=u.id WHERE s.id=?""", [service_id]).fetchone()
+    return row is not None and row['visible'] != 1
 
 
 def service_policy_response(db, row, *, owner_view=False):

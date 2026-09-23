@@ -152,3 +152,44 @@ class AIListingPolicyTests(unittest.TestCase):
         self.assertIn('not yet verified for payouts',order['error'])
         self.assertEqual(db.execute('SELECT COUNT(*) FROM orders').fetchone()[0],0)
         self.assertEqual(self.request('GET','/me/services',token='tok-1')[1]['services'][0]['visibility'],'hidden_unverified_agent')
+
+
+class AIListingPolicyReviewRegressions(AIListingPolicyTests):
+    """Blockers from independent review of PR #142 (fail-open NULL, subdomains)."""
+
+    def test_missing_profile_or_null_payout_method_fails_closed(self):
+        hidden = self.create(1)
+        db = self.core.get_db()
+        for mutate in ("DELETE FROM worker_profiles WHERE user_id=1",
+                       "INSERT OR REPLACE INTO worker_profiles (user_id,payout_method,payout_account_id) VALUES (1,NULL,'acct_live_test')"):
+            with self.subTest(mutate=mutate):
+                db.execute(mutate)
+                db.commit()
+                self.assertTrue(self.core.service_hidden_for_unverified_agent(db, hidden['id']))
+                self.assertEqual(self.request('GET', f"/services/{hidden['id']}")[0], 404)
+                self.assertEqual(self.request('GET', f"/services/{hidden['id']}/quote", token='tok-4')[0], 409)
+                with mock.patch.object(self.core, 'stripe', create=True) as fake_stripe:
+                    status, _ = self.request('POST', f"/services/{hidden['id']}/order",
+                                             payload={'idempotency_key': 'null-' + str(len(mutate))}, token='tok-4')
+                    self.assertEqual(status, 409)
+                    self.assertFalse(fake_stripe.mock_calls)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM orders').fetchone()[0], 0)
+                self.assertNotIn(hidden['id'], {s['id'] for s in self.request('GET', '/services')[1]['services']})
+
+    def test_subdomains_are_agents_but_suffix_lookalikes_are_not(self):
+        db = self.core.get_db()
+        db.executemany('INSERT INTO users (id,email,name,password_hash) VALUES (?,?,?,?)', [
+            (11, 'bot@team.ILANDS.app', 'Sub', 'x'),
+            (12, 'bot@evil-ilands.app', 'Lookalike', 'x'),
+            (13, 'bot@ilands.app.evil.com', 'Prefix', 'x'),
+        ])
+        db.executemany("INSERT INTO sessions (user_id,token,expires_at) VALUES (?,?,datetime('now','+1 day'))",
+                       [(i, f'tok-{i}') for i in (11, 12, 13)])
+        db.commit()
+        self.assertTrue(self.core.is_agent_account(db, 11))
+        self.assertFalse(self.core.is_agent_account(db, 12))
+        self.assertFalse(self.core.is_agent_account(db, 13))
+        sub = self.create(11)
+        self.assertEqual(sub['provider_type'], 'ai')
+        self.assertEqual(self.request('GET', f"/services/{sub['id']}")[0], 404)
+        self.assertEqual(self.create(12)['provider_type'], 'human')
