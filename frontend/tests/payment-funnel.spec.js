@@ -33,6 +33,7 @@ async function boot(page, options = {}) {
         return options.status || { employer_ready: false, worker_ready: false };
       }
       if (path === '/payments/history') return [];
+      if (path === '/payments/connect-countries') return { countries: options.countries || [{ code: 'US', name: 'United States', agreement: 'full' }] };
       if (path === '/payments/setup-employer' || path === '/payments/setup-worker') {
         if (options.setupError) throw new Error('PRIVATE_SETUP_ERROR');
         if (options.delaySetup) await new Promise(resolve => window.__resolveSetup = resolve);
@@ -201,6 +202,33 @@ for (const query of ['connect=success', 'connect=complete', 'setup=success']) {
     await assertPrivate(page);
   });
 }
+test('international payout selector is shown only with choices and posts selected country', async ({ page, isMobile }) => {
+  await boot(page, { countries: [
+    { code: 'US', name: 'United States', agreement: 'full' },
+    { code: 'DE', name: 'Germany', agreement: 'full' },
+    { code: 'CA', name: '<img src=x onerror=alert(1)>', agreement: 'full' }
+  ], setup: { mode: 'simulated' } });
+  const selector = page.getByRole('combobox', { name: 'Payout country' });
+  await expect(selector).toBeVisible();
+  await expect(selector).toHaveValue('US');
+  expect(await page.locator('img[src="x"]').count()).toBe(0);
+  await expect(page.locator('body')).toContainText('Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.');
+  await selector.selectOption('DE');
+  await page.getByRole('button', { name: 'Connect Bank Account', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => __calls.filter(c => c.path === '/payments/setup-worker'))).toEqual([
+    { path: '/payments/setup-worker', method: 'POST', body: { country: 'DE' } }
+  ]);
+  if (isMobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test('default-off country endpoint preserves no-selector US payout setup', async ({ page }) => {
+  await boot(page, { setup: { mode: 'simulated' } });
+  await expect(page.getByRole('combobox', { name: 'Payout country' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect Bank Account', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => __calls.filter(c => c.path === '/payments/setup-worker'))).toEqual([
+    { path: '/payments/setup-worker', method: 'POST', body: {} }
+  ]);
+});
+
 for (const scenario of ['redirect', 'setupError', 'missing', 'simulated']) {
   test(`worker ${scenario} has a separate bounded funnel`, async ({ page }) => {
     await boot(page, scenario === 'setupError' ? { setupError: true } : { setup: scenario === 'redirect' ? { mode: 'live', onboarding_url: '#/payments?connect=success' } : scenario === 'simulated' ? { mode: 'simulated', onboarding_url: '#/payments?connect=success' } : {} });

@@ -3916,11 +3916,17 @@ async function renderPayments() {
 
   try {
     // A failed status request is not the same as "not set up": it gets its own error state.
-    const [statusData, historyData] = await Promise.all([
+    const [statusData, historyData, countriesData] = await Promise.all([
       api('/payments/status'),
-      api('/payments/history').catch(() => null)
+      api('/payments/history').catch(() => null),
+      api('/payments/connect-countries').catch(() => ({ countries: [{ code: 'US', name: 'United States' }] }))
     ]);
     if (!isCurrent()) return;
+    const countries = Array.isArray(countriesData?.countries) ? countriesData.countries.filter(c =>
+      c && typeof c.code === 'string' && /^[A-Z]{2}$/.test(c.code) && typeof c.name === 'string') : [];
+    const existingCountry = statusData.worker_payout_status?.country;
+    const payoutCountry = countries.some(c => c.code === existingCountry) ? existingCountry
+      : countries.some(c => c.code === 'US') ? 'US' : countries[0]?.code;
     const workerMode = paymentSetupMode(statusData.worker_payout_status || {});
     const employerMode = /^pm_sim_/.test(statusData.employer_payment_status?.payment_method_id || '')
       ? 'simulated' : paymentSetupMode(statusData.employer_payment_status || {});
@@ -3978,6 +3984,14 @@ async function renderPayments() {
           ${workerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
             : ''}
+          ${countries.length > 1 ? `<div class="mb-3" style="max-width:100%;min-width:0">
+            <label for="payoutCountry" style="display:block;margin-bottom:var(--space-2)">Payout country</label>
+            <select id="payoutCountry" class="form-input" style="width:100%;max-width:100%" ${statusData.worker_payout_status?.account_id ? 'disabled' : ''}>
+              ${countries.map(c => `<option value="${esc(c.code)}" ${c.code === payoutCountry ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+            <p class="text-xs mt-2">Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.</p>
+            ${statusData.worker_payout_status?.account_id ? '<p class="text-xs mt-1">Your payout country is fixed for this account. Contact support to change it.</p>' : ''}
+          </div>` : ''}
           <button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
             ${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
           </button>
@@ -4191,7 +4205,10 @@ async function setupWorkerPayment(trigger = null) {
   await withBusy(trigger, async () => {
     try {
       paymentSetupEvent('worker', 'attempted');
-      const result = await api('/payments/setup-worker', { method: 'POST', body: {} });
+      const countrySelect = document.getElementById('payoutCountry');
+      const result = await api('/payments/setup-worker', {
+        method: 'POST', body: countrySelect ? { country: countrySelect.value } : {}
+      });
       const mode = paymentSetupMode(result);
       paymentSetupEvent('worker', 'api_succeeded', mode);
       if (['simulated', 'test', 'disabled'].includes(mode)) {
