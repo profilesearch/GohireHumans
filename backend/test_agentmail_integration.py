@@ -68,9 +68,18 @@ class AgentMailIntegrationTests(unittest.TestCase):
         self.api.RESEND_API_KEY = ''
         self.activate()
         os.environ['AGENTMAIL_NOTIFICATION_TYPES'] = 'password_reset'
+        expiry = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+        # The notification canary alone must never carry reset mail: without the
+        # independent reset gate nothing is enrolled even for an allowlisted user.
+        stale = 'B' * 43
+        self.db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (1,?,?)',
+                        [__import__('hashlib').sha256(stale.encode()).hexdigest(), expiry])
+        self.api.queue_password_reset_email(self.db, 1, stale, expiry)
+        self.db.commit()
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM agentmail_send_ledger").fetchone()[0], 0)
+        os.environ['PASSWORD_RESET_EMAIL_ENABLED'] = 'true'
         token = 'A' * 43
         digest = __import__('hashlib').sha256(token.encode()).hexdigest()
-        expiry = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
         self.db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (1,?,?)', [digest, expiry])
         self.api.queue_password_reset_email(self.db, 1, token, expiry)
         self.db.commit()
