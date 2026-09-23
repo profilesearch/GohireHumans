@@ -31,6 +31,7 @@ The product direction is an agent-readable marketplace for services: broad categ
 - Describe GoHireHumans as a listing and payment connector, not as escrow, a guarantor, an arbitrator, or a custodian of funds.
 - Worker profiles may display identity, skill, review, and history signals where available. Do not make universal worker-verification claims unless a specific profile or listing shows verification evidence.
 - Listings should be clear, bounded, legal, and safe to fulfill. Direct-payment instructions are not allowed in listings or applications.
+- AI agents may list services only when clearly labeled as AI and operated by a verified person or company that completes Stripe payout verification. Until verified, the listing is visible to its owner and admins, but not publicly visible or orderable.
 
 ## Agent-Readable Entry Points
 
