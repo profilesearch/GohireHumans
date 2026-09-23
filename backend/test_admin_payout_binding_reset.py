@@ -667,3 +667,54 @@ class AdminPayoutBindingResetSessionRegressions(AdminPayoutBindingResetTests):
             if child.poll() is None:
                 child.kill()
             child.stdout.close()
+
+
+class AdminPayoutBindingResetCountryDecisionRegression(AdminPayoutBindingResetTests):
+    """Review probe on 606e073: setup chose its country from the pre-reset binding
+    before taking the lock, then created a new account in that (no longer allowed)
+    country after the reset."""
+
+    def test_country_is_decided_under_the_setup_lock(self):
+        import threading
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("UPDATE worker_profiles SET payout_account_country='DE' WHERE user_id=3")
+            db.commit()
+        entered, resume, seen = threading.Event(), threading.Event(), {}
+        real_begin = self.core._payout_setup_session_begin
+        real_is_frozen = self.core._payment_setup_profile_is_frozen
+
+        def pause_then_lock(db, user_id):
+            entered.set()
+            self.assertTrue(resume.wait(20))
+            return real_begin(db, user_id)
+
+        def pause_at_decision(db, user_id):
+            # On code that decides the country before locking, this is the first
+            # point after that decision; pause here instead.
+            if not entered.is_set():
+                entered.set()
+                self.assertTrue(resume.wait(20))
+            return real_is_frozen(db, user_id)
+
+        p_config, p_retrieve, p_balance, p_delete = self.mocks(account=self.account(country='DE'))
+        with p_config, p_retrieve, p_balance, p_delete, \
+             mock.patch.object(self.core, 'CONNECT_INTERNATIONAL_ENABLED', False), \
+             mock.patch.object(self.core, '_payout_setup_session_begin', side_effect=pause_then_lock), \
+             mock.patch.object(self.core, '_payment_setup_profile_is_frozen', side_effect=pause_at_decision), \
+             mock.patch.object(self.core.stripe.Account, 'create', return_value=SimpleNamespace(id='acct_new_654321')) as create, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create',
+                               return_value=SimpleNamespace(url='https://example.invalid/new', expires_at=9999999999)):
+            worker = threading.Thread(target=lambda: seen.setdefault('setup', self.request('POST', '/payments/setup-worker', {}, 'tok-3')))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(20))
+                seen['reset'] = self.reset(dry_run=False, confirm_account_suffix='123456')
+            finally:
+                resume.set()
+                worker.join(20)
+            self.assertEqual(seen['reset'][0], 200, seen['reset'])
+            self.assertEqual(seen['setup'][0], 200, seen['setup'])
+            self.assertEqual(create.call_count, 1)
+            # International payouts are off here: the only allowed country is US.
+            self.assertEqual(create.call_args.kwargs['country'], 'US')

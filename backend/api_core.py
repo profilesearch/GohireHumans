@@ -13291,42 +13291,46 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         body = get_body() or {}
-        allowed = {item["code"]: item for item in connect_countries()}
-        existing = db.execute(
-            "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
-            [user["id"]],
-        ).fetchone()
-        existing_account = (existing["payout_account_id"] if existing else "") or ""
-        bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
-        if "country" in body:
-            country = body.get("country")
-        elif bound_live_account:
-            # Returning workers (bank updates, re-onboarding) keep their bound country
-            # even if the international flag or allowlist has since changed.
-            country = (existing["payout_account_country"] or "US")
-        elif len(allowed) == 1:
-            country = next(iter(allowed))
-        else:
-            country = "US"
-        if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
-            return error_response("Unsupported payout country; select an available ISO country code.", 400)
-        if bound_live_account and country == (existing["payout_account_country"] or "US"):
-            # Existing accounts were validated when created; never strand them on rollback.
-            agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
-        elif country in allowed:
-            agreement = allowed[country]["agreement"]
-        else:
-            return error_response("Unsupported payout country; select an available country.", 400)
-        if _payment_setup_profile_is_frozen(db, user["id"]):
-            return error_response("Payment setup is frozen for manual reconciliation.", 409)
-
-        ensure_worker_profile(db, user['id'])
-
+        # Hold the worker's setup lock before reading any payout state, so the
+        # country/agreement decision and every later step see post-reset state.
+        setup_lock = None
         if stripe_configured():
-            session_id = _payout_setup_session_begin(db, user["id"])
-            if session_id is None:
+            setup_lock = _payout_setup_session_begin(db, user["id"])
+            if setup_lock is None:
                 return error_response("Payout setup is being reset by support; try again shortly.", 409)
-            try:
+        try:
+            allowed = {item["code"]: item for item in connect_countries()}
+            existing = db.execute(
+                "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
+                [user["id"]],
+            ).fetchone()
+            existing_account = (existing["payout_account_id"] if existing else "") or ""
+            bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
+            if "country" in body:
+                country = body.get("country")
+            elif bound_live_account:
+                # Returning workers (bank updates, re-onboarding) keep their bound country
+                # even if the international flag or allowlist has since changed.
+                country = (existing["payout_account_country"] or "US")
+            elif len(allowed) == 1:
+                country = next(iter(allowed))
+            else:
+                country = "US"
+            if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
+                return error_response("Unsupported payout country; select an available ISO country code.", 400)
+            if bound_live_account and country == (existing["payout_account_country"] or "US"):
+                # Existing accounts were validated when created; never strand them on rollback.
+                agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
+            elif country in allowed:
+                agreement = allowed[country]["agreement"]
+            else:
+                return error_response("Unsupported payout country; select an available country.", 400)
+            if _payment_setup_profile_is_frozen(db, user["id"]):
+                return error_response("Payment setup is frozen for manual reconciliation.", 409)
+
+            ensure_worker_profile(db, user['id'])
+
+            if stripe_configured():
                 try:
                     # Profile creation is committed before Account.create.
                     db.commit()
@@ -13452,26 +13456,27 @@ def _handle_routes(db):
                     })
                 except PaymentSetupReconciliationRequired as e:
                     return error_response(str(e), 409)
-            finally:
-                _payout_setup_session_end(db, session_id)
-        else:
-            if PRODUCTION_MODE:
-                return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
-            # Simulation
-            body = get_body()
-            payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
-            db.execute(
-                "UPDATE worker_profiles SET payout_account_id=?, payout_method='stripe_connect_active', payout_method_details=? WHERE user_id=?",
-                [payout_account_id, json.dumps({"bank_name": body.get("bank_name", "Demo Bank"), "last4": body.get("last4", "0000")}), user['id']]
-            )
-            audit(db, user['id'], "setup_worker_payout_sim", "worker_profile", user['id'])
-            db.commit()
-            return json_response({
-                "ok": True,
-                "onboarding_url": f"{FRONTEND_URL}/payments?connect=complete&simulated=true",
-                "account_id": payout_account_id,
-                "mode": "simulated"
-            })
+            else:
+                if PRODUCTION_MODE:
+                    return error_response("Stripe is not configured; simulated worker payout setup is disabled in production.", 503)
+                # Simulation
+                body = get_body()
+                payout_account_id = f"acct_sim_{secrets.token_hex(10)}"
+                db.execute(
+                    "UPDATE worker_profiles SET payout_account_id=?, payout_method='stripe_connect_active', payout_method_details=? WHERE user_id=?",
+                    [payout_account_id, json.dumps({"bank_name": body.get("bank_name", "Demo Bank"), "last4": body.get("last4", "0000")}), user['id']]
+                )
+                audit(db, user['id'], "setup_worker_payout_sim", "worker_profile", user['id'])
+                db.commit()
+                return json_response({
+                    "ok": True,
+                    "onboarding_url": f"{FRONTEND_URL}/payments?connect=complete&simulated=true",
+                    "account_id": payout_account_id,
+                    "mode": "simulated"
+                })
+        finally:
+            if setup_lock is not None:
+                _payout_setup_session_end(db, setup_lock)
 
     elif path == "/payments/status" and method == "GET":
         user = authenticate(db)
