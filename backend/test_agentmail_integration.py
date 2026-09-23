@@ -23,6 +23,7 @@ class AgentMailIntegrationTests(unittest.TestCase):
             'AGENTMAIL_OUTBOX_HIGHWATER': '', 'AGENTMAIL_NOTIFICATION_HIGHWATER': '',
             'AGENTMAIL_ACTIVATED_AT': '', 'AGENTMAIL_DAILY_SEND_CAP': '1',
             'AGENTMAIL_TOTAL_SEND_CAP': '1', 'AGENTMAIL_EXPIRES_AT': '',
+            'PASSWORD_RESET_ENCRYPTION_KEY': 'a' * 64,
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -62,6 +63,38 @@ class AgentMailIntegrationTests(unittest.TestCase):
     def cycle(self):
         self.assertTrue(self.api.acquire_notification_worker_lease(self.db, 'offline-owner'))
         return self.api.run_notification_maintenance_once(owner_token='offline-owner')
+
+    def test_password_reset_send_is_gated_and_contains_only_live_link(self):
+        self.api.RESEND_API_KEY = ''
+        self.activate()
+        os.environ['AGENTMAIL_NOTIFICATION_TYPES'] = 'password_reset'
+        expiry = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+        # The notification canary alone must never carry reset mail: without the
+        # independent reset gate nothing is enrolled even for an allowlisted user.
+        stale = 'B' * 43
+        self.db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (1,?,?)',
+                        [__import__('hashlib').sha256(stale.encode()).hexdigest(), expiry])
+        self.api.queue_password_reset_email(self.db, 1, stale, expiry)
+        self.db.commit()
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM agentmail_send_ledger").fetchone()[0], 0)
+        os.environ['PASSWORD_RESET_EMAIL_ENABLED'] = 'true'
+        token = 'A' * 43
+        digest = __import__('hashlib').sha256(token.encode()).hexdigest()
+        self.db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (1,?,?)', [digest, expiry])
+        self.api.queue_password_reset_email(self.db, 1, token, expiry)
+        self.db.commit()
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM agentmail_send_ledger WHERE state='approved'").fetchone()[0], 1)
+        row = self.db.execute("SELECT * FROM transactional_email_outbox WHERE notification_type='password_reset'").fetchone()
+        self.assertNotIn(token, row['link'])
+        response = mock.Mock(status=200)
+        response.read.return_value = b'{"message_id":"<reset@agentmail.to>","thread_id":"thread-reset"}'
+        with mock.patch('urllib.request.OpenerDirector.open', return_value=response) as post:
+            result = self.cycle()
+        self.assertEqual(result['email_delivery']['sent'], 1)
+        payload = json.loads(post.call_args.args[0].data)
+        self.assertIn('#/reset-password?token=' + token, payload['text'])
+        self.assertNotIn(token, str([dict(r) for r in self.db.execute('SELECT * FROM audit_log')]))
+        self.assertEqual(self.db.execute('SELECT link FROM transactional_email_outbox WHERE id=?', [row['id']]).fetchone()[0], '')
 
     def test_maintenance_sends_approved_application_without_resend(self):
         self.api.RESEND_API_KEY = ''

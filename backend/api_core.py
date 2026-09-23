@@ -40,6 +40,19 @@ except ModuleNotFoundError as exc:
         raise ImportError("AgentMail transport module is unavailable")
     agentmail_transport = importlib.util.module_from_spec(_agentmail_spec)
     _agentmail_spec.loader.exec_module(agentmail_transport)
+try:
+    import password_reset_crypto
+except ModuleNotFoundError as exc:
+    if exc.name != "password_reset_crypto":
+        raise
+    import importlib.util
+    _reset_spec = importlib.util.spec_from_file_location(
+        "password_reset_crypto", os.path.join(os.path.dirname(__file__), "password_reset_crypto.py"),
+    )
+    if _reset_spec is None or _reset_spec.loader is None:
+        raise ImportError("Password reset crypto module is unavailable")
+    password_reset_crypto = importlib.util.module_from_spec(_reset_spec)
+    _reset_spec.loader.exec_module(password_reset_crypto)
 from collections.abc import Mapping
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -1458,6 +1471,15 @@ def _init_db_connection_steps(db):
         created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token_hash TEXT NOT NULL UNIQUE CHECK(length(token_hash)=64),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
     CREATE TABLE IF NOT EXISTS worker_profiles (
         user_id INTEGER PRIMARY KEY REFERENCES users(id),
         bio TEXT DEFAULT '',
@@ -3076,6 +3098,34 @@ def clear_login_failures(email):
         _login_failure_store.pop(key, None)
 
 
+def _reset_floor_seconds():
+    try:
+        return min(max(float(os.environ.get('PASSWORD_RESET_RESPONSE_FLOOR_SECONDS', '0.4')), 0.0), 2.0)
+    except ValueError:
+        return 0.4
+
+
+PASSWORD_RESET_RESPONSE_FLOOR_SECONDS = _reset_floor_seconds()
+
+
+def password_reset_rate_allowed(email, *, reset=False):
+    """Bound requests across both email and IP, not just their combination."""
+    ip = str(getattr(_request_ctx, 'remote_addr', 'unknown'))
+    now = time.time()
+    keys = [(f"reset:email:{email}", 3), (f"reset:ip:{ip}", 15)] if not reset else [
+        (f"reset:submit:{ip}", 20)]
+    with _rate_limit_lock:
+        _prune_rate_limit_store(_rate_limit_store, now, 900)
+        for key, limit in keys:
+            stamps = [t for t in _rate_limit_store.get(key, []) if now - t < 900]
+            _rate_limit_store[key] = stamps
+            if len(stamps) >= limit:
+                return False
+        for key, _ in keys:
+            _rate_limit_store[key].append(now)
+    return True
+
+
 # ─── Content Safety ────────────────────────────────────────────────────────────
 
 BLOCKED_KEYWORDS = [
@@ -4093,6 +4143,7 @@ TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES = {
     "review_request",
     "application_reminder_24h",
     "application_reminder_72h",
+    "password_reset",
 }
 
 
@@ -4122,14 +4173,52 @@ def transactional_email_already_sent(db, user_id, notif_type, link, dedupe_conte
     return row is not None, dedupe_key
 
 
+def queue_password_reset_email(db, user_id, token, expires_at):
+    """Persist an encrypted capability; never mirror its link into notifications/audits."""
+    sealed = password_reset_crypto.seal(token, user_id)
+    title = "Reset your GoHireHumans password"
+    message = "Use the link within 30 minutes. If you did not request this, ignore this email."
+    notification_id = db.execute(
+        "INSERT INTO notifications(user_id,type,title,message,link) VALUES (?,?,?,?,?)",
+        [user_id, 'password_reset', title, message, '#/login'],
+    ).lastrowid
+    # The random token is not part of any logged/durable dedupe metadata.
+    dedupe_key = hashlib.sha256(f"password_reset:{notification_id}:{user_id}".encode()).hexdigest()
+    queued = db.execute(
+        """INSERT INTO transactional_email_outbox
+           (user_id,notification_id,email_to,notification_type,title,message,
+            link,dedupe_context,dedupe_key,state,next_attempt_at,expires_at)
+           VALUES (?,?,'','password_reset',?,?,?,?,?,'pending',datetime('now'),?)""",
+        [user_id, notification_id, title, message, sealed,
+         str(notification_id), dedupe_key, expires_at],
+    )
+    agentmail_transport.enroll(db, queued.lastrowid)
+
+
+def invalidate_password_reset_emails(db, user_id):
+    db.execute(
+        """UPDATE transactional_email_outbox
+           SET state='failed',delivery_status='suppressed',link='',message='',title='',
+               next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL
+           WHERE user_id=? AND notification_type='password_reset'
+             AND state='pending'""", [user_id],
+    )
+
+
 def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None, outbox_id=None, outbox_claim_token=None):
-    if (os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
+    if (notif_type == 'password_reset'
+            or os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
             or agentmail_transport.owns_key(db, provider_idempotency_key)):
         return agentmail_transport.send(
             db, outbox_id, outbox_claim_token, provider_idempotency_key, user_id, notif_type,
         )
     if notif_type not in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
         return False
+    if notif_type == 'password_reset':
+        token = password_reset_crypto.active_token(db, link, user_id)
+        if not token:
+            return 'suppressed', None
+        link = '#/reset-password?' + urllib.parse.urlencode({'token': token})
     user = db.execute(
         """SELECT email,name FROM users
            WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0""",
@@ -4195,7 +4284,7 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
     if outcome == "accepted" and provider_email_id:
         audit(db, user_id, "transactional_email_sent", "notification_email", user_id, {
             "type": notif_type,
-            "link": link or "",
+            "link": '[REDACTED]' if notif_type == 'password_reset' else (link or ""),
             "dedupe_key": dedupe_key,
             "provider_email_id": provider_email_id,
         })
@@ -4319,8 +4408,25 @@ def transactional_email_recipient_is_eligible(db, user_id):
 
 def flush_transactional_notification_emails(
     db, now=None, limit=20, owner_token=None, lease_seconds=120, lease_now=None,
+    only_types=None,
 ):
-    """Claim bounded rows with lease/row fencing and lock-free provider I/O."""
+    """Claim bounded rows with lease/row fencing and lock-free provider I/O.
+
+    ``only_types`` confines every phase (claim recovery, reconciliation,
+    expiry and claiming) to the listed notification types. A reset-only rollout
+    passes ('password_reset',) so it can never claim, suppress, expire or send
+    another type's rows while the general notification transport is off.
+    """
+    if only_types is not None:
+        only_types = tuple(sorted({str(t) for t in only_types}))
+        if not only_types or any(not re.fullmatch(r'[a-z_0-9]+', t) for t in only_types):
+            raise ValueError('only_types must be non-empty notification type names')
+        type_sql = " AND notification_type IN (" + ",".join("?" * len(only_types)) + ")"
+        o_type_sql = " AND o.notification_type IN (" + ",".join("?" * len(only_types)) + ")"
+        type_args = list(only_types)
+    else:
+        type_sql = o_type_sql = ""
+        type_args = []
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
     summary = {
@@ -4348,8 +4454,8 @@ def flush_transactional_notification_emails(
         """UPDATE transactional_email_outbox
            SET state='pending',claimed_at=NULL,claim_token=NULL,
                next_attempt_at=?,last_error='recovered abandoned sender claim'
-           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')""",
-        [current_sql],
+           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')""" + type_sql,
+        [current_sql, *type_args],
     )
     summary["claimed_recovered"] = int(recovered.rowcount or 0)
     # Durable attempted-send evidence precedes pre-send suppression. Only pending
@@ -4362,9 +4468,9 @@ def flush_transactional_notification_emails(
         """SELECT o.id,o.dedupe_key,l.state,l.provider_id,l.prepared_at
            FROM transactional_email_outbox o JOIN agentmail_send_ledger l
              ON l.outbox_id=o.id AND l.key_digest=agentmail_key_digest(o.dedupe_key)
-           WHERE o.state='pending' AND l.state IN ('prepared','unknown','accepted')
+           WHERE o.state='pending' AND l.state IN ('prepared','unknown','accepted')""" + o_type_sql + """
            ORDER BY o.id LIMIT ?""",
-        [batch_limit],
+        [*type_args, batch_limit],
     ).fetchall()
     for intent in attempted:
         accepted = intent["state"] == "accepted"
@@ -4400,8 +4506,8 @@ def flush_transactional_notification_emails(
                    ELSE 'notification validity window expired' END,
                next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL,
                email_to='',title='',message='',link=''
-           WHERE state='pending' AND (expires_at IS NULL OR expires_at <= ?)""",
-        [current_sql],
+           WHERE state='pending' AND (expires_at IS NULL OR expires_at <= ?)""" + type_sql,
+        [current_sql, *type_args],
     )
     summary["stale_skipped"] = int(stale.rowcount or 0)
     db.commit()
@@ -4419,9 +4525,9 @@ def flush_transactional_notification_emails(
             """SELECT * FROM transactional_email_outbox
                WHERE state='pending'
                  AND expires_at IS NOT NULL AND expires_at > ?
-                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)""" + type_sql + """
                ORDER BY id LIMIT 1""",
-            [current_sql, current_sql],
+            [current_sql, current_sql, *type_args],
         ).fetchone()
         if row is None:
             db.commit()
@@ -4634,7 +4740,8 @@ def notification_worker_enabled():
         return configured not in {"0", "false", "no", "off"}
     # Keep unit/development imports side-effect free, while production still
     # generates in-app reminders even during an email-provider outage.
-    return bool(PRODUCTION_MODE or email_provider_configuration()['provider_configured'])
+    return bool(PRODUCTION_MODE or email_provider_configuration()['provider_configured']
+                or agentmail_transport.reset_config()[0] is not None)
 
 
 def acquire_notification_worker_lease(db, owner_token, now=None, lease_seconds=120):
@@ -5021,6 +5128,13 @@ def run_notification_maintenance_once(
             delivery = flush_transactional_notification_emails(
                 db, now=now, limit=20, owner_token=owner_token,
                 lease_seconds=lease_seconds, lease_now=lease_now,
+            )
+        elif agentmail_transport.reset_config()[0] is not None:
+            # Reset-only rollout: never touch other notification types' rows.
+            delivery = flush_transactional_notification_emails(
+                db, now=now, limit=20, owner_token=owner_token,
+                lease_seconds=lease_seconds, lease_now=lease_now,
+                only_types=('password_reset',),
             )
         else:
             delivery = {**empty_delivery, "provider_unavailable": 1}
@@ -9871,6 +9985,104 @@ def _handle_routes(db):
             "employer_profile": None
         }, 201)
 
+    elif path == "/auth/password-reset/available" and method == "GET":
+        print("Status: 200")
+        print("Content-Type: application/json")
+        print("Cache-Control: no-store")
+        print()
+        print(json.dumps({'available': agentmail_transport.reset_config()[0] is not None}))
+        return
+
+    elif path == "/auth/forgot-password" and method == "POST":
+        body = get_body() or {}
+        raw_email = body.get('email', '')
+        email = raw_email.strip().lower()[:320] if isinstance(raw_email, str) else ''
+        generic = {'message': 'If an eligible account exists, a password reset link will be emailed.'}
+        # Throttled requests preserve their existing generic fast path even when
+        # delivery is globally unavailable; neither branch writes or sleeps.
+        if not password_reset_rate_allowed(email):
+            return json_response(generic)
+        if agentmail_transport.reset_config()[0] is None:
+            return error_response("Password reset by email isn't available right now. Contact gohirehumans.operations@agentmail.to for help.", 503)
+        # Available requests keep the account-existence timing floor.
+        reset_response_deadline = time.monotonic() + PASSWORD_RESET_RESPONSE_FLOOR_SECONDS
+        # Equalize the dominant CPU work for registered and unknown addresses.
+        hashlib.pbkdf2_hmac('sha256', email.encode(), b'password-reset-request', 100000)
+        user = db.execute("SELECT id,password_hash,is_active,is_banned,is_suspended FROM users WHERE email=?", [email]).fetchone()
+        eligible = bool(password_reset_crypto.configured() and user and user['password_hash']
+                        and user['is_active'] and not user['is_banned'] and not user['is_suspended']
+                        and not is_seeded_sample_email(email))
+        if not eligible:
+            # Same lock, sealing work and single committed write as the eligible
+            # path, so response timing does not reveal whether an account exists.
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+                password_reset_crypto.decoy_seal()
+                audit(db, None, 'password_reset_requested', 'user', None)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        if eligible:
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                # The write lock serializes simultaneous requests for the same user.
+                db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL", [user['id']])
+                invalidate_password_reset_emails(db, user['id'])
+                token = secrets.token_urlsafe(32)
+                digest = hashlib.sha256(token.encode('ascii')).hexdigest()
+                expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (?,?,?)',
+                           [user['id'], digest, expires_at])
+                queue_password_reset_email(db, user['id'], token, expires_at)
+                audit(db, user['id'], 'password_reset_requested', 'user', user['id'])
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        remaining = reset_response_deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+        return json_response(generic)
+
+    elif path == "/auth/reset-password" and method == "POST":
+        body = get_body() or {}
+        token = body.get('token', '')
+        new_password = body.get('new_password', '')
+        if not password_reset_rate_allowed('', reset=True):
+            return error_response('Too many attempts. Try again later.', 429)
+        if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
+            return error_response('Invalid or expired reset link', 400)
+        if not isinstance(new_password, str) or len(new_password) < 8:
+            return error_response('Password must be at least 8 characters', 400)
+        digest = hashlib.sha256(token.encode('ascii')).hexdigest()
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            row = db.execute(
+                """SELECT r.id,r.user_id FROM password_reset_tokens r JOIN users u ON u.id=r.user_id
+                   WHERE r.token_hash=? AND r.used_at IS NULL AND r.expires_at>datetime('now')
+                     AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
+                     AND u.password_hash<>''""", [digest],
+            ).fetchone()
+            if not row:
+                db.rollback()
+                return error_response('Invalid or expired reset link', 400)
+            password_hash = hash_password(new_password)
+            db.execute("UPDATE users SET password_hash=?,updated_at=datetime('now') WHERE id=?",
+                       [password_hash, row['user_id']])
+            db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
+                       [row['user_id']])
+            invalidate_password_reset_emails(db, row['user_id'])
+            db.execute('DELETE FROM sessions WHERE user_id=?', [row['user_id']])
+            db.execute('UPDATE api_keys SET is_active=0 WHERE user_id=?', [row['user_id']])
+            audit(db, row['user_id'], 'password_reset_completed', 'user', row['user_id'])
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return json_response({'message': 'Password updated. Sign in with your new password.'})
+
     elif path == "/auth/login" and method == "POST":
         body = get_body() or {}
         email = body.get("email", "").strip().lower()
@@ -14060,6 +14272,10 @@ def _handle_routes(db):
             "UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=?",
             [hash_password(new_password), target_id]
         )
+        # A rotated password must not be overridable by a reset link issued before it.
+        db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
+                   [target_id])
+        invalidate_password_reset_emails(db, target_id)
         audit(db, user['id'], "admin_rotate_user_password", "user", target_id, {"target_email": target['email']})
         db.commit()
         return json_response({"ok": True, "user_id": target_id})

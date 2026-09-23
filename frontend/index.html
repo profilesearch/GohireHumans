@@ -274,6 +274,21 @@
 // ============================================================
 const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
 
+// Reset links carry a single-use capability in the fragment. Capture it and strip it from
+// the address bar before analytics, attribution, or routing can read location.
+let pendingResetToken = '';
+function captureResetCapability() {
+  const h = location.hash || '';
+  if (!/^#\/reset-password(?:\?|$)/.test(h)) return;
+  const q = h.indexOf('?');
+  if (q === -1) return;
+  const token = new URLSearchParams(h.slice(q + 1)).get('token');
+  if (token) pendingResetToken = token;
+  history.replaceState(null, '', location.pathname + location.search + '#/reset-password');
+}
+captureResetCapability();
+window.addEventListener('hashchange', captureResetCapability, true);
+
 // ─── State ───────────────────────────────────────────────────
 let storedUser = null, storedToken = null;
 try {
@@ -351,8 +366,9 @@ function consumeAuthIntent() {
   // again: encoded separators could turn an invalid/double-encoded path valid.
   // Keep valid query encoding intact so draft text (including % and URLs) survives.
   const path = intent.split('?')[0];
-  const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
+  const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|forgot-password|reset-password|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
   if (!safePath.test(path) || /[\\#\u0000-\u001f\u007f\ufffd]/.test(intent)) return '#/';
+  if (path === 'reset-password' && intent.includes('?')) return '#/reset-password';
   try { decodeURIComponent(intent); } catch (_) { return '#/'; }
   return `#/${intent}`;
 }
@@ -751,6 +767,7 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
 }
 let lastTrackedSpaPath = '';
 function trackSpaPageView(path) {
+  captureResetCapability();
   const pagePath = location.pathname + location.search + location.hash;
   if (lastTrackedSpaPath === pagePath) return;
   lastTrackedSpaPath = pagePath;
@@ -759,7 +776,7 @@ function trackSpaPageView(path) {
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'page_view', {
         page_title: document.title,
-        page_location: location.href,
+        page_location: location.origin + pagePath,
         page_path: pagePath,
         spa_route: path
       });
@@ -2557,6 +2574,11 @@ async function handleJobApply(id) {
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
+async function passwordResetAvailable() {
+  try { return (await api('/auth/password-reset/available')).available === true; }
+  catch (_) { return false; }
+}
+
 function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
@@ -2601,7 +2623,7 @@ function renderAuth(mode) {
             <div class="form-group">
               <label class="label" for="auth-password">Password</label>
               <input class="input" id="auth-password" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required${isLogin ? '' : ' minlength="8"'} autocomplete="${isLogin ? 'current-password' : 'new-password'}">
-              ${isLogin ? '<p class="form-help">Locked out? Email <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a> to recover access.</p>' : ''}
+              ${isLogin ? '<p class="form-help" id="forgot-password-help" hidden><a href="#/forgot-password">Forgot password?</a></p>' : ''}
             </div>
             ${!isLogin ? `
               <div class="form-group mb-4">
@@ -2623,6 +2645,10 @@ function renderAuth(mode) {
         </div>
       </div>
     </div>`;
+  if (isLogin) passwordResetAvailable().then(available => {
+    const help = document.getElementById('forgot-password-help');
+    if (available && help && document.getElementById('authForm')) help.hidden = false;
+  });
   // Initialize Google Sign-In button if configured
   if (GOOGLE_CLIENT_ID) {
     const tryRenderGoogleBtn = () => {
@@ -2645,6 +2671,79 @@ function renderAuth(mode) {
         if (tryRenderGoogleBtn() || ++attempts > 20) clearInterval(interval);
       }, 200);
     }
+  }
+}
+
+function renderPasswordRecovery(mode) {
+  if (mode === 'reset') captureResetCapability();
+  document.getElementById('app').innerHTML = `
+    <div class="auth2-page"><div class="auth2-wrap">
+      <a class="auth2-logo" href="#/">${LOGO} GoHireHumans</a>
+      <div class="auth2-card">
+        <h1 class="auth2-title">${mode === 'reset' ? 'Set a new password' : 'Forgot password?'}</h1>
+        <p class="auth2-sub">${mode === 'reset' ? 'Choose a new password of at least 8 characters.' : 'Enter your email to request a reset link.'}</p>
+        <div id="recovery-error" class="auth2-error" role="alert" aria-live="polite" hidden></div>
+        <p id="recovery-success" class="form-help" role="status" aria-live="polite" hidden></p>
+        ${mode === 'reset' ? `
+          <form id="reset-password-form" onsubmit="handlePasswordRecovery(event, 'reset')">
+            <div class="form-group"><label class="label" for="new-password">New password</label>
+              <input class="input" id="new-password" type="password" required minlength="8" autocomplete="new-password"></div>
+            <div class="form-group"><label class="label" for="confirm-password">Confirm new password</label>
+              <input class="input" id="confirm-password" type="password" required minlength="8" autocomplete="new-password"></div>
+            <button class="btn btn-primary btn-lg auth2-submit" type="submit">Update password</button>
+          </form>` : `
+          <div id="forgot-password-availability"></div>`}
+        <div class="auth2-toggle"><a href="#/login">Sign in</a></div>
+      </div>
+    </div></div>`;
+  if (mode === 'forgot') passwordResetAvailable().then(available => {
+    const target = document.getElementById('forgot-password-availability');
+    if (!target) return;
+    target.innerHTML = available ? `
+      <form id="forgot-password-form" onsubmit="handlePasswordRecovery(event, 'forgot')">
+        <div class="form-group"><label class="label" for="reset-email">Email address</label>
+          <input class="input" id="reset-email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
+        <button class="btn btn-primary btn-lg auth2-submit" type="submit">Send reset link</button>
+      </form>` : `<p class="auth2-sub">Password reset by email isn't available right now. Contact gohirehumans.operations@agentmail.to for help.</p>`;
+  });
+  if (mode === 'reset' && !pendingResetToken) {
+    const error = document.getElementById('recovery-error');
+    error.textContent = 'Invalid or missing reset link. Request a new one.';
+    error.hidden = false;
+    document.getElementById('reset-password-form').hidden = true;
+  }
+}
+
+async function handlePasswordRecovery(event, mode) {
+  event.preventDefault();
+  const error = document.getElementById('recovery-error');
+  const success = document.getElementById('recovery-success');
+  error.hidden = true;
+  error.textContent = '';
+  if (mode === 'reset' && document.getElementById('new-password').value !== document.getElementById('confirm-password').value) {
+    error.textContent = 'Passwords do not match.';
+    error.hidden = false;
+    return;
+  }
+  const button = event.target.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const data = mode === 'reset'
+      ? await api('/auth/reset-password', { method: 'POST', body: {
+          token: pendingResetToken, new_password: document.getElementById('new-password').value } })
+      : await api('/auth/forgot-password', { method: 'POST', body: {
+          email: document.getElementById('reset-email').value.trim() } });
+    success.textContent = mode === 'forgot'
+      ? 'If an eligible account exists, a password reset link will be emailed.'
+      : (data.message || 'Password updated. Sign in with your new password.');
+    success.hidden = false;
+    event.target.hidden = true;
+    if (mode === 'reset') pendingResetToken = '';
+  } catch (err) {
+    error.textContent = err.message || 'Request failed. Please try again.';
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -5015,6 +5114,7 @@ function currentRenderGuard() {
 const HOME_DOCUMENT_TITLE = document.title;
 const ROUTE_TITLES = {
   '/login': 'Sign in', '/auth': 'Sign in', '/register': 'Create a free account',
+  '/forgot-password': 'Forgot password?', '/reset-password': 'Set a new password',
   '/terms': 'Terms of Service', '/privacy': 'Privacy Policy', '/guidelines': 'Community Guidelines',
   '/ai-employers': 'For AI Agents', '/services': 'Browse Services', '/jobs': 'Browse Jobs',
   '/dashboard': 'Dashboard', '/my-services': 'My Services', '/post-service': 'Post a Service',
@@ -5041,6 +5141,7 @@ function routeTitle(path, segments) {
 let lastRoutedPath = null;
 let lastRoutedPage = '';
 function render() {
+  captureResetCapability();
   const rawHash = location.hash;
   if (!isRouteHash(rawHash)) {
     // The skip link (#main-content) and other in-page anchors only move focus.
@@ -5056,6 +5157,7 @@ function render() {
   closeAllModalOverlays();
   const hash = activeRouteHash.slice(1) || '/';
   const path = hash.split('?')[0];
+  if (path !== '/reset-password') pendingResetToken = '';
   const segments = path.split('/').filter(Boolean);
   const pathChanged = path !== lastRoutedPath;
   const page = getQuery().get('page') || '';
@@ -5077,6 +5179,8 @@ function routeView(path, hash, segments) {
   }
   if (path === '/login' || path === '/auth') return renderAuth('login');
   if (path === '/register') return renderAuth('register');
+  if (path === '/forgot-password') return renderPasswordRecovery('forgot');
+  if (path === '/reset-password') return renderPasswordRecovery('reset');
   if (path === '/terms') return renderTerms();
   if (path === '/privacy') return renderPrivacy();
   if (path === '/guidelines') return renderGuidelines();
