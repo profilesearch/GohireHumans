@@ -232,3 +232,68 @@ class AdminAccountErasureTests(unittest.TestCase):
         status, body = self.erase(dry_run=False,confirm_email=self.EMAIL)
         self.assertEqual(status,409,body)
         self.assertEqual(self.dump(),before)
+
+
+class AdminAccountErasureReviewRegressions(AdminAccountErasureTests):
+    """Blockers from independent review of 9f3697d."""
+
+    def test_peer_notification_and_email_naming_target_are_scrubbed(self):
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=1 WHERE id=2')
+            job_id = db.execute("INSERT INTO jobs(employer_id,title,description,category,budget_amount) VALUES (3,'Peer job','Job','research',25)").lastrowid
+            db.execute("INSERT INTO notifications(user_id,type,title,message) VALUES (3,'other','Annual plan','Unique Erasurement Personality stays')")
+            db.commit()
+        status, _ = self.request('POST', f'/jobs/{job_id}/apply', {'cover_message': 'work'}, 'old-session')
+        self.assertEqual(status, 201)
+        with self.core.get_db() as db:
+            named = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id=3 AND message LIKE ?", ['%' + self.NAME + '%']).fetchone()[0]
+            self.assertGreaterEqual(named, 1)
+            db.execute('UPDATE users SET is_active=0 WHERE id=2')
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            for table in ('notifications', 'transactional_email_outbox'):
+                for row in db.execute(f'SELECT title,message FROM {table} WHERE user_id=3'):
+                    text = (row['title'] or '') + ' ' + (row['message'] or '')
+                    self.assertNotIn(self.NAME.lower(), text.lower())
+                    self.assertNotIn(self.EMAIL.lower(), text.lower())
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM notifications WHERE user_id=3 AND message LIKE 'A former user applied%'").fetchone()[0], 1)
+            # Word-bounded: unrelated text that merely contains the name as a substring is untouched.
+            self.assertEqual(db.execute("SELECT message FROM notifications WHERE title='Annual plan'").fetchone()[0], 'Unique Erasurement Personality stays')
+
+    def test_login_audit_ip_is_removed(self):
+        ctx = self.core._request_ctx
+        with mock.patch.object(self.core, 'check_rate_limit', side_effect=lambda: setattr(ctx, 'remote_addr', '203.0.113.72') or True):
+            status, _ = self.request('POST', '/auth/login', {'email': self.EMAIL, 'password': 'wrong'}, token='')
+        self.assertEqual(status, 401)
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            for (details,) in db.execute("SELECT details FROM audit_log WHERE details IS NOT NULL"):
+                self.assertNotIn('203.0.113.72', details)
+                self.assertNotIn(self.EMAIL, details)
+
+    def test_erasing_mail_history_does_not_consume_reset_budget(self):
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=1 WHERE id=3')
+            for i in range(11):
+                oid = db.execute("INSERT INTO transactional_email_outbox(user_id,email_to,notification_type,title,message,dedupe_context,dedupe_key,expires_at) VALUES (2,?,'new_application',?,?,'x',?,datetime('now','+1 day'))", [self.EMAIL, self.NAME, self.EMAIL, f'old-{i}']).lastrowid
+                db.execute("INSERT INTO agentmail_send_ledger(key_digest,outbox_id,fingerprint,state,prepared_at,provider_id,message_id,thread_id) VALUES (?,?,?,'accepted',datetime('now'),'agentmail:opaque',?,?)", [f'{i:064x}', oid, 'f' * 64, f'm{i}', f't{i}'])
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            orphans = db.execute('SELECT COUNT(*) FROM agentmail_send_ledger l LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id WHERE o.id IS NULL').fetchone()[0]
+            self.assertEqual(orphans, 0)
+            kept = db.execute("SELECT DISTINCT notification_type, email_to, title, message FROM transactional_email_outbox WHERE user_id=2").fetchall()
+            self.assertEqual([tuple(r) for r in kept], [('new_application', 'erased-user-2@erased.invalid', '[erased]', '[erased]')])
+        env = {'PASSWORD_RESET_EMAIL_ENABLED': 'true', 'PASSWORD_RESET_ENCRYPTION_KEY': 'a' * 64,
+               'AGENTMAIL_API_KEY': 'offline-key', 'AGENTMAIL_INBOX_ID': 'gohirehumans.operations@agentmail.to',
+               'PASSWORD_RESET_DAILY_SEND_CAP': '10', 'EMAIL_PROVIDER': 'agentmail', 'AGENTMAIL_SEND_ENABLED': 'false'}
+        with mock.patch.dict(os.environ, env), mock.patch.object(self.core, 'PASSWORD_RESET_RESPONSE_FLOOR_SECONDS', 0):
+            status, _ = self.request('POST', '/auth/forgot-password', {'email': 'peer@example.test'}, token='')
+            self.assertEqual(status, 200)
+            with self.core.get_db() as db, mock.patch.object(self.core.agentmail_transport.urllib.request, 'build_opener') as opener:
+                self.core.flush_transactional_notification_emails(db, only_types=('password_reset',))
+                self.assertEqual(opener.call_count, 1, 'reset mail must reach the provider, not be suppressed by erased history')

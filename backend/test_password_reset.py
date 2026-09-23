@@ -164,20 +164,6 @@ class PasswordResetTests(unittest.TestCase):
         self.assertEqual(opener.open.call_count, 2)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM agentmail_send_ledger WHERE state='accepted'").fetchone()[0], 2)
 
-    def test_erased_outbox_does_not_free_password_reset_send_budget(self):
-        os.environ['PASSWORD_RESET_DAILY_SEND_CAP'] = '1'
-        patcher, opener = self.mock_agentmail()
-        with patcher:
-            self.assertEqual(self.forgot(ip='before-erasure')[0], 200)
-            self.api.flush_transactional_notification_emails(self.db)
-            self.assertEqual(opener.open.call_count, 1)
-            # Account erasure removes outbox PII but keeps opaque send intents.
-            self.db.execute('DELETE FROM transactional_email_outbox')
-            self.db.commit()
-            self.assertEqual(self.forgot(ip='after-erasure')[0], 200)
-            self.api.flush_transactional_notification_emails(self.db)
-        self.assertEqual(opener.open.call_count, 1)
-
     def test_user_becomes_ineligible_after_enqueue(self):
         for column in ('is_active', 'is_banned', 'is_suspended'):
             with self.subTest(column=column):

@@ -271,9 +271,8 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
             # excess requests are suppressed rather than deferred past token expiry.
             since = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
             used = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
-                LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id
-                WHERE (o.notification_type='password_reset' OR o.id IS NULL)
-                  AND l.prepared_at>=?""", [since]).fetchone()[0]
+                JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE o.notification_type='password_reset' AND l.prepared_at>=?""", [since]).fetchone()[0]
             if used >= cfg['cap']:
                 db.rollback()
                 return 'suppressed', None

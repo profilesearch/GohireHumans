@@ -4095,8 +4095,8 @@ def require_admin_step_up(db, admin_user, body, action):
 # ?1 is the target id and ?2 is the target's current email.
 _ERASURE_ORDER = 'SELECT id FROM orders WHERE worker_id=?1 OR employer_id=?1'
 _ERASURE_DELETIONS = {
-    'transactional_email_delivery_events': 'provider_email_id IN (SELECT provider_email_id FROM transactional_email_outbox WHERE user_id=?1 OR lower(email_to)=lower(?2)) AND provider_email_id IS NOT NULL',
-    'transactional_email_outbox': 'user_id=?1 OR lower(email_to)=lower(?2)',
+    'transactional_email_delivery_events': 'provider_email_id IN (SELECT provider_email_id FROM transactional_email_outbox WHERE user_id=?1) AND provider_email_id IS NOT NULL',
+    'transactional_email_outbox': 'user_id=?1 AND id NOT IN (SELECT outbox_id FROM agentmail_send_ledger)',
     'order_reminders': 'recipient_user_id=?1',
     'job_application_reminders': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
     'job_application_views': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
@@ -4136,6 +4136,7 @@ _ERASURE_RETAINED = {
 def _erasure_audit_rows(db, target):
     """Retain security records while identifying rows needing PII redaction."""
     email = target['email'].casefold()
+    pattern = _erasure_identity_pattern(target)
     rows = []
     for row in db.execute('SELECT id,user_id,entity_type,entity_id,details FROM audit_log WHERE details IS NOT NULL'):
         details = row['details'] or ''
@@ -4145,32 +4146,72 @@ def _erasure_audit_rows(db, target):
             searchable = details
         if (row['user_id'] == target['id'] or
                 (row['entity_type'] == 'user' and row['entity_id'] == target['id']) or
-                email in searchable.casefold()):
+                email in searchable.casefold() or
+                (pattern is not None and pattern.search(searchable))):
             rows.append((row['id'], details))
     return rows
 
 
+_ERASURE_NETWORK_KEYS = {'ip', 'ip_address', 'remote_addr', 'user_agent', 'client_ip', 'x_forwarded_for'}
+
+
 def _erase_audit_identity(details, target):
+    pattern = _erasure_identity_pattern(target)
     # Work on decoded JSON values: literals can contain escaped @, Unicode or
     # quotation marks. Keep malformed legacy details with a literal fallback.
     def scrub(value):
         if isinstance(value, str):
-            for identity in (target['email'], target['name']):
-                if identity:
-                    value = re.sub(re.escape(identity), '[REDACTED]', value, flags=re.IGNORECASE)
-            return value
+            return pattern.sub('[REDACTED]', value) if pattern else value
         if isinstance(value, list):
             return [scrub(item) for item in value]
         if isinstance(value, dict):
             return {scrub(key): scrub(item) for key, item in value.items()}
         return value
 
+    def drop_network(value):
+        # Network identifiers linked to the erased person are removed outright.
+        if isinstance(value, list):
+            return [drop_network(item) for item in value]
+        if isinstance(value, dict):
+            return {key: ('[REDACTED]' if str(key).lower() in _ERASURE_NETWORK_KEYS else drop_network(item))
+                    for key, item in value.items()}
+        return value
+
     try:
         original = json.loads(details)
     except (ValueError, TypeError):
         return scrub(details)
-    redacted = scrub(original)
+    redacted = drop_network(scrub(original))
     return json.dumps(redacted, ensure_ascii=False) if redacted != original else details
+
+
+# Outbox rows bound to an AgentMail send intent are kept (rows only, contents
+# scrubbed) so erasure cannot free or distort per-type send budgets.
+_ERASURE_OUTBOX_SCRUB = 'user_id=?1 AND id IN (SELECT outbox_id FROM agentmail_send_ledger)'
+# Messages other users received that name the erased person.
+_ERASURE_PEER_TABLES = ('notifications', 'transactional_email_outbox')
+
+
+def _erasure_identity_pattern(target):
+    parts = [re.escape(target['email'])] if target['email'] else []
+    if target['name'] and len(target['name'].strip()) >= 3:
+        parts.append(r'(?<!\w)' + re.escape(target['name'].strip()) + r'(?!\w)')
+    return re.compile('|'.join(parts), re.IGNORECASE) if parts else None
+
+
+def _erasure_peer_rows(db, target):
+    pattern = _erasure_identity_pattern(target)
+    if not pattern:
+        return {}
+    found = {}
+    for table in _ERASURE_PEER_TABLES:
+        cols = ['title', 'message'] + (['email_to'] if table == 'transactional_email_outbox' else [])
+        rows = []
+        for row in db.execute(f"SELECT id,{','.join(cols)} FROM {table} WHERE user_id!=?", [target['id']]):
+            if any(pattern.search(row[c] or '') for c in cols if c != 'email_to'):
+                rows.append(row['id'])
+        found[table] = rows
+    return found
 
 
 def _erasure_plan(db, target):
@@ -4205,9 +4246,13 @@ def _erasure_plan(db, target):
     # an orphaned intent can never be re-bound to a later message. Not a blocker.
     retained['agentmail_send_ledger'] = db.execute(
         'SELECT count(*) FROM agentmail_send_ledger WHERE outbox_id IN '
-        '(SELECT id FROM transactional_email_outbox WHERE user_id=?1 OR lower(email_to)=lower(?2))',
-        values).fetchone()[0]
-    return deleted, anonymized, retained, blockers, audit_rows
+        '(SELECT id FROM transactional_email_outbox WHERE user_id=?1)', values[:1]).fetchone()[0]
+    anonymized['transactional_email_outbox'] = db.execute(
+        f'SELECT count(*) FROM transactional_email_outbox WHERE {_ERASURE_OUTBOX_SCRUB}', values[:1]).fetchone()[0]
+    peer_rows = _erasure_peer_rows(db, target)
+    for table, ids in peer_rows.items():
+        anonymized[f'peer_{table}'] = len(ids)
+    return deleted, anonymized, retained, blockers, audit_rows, peer_rows
 
 
 def send_email(to_email, subject, html_body, idempotency_key=None):
@@ -14552,7 +14597,7 @@ def _handle_routes(db):
                 if not dry_run:
                     db.rollback()
                 return error_response('user_not_found', 409)
-            deleted, anonymized, retained, blockers, audit_rows = _erasure_plan(db, target)
+            deleted, anonymized, retained, blockers, audit_rows, peer_rows = _erasure_plan(db, target)
             result = {'dry_run': dry_run, 'user_id': target_id, 'eligible': not blockers,
                       'blockers': blockers, 'will_delete': deleted,
                       'will_anonymize': anonymized, 'retained': retained}
@@ -14565,6 +14610,23 @@ def _handle_routes(db):
                 db.rollback()
                 return error_response('confirm_email does not match current email', 400)
             values = (target_id, target['email'])
+            erased_email = f'erased-user-{target_id}@erased.invalid'
+            scrubbed = db.execute(
+                f"""UPDATE transactional_email_outbox SET email_to=?2, title='[erased]', message='[erased]',
+                    link='', dedupe_context='[erased]', last_error=NULL, notification_id=NULL
+                    WHERE {_ERASURE_OUTBOX_SCRUB}""", [target_id, erased_email]).rowcount
+            if scrubbed != anonymized['transactional_email_outbox']:
+                raise RuntimeError('Account erasure count changed: transactional_email_outbox scrub')
+            pattern = _erasure_identity_pattern(target)
+            for table, ids in peer_rows.items():
+                cols = ('title', 'message')
+                for row_id in ids:
+                    row = db.execute(f'SELECT title,message FROM {table} WHERE id=?', [row_id]).fetchone()
+                    if not row:
+                        raise RuntimeError(f'Account erasure count changed: peer {table}')
+                    db.execute(f'UPDATE {table} SET title=?, message=? WHERE id=?',
+                               [pattern.sub('A former user', row['title'] or ''),
+                                pattern.sub('A former user', row['message'] or ''), row_id])
             for table, where in _ERASURE_DELETIONS.items():
                 affected = db.execute(f'DELETE FROM {table} WHERE {where}',
                                       values if '?2' in where else values[:1]).rowcount
