@@ -40,6 +40,19 @@ except ModuleNotFoundError as exc:
         raise ImportError("AgentMail transport module is unavailable")
     agentmail_transport = importlib.util.module_from_spec(_agentmail_spec)
     _agentmail_spec.loader.exec_module(agentmail_transport)
+try:
+    import password_reset_crypto
+except ModuleNotFoundError as exc:
+    if exc.name != "password_reset_crypto":
+        raise
+    import importlib.util
+    _reset_spec = importlib.util.spec_from_file_location(
+        "password_reset_crypto", os.path.join(os.path.dirname(__file__), "password_reset_crypto.py"),
+    )
+    if _reset_spec is None or _reset_spec.loader is None:
+        raise ImportError("Password reset crypto module is unavailable")
+    password_reset_crypto = importlib.util.module_from_spec(_reset_spec)
+    _reset_spec.loader.exec_module(password_reset_crypto)
 from collections.abc import Mapping
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -1421,6 +1434,15 @@ def _init_db_connection_steps(db):
         created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token_hash TEXT NOT NULL UNIQUE CHECK(length(token_hash)=64),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
     CREATE TABLE IF NOT EXISTS worker_profiles (
         user_id INTEGER PRIMARY KEY REFERENCES users(id),
         bio TEXT DEFAULT '',
@@ -2925,6 +2947,24 @@ def clear_login_failures(email):
         _login_failure_store.pop(key, None)
 
 
+def password_reset_rate_allowed(email, *, reset=False):
+    """Bound requests across both email and IP, not just their combination."""
+    ip = str(getattr(_request_ctx, 'remote_addr', 'unknown'))
+    now = time.time()
+    keys = [(f"reset:email:{email}", 3), (f"reset:ip:{ip}", 15)] if not reset else [
+        (f"reset:submit:{ip}", 20)]
+    with _rate_limit_lock:
+        _prune_rate_limit_store(_rate_limit_store, now, 900)
+        for key, limit in keys:
+            stamps = [t for t in _rate_limit_store.get(key, []) if now - t < 900]
+            _rate_limit_store[key] = stamps
+            if len(stamps) >= limit:
+                return False
+        for key, _ in keys:
+            _rate_limit_store[key].append(now)
+    return True
+
+
 # ─── Content Safety ────────────────────────────────────────────────────────────
 
 BLOCKED_KEYWORDS = [
@@ -3942,6 +3982,7 @@ TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES = {
     "review_request",
     "application_reminder_24h",
     "application_reminder_72h",
+    "password_reset",
 }
 
 
@@ -3971,6 +4012,38 @@ def transactional_email_already_sent(db, user_id, notif_type, link, dedupe_conte
     return row is not None, dedupe_key
 
 
+def queue_password_reset_email(db, user_id, token, expires_at):
+    """Persist an encrypted capability; never mirror its link into notifications/audits."""
+    sealed = password_reset_crypto.seal(token, user_id)
+    title = "Reset your GoHireHumans password"
+    message = "Use the link within 30 minutes. If you did not request this, ignore this email."
+    notification_id = db.execute(
+        "INSERT INTO notifications(user_id,type,title,message,link) VALUES (?,?,?,?,?)",
+        [user_id, 'password_reset', title, message, '#/login'],
+    ).lastrowid
+    # The random token is not part of any logged/durable dedupe metadata.
+    dedupe_key = hashlib.sha256(f"password_reset:{notification_id}:{user_id}".encode()).hexdigest()
+    queued = db.execute(
+        """INSERT INTO transactional_email_outbox
+           (user_id,notification_id,email_to,notification_type,title,message,
+            link,dedupe_context,dedupe_key,state,next_attempt_at,expires_at)
+           VALUES (?,?,'','password_reset',?,?,?,?,?,'pending',datetime('now'),?)""",
+        [user_id, notification_id, title, message, sealed,
+         str(notification_id), dedupe_key, expires_at],
+    )
+    agentmail_transport.enroll(db, queued.lastrowid)
+
+
+def invalidate_password_reset_emails(db, user_id):
+    db.execute(
+        """UPDATE transactional_email_outbox
+           SET state='failed',delivery_status='suppressed',link='',message='',title='',
+               next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL
+           WHERE user_id=? AND notification_type='password_reset'
+             AND state='pending'""", [user_id],
+    )
+
+
 def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None, outbox_id=None, outbox_claim_token=None):
     if (os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
             or agentmail_transport.owns_key(db, provider_idempotency_key)):
@@ -3979,6 +4052,11 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
         )
     if notif_type not in TRANSACTIONAL_EMAIL_NOTIFICATION_TYPES:
         return False
+    if notif_type == 'password_reset':
+        token = password_reset_crypto.active_token(db, link, user_id)
+        if not token:
+            return 'suppressed', None
+        link = '#/reset-password?' + urllib.parse.urlencode({'token': token})
     user = db.execute(
         """SELECT email,name FROM users
            WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0""",
@@ -4044,7 +4122,7 @@ def send_transactional_notification_email(db, user_id, notif_type, title, messag
     if outcome == "accepted" and provider_email_id:
         audit(db, user_id, "transactional_email_sent", "notification_email", user_id, {
             "type": notif_type,
-            "link": link or "",
+            "link": '[REDACTED]' if notif_type == 'password_reset' else (link or ""),
             "dedupe_key": dedupe_key,
             "provider_email_id": provider_email_id,
         })
@@ -9699,6 +9777,73 @@ def _handle_routes(db):
             "worker_profile": None,
             "employer_profile": None
         }, 201)
+
+    elif path == "/auth/forgot-password" and method == "POST":
+        body = get_body() or {}
+        raw_email = body.get('email', '')
+        email = raw_email.strip().lower()[:320] if isinstance(raw_email, str) else ''
+        generic = {'message': 'If an eligible account exists, a password reset link will be emailed.'}
+        # Equalize the dominant CPU work for registered and unknown addresses.
+        hashlib.pbkdf2_hmac('sha256', email.encode(), b'password-reset-request', 100000)
+        allowed = password_reset_rate_allowed(email)
+        user = db.execute("SELECT id,password_hash,is_active,is_banned,is_suspended FROM users WHERE email=?", [email]).fetchone()
+        if (allowed and password_reset_crypto.configured() and user and user['password_hash']
+                and user['is_active'] and not user['is_banned'] and not user['is_suspended']
+                and not is_seeded_sample_email(email)):
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                # The write lock serializes simultaneous requests for the same user.
+                db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL", [user['id']])
+                invalidate_password_reset_emails(db, user['id'])
+                token = secrets.token_urlsafe(32)
+                digest = hashlib.sha256(token.encode('ascii')).hexdigest()
+                expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (?,?,?)',
+                           [user['id'], digest, expires_at])
+                queue_password_reset_email(db, user['id'], token, expires_at)
+                audit(db, user['id'], 'password_reset_requested', 'user', user['id'])
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        return json_response(generic)
+
+    elif path == "/auth/reset-password" and method == "POST":
+        body = get_body() or {}
+        token = body.get('token', '')
+        new_password = body.get('new_password', '')
+        if not password_reset_rate_allowed('', reset=True):
+            return error_response('Too many attempts. Try again later.', 429)
+        if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
+            return error_response('Invalid or expired reset link', 400)
+        if not isinstance(new_password, str) or len(new_password) < 8:
+            return error_response('Password must be at least 8 characters', 400)
+        digest = hashlib.sha256(token.encode('ascii')).hexdigest()
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            row = db.execute(
+                """SELECT r.id,r.user_id FROM password_reset_tokens r JOIN users u ON u.id=r.user_id
+                   WHERE r.token_hash=? AND r.used_at IS NULL AND r.expires_at>datetime('now')
+                     AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
+                     AND u.password_hash<>''""", [digest],
+            ).fetchone()
+            if not row:
+                db.rollback()
+                return error_response('Invalid or expired reset link', 400)
+            password_hash = hash_password(new_password)
+            db.execute("UPDATE users SET password_hash=?,updated_at=datetime('now') WHERE id=?",
+                       [password_hash, row['user_id']])
+            db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
+                       [row['user_id']])
+            invalidate_password_reset_emails(db, row['user_id'])
+            db.execute('DELETE FROM sessions WHERE user_id=?', [row['user_id']])
+            db.execute('UPDATE api_keys SET is_active=0 WHERE user_id=?', [row['user_id']])
+            audit(db, row['user_id'], 'password_reset_completed', 'user', row['user_id'])
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return json_response({'message': 'Password updated. Sign in with your new password.'})
 
     elif path == "/auth/login" and method == "POST":
         body = get_body() or {}

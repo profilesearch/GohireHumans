@@ -15,10 +15,22 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
+try:
+    import password_reset_crypto
+except ModuleNotFoundError as exc:
+    if exc.name != 'password_reset_crypto':
+        raise
+    import importlib.util
+    _crypto_spec = importlib.util.spec_from_file_location(
+        'password_reset_crypto', os.path.join(os.path.dirname(__file__), 'password_reset_crypto.py'))
+    if _crypto_spec is None or _crypto_spec.loader is None:
+        raise ImportError('Password reset crypto module is unavailable')
+    password_reset_crypto = importlib.util.module_from_spec(_crypto_spec)
+    _crypto_spec.loader.exec_module(password_reset_crypto)
 from datetime import datetime, timedelta, timezone
 
 SENDER = 'gohirehumans.operations@agentmail.to'
-SUPPORTED_TYPES = frozenset({'new_application'})
+SUPPORTED_TYPES = frozenset({'new_application', 'password_reset'})
 SUBJECT = 'GoHireHumans activity update'
 TEXT = ('There is an update related to your GoHireHumans account. '
         'Sign in to review it on GoHireHumans: https://www.gohirehumans.com\n\n'
@@ -142,8 +154,22 @@ def _binding(db, row, cfg):
         return None
     if user['email'] not in cfg['recipients'] or row['notification_type'] not in cfg['types']:
         return None
-    payload = dict(to=[user['email']], reply_to=[SENDER], subject=SUBJECT,
-                   text=TEXT, track_opens=False)
+    if row['notification_type'] == 'password_reset':
+        token = password_reset_crypto.active_token(db, row['link'], row['user_id'])
+        if token is None:
+            return None
+        app_base = os.environ.get('APP_BASE_URL', 'https://www.gohirehumans.com').rstrip('/')
+        if not re.fullmatch(r'https://(?:www\.)?gohirehumans\.com', app_base):
+            return None
+        link = app_base + '/#/reset-password?token=' + urllib.parse.quote(token, safe='')
+        payload = dict(to=[user['email']], reply_to=[SENDER],
+                       subject='Reset your GoHireHumans password',
+                       text='Use this link within 30 minutes to reset your password: ' + link
+                            + '\n\nIf you did not request this, ignore this email.',
+                       track_opens=False)
+    else:
+        payload = dict(to=[user['email']], reply_to=[SENDER], subject=SUBJECT,
+                       text=TEXT, track_opens=False)
     fingerprint = digest(json.dumps([row['id'], row['notification_id'], row['user_id'],
         row['notification_type'], row['created_at'], source['created_at'],
         cfg['start'].isoformat(), cfg['highwater'], cfg['notification_highwater'], SENDER, payload],

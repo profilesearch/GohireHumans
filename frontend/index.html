@@ -351,8 +351,9 @@ function consumeAuthIntent() {
   // again: encoded separators could turn an invalid/double-encoded path valid.
   // Keep valid query encoding intact so draft text (including % and URLs) survives.
   const path = intent.split('?')[0];
-  const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
+  const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|forgot-password|reset-password|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
   if (!safePath.test(path) || /[\\#\u0000-\u001f\u007f\ufffd]/.test(intent)) return '#/';
+  if (path === 'reset-password' && intent.includes('?')) return '#/reset-password';
   try { decodeURIComponent(intent); } catch (_) { return '#/'; }
   return `#/${intent}`;
 }
@@ -2588,7 +2589,7 @@ function renderAuth(mode) {
             <div class="form-group">
               <label class="label" for="auth-password">Password</label>
               <input class="input" id="auth-password" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required${isLogin ? '' : ' minlength="8"'} autocomplete="${isLogin ? 'current-password' : 'new-password'}">
-              ${isLogin ? '<p class="form-help">Locked out? Email <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a> to recover access.</p>' : ''}
+              ${isLogin ? '<p class="form-help"><a href="#/forgot-password">Forgot password?</a></p>' : ''}
             </div>
             ${!isLogin ? `
               <div class="form-group mb-4">
@@ -2632,6 +2633,79 @@ function renderAuth(mode) {
         if (tryRenderGoogleBtn() || ++attempts > 20) clearInterval(interval);
       }, 200);
     }
+  }
+}
+
+let pendingResetToken = '';
+function renderPasswordRecovery(mode) {
+  if (mode === 'reset') {
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    pendingResetToken = params.get('token') || '';
+    // Fragment parameters still leak into history, screenshots, and copied URLs.
+    history.replaceState(null, '', location.pathname + location.search + '#/reset-password');
+  }
+  document.getElementById('app').innerHTML = `
+    <div class="auth2-page"><div class="auth2-wrap">
+      <a class="auth2-logo" href="#/">${LOGO} GoHireHumans</a>
+      <div class="auth2-card">
+        <h1 class="auth2-title">${mode === 'reset' ? 'Set a new password' : 'Forgot password?'}</h1>
+        <p class="auth2-sub">${mode === 'reset' ? 'Choose a new password of at least 8 characters.' : 'Enter your email to request a reset link.'}</p>
+        <div id="recovery-error" class="auth2-error" role="alert" aria-live="polite" hidden></div>
+        <p id="recovery-success" class="form-help" role="status" aria-live="polite" hidden></p>
+        ${mode === 'reset' ? `
+          <form id="reset-password-form" onsubmit="handlePasswordRecovery(event, 'reset')">
+            <div class="form-group"><label class="label" for="new-password">New password</label>
+              <input class="input" id="new-password" type="password" required minlength="8" autocomplete="new-password"></div>
+            <div class="form-group"><label class="label" for="confirm-password">Confirm new password</label>
+              <input class="input" id="confirm-password" type="password" required minlength="8" autocomplete="new-password"></div>
+            <button class="btn btn-primary btn-lg auth2-submit" type="submit">Update password</button>
+          </form>` : `
+          <form id="forgot-password-form" onsubmit="handlePasswordRecovery(event, 'forgot')">
+            <div class="form-group"><label class="label" for="reset-email">Email address</label>
+              <input class="input" id="reset-email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
+            <button class="btn btn-primary btn-lg auth2-submit" type="submit">Send reset link</button>
+          </form>`}
+        <div class="auth2-toggle"><a href="#/login">Sign in</a></div>
+      </div>
+    </div></div>`;
+  if (mode === 'reset' && !pendingResetToken) {
+    const error = document.getElementById('recovery-error');
+    error.textContent = 'Invalid or missing reset link. Request a new one.';
+    error.hidden = false;
+    document.getElementById('reset-password-form').hidden = true;
+  }
+}
+
+async function handlePasswordRecovery(event, mode) {
+  event.preventDefault();
+  const error = document.getElementById('recovery-error');
+  const success = document.getElementById('recovery-success');
+  error.hidden = true;
+  error.textContent = '';
+  if (mode === 'reset' && document.getElementById('new-password').value !== document.getElementById('confirm-password').value) {
+    error.textContent = 'Passwords do not match.';
+    error.hidden = false;
+    return;
+  }
+  const button = event.target.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const data = mode === 'reset'
+      ? await api('/auth/reset-password', { method: 'POST', body: {
+          token: pendingResetToken, new_password: document.getElementById('new-password').value } })
+      : await api('/auth/forgot-password', { method: 'POST', body: {
+          email: document.getElementById('reset-email').value.trim() } });
+    success.textContent = mode === 'forgot'
+      ? 'If an eligible account exists, a password reset link will be emailed.'
+      : (data.message || 'Password updated. Sign in with your new password.');
+    success.hidden = false;
+    event.target.hidden = true;
+    if (mode === 'reset') pendingResetToken = '';
+  } catch (err) {
+    error.textContent = err.message || 'Request failed. Please try again.';
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -4972,6 +5046,7 @@ function currentRenderGuard() {
 const HOME_DOCUMENT_TITLE = document.title;
 const ROUTE_TITLES = {
   '/login': 'Sign in', '/auth': 'Sign in', '/register': 'Create a free account',
+  '/forgot-password': 'Forgot password?', '/reset-password': 'Set a new password',
   '/terms': 'Terms of Service', '/privacy': 'Privacy Policy', '/guidelines': 'Community Guidelines',
   '/ai-employers': 'For AI Agents', '/services': 'Browse Services', '/jobs': 'Browse Jobs',
   '/dashboard': 'Dashboard', '/my-services': 'My Services', '/post-service': 'Post a Service',
@@ -5013,6 +5088,7 @@ function render() {
   closeAllModalOverlays();
   const hash = activeRouteHash.slice(1) || '/';
   const path = hash.split('?')[0];
+  if (path !== '/reset-password') pendingResetToken = '';
   const segments = path.split('/').filter(Boolean);
   const pathChanged = path !== lastRoutedPath;
   const page = getQuery().get('page') || '';
@@ -5034,6 +5110,8 @@ function routeView(path, hash, segments) {
   }
   if (path === '/login' || path === '/auth') return renderAuth('login');
   if (path === '/register') return renderAuth('register');
+  if (path === '/forgot-password') return renderPasswordRecovery('forgot');
+  if (path === '/reset-password') return renderPasswordRecovery('reset');
   if (path === '/terms') return renderTerms();
   if (path === '/privacy') return renderPrivacy();
   if (path === '/guidelines') return renderGuidelines();
