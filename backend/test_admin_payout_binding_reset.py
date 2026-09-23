@@ -616,10 +616,8 @@ class AdminPayoutBindingResetSessionRegressions(AdminPayoutBindingResetTests):
             with p_config, p_retrieve, p_balance, p_delete as delete, \
                  mock.patch.object(self.core.time, 'time', return_value=self.core.time.time() + 86400):
                 status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
-                dry_status, dry_body = self.reset(dry_run=True)
             self.assertEqual(status, 409, body)
             self.assertIn('setup_operation_pending', body['blockers'])
-            self.assertIn('setup_operation_pending', dry_body['blockers'])
             self.assertEqual(delete.call_count, 0)
         finally:
             held.release()
@@ -718,3 +716,53 @@ class AdminPayoutBindingResetCountryDecisionRegression(AdminPayoutBindingResetTe
             self.assertEqual(create.call_count, 1)
             # International payouts are off here: the only allowed country is US.
             self.assertEqual(create.call_args.kwargs['country'], 'US')
+
+
+class AdminPayoutBindingResetDryRunLockRegression(AdminPayoutBindingResetTests):
+    """Review of 65d3c1e: a dry run briefly took the exclusive setup lock, so a
+    worker's setup starting at that moment was turned away with 409."""
+
+    def test_dry_run_never_takes_the_setup_lock(self):
+        self.prepare()
+        acquired = []
+        real_acquire = self.core._PayoutBindingLock.acquire
+
+        def record(lock, exclusive):
+            acquired.append(exclusive)
+            return real_acquire(lock, exclusive)
+
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, \
+             mock.patch.object(self.core._PayoutBindingLock, 'acquire', record):
+            status, body = self.reset(dry_run=True)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(acquired, [])
+        self.assertEqual(delete.call_count, 0)
+
+    def test_setup_during_dry_run_is_not_rejected(self):
+        import threading
+        self.prepare()
+        entered, resume, seen = threading.Event(), threading.Event(), {}
+        real_retrieve = self.core.retrieve_live_connect_account
+
+        def paused_retrieve(*args, **kwargs):
+            entered.set()
+            self.assertTrue(resume.wait(20))
+            return real_retrieve(*args, **kwargs)
+
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create',
+                               return_value=SimpleNamespace(url='https://example.invalid/setup', expires_at=9999999999)):
+            with mock.patch.object(self.core, 'retrieve_live_connect_account', side_effect=paused_retrieve):
+                dry = threading.Thread(target=lambda: seen.setdefault('dry', self.reset(dry_run=True)))
+                dry.start()
+                try:
+                    self.assertTrue(entered.wait(20))
+                    seen['setup'] = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+                finally:
+                    resume.set()
+                    dry.join(20)
+        self.assertEqual(seen['setup'][0], 200, seen['setup'])
+        self.assertEqual(seen['dry'][0], 200, seen['dry'])
+        self.assertEqual(delete.call_count, 0)

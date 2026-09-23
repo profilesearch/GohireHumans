@@ -14707,11 +14707,12 @@ def _handle_routes(db):
 
         # A live reset holds the worker's setup lock exclusive from its first check
         # until after the local clear, so no setup request can be running at any
-        # point of it (see _PayoutBindingLock). A dry run only probes the lock.
+        # point of it (see _PayoutBindingLock). A dry run never touches the lock, so
+        # it can never turn a worker's setup away; the live run re-checks under it.
         binding_lock = _PayoutBindingLock(target_id)
-        setup_in_progress = not binding_lock.acquire(exclusive=True)
-        if dry_run:
-            binding_lock.release()
+        setup_in_progress = False
+        if not dry_run:
+            setup_in_progress = not binding_lock.acquire(exclusive=True)
         try:
             blockers = local_blockers()
             if setup_in_progress and 'setup_operation_pending' not in blockers:
