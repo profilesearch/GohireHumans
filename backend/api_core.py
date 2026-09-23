@@ -5386,7 +5386,9 @@ def _payment_setup_operation_serialized(
             # holding the short writer lock, before either request reaches Stripe.
             prior = db.execute(
                 "SELECT request_binding_json FROM payment_setup_operations "
-                "WHERE user_id=? AND operation_kind='account_create' ORDER BY id DESC LIMIT 1",
+                "WHERE user_id=? AND operation_kind='account_create' "
+                "AND COALESCE(error_code,'')!='admin_payout_binding_reset' "
+                "ORDER BY id DESC LIMIT 1",
                 [user_id],
             ).fetchone()
             if prior:
@@ -13241,6 +13243,15 @@ def _handle_routes(db):
                 if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
                     capabilities = {"transfers": {"requested": True}}
                     account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
+                    retired_count = db.execute(
+                        """SELECT COUNT(*) FROM payment_setup_operations WHERE user_id=?
+                           AND operation_kind='account_create'
+                           AND error_code='admin_payout_binding_reset'""", [user['id']]
+                    ).fetchone()[0]
+                    if retired_count:
+                        # A reset must not replay the old account-create fingerprint
+                        # or reuse its Stripe idempotency key (including same-country).
+                        account_binding['reset_generation'] = retired_count
                     if country != "US" and agreement == "full":
                         capabilities = {"card_payments": {"requested": True}, **capabilities}
                         account_binding["capabilities"] = capabilities
@@ -13275,6 +13286,7 @@ def _handle_routes(db):
                     """SELECT request_binding_json,result_json FROM payment_setup_operations
                        WHERE user_id=? AND operation_kind='account_link_create'
                          AND status='committed' AND manual_review_required=0
+                         AND COALESCE(error_code,'')!='admin_payout_binding_reset'
                        ORDER BY id DESC LIMIT 1""", [user["id"]]
                 ).fetchone()
                 if previous_link:
@@ -14294,6 +14306,158 @@ def _handle_routes(db):
             "page": page,
             "per_page": per_page
         })
+
+    elif re.fullmatch(r'/admin/users/\d+/payout-binding/reset', path) and method == 'POST':
+        admin = authenticate(db)
+        if not admin or not admin['is_admin']:
+            return error_response('Admin access required', 403)
+        target_id = int(path.split('/')[3])
+        body = get_body() or {}
+        step_error, step_status = require_admin_step_up(db, admin, body, 'admin_payout_binding_reset')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        delete_stripe_account = body.get('delete_stripe_account', True)
+        if not isinstance(dry_run, bool) or not isinstance(delete_stripe_account, bool):
+            return error_response('dry_run and delete_stripe_account must be booleans', 400)
+        profile = db.execute(
+            'SELECT payout_account_id,payout_account_country FROM worker_profiles WHERE user_id=?',
+            [target_id],
+        ).fetchone()
+        account_id = (profile['payout_account_id'] if profile else None) or ''
+        if not account_id.startswith('acct_') or account_id.startswith('acct_sim_'):
+            return error_response('No live payout binding to reset', 409)
+        suffix = account_id[-6:]
+        if not dry_run and body.get('confirm_account_suffix') != suffix:
+            return error_response('confirm_account_suffix does not match the bound account', 409)
+        if not stripe_configured():
+            return error_response('Stripe is not configured', 503)
+
+        def local_blockers():
+            blockers = []
+            # Canceled orders are allowed only without any money-related child;
+            # paid/active orders, holds, transfers and attempts always block.
+            financial = db.execute(
+                """SELECT (EXISTS(SELECT 1 FROM orders WHERE worker_id=? AND status!='canceled')
+                        OR EXISTS(SELECT 1 FROM payout_transfers WHERE worker_id=? OR destination_account_id=?)
+                        OR EXISTS(SELECT 1 FROM payout_release_attempts WHERE worker_id=? OR destination_account_id=?)
+                        OR EXISTS(SELECT 1 FROM refund_attempts WHERE worker_id=?)
+                        OR EXISTS(SELECT 1 FROM milestones m JOIN orders o ON o.id=m.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM escrow_holds h JOIN orders o ON o.id=h.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM funding_attempts f JOIN orders o ON o.id=f.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM hourly_contracts h JOIN orders o ON o.id=h.order_id WHERE o.worker_id=?)
+                        OR EXISTS(SELECT 1 FROM platform_revenue r JOIN orders o ON o.id=r.order_id WHERE o.worker_id=?))""",
+                [target_id, target_id, account_id, target_id, account_id,
+                 target_id, target_id, target_id, target_id, target_id, target_id],
+            ).fetchone()[0]
+            if financial:
+                blockers.append('financial_history')
+            if _payment_setup_profile_is_frozen(db, target_id):
+                blockers.append('setup_frozen')
+            if db.execute(
+                "SELECT 1 FROM payment_setup_operations WHERE user_id=? AND status IN ('prepared','unknown') LIMIT 1",
+                [target_id],
+            ).fetchone():
+                blockers.append('setup_operation_pending')
+            return blockers
+
+        blockers = local_blockers()
+        result = {'dry_run': dry_run, 'eligible': False, 'blockers': blockers,
+                  'account_id_suffix': suffix, 'account_country': profile['payout_account_country'],
+                  'details_submitted': None, 'payouts_enabled': None,
+                  'will_delete_stripe_account': delete_stripe_account}
+        # No Stripe I/O when local evidence alone disqualifies the binding.
+        if not blockers:
+            db.commit()  # Authentication/step-up must not hold a writer across Stripe I/O.
+            try:
+                acct = retrieve_live_connect_account(account_id)
+            except STRIPE_ERROR:
+                acct = None
+            if not acct:
+                blockers.append('account_unverified')
+            else:
+                result['details_submitted'] = stripe_attr(acct, 'details_submitted')
+                result['payouts_enabled'] = stripe_attr(acct, 'payouts_enabled')
+                result['account_country'] = stripe_attr(acct, 'country')
+                if stripe_attr(acct, 'id') != account_id:
+                    blockers.append('account_id_mismatch')
+                if result['account_country'] != (profile['payout_account_country'] or 'US'):
+                    blockers.append('account_country_mismatch')
+                if stripe_attr(stripe_attr(acct, 'metadata', {}), 'user_id') != str(target_id):
+                    blockers.append('account_owner_mismatch')
+                for field in ('details_submitted', 'payouts_enabled', 'charges_enabled'):
+                    if stripe_attr(acct, field) is not False:
+                        blockers.append(field)
+                capabilities = stripe_attr(acct, 'capabilities', {}) or {}
+                if stripe_attr(capabilities, 'transfers') == 'active':
+                    blockers.append('transfers_active')
+                try:
+                    balance = stripe.Balance.retrieve(stripe_account=account_id)
+                    buckets = [stripe_attr(balance, key) for key in ('available', 'pending')]
+                    if any(not isinstance(bucket, list) for bucket in buckets):
+                        raise ValueError('missing balance bucket')
+                    amounts = [stripe_attr(item, 'amount') for bucket in buckets for item in bucket]
+                    if any(type(amount) is not int for amount in amounts):
+                        raise ValueError('missing balance amount')
+                    if any(amount != 0 for amount in amounts):
+                        blockers.append('nonzero_balance')
+                except Exception:
+                    # Unexpected SDK/response failures cannot prove zero balance.
+                    blockers.append('balance_unverified')
+        result['eligible'] = not blockers
+        if dry_run:
+            return json_response(result)
+        if blockers:
+            return json_response(result, 409)
+
+        stripe_deleted = False
+        if delete_stripe_account:
+            try:
+                deleted = stripe.Account.delete(account_id)
+            except stripe.InvalidRequestError:
+                return error_response('Stripe account could not be deleted; binding unchanged', 409)
+            except STRIPE_ERROR:
+                return error_response('Stripe account deletion could not be verified; binding unchanged', 503)
+            if stripe_attr(deleted, 'deleted') is not True:
+                return error_response('Stripe account deletion could not be verified; binding unchanged', 409)
+            stripe_deleted = True
+
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            changed = db.execute(
+                """UPDATE worker_profiles SET payout_account_id=NULL,payout_method='pending_setup',
+                       payout_account_country=NULL,payout_service_agreement=NULL,payout_method_details=NULL
+                   WHERE user_id=? AND payout_account_id=?""",
+                [target_id, account_id],
+            )
+            if changed.rowcount != 1 or local_blockers():
+                db.rollback()
+                audit(db, admin['id'], 'admin_payout_binding_reset_binding_changed', 'user', target_id,
+                      {'old_account_suffix': suffix, 'stripe_deleted': stripe_deleted})
+                db.commit()
+                return json_response({'error': 'binding_changed', 'stripe_deleted': stripe_deleted}, 409)
+            # Preserve the historical ledger, but exclude retired identities from
+            # account-create country checks, replay and prior AccountLink generation.
+            db.execute(
+                """UPDATE payment_setup_operations SET error_code='admin_payout_binding_reset',
+                       updated_at=datetime('now') WHERE user_id=? AND status IN ('committed','failed')
+                       AND ((operation_kind='account_create' AND processor_object_id=?)
+                         OR (operation_kind='account_link_create'
+                             AND CASE WHEN json_valid(request_binding_json)
+                                      THEN json_extract(request_binding_json,'$.account_id')=?
+                                      ELSE 0 END))""",
+                [target_id, account_id, account_id],
+            )
+            audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id,
+                  {'old_account_suffix': suffix, 'old_country': profile['payout_account_country'],
+                   'stripe_deleted': stripe_deleted})
+            db.commit()
+        except Exception:
+            if db.in_transaction:
+                db.rollback()
+            raise
+        return json_response({'ok': True, 'dry_run': False, 'stripe_deleted': stripe_deleted,
+                              'account_id_suffix': suffix})
 
     elif path == '/admin/payout-readiness/sync' and method == 'POST':
         user = authenticate(db)

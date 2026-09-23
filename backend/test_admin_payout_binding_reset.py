@@ -1,0 +1,388 @@
+"""Admin payout binding reset: fail closed before deleting an unfinished account."""
+import json
+import sqlite3
+import unittest
+from types import SimpleNamespace
+from unittest import mock
+
+import stripe
+import test_ai_listing_policy as policy
+
+
+class AdminPayoutBindingResetTests(unittest.TestCase):
+    setUp = policy.AIListingPolicyTests.setUp
+    tearDown = policy.AIListingPolicyTests.tearDown
+    request = policy.AIListingPolicyTests.request
+    ACCOUNT = 'acct_old_us_123456'
+    PASSWORD = 'Admin-Test-Password-123!'
+
+    def prepare(self):
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET password_hash=? WHERE id=5',
+                       (self.core.hash_password(self.PASSWORD),))
+            db.execute('''UPDATE worker_profiles SET payout_account_id=?,payout_method='stripe_connect_pending',
+                          payout_account_country='US',payout_service_agreement='full',payout_method_details='{}'
+                          WHERE user_id=3''', (self.ACCOUNT,))
+            db.commit()
+
+    def account(self, **changes):
+        result = dict(id=self.ACCOUNT, country='US', details_submitted=False,
+                      payouts_enabled=False, charges_enabled=False,
+                      capabilities={'transfers': 'pending'}, metadata={'user_id': '3'})
+        result.update(changes)
+        return result
+
+    def payload(self, **changes):
+        result = dict(admin_password=self.PASSWORD)
+        result.update(changes)
+        return result
+
+    def reset(self, **changes):
+        return self.request('POST', '/admin/users/3/payout-binding/reset',
+                            self.payload(**changes), 'tok-5')
+
+    def snapshot(self):
+        with self.core.get_db() as db:
+            profile = tuple(db.execute('''SELECT payout_account_id,payout_method,payout_account_country,
+                                    payout_service_agreement,payout_method_details FROM worker_profiles
+                                    WHERE user_id=3''').fetchone())
+            operations = [tuple(row) for row in db.execute('''SELECT operation_key,status,error_code FROM
+                                              payment_setup_operations WHERE user_id=3 ORDER BY id''')]
+            audits = db.execute("SELECT COUNT(*) FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()[0]
+            return profile, operations, audits
+
+    def mocks(self, account=None, balance=None):
+        account = self.account() if account is None else account
+        balance = {'available': [{'amount': 0}], 'pending': [{'amount': 0}]} if balance is None else balance
+        return (mock.patch.object(self.core, 'stripe_configured', return_value=True),
+                mock.patch.object(self.core, 'retrieve_live_connect_account', return_value=account),
+                mock.patch.object(self.core.stripe.Balance, 'retrieve', return_value=balance),
+                mock.patch.object(self.core.stripe.Account, 'delete', return_value={'deleted': True}))
+
+    def test_admin_step_up_and_dry_run_are_read_only(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            self.assertEqual(self.request('POST', '/admin/users/3/payout-binding/reset',
+                                          self.payload(dry_run=False, confirm_account_suffix='123456'), 'tok-3')[0], 403)
+            status, body = self.request('POST', '/admin/users/3/payout-binding/reset', {}, 'tok-5')
+            self.assertEqual(status, 403, body)
+            self.assertIn('Admin password', body['error'])
+            self.assertEqual(retrieve.call_count, 0)
+            status, body = self.reset()
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body, {'dry_run': True, 'eligible': True, 'blockers': [],
+                                    'account_id_suffix': '123456', 'account_country': 'US',
+                                    'details_submitted': False, 'payouts_enabled': False,
+                                    'will_delete_stripe_account': True})
+            retrieve.assert_called_once_with(self.ACCOUNT)
+            balance.assert_called_once_with(stripe_account=self.ACCOUNT)
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_refuses_unsafe_stripe_account_or_balance(self):
+        self.prepare()
+        cases = [
+            (self.account(details_submitted=True), None, 'details_submitted'),
+            (self.account(payouts_enabled=True), None, 'payouts_enabled'),
+            (self.account(charges_enabled=True), None, 'charges_enabled'),
+            (self.account(capabilities={'transfers': 'active'}), None, 'transfers_active'),
+            (self.account(metadata={'user_id': '42'}), None, 'account_owner_mismatch'),
+            (self.account(id='acct_other'), None, 'account_id_mismatch'),
+            (self.account(country='DE'), None, 'account_country_mismatch'),
+            (self.account(), {'available': [{'amount': 100}], 'pending': []}, 'nonzero_balance'),
+        ]
+        before = self.snapshot()
+        for account, balance_value, blocker in cases:
+            with self.subTest(blocker=blocker):
+                p_config, p_retrieve, p_balance, p_delete = self.mocks(account, balance_value)
+                with p_config, p_retrieve, p_balance, p_delete as delete:
+                    status, body = self.reset()
+                    self.assertEqual(status, 200, body)
+                    self.assertFalse(body['eligible'])
+                    self.assertIn(blocker, body['blockers'])
+                    self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 409)
+                    delete.assert_not_called()
+                self.assertEqual(self.snapshot(), before)
+
+    def test_balance_retrieval_failure_refuses(self):
+        self.prepare()
+        before = self.snapshot()
+        for failure in (stripe.APIConnectionError('offline'), RuntimeError('invalid Stripe response')):
+            p_config, p_retrieve, p_balance, p_delete = self.mocks()
+            with p_config, p_retrieve, p_balance as balance, p_delete as delete:
+                balance.side_effect = failure
+                status, body = self.reset()
+                self.assertEqual(status, 200, body)
+                self.assertIn('balance_unverified', body['blockers'])
+                self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 409)
+                delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_financial_history_frozen_and_pending_operations_refuse_before_stripe(self):
+        self.prepare()
+        fixtures = [
+            ("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'pending',25)", 'financial_history'),
+            ("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'completed',25)", 'financial_history'),
+            ("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'disputed',25)", 'financial_history'),
+            ("INSERT INTO payment_setup_operations (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,processor_idempotency_key,status) VALUES ('k','account_create',3,'hash','{}','ik','prepared')", 'setup_operation_pending'),
+            ("INSERT INTO payment_setup_operations (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,processor_idempotency_key,status,manual_review_required) VALUES ('k','account_create',3,'hash','{}','ik','unknown',1)", 'setup_frozen'),
+        ]
+        for sql, blocker in fixtures:
+            with self.subTest(blocker=blocker, sql=sql):
+                with self.core.get_db() as db:
+                    db.execute(sql)
+                    db.commit()
+                p_config, p_retrieve, p_balance, p_delete = self.mocks()
+                with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+                    status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+                    self.assertEqual(status, 409, body)
+                    self.assertIn(blocker, body['blockers'])
+                    retrieve.assert_not_called()
+                    balance.assert_not_called()
+                    delete.assert_not_called()
+                with self.core.get_db() as db:
+                    db.execute('DELETE FROM orders WHERE worker_id=3')
+                    db.execute('DELETE FROM payment_setup_operations WHERE user_id=3')
+                    db.commit()
+
+    def test_transfer_or_hold_history_refuses(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (99,'service_order',3,4,'completed',25)")
+            db.execute("INSERT INTO payout_transfers (order_id,worker_id,amount,transfer_type,idempotency_key) VALUES (99,3,25,'milestone','test-transfer')")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance, p_delete:
+            status, body = self.reset()
+            self.assertEqual(status, 200, body)
+            self.assertIn('financial_history', body['blockers'])
+            retrieve.assert_not_called()
+
+    def test_wrong_suffix_and_invalid_flags_cannot_delete(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            status, body = self.reset(dry_run=False, confirm_account_suffix='wrong!')
+            self.assertEqual(status, 409, body)
+            retrieve.assert_not_called()
+            for field in ('dry_run', 'delete_stripe_account'):
+                self.assertEqual(self.reset(**{field: 'false'})[0], 400)
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_delete_failure_keeps_binding_and_ledger(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = stripe.InvalidRequestError('cannot delete', param='id')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_delete_first_clears_binding_and_new_de_setup_does_not_replay_us(self):
+        self.prepare()
+        self.core.CONNECT_INTERNATIONAL_ENABLED = True
+        # Account.create previously committed a US identity; resetting must retire it.
+        with self.core.get_db() as db:
+            db.execute("""INSERT INTO payment_setup_operations
+                (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                 processor_idempotency_key,status,processor_object_id,result_json)
+                VALUES ('old-us','account_create',3,'hash',?,'old-us:v1','committed',?,?)""",
+                (json.dumps({'country': 'US', 'agreement': 'full'}), self.ACCOUNT,
+                 json.dumps({'account_id': self.ACCOUNT, 'processor_object_id': self.ACCOUNT})))
+            db.commit()
+        route_connections = []
+        real_get_db = self.core.get_db
+        def track_db():
+            conn = real_get_db()
+            route_connections.append(conn)
+            return conn
+        def probe(*args, **kwargs):
+            self.assertFalse(route_connections[-1].in_transaction)
+            with sqlite3.connect(self.core._get_db_path(), timeout=0.2) as contender:
+                contender.execute('BEGIN IMMEDIATE')
+                contender.rollback()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with mock.patch.object(self.core, 'get_db', side_effect=track_db), p_config, \
+             p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            retrieve.side_effect = lambda *a: (probe(), self.account())[1]
+            balance.side_effect = lambda **kw: (probe(), {'available': [], 'pending': []})[1]
+            delete.side_effect = lambda *a: (probe(), {'deleted': True})[1]
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body['stripe_deleted'], True)
+            delete.assert_called_once_with(self.ACCOUNT)
+        with self.core.get_db() as db:
+            row = db.execute('SELECT payout_account_id,payout_method,payout_account_country,payout_service_agreement,payout_method_details FROM worker_profiles WHERE user_id=3').fetchone()
+            self.assertEqual(tuple(row), (None, 'pending_setup', None, None, None))
+            old = db.execute("SELECT status,error_code FROM payment_setup_operations WHERE operation_key='old-us'").fetchone()
+            self.assertEqual(tuple(old), ('committed', 'admin_payout_binding_reset'))
+            audit = db.execute("SELECT details FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()
+            self.assertEqual(json.loads(audit[0]), {'old_account_suffix': '123456', 'old_country': 'US', 'stripe_deleted': True})
+        def create(**kwargs):
+            self.assertEqual(kwargs['country'], 'DE')
+            self.assertEqual(kwargs['capabilities'], {'card_payments': {'requested': True}, 'transfers': {'requested': True}})
+            return SimpleNamespace(id='acct_new_de_654321')
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Account, 'create', side_effect=create) as created, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'DE'}, 'tok-3')
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body['account_id'], 'acct_new_de_654321')
+            created.assert_called_once()
+    def test_reset_then_same_country_uses_fresh_account_create_identity(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute('UPDATE worker_profiles SET payout_account_id=NULL WHERE user_id=3')
+            db.commit()
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Account, 'create', return_value=SimpleNamespace(id=self.ACCOUNT)), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+            self.assertEqual(status, 200, body)
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete:
+            self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 200)
+        with self.core.get_db() as db:
+            retired = db.execute("SELECT operation_kind,error_code FROM payment_setup_operations WHERE user_id=3 ORDER BY id").fetchall()
+            self.assertEqual([(row['operation_kind'], row['error_code']) for row in retired],
+                             [('account_create', 'admin_payout_binding_reset'),
+                              ('account_link_create', 'admin_payout_binding_reset')])
+        def create(**kwargs):
+            self.assertEqual(kwargs['country'], 'US')
+            self.assertEqual(kwargs['capabilities'], {'transfers': {'requested': True}})
+            return SimpleNamespace(id='acct_new_us_654321')
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Account, 'create', side_effect=create) as created, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body['account_id'], 'acct_new_us_654321')
+        created.assert_called_once()
+
+    def test_binding_changed_after_stripe_delete_is_audited_and_not_cleared(self):
+        self.prepare()
+        new_id = 'acct_rebound_654321'
+        def rebind_then_deleted(*args):
+            with self.core.get_db() as db:
+                db.execute('UPDATE worker_profiles SET payout_account_id=? WHERE user_id=3', (new_id,))
+                db.commit()
+            return {'deleted': True}
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = rebind_then_deleted
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body, {'error': 'binding_changed', 'stripe_deleted': True})
+        self.assertEqual(self.snapshot()[0][0], new_id)
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM audit_log WHERE action='admin_payout_binding_reset_binding_changed'").fetchone()[0], 1)
+
+    def test_apply_without_stripe_delete_requires_confirmation_and_clears_only_binding(self):
+        self.prepare()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            status, body = self.reset(dry_run=False, delete_stripe_account=False,
+                                      confirm_account_suffix='123456')
+            self.assertEqual(status, 200, body)
+            self.assertFalse(body['stripe_deleted'])
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot()[0], (None, 'pending_setup', None, None, None))
+    def test_canceled_unfunded_order_is_not_financial_history_but_milestone_is(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO orders (id,type,worker_id,employer_id,status,total_amount) VALUES (99,'service_order',3,4,'canceled',25)")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            status, body = self.reset()
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body['eligible'])
+            delete.assert_not_called()
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO milestones (order_id,title,amount) VALUES (99,'Work',25)")
+            db.commit()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+            self.assertIn('financial_history', body['blockers'])
+            delete.assert_not_called()
+
+    def test_financial_history_appearing_during_delete_prevents_local_clear(self):
+        self.prepare()
+        def add_order_then_deleted(*args):
+            with self.core.get_db() as db:
+                db.execute("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'pending',25)")
+                db.commit()
+            return {'deleted': True}
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = add_order_then_deleted
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body, {'error': 'binding_changed', 'stripe_deleted': True})
+        self.assertEqual(self.snapshot()[0][0], self.ACCOUNT)
+    def test_simulated_or_missing_binding_never_reaches_stripe(self):
+        self.prepare()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            for account_id in (None, 'acct_sim_123456'):
+                with self.core.get_db() as db:
+                    db.execute('UPDATE worker_profiles SET payout_account_id=? WHERE user_id=3', (account_id,))
+                    db.commit()
+                self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 409)
+            retrieve.assert_not_called()
+            balance.assert_not_called()
+            delete.assert_not_called()
+
+    def test_stripe_retrieve_failure_or_malformed_balance_fails_closed(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            retrieve.side_effect = stripe.APIConnectionError('offline')
+            status, body = self.reset()
+            self.assertEqual(status, 200, body)
+            self.assertIn('account_unverified', body['blockers'])
+            retrieve.side_effect = None
+            for invalid in ({'available': [], 'pending': None},
+                            {'available': [{'amount': '0'}], 'pending': []}):
+                balance.return_value = invalid
+                status, body = self.reset()
+                self.assertEqual(status, 200, body)
+                self.assertIn('balance_unverified', body['blockers'])
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_delete_response_without_deleted_true_cannot_clear_binding(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.return_value = {'deleted': False}
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+        self.assertEqual(self.snapshot(), before)
+    def test_malformed_historical_account_link_cannot_strand_deleted_account(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("""INSERT INTO payment_setup_operations
+                (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                 processor_idempotency_key,status,processor_object_id,result_json)
+                VALUES ('bad-link','account_link_create',3,'hash','not-json','bad-link:v1',
+                        'committed','link-old','{}')""")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 200, body)
+            delete.assert_called_once()
+        self.assertIsNone(self.snapshot()[0][0])
+
+
+if __name__ == '__main__':
+    unittest.main()
