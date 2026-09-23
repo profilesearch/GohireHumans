@@ -251,7 +251,8 @@ class AdminPayoutBindingResetTests(unittest.TestCase):
             retired = db.execute("SELECT operation_kind,error_code FROM payment_setup_operations WHERE user_id=3 ORDER BY id").fetchall()
             self.assertEqual([(row['operation_kind'], row['error_code']) for row in retired],
                              [('account_create', 'admin_payout_binding_reset'),
-                              ('account_link_create', 'admin_payout_binding_reset')])
+                              ('account_link_create', 'admin_payout_binding_reset'),
+                              ('admin_payout_binding_reset', 'admin_payout_binding_reset')])
         def create(**kwargs):
             self.assertEqual(kwargs['country'], 'US')
             self.assertEqual(kwargs['capabilities'], {'transfers': {'requested': True}})
@@ -386,3 +387,73 @@ class AdminPayoutBindingResetTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AdminPayoutBindingResetRaceRegressions(AdminPayoutBindingResetTests):
+    """Blockers from independent review of 4335ef4."""
+
+    def test_setup_worker_during_delete_is_refused_and_reset_completes(self):
+        self.prepare()
+        self.core.CONNECT_INTERNATIONAL_ENABLED = True
+        seen = {}
+        def setup_during_delete(*args):
+            with mock.patch.object(self.core.stripe.AccountLink, 'create') as link, \
+                 mock.patch.object(self.core.stripe.Account, 'create') as create:
+                seen['setup'] = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+                seen['stripe_calls'] = link.call_count + create.call_count
+            return {'deleted': True}
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = setup_during_delete
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 200, body)
+        self.assertEqual(seen['setup'][0], 409, seen['setup'])
+        self.assertEqual(seen['stripe_calls'], 0)
+        with self.core.get_db() as db:
+            self.assertIsNone(db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=3').fetchone()[0])
+            ops = [tuple(r) for r in db.execute("SELECT operation_kind,status,manual_review_required FROM payment_setup_operations WHERE user_id=3")]
+        self.assertEqual(ops, [('admin_payout_binding_reset', 'committed', 0)])
+        self.assertFalse(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Account, 'create', return_value=SimpleNamespace(id='acct_new_de_654321')) as created, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'DE'}, 'tok-3')
+        self.assertEqual(status, 200, body)
+        self.assertEqual(created.call_args.kwargs['country'], 'DE')
+
+    def test_definitive_delete_refusal_releases_lock(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = stripe.InvalidRequestError('cannot delete', param='id')
+            status, _ = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 409)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
+
+    def test_unknown_delete_outcome_freezes_setup_for_review(self):
+        self.prepare()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete:
+            delete.side_effect = stripe.APIConnectionError('network')
+            status, _ = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 503)
+        self.assertTrue(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.AccountLink, 'create') as link:
+            status, _ = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+        self.assertEqual(status, 409)
+        link.assert_not_called()
+
+    def test_nonzero_instant_or_reserved_balance_blocks_delete(self):
+        for bucket in ('instant_available', 'connect_reserved'):
+            with self.subTest(bucket=bucket):
+                self.prepare()
+                balance = {'available': [{'amount': 0}], 'pending': [{'amount': 0}], bucket: [{'amount': 5}]}
+                p_config, p_retrieve, p_balance, p_delete = self.mocks(balance=balance)
+                with p_config, p_retrieve, p_balance, p_delete as delete:
+                    status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+                    self.assertEqual(status, 409, body)
+                    self.assertIn('nonzero_balance', body['blockers'])
+                    delete.assert_not_called()
