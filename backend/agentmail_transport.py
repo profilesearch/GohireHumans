@@ -15,10 +15,22 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
+try:
+    import password_reset_crypto
+except ModuleNotFoundError as exc:
+    if exc.name != 'password_reset_crypto':
+        raise
+    import importlib.util
+    _crypto_spec = importlib.util.spec_from_file_location(
+        'password_reset_crypto', os.path.join(os.path.dirname(__file__), 'password_reset_crypto.py'))
+    if _crypto_spec is None or _crypto_spec.loader is None:
+        raise ImportError('Password reset crypto module is unavailable')
+    password_reset_crypto = importlib.util.module_from_spec(_crypto_spec)
+    _crypto_spec.loader.exec_module(password_reset_crypto)
 from datetime import datetime, timedelta, timezone
 
 SENDER = 'gohirehumans.operations@agentmail.to'
-SUPPORTED_TYPES = frozenset({'new_application'})
+SUPPORTED_TYPES = frozenset({'new_application', 'password_reset'})
 SUBJECT = 'GoHireHumans activity update'
 TEXT = ('There is an update related to your GoHireHumans account. '
         'Sign in to review it on GoHireHumans: https://www.gohirehumans.com\n\n'
@@ -124,6 +136,31 @@ def config() -> tuple[dict | None, str]:
                 total_cap=int(total_cap)), 'ready'
 
 
+def reset_config() -> tuple[dict | None, str]:
+    """Independent, default-off password-reset transport; never inherit the canary."""
+    env = os.environ
+    if env.get('PASSWORD_RESET_EMAIL_ENABLED') != 'true':
+        return None, 'reset_disabled'
+    key = env.get('AGENTMAIL_API_KEY', '')
+    if not key or not key.isascii() or any(c.isspace() or ord(c) < 33 or ord(c) > 126 for c in key):
+        return None, 'key_missing_or_invalid'
+    if env.get('AGENTMAIL_INBOX_ID') != SENDER:
+        return None, 'sender_invalid'
+    if not password_reset_crypto.configured():
+        return None, 'encryption_key_invalid'
+    cap = env.get('PASSWORD_RESET_DAILY_SEND_CAP', '10')
+    if not re.fullmatch(r'[1-9][0-9]?', cap) or not 1 <= int(cap) <= 20:
+        return None, 'daily_cap_invalid'
+    app_base = env.get('APP_BASE_URL', 'https://www.gohirehumans.com')
+    if not re.fullmatch(r'https://(?:www\.)?gohirehumans\.com', app_base):
+        return None, 'app_base_invalid'
+    return dict(key=key, cap=int(cap), app_base=app_base), 'ready'
+
+
+def _config_for(notification_type):
+    return reset_config() if notification_type == 'password_reset' else config()
+
+
 def _binding(db, row, cfg):
     user = db.execute('SELECT email FROM users WHERE id=? AND is_active=1 AND is_banned=0 AND is_suspended=0', [row['user_id']]).fetchone()
     source = db.execute('SELECT user_id,type,created_at FROM notifications WHERE id=?', [row['notification_id']]).fetchone()
@@ -134,16 +171,38 @@ def _binding(db, row, cfg):
         created = datetime.strptime(row['created_at'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
         source_created = datetime.strptime(source['created_at'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
         expires = datetime.strptime(row['expires_at'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-        fresh = (cfg['start'] <= source_created <= created <= now < expires
-                 and (now - source_created).total_seconds() <= MAX_AGE_SECONDS)
+        if row['notification_type'] == 'password_reset':
+            fresh = source_created <= created <= now < expires
+        else:
+            fresh = (cfg['start'] <= source_created <= created <= now < expires
+                     and (now - source_created).total_seconds() <= MAX_AGE_SECONDS)
     except (TypeError, ValueError, OverflowError):
         return None
-    if not fresh or row['id'] <= cfg['highwater'] or row['notification_id'] <= cfg['notification_highwater']:
+    if not fresh:
         return None
-    if user['email'] not in cfg['recipients'] or row['notification_type'] not in cfg['types']:
+    if row['notification_type'] != 'password_reset' and (
+            row['id'] <= cfg['highwater'] or row['notification_id'] <= cfg['notification_highwater']
+            or user['email'] not in cfg['recipients'] or row['notification_type'] not in cfg['types']):
         return None
-    payload = dict(to=[user['email']], reply_to=[SENDER], subject=SUBJECT,
-                   text=TEXT, track_opens=False)
+    if row['notification_type'] == 'password_reset':
+        token = password_reset_crypto.active_token(db, row['link'], row['user_id'])
+        if token is None:
+            return None
+        link = cfg['app_base'] + '/#/reset-password?token=' + urllib.parse.quote(token, safe='')
+        payload = dict(to=[user['email']], reply_to=[SENDER],
+                       subject='Reset your GoHireHumans password',
+                       text='Use this link within 30 minutes to reset your password: ' + link
+                            + '\n\nIf you did not request this, ignore this email.\n\nGoHireHumans',
+                       track_opens=False)
+        # Recipient is deliberately excluded from the reset fingerprint: a user
+        # changing their address before send must receive it at the current one.
+        fingerprint = digest(json.dumps([row['id'], row['notification_id'], row['user_id'],
+            row['notification_type'], row['created_at'], source['created_at'],
+            digest(row['link']), cfg['app_base'], SENDER], sort_keys=True, separators=(',', ':')))
+        return fingerprint, payload
+    else:
+        payload = dict(to=[user['email']], reply_to=[SENDER], subject=SUBJECT,
+                       text=TEXT, track_opens=False)
     fingerprint = digest(json.dumps([row['id'], row['notification_id'], row['user_id'],
         row['notification_type'], row['created_at'], source['created_at'],
         cfg['start'].isoformat(), cfg['highwater'], cfg['notification_highwater'], SENDER, payload],
@@ -153,14 +212,16 @@ def _binding(db, row, cfg):
 
 def enroll(db, outbox_id):
     """Called ONLY during creation, in the notification/outbox transaction."""
-    cfg, _ = config()
+    row = db.execute('SELECT * FROM transactional_email_outbox WHERE id=?', [outbox_id]).fetchone()
+    if row is None:
+        return
+    cfg, _ = _config_for(row['notification_type'])
     if cfg is None:
         return
     validate_schema(db)
-    row = db.execute('SELECT * FROM transactional_email_outbox WHERE id=?', [outbox_id]).fetchone()
-    binding = _binding(db, row, cfg) if row is not None else None
+    binding = _binding(db, row, cfg)
     if binding:
-        if not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
+        if row['notification_type'] != 'password_reset' and not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
             return
         db.execute("INSERT OR IGNORE INTO agentmail_send_ledger(key_digest,outbox_id,fingerprint,state) VALUES(?,?,?,'approved')",
                    [digest(row['dedupe_key']), row['id'], binding[0]])
@@ -185,10 +246,10 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
         validate_schema(db)
         row = db.execute("SELECT * FROM transactional_email_outbox WHERE id=? AND state='sending' AND claim_token=?",
                          [outbox_id, claim_token]).fetchone()
-        cfg, _ = config()
         if row is None or row['dedupe_key'] != key or row['user_id'] != user_id or row['notification_type'] != notification_type:
             db.rollback()
             return 'suppressed', None
+        cfg, _ = _config_for(row['notification_type'])
         intent = db.execute('SELECT * FROM agentmail_send_ledger WHERE key_digest=?', [digest(key)]).fetchone()
         if cfg is None or intent is None:
             db.rollback()
@@ -204,11 +265,29 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
             db.rollback()
             return 'manual_review', None
         now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-        used = db.execute('SELECT COUNT(*) FROM agentmail_send_ledger WHERE prepared_at>=?', [now[:10]]).fetchone()[0]
-        total = db.execute('SELECT COUNT(*) FROM agentmail_send_ledger WHERE prepared_at IS NOT NULL').fetchone()[0]
-        if used >= cfg['cap'] or total >= cfg['total_cap']:
-            db.rollback()
-            return 'suppressed', None
+        if row['notification_type'] == 'password_reset':
+            # Count every prepared intent, including ambiguous provider outcomes.
+            # BEGIN IMMEDIATE serializes competing workers before preparation;
+            # excess requests are suppressed rather than deferred past token expiry.
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
+            used = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
+                JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE o.notification_type='password_reset' AND l.prepared_at>=?""", [since]).fetchone()[0]
+            if used >= cfg['cap']:
+                db.rollback()
+                return 'suppressed', None
+        else:
+            # Reset mail has its own budget; it never consumes the canary's caps.
+            used = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
+                LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE l.prepared_at>=? AND COALESCE(o.notification_type,'')!='password_reset'""",
+                [now[:10]]).fetchone()[0]
+            total = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
+                LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE l.prepared_at IS NOT NULL AND COALESCE(o.notification_type,'')!='password_reset'""").fetchone()[0]
+            if used >= cfg['cap'] or total >= cfg['total_cap']:
+                db.rollback()
+                return 'suppressed', None
         db.execute("UPDATE agentmail_send_ledger SET state='prepared',prepared_at=? WHERE key_digest=? AND state='approved'",
                    [now, digest(key)])
         db.commit()  # irreversible send intent; never retain a writer over I/O
@@ -220,7 +299,11 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
         opener = urllib.request.build_opener(_NoRedirect())
         # Preparation/opener construction may cross the rollout boundary.
         # Keep the committed intent (and consumed budget); never retry it.
-        if not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
+        if row['notification_type'] == 'password_reset':
+            current_cfg, _ = reset_config()
+            if current_cfg != cfg:
+                return 'manual_review', None
+        elif not cfg['start'] <= datetime.now(timezone.utc) < cfg['end']:
             return 'manual_review', None
         response = opener.open(request, timeout=10)
         try:
