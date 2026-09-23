@@ -601,9 +601,16 @@ function formatOrderAmount(order) {
   return isHourly ? `$${amount.toFixed(2)}/hr` : `$${amount.toFixed(2)} total`;
 }
 function providerBadge(service) {
-  if (service.provider_type === 'ai') return '<span class="badge badge-ai">Agent service</span>';
+  if (service.provider_type === 'ai') return '<span class="badge badge-ai">AI service</span>';
   if (service.provider_type === 'human') return '<span class="badge badge-human">Human service</span>';
   return '';
+}
+function aiServiceDisclosure(service) {
+  return service.provider_type === 'ai' ? '<p class="ai-service-disclosure">Delivered by an AI agent operated by a verified account holder.</p>' : '';
+}
+function aiListingNotice(service) {
+  return service.visibility === 'hidden_unverified_agent'
+    ? `<p class="app-notice app-notice--rule" role="status">${esc(service.notice || 'This AI listing will stay hidden until your Stripe payout account is verified.')}</p>` : '';
 }
 function workerReviewFacts(service) {
   const rawCount = service && service.worker_review_count;
@@ -1361,8 +1368,9 @@ function landingPreviewCards(services) {
     const category = formatCategory(s.category || s.category_name || '');
     return `
         <a class="lp-feed-card" href="${href}">
-          <div class="lp-feed-card-cat">${esc(category)}</div>
+          <div class="lp-feed-card-cat">${esc(category)} ${providerBadge(s)}</div>
           <div class="lp-feed-title">${esc(s.title)}</div>
+          ${aiServiceDisclosure(s)}
           <div class="lp-feed-meta">
             ${delivery ? `<span>${I.clock} ${esc(delivery)}</span>` : ''}
             ${s.worker_name ? `<span>By ${esc(s.worker_name)}</span>` : ''}
@@ -1758,6 +1766,7 @@ function serviceCard(s) {
       <div class="svc-card-body">
         <h3 class="svc-card-title">${esc(s.title)}</h3>
         <p class="svc-card-desc">${esc(s.description || '')}</p>
+        ${aiServiceDisclosure(s)}
       </div>
       <div class="svc-card-worker">
         <div class="avatar-sm" aria-hidden="true">${esc((s.worker_name||'?').slice(0,2).toUpperCase())}</div>
@@ -1831,6 +1840,8 @@ async function renderServiceDetail(id) {
     // Custom pricing keeps the button: checkout explains that it is unavailable without any POST.
     const orderBtn = isOwnService
       ? `<p class="svc-order-note">This is your own listing. Manage it from <a href="#/my-services">My Services</a>.</p>`
+      : svc.visibility === 'hidden_unverified_agent'
+        ? ''
       : !listingActive
         ? `<p class="svc-order-note">This service is ${esc(svc.status)} and is not accepting orders right now.</p>`
         : `<button class="btn btn-primary btn-lg" onclick="handleOrderService(${Number(id)})">Order This Service</button>${!['fixed','hourly'].includes(svc.pricing_type) ? `<p class="svc-order-note">Custom pricing: agree on a fixed price with the provider before ordering.</p>` : ''}`;
@@ -1847,6 +1858,8 @@ async function renderServiceDetail(id) {
           <div class="detail-content">
             <div class="mb-6">
               <div class="cluster mb-3">${providerBadge(svc)}<div class="badge badge-open">${esc(formatCategory(svc.category))}</div></div>
+              ${aiServiceDisclosure(svc)}
+              ${aiListingNotice(svc)}
               <h1 class="detail-title">${esc(svc.title)}</h1>
               <div class="svc-worker-row">
                 <div class="avatar-md" aria-hidden="true">${esc((svc.worker_name||'?').slice(0,2).toUpperCase())}</div>
@@ -2773,15 +2786,17 @@ async function renderDashboard() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'dashboard');
 
   try {
-    const [profileData, ordersData] = await Promise.all([
+    const [profileData, ordersData, myServicesData] = await Promise.all([
       api('/profile'),
-      api('/orders').catch(() => ({ orders: [] }))
+      api('/orders').catch(() => ({ orders: [] })),
+      api('/me/services?per_page=100').catch(() => ({ services: [] }))
     ]);
     if (!isCurrent()) return;
     const u = profileData;
     const orders = (Array.isArray(ordersData) ? ordersData : (ordersData.orders || [])).slice(0, 5);
     const workerProfile = u.worker_profile;
     const employerProfile = u.employer_profile;
+    const hiddenAI = (myServicesData.services || []).find(s => s.visibility === 'hidden_unverified_agent');
 
     const recentOrders = orders.length
       ? orders.map(o => `
@@ -2886,8 +2901,9 @@ async function renderMyServices() {
             <div class="task-card">
               <div class="task-card-header">
                 <div class="task-card-title"><a href="#/services/${esc(String(s.id))}">${esc(s.title)}</a></div>
-                ${statusBadge(s.status)}
+                ${statusBadge(s.status)} ${providerBadge(s)}
               </div>
+              ${aiListingNotice(s)}
               <div class="task-card-meta">
                 <span>${I.dollar} ${formatPrice(s)}</span>
                 ${serviceDeliveryLabel(s.delivery_time_days) ? `<span>${I.clock} ${serviceDeliveryLabel(s.delivery_time_days)}</span>` : ''}
@@ -2958,6 +2974,8 @@ function renderPostService(editId = null) {
       <div class="form-page">
         <h1 class="page-title">${editId ? 'Edit Service' : 'Post a Service'}</h1>
         <p class="page-desc">${editId ? 'Update your service listing.' : 'Offer your skills on GoHireHumans.'}</p>
+        <p class="form-help">AI agents may list services only when clearly labeled as AI and operated by a verified person or company that completes Stripe payout verification.</p>
+        ${aiListingNotice(e)}
         <form onsubmit="handlePostService(event,${editId||'null'})">
           <div class="form-group">
             <label class="label" for="service-title">Service Title *</label>
@@ -4000,11 +4018,17 @@ async function renderPayments() {
 
   try {
     // A failed status request is not the same as "not set up": it gets its own error state.
-    const [statusData, historyData] = await Promise.all([
+    const [statusData, historyData, countriesData] = await Promise.all([
       api('/payments/status'),
-      api('/payments/history').catch(() => null)
+      api('/payments/history').catch(() => null),
+      api('/payments/connect-countries').catch(() => ({ countries: [{ code: 'US', name: 'United States' }] }))
     ]);
     if (!isCurrent()) return;
+    const countries = Array.isArray(countriesData?.countries) ? countriesData.countries.filter(c =>
+      c && typeof c.code === 'string' && /^[A-Z]{2}$/.test(c.code) && typeof c.name === 'string') : [];
+    const existingCountry = statusData.worker_payout_status?.country;
+    const payoutCountry = countries.some(c => c.code === existingCountry) ? existingCountry
+      : countries.some(c => c.code === 'US') ? 'US' : countries[0]?.code;
     const workerMode = paymentSetupMode(statusData.worker_payout_status || {});
     const employerMode = /^pm_sim_/.test(statusData.employer_payment_status?.payment_method_id || '')
       ? 'simulated' : paymentSetupMode(statusData.employer_payment_status || {});
@@ -4062,6 +4086,16 @@ async function renderPayments() {
           ${workerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
             : ''}
+          ${countries.length > 1 ? `<div class="mb-3" style="max-width:100%;min-width:0">
+            <label for="payoutCountry" style="display:block;margin-bottom:var(--space-2)">Payout country</label>
+            <select id="payoutCountry" class="form-input" style="width:100%;max-width:100%" ${statusData.worker_payout_status?.account_id ? 'disabled' : ''}>
+              ${countries.map(c => `<option value="${esc(c.code)}" ${c.code === payoutCountry ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+            <p class="text-xs mt-2">Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.</p>
+            ${statusData.worker_payout_status?.account_id ? '<p class="text-xs mt-1">Your payout country is fixed for this account. Contact support to change it.</p>' : ''}
+          </div>` : ''}
+          ${countries.length === 1 && !statusData.worker_payout_status?.account_id
+            ? `<span hidden data-payout-country="${esc(countries[0].code)}"></span>` : ''}
           <button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
             ${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
           </button>
@@ -4275,7 +4309,14 @@ async function setupWorkerPayment(trigger = null) {
   await withBusy(trigger, async () => {
     try {
       paymentSetupEvent('worker', 'attempted');
-      const result = await api('/payments/setup-worker', { method: 'POST', body: {} });
+      const countrySelect = document.getElementById('payoutCountry');
+      // With a selector, send the choice; with a single offered country, send it
+      // explicitly; otherwise let the server keep an existing account's country.
+      const onlyCountry = document.querySelector('[data-payout-country]')?.dataset.payoutCountry;
+      const result = await api('/payments/setup-worker', {
+        method: 'POST', body: countrySelect && !countrySelect.disabled ? { country: countrySelect.value }
+          : onlyCountry ? { country: onlyCountry } : {}
+      });
       const mode = paymentSetupMode(result);
       paymentSetupEvent('worker', 'api_succeeded', mode);
       if (['simulated', 'test', 'disabled'].includes(mode)) {
@@ -4862,7 +4903,7 @@ function renderAIEmployers() {
             </div>
             <dl class="pub-hero-facts">
               <dt>Discovery</dt><dd>Agents can discover work</dd>
-              <dt>Listings</dt><dd>Humans and agents can list services</dd>
+              <dt>Listings</dt><dd>Humans and verified agent operators can list services</dd>
               <dt>Payments</dt><dd>Stripe processing where configured</dd>
               <dt>Format</dt><dd>Same clear listing model for people and agents</dd>
             </dl>
@@ -4872,6 +4913,7 @@ function renderAIEmployers() {
 
       <section class="pub-section pub-section--alt">
         <div class="pub-inner">
+          <p>AI agents may list services only when clearly labeled as AI and operated by a verified person or company that completes Stripe payout verification.</p>
           <div class="section-head">
             <div class="lp-section-label">Six ways to route work</div>
             <h2>Humans and agents can route scoped work.</h2>
@@ -5035,6 +5077,7 @@ function renderGuidelines() {
       <p class="legal-meta">Last updated: September 2026</p>
       <h2>Be Professional</h2><p>Communicate clearly and complete work to the agreed standard. Respond promptly.</p>
       <h2>Be Honest</h2><p>Provide accurate information about your skills, availability, and deliverables.</p>
+      <h2>AI Services</h2><p>AI agents may list services only when clearly labeled as AI and operated by a verified person or company that completes Stripe payout verification. Listings remain hidden and cannot be ordered until payout verification is complete.</p>
       <h2>Be Respectful</h2><p>Treat all users with respect and professionalism at all times.</p>
       <h2>Quality Work</h2><p>Deliver work that genuinely meets the agreed requirements.</p>
       <h2>Prohibited Content</h2><p>Companionship services, illegal activities, and anything violating our acceptable use policy are strictly prohibited.</p>

@@ -196,6 +196,44 @@ ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
 # Deliberate code-level release gate for fixed-price hiring.
 JOB_HIRING_ENABLED = False
+# US stays the only onboarding country unless explicitly enabled by an operator.
+CONNECT_INTERNATIONAL_ENABLED = os.environ.get("CONNECT_INTERNATIONAL_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+# Self-serve US-platform cross-border Connect payouts: US, UK, EEA, CA, CH.
+# https://docs.stripe.com/connect/cross-border-payouts
+# TODO: Do not add recipient-agreement countries without an official supported
+# US-platform route: Stripe explicitly excludes recipient agreements from
+# self-serve cross-border Connect payouts. Iceland is omitted because Stripe's
+# US-platform selector offers recipient rather than full agreement there.
+CONNECT_COUNTRIES = {
+    "US": ("United States", "full"), "GB": ("United Kingdom", "full"),
+    "CA": ("Canada", "full"), "CH": ("Switzerland", "full"),
+    "AT": ("Austria", "full"), "BE": ("Belgium", "full"),
+    "BG": ("Bulgaria", "full"), "HR": ("Croatia", "full"),
+    "CY": ("Cyprus", "full"), "CZ": ("Czech Republic", "full"),
+    "DK": ("Denmark", "full"), "EE": ("Estonia", "full"),
+    "FI": ("Finland", "full"), "FR": ("France", "full"),
+    "DE": ("Germany", "full"), "GR": ("Greece", "full"),
+    "HU": ("Hungary", "full"), "IE": ("Ireland", "full"),
+    "IT": ("Italy", "full"), "LV": ("Latvia", "full"),
+    "LI": ("Liechtenstein", "full"), "LT": ("Lithuania", "full"),
+    "LU": ("Luxembourg", "full"), "MT": ("Malta", "full"),
+    "NL": ("Netherlands", "full"), "NO": ("Norway", "full"),
+    "PL": ("Poland", "full"), "PT": ("Portugal", "full"),
+    "RO": ("Romania", "full"), "SK": ("Slovakia", "full"),
+    "SI": ("Slovenia", "full"), "ES": ("Spain", "full"),
+    "SE": ("Sweden", "full"),
+}
+
+def connect_countries():
+    if not CONNECT_INTERNATIONAL_ENABLED:
+        allowed = ("US",)
+    else:
+        restriction = os.environ.get("CONNECT_COUNTRIES_ALLOWLIST", "").strip()
+        allowed = (set(restriction.upper().replace(" ", "").split(",")) & CONNECT_COUNTRIES.keys()
+                   if restriction else CONNECT_COUNTRIES.keys())
+    return [{"code": code, "name": CONNECT_COUNTRIES[code][0], "agreement": CONNECT_COUNTRIES[code][1]}
+            for code in sorted(allowed)]
+
 MAX_MONEY_INPUT_CHARS = 96
 MAX_MONEY_ABS = Decimal("999999.99")
 PLATFORM_FEE_BPS = 100
@@ -289,7 +327,6 @@ def is_live_connect_account_ready(account):
     capabilities = stripe_attr(account, 'capabilities', {}) or {}
     return bool(
         stripe_attr(account, 'payouts_enabled', False)
-        and stripe_attr(account, 'charges_enabled', False)
         and stripe_attr(capabilities, 'transfers', None) == 'active'
     )
 
@@ -362,7 +399,7 @@ def _table_columns(db, table_name):
         "payout_release_conflict_evidence", "services", "users",
         "api_key_usage", "disputes", "refund_attempts",
         "refund_attempt_conflict_evidence", "transactional_email_outbox",
-        "job_application_reminders",
+        "job_application_reminders", "worker_profiles",
     }
     if table_name not in supported_tables:
         raise ValueError("Unsupported migration table")
@@ -1450,6 +1487,8 @@ def _init_db_connection_steps(db):
         hourly_rate REAL,
         payout_method TEXT DEFAULT 'pending_setup',
         payout_account_id TEXT,
+        payout_account_country TEXT,
+        payout_service_agreement TEXT,
         payout_method_details TEXT,
         avg_rating REAL DEFAULT 0,
         total_reviews INTEGER DEFAULT 0,
@@ -1871,6 +1910,12 @@ def _init_db_connection_steps(db):
     validate_required_payment_setup_schema(db)
     validate_required_refund_schema(db)
 
+    # ── Worker Connect migrations (legacy connected accounts are US/full) ──
+    ensure_column(db, "worker_profiles", "payout_account_country",
+                  "ALTER TABLE worker_profiles ADD COLUMN payout_account_country TEXT")
+    ensure_column(db, "worker_profiles", "payout_service_agreement",
+                  "ALTER TABLE worker_profiles ADD COLUMN payout_service_agreement TEXT")
+
     # ── Account-state migrations ─────────────────────────────────────
     ensure_column(
         db, "users", "is_suspended",
@@ -1894,6 +1939,19 @@ def _init_db_connection_steps(db):
         "ALTER TABLE users ADD COLUMN is_ai_agent INTEGER DEFAULT 0",
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_services_provider_type ON services(provider_type)")
+    # Additive, repeat-safe relabel. No service or account is deleted; the public
+    # visibility predicate also catches flagged/AI sellers outside these domains.
+    domains = agent_platform_domains()
+    domain_sql = agent_email_domain_sql('u')
+    if domains:
+        users_changed = db.execute(
+            f"UPDATE users AS u SET is_ai_agent=1 WHERE ({domain_sql}) AND COALESCE(is_ai_agent,0)!=1"
+        ).rowcount
+        services_changed = db.execute(
+            f"""UPDATE services SET provider_type='ai' WHERE COALESCE(provider_type,'human')!='ai'
+                AND worker_id IN (SELECT u.id FROM users u WHERE {domain_sql})"""
+        ).rowcount
+        print(f"[GoHireHumans] Agent domain backfill: users={users_changed} services={services_changed}", file=sys.stderr)
 
     # ── Google OAuth + Referral program migrations ──────────────────────
     # SQLite cannot ADD COLUMN with UNIQUE, so uniqueness is installed below.
@@ -2655,6 +2713,84 @@ def ensure_db_initialized():
     return True
 
 
+AI_LISTING_NOTICE = "This AI listing will stay hidden until your Stripe payout account is verified."
+AI_LISTING_ORDER_ERROR = "This AI listing is not yet verified for payouts"
+
+
+def agent_platform_domains():
+    """Validated exact email domains; never interpolate untrusted env into SQL."""
+    raw = os.environ.get('AGENT_PLATFORM_DOMAINS', 'ilands.app')
+    return tuple(sorted({d.strip().lower() for d in raw.split(',')
+                         if re.fullmatch(r'[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?', d.strip().lower())}))
+
+
+def agent_email_domain_sql(user_alias='u'):
+    domains = agent_platform_domains()
+    if not domains:
+        return '0'
+    # Domains have been restricted to alphanumerics, dots and hyphens.
+    e = f"LOWER(TRIM({user_alias}.email))"
+    # Mail is routed by the text after the LAST '@' (RFC 5321); strings without
+    # an '@' have no domain. RTRIM with every non-'@' character strips back to
+    # the last '@', and REPLACE removes that prefix.
+    host = (f"(CASE WHEN INSTR({e},'@')>0 "
+            f"THEN REPLACE({e}, RTRIM({e}, REPLACE({e},'@','')), '') ELSE '' END)")
+    # Exact domain or a true subdomain ("team.ilands.app"), never suffix look-alikes
+    # ("evil-ilands.app"): the character before the domain must be a dot.
+    clauses = []
+    for d in domains:
+        clauses.append(f"{host} = '{d}'")
+        clauses.append(f"SUBSTR({host}, -{len(d) + 1}) = '.{d}'")
+    return "(COALESCE(" + " OR ".join(clauses) + ", 0))"
+
+
+def agent_seller_sql(service_alias='s', user_alias='u'):
+    # Account flags/domains apply to every listing; an AI service on an
+    # otherwise-human account does not turn its other human services into AI.
+    return (f"(COALESCE({user_alias}.is_ai_agent,0)=1 OR {agent_email_domain_sql(user_alias)} "
+            f"OR COALESCE({service_alias}.provider_type,'')='ai')")
+
+
+def agent_account_sql(user_alias='u'):
+    return f"(COALESCE({user_alias}.is_ai_agent,0)=1 OR {agent_email_domain_sql(user_alias)})"
+
+
+def public_service_visibility_sql(service_alias='s', user_alias='u', profile_alias='wp'):
+    # COALESCE keeps the predicate two-valued: a missing worker profile or NULL
+    # payout_method must mean "not verified", never SQL NULL (which NOT would
+    # also treat as not-hidden).
+    return (f"(NOT {agent_seller_sql(service_alias, user_alias)} "
+            f"OR COALESCE({profile_alias}.payout_method,'')='stripe_connect_active')")
+
+
+def is_agent_seller(db, user_id):
+    return db.execute(f"""SELECT 1 FROM users u LEFT JOIN services s ON s.worker_id=u.id
+        WHERE u.id=? AND {agent_seller_sql()} LIMIT 1""", [user_id]).fetchone() is not None
+
+
+def is_agent_account(db, user_id):
+    return db.execute(f"SELECT 1 FROM users u WHERE u.id=? AND {agent_account_sql()}",
+                      [user_id]).fetchone() is not None
+
+
+def service_hidden_for_unverified_agent(db, service_id):
+    """Fail closed: hidden unless the service is positively visible."""
+    row = db.execute(f"""SELECT CASE WHEN {public_service_visibility_sql()} THEN 1 ELSE 0 END AS visible
+        FROM services s JOIN users u ON s.worker_id=u.id
+        LEFT JOIN worker_profiles wp ON wp.user_id=u.id WHERE s.id=?""", [service_id]).fetchone()
+    return row is not None and row['visible'] != 1
+
+
+def service_policy_response(db, row, *, owner_view=False):
+    result = row_to_dict(row)
+    if row['provider_type'] == 'ai' or is_agent_account(db, row['worker_id']):
+        result['provider_type'] = 'ai'
+        if owner_view and service_hidden_for_unverified_agent(db, row['id']):
+            result['notice'] = AI_LISTING_NOTICE
+            result['visibility'] = 'hidden_unverified_agent'
+    return result
+
+
 SEEDED_SAMPLE_EMAILS = {
     "sarah.chen@example.com",
     "marcus.johnson@example.com",
@@ -2669,6 +2805,14 @@ SEEDED_SAMPLE_EMAILS = {
     "hiring@cloudnative.dev",
     "ops@scalefirst.io",
     "founder@aitools.co",
+    # Legacy sample worker accounts (created 2026-03-16) whose services leaked
+    # into public browse. Hidden from public reads and never orderable.
+    "david.chen.design@example.com",
+    "priya.sharma.dev@example.com",
+    "tom.williams.write@example.com",
+    "lisa.nguyen.va@example.com",
+    "carlos.reyes.market@example.com",
+    "anna.kowalski.trans@example.com",
 }
 
 
@@ -2682,6 +2826,13 @@ def seeded_sample_email_placeholders():
 
 def seeded_sample_email_values():
     return list(SEEDED_SAMPLE_EMAILS)
+
+
+def service_owned_by_seeded_sample(db, service_id):
+    row = db.execute(
+        "SELECT u.email FROM services s JOIN users u ON u.id=s.worker_id WHERE s.id=?", [service_id]
+    ).fetchone()
+    return row is not None and is_seeded_sample_email(row["email"])
 
 
 def public_non_seeded_user_condition(user_alias="u"):
@@ -5162,6 +5313,22 @@ def _payment_setup_operation_serialized(
         db.commit()
     db.execute("BEGIN IMMEDIATE")
     try:
+        if operation_kind == "account_create":
+            # A different country has a different fingerprint. Reject it while
+            # holding the short writer lock, before either request reaches Stripe.
+            prior = db.execute(
+                "SELECT request_binding_json FROM payment_setup_operations "
+                "WHERE user_id=? AND operation_kind='account_create' ORDER BY id DESC LIMIT 1",
+                [user_id],
+            ).fetchone()
+            if prior:
+                prior_binding = json.loads(prior["request_binding_json"])
+                if (prior_binding.get("country", "US") != binding["country"]
+                        or prior_binding.get("agreement", "full") != binding["agreement"]):
+                    db.rollback()
+                    raise PaymentSetupReconciliationRequired(
+                        "Existing payout account is bound to another country; contact support to change it."
+                    )
         existing = db.execute(
             "SELECT * FROM payment_setup_operations WHERE operation_key=?",
             [operation_key],
@@ -8120,8 +8287,6 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
             if stripe_configured():
                 account = retrieve_live_connect_account(worker["payout_account_id"])
                 ready = (stripe_attr(account, "id") == worker["payout_account_id"]
-                         and stripe_attr(account, "payouts_enabled") is True
-                         and stripe_attr(account, "charges_enabled") is True
                          and is_live_connect_account_ready(account))
             else:
                 ready = worker_has_payout_setup(db, order["worker_id"])
@@ -9660,7 +9825,10 @@ def _handle_routes(db):
         seeded_user_subquery = public_non_seeded_user_subquery()
         seeded_values = seeded_sample_email_values()
         services_count = db.execute(
-            f"SELECT COUNT(*) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            f"""SELECT COUNT(*) as c FROM services s JOIN users u ON u.id=s.worker_id
+                LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+                WHERE s.status='active' AND s.worker_id NOT IN ({seeded_user_subquery})
+                AND {public_service_visibility_sql()}""",
             seeded_values
         ).fetchone()['c']
         workers_count = db.execute(
@@ -9695,7 +9863,10 @@ def _handle_routes(db):
             public_non_seeded_user_values()
         ).fetchone()['c']
         categories_count = db.execute(
-            f"SELECT COUNT(DISTINCT category) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            f"""SELECT COUNT(DISTINCT s.category) as c FROM services s
+                JOIN users u ON u.id=s.worker_id LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+                WHERE s.status='active' AND s.worker_id NOT IN ({seeded_user_subquery})
+                AND {public_service_visibility_sql()}""",
             seeded_values
         ).fetchone()['c']
         return json_response({
@@ -10209,7 +10380,8 @@ def _handle_routes(db):
         pricing_type = params.get("pricing_type")
         provider_type = params.get("provider_type")
 
-        conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})"]
+        conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})",
+                      public_service_visibility_sql()]
         values = seeded_sample_email_values()
 
         if category:
@@ -10219,7 +10391,7 @@ def _handle_routes(db):
             conditions.append("s.pricing_type = ?")
             values.append(pricing_type)
         if provider_type:
-            conditions.append("s.provider_type = ?")
+            conditions.append(f"(CASE WHEN {agent_seller_sql()} THEN 'ai' ELSE s.provider_type END) = ?")
             values.append(provider_type)
         try:
             min_price_val = parse_float_param(params, "min_price", min_value=0)
@@ -10238,7 +10410,9 @@ def _handle_routes(db):
             values.extend([pct, pct, pct])
 
         where = " AND ".join(conditions)
-        count = db.execute(f"SELECT COUNT(*) as c FROM services s WHERE {where}", values).fetchone()['c']
+        count = db.execute(f"""SELECT COUNT(*) as c FROM services s
+            JOIN users u ON u.id=s.worker_id LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+            WHERE {where}""", values).fetchone()['c']
         rows = db.execute(
             f"""SELECT s.*, u.name as worker_name, u.avatar_url as worker_avatar,
                 wp.avg_rating as worker_rating, wp.total_reviews as worker_review_count,
@@ -10253,7 +10427,7 @@ def _handle_routes(db):
         ).fetchall()
 
         return json_response({
-            "services": [row_to_dict(r) for r in rows],
+            "services": [service_policy_response(db, r) for r in rows],
             "total": count,
             "page": page,
             "per_page": per_page,
@@ -10307,7 +10481,7 @@ def _handle_routes(db):
         ).fetchall()
 
         return json_response({
-            "services": [row_to_dict(r) for r in rows],
+            "services": [service_policy_response(db, r, owner_view=True) for r in rows],
             "total": count,
             "page": page,
             "per_page": per_page,
@@ -10330,7 +10504,12 @@ def _handle_routes(db):
         ).fetchone()
         if not row:
             return error_response("Service not found", 404)
-        return json_response(row_to_dict(row))
+        hidden = service_hidden_for_unverified_agent(db, service_id)
+        viewer = authenticate(db) if hidden else None
+        privileged = bool(viewer and (viewer['id'] == row['worker_id'] or viewer['is_admin']))
+        if hidden and not privileged:
+            return error_response("Service not found", 404)
+        return json_response(service_policy_response(db, row, owner_view=privileged))
 
     elif path == "/services" and method == "POST":
         user = authenticate(db)
@@ -10394,6 +10573,8 @@ def _handle_routes(db):
         provider_type = body.get("provider_type", "human")
         if provider_type not in ('human', 'ai'):
             return error_response("provider_type must be 'human' or 'ai'")
+        if is_agent_account(db, user['id']):
+            provider_type = 'ai'
 
         fulfillment_type = body.get("fulfillment_type", "manual")
         if fulfillment_type not in ('manual', 'api'):
@@ -10429,7 +10610,7 @@ def _handle_routes(db):
         audit(db, user['id'], "create_service", "service", service_id)
         db.commit()
         svc = db.execute("SELECT * FROM services WHERE id = ?", [service_id]).fetchone()
-        return json_response(row_to_dict(svc), 201)
+        return json_response(service_policy_response(db, svc, owner_view=True), 201)
 
     elif re.match(r"^/services/(\d+)$", path) and method == "PUT":
         user = authenticate(db)
@@ -10443,6 +10624,10 @@ def _handle_routes(db):
             return error_response("Forbidden", 403)
 
         body = get_body()
+        if 'provider_type' in body and body['provider_type'] not in ('human', 'ai'):
+            return error_response("provider_type must be 'human' or 'ai'")
+        if svc['provider_type'] == 'ai' or is_agent_account(db, svc['worker_id']):
+            body['provider_type'] = 'ai'
         if body.get('title') or body.get('description'):
             txt = (body.get('title') or svc['title']) + " " + (body.get('description') or svc['description'])
             safe, msg = check_content_safety(txt)
@@ -10534,7 +10719,7 @@ def _handle_routes(db):
         audit(db, user['id'], "update_service", "service", service_id)
         db.commit()
         svc = db.execute("SELECT * FROM services WHERE id = ?", [service_id]).fetchone()
-        return json_response(row_to_dict(svc))
+        return json_response(service_policy_response(db, svc, owner_view=True))
 
     elif re.match(r"^/services/(\d+)$", path) and method == "DELETE":
         user = authenticate(db)
@@ -11286,10 +11471,12 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/quote$", path).group(1))
         svc = db.execute("SELECT * FROM services WHERE id=? AND status='active'", [service_id]).fetchone()
-        if not svc:
+        if not svc or service_owned_by_seeded_sample(db, service_id):
             return error_response("Service not found or unavailable", 404)
         if svc['worker_id'] == user['id']:
             return error_response("You cannot order your own service", 403)
+        if service_hidden_for_unverified_agent(db, service_id):
+            return error_response(AI_LISTING_ORDER_ERROR, 409)
         # Keep explicit empty quantities invalid rather than silently defaulting.
         quote_inputs = dict(urllib.parse.parse_qsl(
             getattr(_request_ctx, 'query_string', ''), keep_blank_values=True
@@ -11305,6 +11492,11 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/order$", path).group(1))
+        # Fail closed before the idempotent replay path or any processor I/O.
+        if service_owned_by_seeded_sample(db, service_id):
+            return error_response("Service not found or unavailable", 404)
+        if service_hidden_for_unverified_agent(db, service_id):
+            return error_response(AI_LISTING_ORDER_ERROR, 409)
         body = get_body()
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
@@ -12907,10 +13099,47 @@ def _handle_routes(db):
         db.commit()
         return json_response({"ok": True, "payment_method_id": payment_method_id})
 
+    elif path == "/payments/connect-countries" and method == "GET":
+        # Configuration only, no account data; safe for public short-lived caching.
+        _request_ctx.response_status = 200
+        print("Status: 200")
+        print("Content-Type: application/json")
+        print("Cache-Control: public, max-age=300")
+        print()
+        print(json.dumps({"countries": connect_countries()}))
+        return
+
     elif path == "/payments/setup-worker" and method == "POST":
         user = authenticate(db)
         if not user:
             return error_response("Unauthorized", 401)
+        body = get_body() or {}
+        allowed = {item["code"]: item for item in connect_countries()}
+        existing = db.execute(
+            "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
+            [user["id"]],
+        ).fetchone()
+        existing_account = (existing["payout_account_id"] if existing else "") or ""
+        bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
+        if "country" in body:
+            country = body.get("country")
+        elif bound_live_account:
+            # Returning workers (bank updates, re-onboarding) keep their bound country
+            # even if the international flag or allowlist has since changed.
+            country = (existing["payout_account_country"] or "US")
+        elif len(allowed) == 1:
+            country = next(iter(allowed))
+        else:
+            country = "US"
+        if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
+            return error_response("Unsupported payout country; select an available ISO country code.", 400)
+        if bound_live_account and country == (existing["payout_account_country"] or "US"):
+            # Existing accounts were validated when created; never strand them on rollback.
+            agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
+        elif country in allowed:
+            agreement = allowed[country]["agreement"]
+        else:
+            return error_response("Unsupported payout country; select an available country.", 400)
         if _payment_setup_profile_is_frozen(db, user["id"]):
             return error_response("Payment setup is frozen for manual reconciliation.", 409)
 
@@ -12921,20 +13150,34 @@ def _handle_routes(db):
                 # Profile creation is committed before Account.create.
                 db.commit()
                 wp = db.execute(
-                    "SELECT payout_account_id FROM worker_profiles WHERE user_id=?",
+                    "SELECT payout_account_id,payout_account_country,payout_service_agreement "
+                    "FROM worker_profiles WHERE user_id=?",
                     [user["id"]],
                 ).fetchone()
                 account_id = (wp["payout_account_id"] if wp else "") or ""
+                if account_id and not account_id.startswith("acct_sim_"):
+                    existing_country = wp["payout_account_country"] or "US"
+                    existing_agreement = wp["payout_service_agreement"] or "full"
+                    if existing_country != country or existing_agreement != agreement:
+                        return error_response(
+                            "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+                        )
                 if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
+                    capabilities = {"transfers": {"requested": True}}
+                    account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
+                    if country != "US" and agreement == "full":
+                        capabilities = {"card_payments": {"requested": True}, **capabilities}
+                        account_binding["capabilities"] = capabilities
                     account_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
                         "account_create",
-                        {"country": "US", "email": user["email"], "type": "express", "user_id": user["id"]},
+                        account_binding,
                         lambda key: stripe.Account.create(
-                            type="express", country="US", email=user["email"],
-                            capabilities={"transfers": {"requested": True}},
+                            type="express", country=country, email=user["email"],
+                            capabilities=capabilities,
                             metadata={"user_id": str(user["id"])}, idempotency_key=key,
+                            **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
                         ),
                         lambda value: {
                             "processor_object_id": stripe_attr(value, "id", ""),
@@ -12942,9 +13185,10 @@ def _handle_routes(db):
                         },
                         lambda conn, result: conn.execute(
                             """UPDATE worker_profiles
-                               SET payout_account_id=?,payout_method='stripe_connect'
+                               SET payout_account_id=?,payout_method='stripe_connect',
+                                   payout_account_country=?,payout_service_agreement=?
                                WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
-                            [result["account_id"], user["id"], result["account_id"]],
+                            [result["account_id"], country, agreement, user["id"], result["account_id"]],
                         ),
                     )
                     account_id = account_result["account_id"]
@@ -13041,12 +13285,14 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
 
-        wp = db.execute("SELECT payout_account_id, payout_method FROM worker_profiles WHERE user_id=?", [user['id']]).fetchone()
+        wp = db.execute("SELECT payout_account_id, payout_method, payout_account_country, payout_service_agreement FROM worker_profiles WHERE user_id=?", [user['id']]).fetchone()
         ep = db.execute("SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id=?", [user['id']]).fetchone()
 
         worker_status = None
         if wp:
             if wp['payout_account_id']:
+                account_country = wp['payout_account_country'] or 'US'
+                agreement = wp['payout_service_agreement'] or 'full'
                 if stripe_configured() and not wp['payout_account_id'].startswith('acct_sim_'):
                     try:
                         acct = retrieve_live_connect_account(wp['payout_account_id'])
@@ -13057,10 +13303,12 @@ def _handle_routes(db):
                             "charges_enabled": bool(stripe_attr(acct, 'charges_enabled')),
                             "details_submitted": bool(stripe_attr(acct, 'details_submitted')),
                             "account_id": wp['payout_account_id'],
+                            "country": account_country,
+                            "service_agreement": agreement,
                             "mode": "live"
                         }
                     except STRIPE_ERROR:
-                        worker_status = {"connected": False, "account_id": wp['payout_account_id'], "mode": "live"}
+                        worker_status = {"connected": False, "account_id": wp['payout_account_id'], "country": account_country, "service_agreement": agreement, "mode": "live"}
                 else:
                     if PRODUCTION_MODE:
                         worker_status = {"connected": False, "account_id": None, "mode": "disabled", "message": "Simulated worker payout is disabled in production."}
@@ -13561,12 +13809,12 @@ def _handle_routes(db):
         elif event_type == 'account.updated':
             # Worker Connect account updated
             account_id = data['id']
-            wp = db.execute("SELECT user_id FROM worker_profiles WHERE payout_account_id=?", [account_id]).fetchone()
+            wp = db.execute("SELECT user_id,payout_method FROM worker_profiles WHERE payout_account_id=?", [account_id]).fetchone()
             if wp:
-                is_active = data.get('payouts_enabled', False) and data.get('charges_enabled', False)
+                is_active = is_live_connect_account_ready(data)
                 new_method = 'stripe_connect_active' if is_active else 'stripe_connect_pending'
                 db.execute("UPDATE worker_profiles SET payout_method=? WHERE user_id=?", [new_method, wp['user_id']])
-                if is_active:
+                if is_active and wp['payout_method'] != 'stripe_connect_active':
                     push_notification(db, wp['user_id'], "payout_ready",
                         "Payout account ready!",
                         "Your bank account is connected and you can now receive payments.",
