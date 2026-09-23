@@ -2783,6 +2783,14 @@ SEEDED_SAMPLE_EMAILS = {
     "hiring@cloudnative.dev",
     "ops@scalefirst.io",
     "founder@aitools.co",
+    # Legacy sample worker accounts (created 2026-03-16) whose services leaked
+    # into public browse. Hidden from public reads and never orderable.
+    "david.chen.design@example.com",
+    "priya.sharma.dev@example.com",
+    "tom.williams.write@example.com",
+    "lisa.nguyen.va@example.com",
+    "carlos.reyes.market@example.com",
+    "anna.kowalski.trans@example.com",
 }
 
 
@@ -2796,6 +2804,13 @@ def seeded_sample_email_placeholders():
 
 def seeded_sample_email_values():
     return list(SEEDED_SAMPLE_EMAILS)
+
+
+def service_owned_by_seeded_sample(db, service_id):
+    row = db.execute(
+        "SELECT u.email FROM services s JOIN users u ON u.id=s.worker_id WHERE s.id=?", [service_id]
+    ).fetchone()
+    return row is not None and is_seeded_sample_email(row["email"])
 
 
 def public_non_seeded_user_condition(user_alias="u"):
@@ -11278,7 +11293,7 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/quote$", path).group(1))
         svc = db.execute("SELECT * FROM services WHERE id=? AND status='active'", [service_id]).fetchone()
-        if not svc:
+        if not svc or service_owned_by_seeded_sample(db, service_id):
             return error_response("Service not found or unavailable", 404)
         if svc['worker_id'] == user['id']:
             return error_response("You cannot order your own service", 403)
@@ -11300,6 +11315,8 @@ def _handle_routes(db):
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/order$", path).group(1))
         # Fail closed before the idempotent replay path or any processor I/O.
+        if service_owned_by_seeded_sample(db, service_id):
+            return error_response("Service not found or unavailable", 404)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
         body = get_body()
