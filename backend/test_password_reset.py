@@ -19,6 +19,9 @@ class PasswordResetTests(unittest.TestCase):
         self.stack.enter_context(mock.patch.dict(os.environ, {
             'DATABASE_PATH': str(Path(tmp) / 'test.db'), 'DISABLE_AUTO_SEED': '1',
             'EMAIL_PROVIDER': 'agentmail', 'AGENTMAIL_SEND_ENABLED': 'false',
+            'AGENTMAIL_API_KEY': 'offline-test-key',
+            'AGENTMAIL_INBOX_ID': 'gohirehumans.operations@agentmail.to',
+            'PASSWORD_RESET_EMAIL_ENABLED': 'true',
             'PASSWORD_RESET_ENCRYPTION_KEY': 'a' * 64, 'PASSWORD_RESET_RESPONSE_FLOOR_SECONDS': '0',
         }, clear=True))
         self.api = load_api_core()
@@ -80,25 +83,98 @@ class PasswordResetTests(unittest.TestCase):
         self.assertNotIn(token, Path(os.environ['DATABASE_PATH']).read_bytes().decode('latin1'))
         self.assertNotIn(token, str(self.db.execute('SELECT * FROM audit_log').fetchall()))
 
-    def test_resend_worker_delivers_only_live_link_without_persisting_token(self):
-        os.environ['EMAIL_PROVIDER'] = 'resend'
-        self.forgot()
+    def mock_agentmail(self):
+        response = mock.Mock(status=200)
+        message_ids = iter(range(100))
+        response.read.side_effect = lambda _: json.dumps({'message_id': 'offline-' + str(next(message_ids)), 'thread_id': 'offline-thread'}).encode()
+        opener = mock.Mock()
+        opener.open.return_value = response
+        return mock.patch.object(self.api.agentmail_transport.urllib.request, 'build_opener', return_value=opener), opener
+
+    def test_worker_delivers_non_allowlisted_live_link_with_canary_disabled(self):
+        os.environ['AGENTMAIL_RECIPIENT_ALLOWLIST'] = 'someone-else@example.com'
+        os.environ['AGENTMAIL_EXPIRES_AT'] = '2026-09-18T00:00:00Z'
+        self.assertEqual(self.api.agentmail_transport.config()[0], None)
+        self.assertEqual(self.forgot()[0], 200)
         token = self.tokens[-1]
-        delivered = []
-        def fake_send(to, subject, body, idempotency_key=None):
-            delivered.append((to, subject, body, idempotency_key))
-            return 'resend-message-id'
-        with mock.patch.object(self.api, 'send_email', side_effect=fake_send):
+        patcher, opener = self.mock_agentmail()
+        with patcher:
             summary = self.api.flush_transactional_notification_emails(self.db)
         self.assertEqual(summary['sent'], 1)
-        self.assertEqual(len(delivered), 1)
-        self.assertEqual(delivered[0][0], 'a@example.com')
-        self.assertIn('/#/reset-password?token=' + token, delivered[0][2])
+        self.assertEqual(opener.open.call_count, 1)
+        payload = json.loads(opener.open.call_args.args[0].data)
+        self.assertEqual(payload['to'], ['a@example.com'])
+        self.assertEqual(payload['subject'], 'Reset your GoHireHumans password')
+        self.assertIn('/#/reset-password?token=' + token, payload['text'])
+        self.assertIn('30 minutes', payload['text'])
+        self.assertTrue(payload['text'].endswith('GoHireHumans'))
+        self.assertIs(payload['track_opens'], False)
         row = self.db.execute("SELECT * FROM transactional_email_outbox WHERE notification_type='password_reset'").fetchone()
         self.assertEqual(row['state'], 'sent')
-        self.assertEqual(row['provider_email_id'], 'resend-message-id')
         self.assertNotIn(token, json.dumps(dict(row)))
         self.assertNotIn(token, json.dumps([dict(r) for r in self.db.execute('SELECT * FROM audit_log')]))
+
+    def test_new_application_stays_suppressed_with_reset_enabled(self):
+        self.db.execute("INSERT INTO notifications(user_id,type,title,message,created_at) VALUES (1,'new_application','update','hello',datetime('now'))")
+        notification_id = self.db.execute('SELECT MAX(id) FROM notifications').fetchone()[0]
+        outbox_id = self.db.execute("""INSERT INTO transactional_email_outbox
+            (user_id,notification_id,email_to,notification_type,title,message,link,dedupe_context,dedupe_key,state,created_at,expires_at)
+            VALUES (1,?,'','new_application','update','hello','#/dashboard','app-test','new-app-test','pending',datetime('now'),datetime('now','+15 minutes'))""", [notification_id]).lastrowid
+        self.api.agentmail_transport.enroll(self.db, outbox_id)
+        self.db.commit()
+        patcher, opener = self.mock_agentmail()
+        with patcher:
+            self.api.flush_transactional_notification_emails(self.db)
+        opener.open.assert_not_called()
+        self.assertEqual(self.db.execute('SELECT state FROM transactional_email_outbox WHERE id=?', [outbox_id]).fetchone()[0], 'failed')
+
+    def test_unavailable_has_no_writes_and_throttle_still_first(self):
+        os.environ['PASSWORD_RESET_EMAIL_ENABLED'] = 'false'
+        self.assertEqual(self.request('/auth/password-reset/available', {}, method='GET'), (200, {'available': False}))
+        before = [self.db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+                  for table in ('password_reset_tokens', 'transactional_email_outbox', 'audit_log')]
+        self.api.PASSWORD_RESET_RESPONSE_FLOOR_SECONDS = 1
+        with mock.patch.object(self.api.time, 'sleep', side_effect=AssertionError('sleep')):
+            for _ in range(4):
+                status, body = self.forgot()
+                if _ < 3:
+                    self.assertEqual(status, 503)
+                    self.assertEqual(body, {'error': "Password reset by email isn't available right now. Contact gohirehumans.operations@agentmail.to for help."})
+                else:
+                    self.assertEqual(status, 200)
+        self.assertEqual(before, [self.db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+                                  for table in ('password_reset_tokens', 'transactional_email_outbox', 'audit_log')])
+
+    def test_missing_malformed_key_and_bad_reset_config_unavailable(self):
+        for name, value in [('PASSWORD_RESET_ENCRYPTION_KEY', ''), ('PASSWORD_RESET_ENCRYPTION_KEY', 'bad'),
+                            ('PASSWORD_RESET_DAILY_SEND_CAP', '21'), ('PASSWORD_RESET_DAILY_SEND_CAP', '0'),
+                            ('APP_BASE_URL', 'https://evil.example')]:
+            with self.subTest(name=name, value=value), mock.patch.dict(os.environ, {name: value}):
+                self.assertEqual(self.request('/auth/password-reset/available', {}, method='GET')[1], {'available': False})
+        self.assertEqual(self.request('/auth/password-reset/available', {}, method='GET')[1], {'available': True})
+
+    def test_daily_cap_suppresses_excess_without_send(self):
+        os.environ['PASSWORD_RESET_DAILY_SEND_CAP'] = '2'
+        patcher, opener = self.mock_agentmail()
+        with patcher:
+            for index in range(3):
+                self.assertEqual(self.forgot(ip='cap-' + str(index))[0], 200)
+                self.api.flush_transactional_notification_emails(self.db)
+        self.assertEqual(opener.open.call_count, 2)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM agentmail_send_ledger WHERE state='accepted'").fetchone()[0], 2)
+
+    def test_user_becomes_ineligible_after_enqueue(self):
+        for column in ('is_active', 'is_banned', 'is_suspended'):
+            with self.subTest(column=column):
+                self.db.execute('UPDATE users SET is_active=1,is_banned=0,is_suspended=0 WHERE id=1')
+                self.db.commit()
+                self.forgot(ip='ineligible-' + column)
+                self.db.execute('UPDATE users SET ' + column + '=? WHERE id=1', [0 if column == 'is_active' else 1])
+                self.db.commit()
+                patcher, opener = self.mock_agentmail()
+                with patcher:
+                    self.api.flush_transactional_notification_emails(self.db)
+                opener.open.assert_not_called()
 
     def test_reset_single_use_revokes_sessions_and_api_keys(self):
         self.forgot()

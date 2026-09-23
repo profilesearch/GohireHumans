@@ -4206,7 +4206,8 @@ def invalidate_password_reset_emails(db, user_id):
 
 
 def send_transactional_notification_email(db, user_id, notif_type, title, message=None, link=None, dedupe_context=None, provider_idempotency_key=None, outbox_id=None, outbox_claim_token=None):
-    if (os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
+    if (notif_type == 'password_reset'
+            or os.environ.get("EMAIL_PROVIDER", "resend") == "agentmail"
             or agentmail_transport.owns_key(db, provider_idempotency_key)):
         return agentmail_transport.send(
             db, outbox_id, outbox_claim_token, provider_idempotency_key, user_id, notif_type,
@@ -4722,7 +4723,8 @@ def notification_worker_enabled():
         return configured not in {"0", "false", "no", "off"}
     # Keep unit/development imports side-effect free, while production still
     # generates in-app reminders even during an email-provider outage.
-    return bool(PRODUCTION_MODE or email_provider_configuration()['provider_configured'])
+    return bool(PRODUCTION_MODE or email_provider_configuration()['provider_configured']
+                or agentmail_transport.reset_config()[0] is not None)
 
 
 def acquire_notification_worker_lease(db, owner_token, now=None, lease_seconds=120):
@@ -5105,7 +5107,8 @@ def run_notification_maintenance_once(
                 "email_delivery": {**empty_delivery, "lease_lost": 1},
                 "lease_lost": 1,
             }
-        if email_provider_configuration()['provider_configured']:
+        if (email_provider_configuration()['provider_configured']
+                or agentmail_transport.reset_config()[0] is not None):
             delivery = flush_transactional_notification_emails(
                 db, now=now, limit=20, owner_token=owner_token,
                 lease_seconds=lease_seconds, lease_now=lease_now,
@@ -9959,19 +9962,27 @@ def _handle_routes(db):
             "employer_profile": None
         }, 201)
 
+    elif path == "/auth/password-reset/available" and method == "GET":
+        print("Status: 200")
+        print("Content-Type: application/json")
+        print("Cache-Control: no-store")
+        print()
+        print(json.dumps({'available': agentmail_transport.reset_config()[0] is not None}))
+        return
+
     elif path == "/auth/forgot-password" and method == "POST":
         body = get_body() or {}
         raw_email = body.get('email', '')
         email = raw_email.strip().lower()[:320] if isinstance(raw_email, str) else ''
         generic = {'message': 'If an eligible account exists, a password reset link will be emailed.'}
-        # Every response is held to a fixed floor so request timing does not reveal
-        # whether an account exists (work differs by a few ms between paths).
-        reset_response_deadline = time.monotonic() + PASSWORD_RESET_RESPONSE_FLOOR_SECONDS
-        # Rate limits depend only on the submitted email and IP, never on whether an
-        # account exists, so a throttled request can return at once: no hashing,
-        # no database write, and no response-floor thread hold.
+        # Throttled requests preserve their existing generic fast path even when
+        # delivery is globally unavailable; neither branch writes or sleeps.
         if not password_reset_rate_allowed(email):
             return json_response(generic)
+        if agentmail_transport.reset_config()[0] is None:
+            return error_response("Password reset by email isn't available right now. Contact gohirehumans.operations@agentmail.to for help.", 503)
+        # Available requests keep the account-existence timing floor.
+        reset_response_deadline = time.monotonic() + PASSWORD_RESET_RESPONSE_FLOOR_SECONDS
         # Equalize the dominant CPU work for registered and unknown addresses.
         hashlib.pbkdf2_hmac('sha256', email.encode(), b'password-reset-request', 100000)
         user = db.execute("SELECT id,password_hash,is_active,is_banned,is_suspended FROM users WHERE email=?", [email]).fetchone()

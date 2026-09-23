@@ -2574,6 +2574,11 @@ async function handleJobApply(id) {
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
+async function passwordResetAvailable() {
+  try { return (await api('/auth/password-reset/available')).available === true; }
+  catch (_) { return false; }
+}
+
 function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
@@ -2618,7 +2623,7 @@ function renderAuth(mode) {
             <div class="form-group">
               <label class="label" for="auth-password">Password</label>
               <input class="input" id="auth-password" type="password" name="password" placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required${isLogin ? '' : ' minlength="8"'} autocomplete="${isLogin ? 'current-password' : 'new-password'}">
-              ${isLogin ? '<p class="form-help"><a href="#/forgot-password">Forgot password?</a></p>' : ''}
+              ${isLogin ? '<p class="form-help" id="forgot-password-help" hidden><a href="#/forgot-password">Forgot password?</a></p>' : ''}
             </div>
             ${!isLogin ? `
               <div class="form-group mb-4">
@@ -2640,6 +2645,10 @@ function renderAuth(mode) {
         </div>
       </div>
     </div>`;
+  if (isLogin) passwordResetAvailable().then(available => {
+    const help = document.getElementById('forgot-password-help');
+    if (available && help && document.getElementById('authForm')) help.hidden = false;
+  });
   // Initialize Google Sign-In button if configured
   if (GOOGLE_CLIENT_ID) {
     const tryRenderGoogleBtn = () => {
@@ -2683,14 +2692,20 @@ function renderPasswordRecovery(mode) {
               <input class="input" id="confirm-password" type="password" required minlength="8" autocomplete="new-password"></div>
             <button class="btn btn-primary btn-lg auth2-submit" type="submit">Update password</button>
           </form>` : `
-          <form id="forgot-password-form" onsubmit="handlePasswordRecovery(event, 'forgot')">
-            <div class="form-group"><label class="label" for="reset-email">Email address</label>
-              <input class="input" id="reset-email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
-            <button class="btn btn-primary btn-lg auth2-submit" type="submit">Send reset link</button>
-          </form>`}
+          <div id="forgot-password-availability"></div>`}
         <div class="auth2-toggle"><a href="#/login">Sign in</a></div>
       </div>
     </div></div>`;
+  if (mode === 'forgot') passwordResetAvailable().then(available => {
+    const target = document.getElementById('forgot-password-availability');
+    if (!target) return;
+    target.innerHTML = available ? `
+      <form id="forgot-password-form" onsubmit="handlePasswordRecovery(event, 'forgot')">
+        <div class="form-group"><label class="label" for="reset-email">Email address</label>
+          <input class="input" id="reset-email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
+        <button class="btn btn-primary btn-lg auth2-submit" type="submit">Send reset link</button>
+      </form>` : `<p class="auth2-sub">Password reset by email isn't available right now. Contact gohirehumans.operations@agentmail.to for help.</p>`;
+  });
   if (mode === 'reset' && !pendingResetToken) {
     const error = document.getElementById('recovery-error');
     error.textContent = 'Invalid or missing reset link. Request a new one.';
