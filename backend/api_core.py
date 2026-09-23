@@ -1872,6 +1872,19 @@ def _init_db_connection_steps(db):
         "ALTER TABLE users ADD COLUMN is_ai_agent INTEGER DEFAULT 0",
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_services_provider_type ON services(provider_type)")
+    # Additive, repeat-safe relabel. No service or account is deleted; the public
+    # visibility predicate also catches flagged/AI sellers outside these domains.
+    domains = agent_platform_domains()
+    domain_sql = agent_email_domain_sql('u')
+    if domains:
+        users_changed = db.execute(
+            f"UPDATE users AS u SET is_ai_agent=1 WHERE ({domain_sql}) AND COALESCE(is_ai_agent,0)!=1"
+        ).rowcount
+        services_changed = db.execute(
+            f"""UPDATE services SET provider_type='ai' WHERE COALESCE(provider_type,'human')!='ai'
+                AND worker_id IN (SELECT u.id FROM users u WHERE {domain_sql})"""
+        ).rowcount
+        print(f"[GoHireHumans] Agent domain backfill: users={users_changed} services={services_changed}", file=sys.stderr)
 
     # ── Google OAuth + Referral program migrations ──────────────────────
     # SQLite cannot ADD COLUMN with UNIQUE, so uniqueness is installed below.
@@ -2631,6 +2644,68 @@ def ensure_db_initialized():
             return False
     init_db()
     return True
+
+
+AI_LISTING_NOTICE = "This AI listing will stay hidden until your Stripe payout account is verified."
+AI_LISTING_ORDER_ERROR = "This AI listing is not yet verified for payouts"
+
+
+def agent_platform_domains():
+    """Validated exact email domains; never interpolate untrusted env into SQL."""
+    raw = os.environ.get('AGENT_PLATFORM_DOMAINS', 'ilands.app')
+    return tuple(sorted({d.strip().lower() for d in raw.split(',')
+                         if re.fullmatch(r'[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?', d.strip().lower())}))
+
+
+def agent_email_domain_sql(user_alias='u'):
+    domains = agent_platform_domains()
+    if not domains:
+        return '0'
+    # Domains have been restricted to alphanumerics, dots and hyphens.
+    literals = ','.join("'" + d + "'" for d in domains)
+    return f"LOWER(SUBSTR({user_alias}.email, INSTR({user_alias}.email,'@')+1)) IN ({literals})"
+
+
+def agent_seller_sql(service_alias='s', user_alias='u'):
+    # Account flags/domains apply to every listing; an AI service on an
+    # otherwise-human account does not turn its other human services into AI.
+    return (f"(COALESCE({user_alias}.is_ai_agent,0)=1 OR {agent_email_domain_sql(user_alias)} "
+            f"OR {service_alias}.provider_type='ai')")
+
+
+def agent_account_sql(user_alias='u'):
+    return f"(COALESCE({user_alias}.is_ai_agent,0)=1 OR {agent_email_domain_sql(user_alias)})"
+
+
+def public_service_visibility_sql(service_alias='s', user_alias='u', profile_alias='wp'):
+    return (f"(NOT {agent_seller_sql(service_alias, user_alias)} "
+            f"OR {profile_alias}.payout_method='stripe_connect_active')")
+
+
+def is_agent_seller(db, user_id):
+    return db.execute(f"""SELECT 1 FROM users u LEFT JOIN services s ON s.worker_id=u.id
+        WHERE u.id=? AND {agent_seller_sql()} LIMIT 1""", [user_id]).fetchone() is not None
+
+
+def is_agent_account(db, user_id):
+    return db.execute(f"SELECT 1 FROM users u WHERE u.id=? AND {agent_account_sql()}",
+                      [user_id]).fetchone() is not None
+
+
+def service_hidden_for_unverified_agent(db, service_id):
+    return db.execute(f"""SELECT 1 FROM services s JOIN users u ON s.worker_id=u.id
+        LEFT JOIN worker_profiles wp ON wp.user_id=u.id WHERE s.id=?
+        AND NOT {public_service_visibility_sql()}""", [service_id]).fetchone() is not None
+
+
+def service_policy_response(db, row, *, owner_view=False):
+    result = row_to_dict(row)
+    if row['provider_type'] == 'ai' or is_agent_account(db, row['worker_id']):
+        result['provider_type'] = 'ai'
+        if owner_view and service_hidden_for_unverified_agent(db, row['id']):
+            result['notice'] = AI_LISTING_NOTICE
+            result['visibility'] = 'hidden_unverified_agent'
+    return result
 
 
 SEEDED_SAMPLE_EMAILS = {
@@ -9572,7 +9647,10 @@ def _handle_routes(db):
         seeded_user_subquery = public_non_seeded_user_subquery()
         seeded_values = seeded_sample_email_values()
         services_count = db.execute(
-            f"SELECT COUNT(*) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            f"""SELECT COUNT(*) as c FROM services s JOIN users u ON u.id=s.worker_id
+                LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+                WHERE s.status='active' AND s.worker_id NOT IN ({seeded_user_subquery})
+                AND {public_service_visibility_sql()}""",
             seeded_values
         ).fetchone()['c']
         workers_count = db.execute(
@@ -9607,7 +9685,10 @@ def _handle_routes(db):
             public_non_seeded_user_values()
         ).fetchone()['c']
         categories_count = db.execute(
-            f"SELECT COUNT(DISTINCT category) as c FROM services WHERE status='active' AND worker_id NOT IN ({seeded_user_subquery})",
+            f"""SELECT COUNT(DISTINCT s.category) as c FROM services s
+                JOIN users u ON u.id=s.worker_id LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+                WHERE s.status='active' AND s.worker_id NOT IN ({seeded_user_subquery})
+                AND {public_service_visibility_sql()}""",
             seeded_values
         ).fetchone()['c']
         return json_response({
@@ -10031,7 +10112,8 @@ def _handle_routes(db):
         pricing_type = params.get("pricing_type")
         provider_type = params.get("provider_type")
 
-        conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})"]
+        conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})",
+                      public_service_visibility_sql()]
         values = seeded_sample_email_values()
 
         if category:
@@ -10041,7 +10123,7 @@ def _handle_routes(db):
             conditions.append("s.pricing_type = ?")
             values.append(pricing_type)
         if provider_type:
-            conditions.append("s.provider_type = ?")
+            conditions.append(f"(CASE WHEN {agent_seller_sql()} THEN 'ai' ELSE s.provider_type END) = ?")
             values.append(provider_type)
         try:
             min_price_val = parse_float_param(params, "min_price", min_value=0)
@@ -10060,7 +10142,9 @@ def _handle_routes(db):
             values.extend([pct, pct, pct])
 
         where = " AND ".join(conditions)
-        count = db.execute(f"SELECT COUNT(*) as c FROM services s WHERE {where}", values).fetchone()['c']
+        count = db.execute(f"""SELECT COUNT(*) as c FROM services s
+            JOIN users u ON u.id=s.worker_id LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+            WHERE {where}""", values).fetchone()['c']
         rows = db.execute(
             f"""SELECT s.*, u.name as worker_name, u.avatar_url as worker_avatar,
                 wp.avg_rating as worker_rating, wp.total_reviews as worker_review_count,
@@ -10075,7 +10159,7 @@ def _handle_routes(db):
         ).fetchall()
 
         return json_response({
-            "services": [row_to_dict(r) for r in rows],
+            "services": [service_policy_response(db, r) for r in rows],
             "total": count,
             "page": page,
             "per_page": per_page,
@@ -10129,7 +10213,7 @@ def _handle_routes(db):
         ).fetchall()
 
         return json_response({
-            "services": [row_to_dict(r) for r in rows],
+            "services": [service_policy_response(db, r, owner_view=True) for r in rows],
             "total": count,
             "page": page,
             "per_page": per_page,
@@ -10152,7 +10236,12 @@ def _handle_routes(db):
         ).fetchone()
         if not row:
             return error_response("Service not found", 404)
-        return json_response(row_to_dict(row))
+        hidden = service_hidden_for_unverified_agent(db, service_id)
+        viewer = authenticate(db) if hidden else None
+        privileged = bool(viewer and (viewer['id'] == row['worker_id'] or viewer['is_admin']))
+        if hidden and not privileged:
+            return error_response("Service not found", 404)
+        return json_response(service_policy_response(db, row, owner_view=privileged))
 
     elif path == "/services" and method == "POST":
         user = authenticate(db)
@@ -10216,6 +10305,8 @@ def _handle_routes(db):
         provider_type = body.get("provider_type", "human")
         if provider_type not in ('human', 'ai'):
             return error_response("provider_type must be 'human' or 'ai'")
+        if is_agent_account(db, user['id']):
+            provider_type = 'ai'
 
         fulfillment_type = body.get("fulfillment_type", "manual")
         if fulfillment_type not in ('manual', 'api'):
@@ -10251,7 +10342,7 @@ def _handle_routes(db):
         audit(db, user['id'], "create_service", "service", service_id)
         db.commit()
         svc = db.execute("SELECT * FROM services WHERE id = ?", [service_id]).fetchone()
-        return json_response(row_to_dict(svc), 201)
+        return json_response(service_policy_response(db, svc, owner_view=True), 201)
 
     elif re.match(r"^/services/(\d+)$", path) and method == "PUT":
         user = authenticate(db)
@@ -10265,6 +10356,10 @@ def _handle_routes(db):
             return error_response("Forbidden", 403)
 
         body = get_body()
+        if 'provider_type' in body and body['provider_type'] not in ('human', 'ai'):
+            return error_response("provider_type must be 'human' or 'ai'")
+        if svc['provider_type'] == 'ai' or is_agent_account(db, svc['worker_id']):
+            body['provider_type'] = 'ai'
         if body.get('title') or body.get('description'):
             txt = (body.get('title') or svc['title']) + " " + (body.get('description') or svc['description'])
             safe, msg = check_content_safety(txt)
@@ -10356,7 +10451,7 @@ def _handle_routes(db):
         audit(db, user['id'], "update_service", "service", service_id)
         db.commit()
         svc = db.execute("SELECT * FROM services WHERE id = ?", [service_id]).fetchone()
-        return json_response(row_to_dict(svc))
+        return json_response(service_policy_response(db, svc, owner_view=True))
 
     elif re.match(r"^/services/(\d+)$", path) and method == "DELETE":
         user = authenticate(db)
@@ -11112,6 +11207,8 @@ def _handle_routes(db):
             return error_response("Service not found or unavailable", 404)
         if svc['worker_id'] == user['id']:
             return error_response("You cannot order your own service", 403)
+        if service_hidden_for_unverified_agent(db, service_id):
+            return error_response(AI_LISTING_ORDER_ERROR, 409)
         # Keep explicit empty quantities invalid rather than silently defaulting.
         quote_inputs = dict(urllib.parse.parse_qsl(
             getattr(_request_ctx, 'query_string', ''), keep_blank_values=True
@@ -11127,6 +11224,9 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/order$", path).group(1))
+        # Fail closed before the idempotent replay path or any processor I/O.
+        if service_hidden_for_unverified_agent(db, service_id):
+            return error_response(AI_LISTING_ORDER_ERROR, 409)
         body = get_body()
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
