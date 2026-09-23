@@ -12985,14 +12985,19 @@ def _handle_routes(db):
                             "Existing payout account is bound to another country or agreement; contact support to change it.", 409
                         )
                 if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
+                    capabilities = {"transfers": {"requested": True}}
+                    account_binding = {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]}
+                    if country != "US" and agreement == "full":
+                        capabilities = {"card_payments": {"requested": True}, **capabilities}
+                        account_binding["capabilities"] = capabilities
                     account_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
                         "account_create",
-                        {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]},
+                        account_binding,
                         lambda key: stripe.Account.create(
                             type="express", country=country, email=user["email"],
-                            capabilities={"transfers": {"requested": True}},
+                            capabilities=capabilities,
                             metadata={"user_id": str(user["id"])}, idempotency_key=key,
                             **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
                         ),
