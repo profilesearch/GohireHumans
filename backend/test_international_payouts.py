@@ -170,6 +170,34 @@ class InternationalPayoutTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(self.calls, [])
 
+    def test_single_allowed_country_is_used_when_client_omits_country(self):
+        # Review blocker: allowlist=DE hides the selector and the UI posts {}.
+        self.api.CONNECT_INTERNATIONAL_ENABLED = True
+        with mock.patch.dict(os.environ, {'CONNECT_COUNTRIES_ALLOWLIST': 'DE'}):
+            status, result = self.request('/payments/setup-worker', 'worker-token', {})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(next(c for c in self.calls if c[0] == 'account_create')[2]['country'], 'DE')
+
+    def test_flag_rollback_keeps_existing_account_bank_updates_working(self):
+        # Review blocker: after DE onboarding, turning the flag off stranded the worker.
+        self.api.CONNECT_INTERNATIONAL_ENABLED = True
+        status, result = self.request('/payments/setup-worker', 'worker-token', {'country': 'DE'})
+        self.assertEqual(status, 200, result)
+        self.api.CONNECT_INTERNATIONAL_ENABLED = False
+        for payload in ({}, {'country': 'DE'}):
+            with self.subTest(payload=payload):
+                self.calls.clear()
+                status, result = self.request('/payments/setup-worker', 'worker-token', dict(payload, refresh=True))
+                self.assertEqual(status, 200, result)
+                names = [c[0] for c in self.calls]
+                self.assertNotIn('account_create', names)
+                self.assertIn('account_link_create', names)
+        # A different, now-unsupported country is still refused without Stripe I/O.
+        self.calls.clear()
+        status, _ = self.request('/payments/setup-worker', 'worker-token', {'country': 'GB'})
+        self.assertIn(status, (400, 409))
+        self.assertEqual(self.calls, [])
+
     def test_migration_adds_columns_idempotently(self):
         self.api.init_db()
         with self.api.get_db() as db:

@@ -225,6 +225,22 @@ test('default-off country endpoint preserves no-selector US payout setup', async
   await expect(page.getByRole('combobox', { name: 'Payout country' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Connect Bank Account', exact: true }).click();
   await expect.poll(() => page.evaluate(() => __calls.filter(c => c.path === '/payments/setup-worker'))).toEqual([
+    { path: '/payments/setup-worker', method: 'POST', body: { country: 'US' } }
+  ]);
+});
+test('single offered non-US country is posted explicitly (allowlist of one)', async ({ page }) => {
+  await boot(page, { setup: { mode: 'simulated' }, countries: [{ code: 'DE', name: 'Germany', agreement: 'full' }] });
+  await expect(page.getByRole('combobox', { name: 'Payout country' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect Bank Account', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => __calls.filter(c => c.path === '/payments/setup-worker'))).toEqual([
+    { path: '/payments/setup-worker', method: 'POST', body: { country: 'DE' } }
+  ]);
+});
+test('existing bound account posts no country so the server keeps it after rollback', async ({ page }) => {
+  await boot(page, { setup: { mode: 'simulated' }, status: { employer_ready: false, worker_ready: true,
+    worker_payout_status: { connected: true, account_id: 'acct_bound', country: 'DE', mode: 'live' } } });
+  await page.getByRole('button', { name: 'Update Bank Account', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => __calls.filter(c => c.path === '/payments/setup-worker'))).toEqual([
     { path: '/payments/setup-worker', method: 'POST', body: {} }
   ]);
 });

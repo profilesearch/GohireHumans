@@ -12803,13 +12803,32 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         body = get_body() or {}
-        country = body.get("country", "US")
+        allowed = {item["code"]: item for item in connect_countries()}
+        existing = db.execute(
+            "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
+            [user["id"]],
+        ).fetchone()
+        existing_account = (existing["payout_account_id"] if existing else "") or ""
+        bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
+        if "country" in body:
+            country = body.get("country")
+        elif bound_live_account:
+            # Returning workers (bank updates, re-onboarding) keep their bound country
+            # even if the international flag or allowlist has since changed.
+            country = (existing["payout_account_country"] or "US")
+        elif len(allowed) == 1:
+            country = next(iter(allowed))
+        else:
+            country = "US"
         if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
             return error_response("Unsupported payout country; select an available ISO country code.", 400)
-        allowed = {item["code"]: item for item in connect_countries()}
-        if country not in allowed:
+        if bound_live_account and country == (existing["payout_account_country"] or "US"):
+            # Existing accounts were validated when created; never strand them on rollback.
+            agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
+        elif country in allowed:
+            agreement = allowed[country]["agreement"]
+        else:
             return error_response("Unsupported payout country; select an available country.", 400)
-        agreement = allowed[country]["agreement"]
         if _payment_setup_profile_is_frozen(db, user["id"]):
             return error_response("Payment setup is frozen for manual reconciliation.", 409)
 

@@ -3992,6 +3992,8 @@ async function renderPayments() {
             <p class="text-xs mt-2">Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.</p>
             ${statusData.worker_payout_status?.account_id ? '<p class="text-xs mt-1">Your payout country is fixed for this account. Contact support to change it.</p>' : ''}
           </div>` : ''}
+          ${countries.length === 1 && !statusData.worker_payout_status?.account_id
+            ? `<span hidden data-payout-country="${esc(countries[0].code)}"></span>` : ''}
           <button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
             ${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
           </button>
@@ -4206,8 +4208,12 @@ async function setupWorkerPayment(trigger = null) {
     try {
       paymentSetupEvent('worker', 'attempted');
       const countrySelect = document.getElementById('payoutCountry');
+      // With a selector, send the choice; with a single offered country, send it
+      // explicitly; otherwise let the server keep an existing account's country.
+      const onlyCountry = document.querySelector('[data-payout-country]')?.dataset.payoutCountry;
       const result = await api('/payments/setup-worker', {
-        method: 'POST', body: countrySelect ? { country: countrySelect.value } : {}
+        method: 'POST', body: countrySelect && !countrySelect.disabled ? { country: countrySelect.value }
+          : onlyCountry ? { country: onlyCountry } : {}
       });
       const mode = paymentSetupMode(result);
       paymentSetupEvent('worker', 'api_succeeded', mode);
