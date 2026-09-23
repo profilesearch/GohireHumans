@@ -183,6 +183,44 @@ ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
 # Deliberate code-level release gate for fixed-price hiring.
 JOB_HIRING_ENABLED = False
+# US stays the only onboarding country unless explicitly enabled by an operator.
+CONNECT_INTERNATIONAL_ENABLED = os.environ.get("CONNECT_INTERNATIONAL_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+# Self-serve US-platform cross-border Connect payouts: US, UK, EEA, CA, CH.
+# https://docs.stripe.com/connect/cross-border-payouts
+# TODO: Do not add recipient-agreement countries without an official supported
+# US-platform route: Stripe explicitly excludes recipient agreements from
+# self-serve cross-border Connect payouts. Iceland is omitted because Stripe's
+# US-platform selector offers recipient rather than full agreement there.
+CONNECT_COUNTRIES = {
+    "US": ("United States", "full"), "GB": ("United Kingdom", "full"),
+    "CA": ("Canada", "full"), "CH": ("Switzerland", "full"),
+    "AT": ("Austria", "full"), "BE": ("Belgium", "full"),
+    "BG": ("Bulgaria", "full"), "HR": ("Croatia", "full"),
+    "CY": ("Cyprus", "full"), "CZ": ("Czech Republic", "full"),
+    "DK": ("Denmark", "full"), "EE": ("Estonia", "full"),
+    "FI": ("Finland", "full"), "FR": ("France", "full"),
+    "DE": ("Germany", "full"), "GR": ("Greece", "full"),
+    "HU": ("Hungary", "full"), "IE": ("Ireland", "full"),
+    "IT": ("Italy", "full"), "LV": ("Latvia", "full"),
+    "LI": ("Liechtenstein", "full"), "LT": ("Lithuania", "full"),
+    "LU": ("Luxembourg", "full"), "MT": ("Malta", "full"),
+    "NL": ("Netherlands", "full"), "NO": ("Norway", "full"),
+    "PL": ("Poland", "full"), "PT": ("Portugal", "full"),
+    "RO": ("Romania", "full"), "SK": ("Slovakia", "full"),
+    "SI": ("Slovenia", "full"), "ES": ("Spain", "full"),
+    "SE": ("Sweden", "full"),
+}
+
+def connect_countries():
+    if not CONNECT_INTERNATIONAL_ENABLED:
+        allowed = ("US",)
+    else:
+        restriction = os.environ.get("CONNECT_COUNTRIES_ALLOWLIST", "").strip()
+        allowed = (set(restriction.upper().replace(" ", "").split(",")) & CONNECT_COUNTRIES.keys()
+                   if restriction else CONNECT_COUNTRIES.keys())
+    return [{"code": code, "name": CONNECT_COUNTRIES[code][0], "agreement": CONNECT_COUNTRIES[code][1]}
+            for code in sorted(allowed)]
+
 MAX_MONEY_INPUT_CHARS = 96
 MAX_MONEY_ABS = Decimal("999999.99")
 PLATFORM_FEE_BPS = 100
@@ -276,7 +314,6 @@ def is_live_connect_account_ready(account):
     capabilities = stripe_attr(account, 'capabilities', {}) or {}
     return bool(
         stripe_attr(account, 'payouts_enabled', False)
-        and stripe_attr(account, 'charges_enabled', False)
         and stripe_attr(capabilities, 'transfers', None) == 'active'
     )
 
@@ -349,7 +386,7 @@ def _table_columns(db, table_name):
         "payout_release_conflict_evidence", "services", "users",
         "api_key_usage", "disputes", "refund_attempts",
         "refund_attempt_conflict_evidence", "transactional_email_outbox",
-        "job_application_reminders",
+        "job_application_reminders", "worker_profiles",
     }
     if table_name not in supported_tables:
         raise ValueError("Unsupported migration table")
@@ -1428,6 +1465,8 @@ def _init_db_connection_steps(db):
         hourly_rate REAL,
         payout_method TEXT DEFAULT 'pending_setup',
         payout_account_id TEXT,
+        payout_account_country TEXT,
+        payout_service_agreement TEXT,
         payout_method_details TEXT,
         avg_rating REAL DEFAULT 0,
         total_reviews INTEGER DEFAULT 0,
@@ -1848,6 +1887,12 @@ def _init_db_connection_steps(db):
     validate_required_payout_schema(db)
     validate_required_payment_setup_schema(db)
     validate_required_refund_schema(db)
+
+    # ── Worker Connect migrations (legacy connected accounts are US/full) ──
+    ensure_column(db, "worker_profiles", "payout_account_country",
+                  "ALTER TABLE worker_profiles ADD COLUMN payout_account_country TEXT")
+    ensure_column(db, "worker_profiles", "payout_service_agreement",
+                  "ALTER TABLE worker_profiles ADD COLUMN payout_service_agreement TEXT")
 
     # ── Account-state migrations ─────────────────────────────────────
     ensure_column(
@@ -5165,6 +5210,22 @@ def _payment_setup_operation_serialized(
         db.commit()
     db.execute("BEGIN IMMEDIATE")
     try:
+        if operation_kind == "account_create":
+            # A different country has a different fingerprint. Reject it while
+            # holding the short writer lock, before either request reaches Stripe.
+            prior = db.execute(
+                "SELECT request_binding_json FROM payment_setup_operations "
+                "WHERE user_id=? AND operation_kind='account_create' ORDER BY id DESC LIMIT 1",
+                [user_id],
+            ).fetchone()
+            if prior:
+                prior_binding = json.loads(prior["request_binding_json"])
+                if (prior_binding.get("country", "US") != binding["country"]
+                        or prior_binding.get("agreement", "full") != binding["agreement"]):
+                    db.rollback()
+                    raise PaymentSetupReconciliationRequired(
+                        "Existing payout account is bound to another country; contact support to change it."
+                    )
         existing = db.execute(
             "SELECT * FROM payment_setup_operations WHERE operation_key=?",
             [operation_key],
@@ -8123,8 +8184,6 @@ def fund_escrow_stripe(db, employer_id, amount, order_id, milestone_id=None, des
             if stripe_configured():
                 account = retrieve_live_connect_account(worker["payout_account_id"])
                 ready = (stripe_attr(account, "id") == worker["payout_account_id"]
-                         and stripe_attr(account, "payouts_enabled") is True
-                         and stripe_attr(account, "charges_enabled") is True
                          and is_live_connect_account_ready(account))
             else:
                 ready = worker_has_payout_setup(db, order["worker_id"])
@@ -12845,10 +12904,47 @@ def _handle_routes(db):
         db.commit()
         return json_response({"ok": True, "payment_method_id": payment_method_id})
 
+    elif path == "/payments/connect-countries" and method == "GET":
+        # Configuration only, no account data; safe for public short-lived caching.
+        _request_ctx.response_status = 200
+        print("Status: 200")
+        print("Content-Type: application/json")
+        print("Cache-Control: public, max-age=300")
+        print()
+        print(json.dumps({"countries": connect_countries()}))
+        return
+
     elif path == "/payments/setup-worker" and method == "POST":
         user = authenticate(db)
         if not user:
             return error_response("Unauthorized", 401)
+        body = get_body() or {}
+        allowed = {item["code"]: item for item in connect_countries()}
+        existing = db.execute(
+            "SELECT payout_account_id,payout_account_country,payout_service_agreement FROM worker_profiles WHERE user_id=?",
+            [user["id"]],
+        ).fetchone()
+        existing_account = (existing["payout_account_id"] if existing else "") or ""
+        bound_live_account = existing_account.startswith("acct_") and not existing_account.startswith("acct_sim_")
+        if "country" in body:
+            country = body.get("country")
+        elif bound_live_account:
+            # Returning workers (bank updates, re-onboarding) keep their bound country
+            # even if the international flag or allowlist has since changed.
+            country = (existing["payout_account_country"] or "US")
+        elif len(allowed) == 1:
+            country = next(iter(allowed))
+        else:
+            country = "US"
+        if not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country):
+            return error_response("Unsupported payout country; select an available ISO country code.", 400)
+        if bound_live_account and country == (existing["payout_account_country"] or "US"):
+            # Existing accounts were validated when created; never strand them on rollback.
+            agreement = existing["payout_service_agreement"] or CONNECT_COUNTRIES.get(country, ("", "full"))[1]
+        elif country in allowed:
+            agreement = allowed[country]["agreement"]
+        else:
+            return error_response("Unsupported payout country; select an available country.", 400)
         if _payment_setup_profile_is_frozen(db, user["id"]):
             return error_response("Payment setup is frozen for manual reconciliation.", 409)
 
@@ -12859,20 +12955,29 @@ def _handle_routes(db):
                 # Profile creation is committed before Account.create.
                 db.commit()
                 wp = db.execute(
-                    "SELECT payout_account_id FROM worker_profiles WHERE user_id=?",
+                    "SELECT payout_account_id,payout_account_country,payout_service_agreement "
+                    "FROM worker_profiles WHERE user_id=?",
                     [user["id"]],
                 ).fetchone()
                 account_id = (wp["payout_account_id"] if wp else "") or ""
+                if account_id and not account_id.startswith("acct_sim_"):
+                    existing_country = wp["payout_account_country"] or "US"
+                    existing_agreement = wp["payout_service_agreement"] or "full"
+                    if existing_country != country or existing_agreement != agreement:
+                        return error_response(
+                            "Existing payout account is bound to another country or agreement; contact support to change it.", 409
+                        )
                 if not (account_id.startswith("acct_") and not account_id.startswith("acct_sim_")):
                     account_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
                         "account_create",
-                        {"country": "US", "email": user["email"], "type": "express", "user_id": user["id"]},
+                        {"country": country, "agreement": agreement, "email": user["email"], "type": "express", "user_id": user["id"]},
                         lambda key: stripe.Account.create(
-                            type="express", country="US", email=user["email"],
+                            type="express", country=country, email=user["email"],
                             capabilities={"transfers": {"requested": True}},
                             metadata={"user_id": str(user["id"])}, idempotency_key=key,
+                            **({"tos_acceptance": {"service_agreement": "recipient"}} if agreement == "recipient" else {}),
                         ),
                         lambda value: {
                             "processor_object_id": stripe_attr(value, "id", ""),
@@ -12880,9 +12985,10 @@ def _handle_routes(db):
                         },
                         lambda conn, result: conn.execute(
                             """UPDATE worker_profiles
-                               SET payout_account_id=?,payout_method='stripe_connect'
+                               SET payout_account_id=?,payout_method='stripe_connect',
+                                   payout_account_country=?,payout_service_agreement=?
                                WHERE user_id=? AND (payout_account_id IS NULL OR payout_account_id='' OR payout_account_id=?)""",
-                            [result["account_id"], user["id"], result["account_id"]],
+                            [result["account_id"], country, agreement, user["id"], result["account_id"]],
                         ),
                     )
                     account_id = account_result["account_id"]
@@ -12979,12 +13085,14 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
 
-        wp = db.execute("SELECT payout_account_id, payout_method FROM worker_profiles WHERE user_id=?", [user['id']]).fetchone()
+        wp = db.execute("SELECT payout_account_id, payout_method, payout_account_country, payout_service_agreement FROM worker_profiles WHERE user_id=?", [user['id']]).fetchone()
         ep = db.execute("SELECT stripe_customer_id, payment_method_id FROM employer_profiles WHERE user_id=?", [user['id']]).fetchone()
 
         worker_status = None
         if wp:
             if wp['payout_account_id']:
+                account_country = wp['payout_account_country'] or 'US'
+                agreement = wp['payout_service_agreement'] or 'full'
                 if stripe_configured() and not wp['payout_account_id'].startswith('acct_sim_'):
                     try:
                         acct = retrieve_live_connect_account(wp['payout_account_id'])
@@ -12995,10 +13103,12 @@ def _handle_routes(db):
                             "charges_enabled": bool(stripe_attr(acct, 'charges_enabled')),
                             "details_submitted": bool(stripe_attr(acct, 'details_submitted')),
                             "account_id": wp['payout_account_id'],
+                            "country": account_country,
+                            "service_agreement": agreement,
                             "mode": "live"
                         }
                     except STRIPE_ERROR:
-                        worker_status = {"connected": False, "account_id": wp['payout_account_id'], "mode": "live"}
+                        worker_status = {"connected": False, "account_id": wp['payout_account_id'], "country": account_country, "service_agreement": agreement, "mode": "live"}
                 else:
                     if PRODUCTION_MODE:
                         worker_status = {"connected": False, "account_id": None, "mode": "disabled", "message": "Simulated worker payout is disabled in production."}
@@ -13499,12 +13609,12 @@ def _handle_routes(db):
         elif event_type == 'account.updated':
             # Worker Connect account updated
             account_id = data['id']
-            wp = db.execute("SELECT user_id FROM worker_profiles WHERE payout_account_id=?", [account_id]).fetchone()
+            wp = db.execute("SELECT user_id,payout_method FROM worker_profiles WHERE payout_account_id=?", [account_id]).fetchone()
             if wp:
-                is_active = data.get('payouts_enabled', False) and data.get('charges_enabled', False)
+                is_active = is_live_connect_account_ready(data)
                 new_method = 'stripe_connect_active' if is_active else 'stripe_connect_pending'
                 db.execute("UPDATE worker_profiles SET payout_method=? WHERE user_id=?", [new_method, wp['user_id']])
-                if is_active:
+                if is_active and wp['payout_method'] != 'stripe_connect_active':
                     push_notification(db, wp['user_id'], "payout_ready",
                         "Payout account ready!",
                         "Your bank account is connected and you can now receive payments.",
