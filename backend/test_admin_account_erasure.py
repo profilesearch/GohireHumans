@@ -297,3 +297,33 @@ class AdminAccountErasureReviewRegressions(AdminAccountErasureTests):
             with self.core.get_db() as db, mock.patch.object(self.core.agentmail_transport.urllib.request, 'build_opener') as opener:
                 self.core.flush_transactional_notification_emails(db, only_types=('password_reset',))
                 self.assertEqual(opener.call_count, 1, 'reset mail must reach the provider, not be suppressed by erased history')
+
+
+class AdminAccountErasureThirdReviewRegressions(AdminAccountErasureTests):
+    """Blocker from independent review of 421ac06: common-word names."""
+
+    def test_common_word_name_never_rewrites_unrelated_audit_or_messages(self):
+        with self.core.get_db() as db:
+            db.execute("UPDATE users SET name='Payment' WHERE id=2")
+            unrelated = json.dumps({'payment': {'order_id': 9, 'amount': 25}, 'ip': '198.51.100.40',
+                                    'note': 'Payment received for peer order'})
+            db.execute("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES (3,'peer_payment','order',9,?)", [unrelated])
+            db.execute("INSERT INTO notifications(user_id,type,title,message) VALUES (3,'payment','Payment received','Payment received for order 9')")
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute("SELECT details FROM audit_log WHERE action='peer_payment'").fetchone()[0], unrelated)
+            self.assertEqual(tuple(db.execute("SELECT title,message FROM notifications WHERE type='payment'").fetchone()),
+                             ('Payment received', 'Payment received for order 9'))
+
+    def test_peer_ip_in_row_mentioning_target_email_is_kept(self):
+        detail = json.dumps({'message': 'Contacted ' + self.EMAIL, 'ip': '198.51.100.41'})
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES (3,'peer_contact','user',3,?)", [detail])
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            got = json.loads(db.execute("SELECT details FROM audit_log WHERE action='peer_contact'").fetchone()[0])
+        self.assertEqual(got, {'message': 'Contacted [REDACTED]', 'ip': '198.51.100.41'})

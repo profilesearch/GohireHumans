@@ -4136,7 +4136,6 @@ _ERASURE_RETAINED = {
 def _erasure_audit_rows(db, target):
     """Retain security records while identifying rows needing PII redaction."""
     email = target['email'].casefold()
-    pattern = _erasure_identity_pattern(target)
     rows = []
     for row in db.execute('SELECT id,user_id,entity_type,entity_id,details FROM audit_log WHERE details IS NOT NULL'):
         details = row['details'] or ''
@@ -4144,36 +4143,33 @@ def _erasure_audit_rows(db, target):
             searchable = json.dumps(json.loads(details), ensure_ascii=False)
         except (ValueError, TypeError):
             searchable = details
-        if (row['user_id'] == target['id'] or
-                (row['entity_type'] == 'user' and row['entity_id'] == target['id']) or
-                email in searchable.casefold() or
-                (pattern is not None and pattern.search(searchable))):
-            rows.append((row['id'], details))
+        linked = (row['user_id'] == target['id'] or
+                  (row['entity_type'] == 'user' and row['entity_id'] == target['id']))
+        if linked or email in searchable.casefold():
+            rows.append((row['id'], details, linked))
     return rows
 
 
 _ERASURE_NETWORK_KEYS = {'ip', 'ip_address', 'remote_addr', 'user_agent', 'client_ip', 'x_forwarded_for'}
 
 
-def _erase_audit_identity(details, target):
+def _erase_audit_identity(details, target, linked):
+    # Only rows reliably tied to the target are selected: the target is the actor
+    # or subject, or the row contains the target's exact email. Name-only matches
+    # are never selected, so a common-word name cannot rewrite unrelated evidence.
+    # Values lose the name/email; JSON keys are never modified. Network identifiers
+    # are dropped only when the target is the actor or subject. Malformed legacy
+    # details use a literal fallback.
     pattern = _erasure_identity_pattern(target)
-    # Work on decoded JSON values: literals can contain escaped @, Unicode or
-    # quotation marks. Keep malformed legacy details with a literal fallback.
+
     def scrub(value):
         if isinstance(value, str):
             return pattern.sub('[REDACTED]', value) if pattern else value
         if isinstance(value, list):
             return [scrub(item) for item in value]
         if isinstance(value, dict):
-            return {scrub(key): scrub(item) for key, item in value.items()}
-        return value
-
-    def drop_network(value):
-        # Network identifiers linked to the erased person are removed outright.
-        if isinstance(value, list):
-            return [drop_network(item) for item in value]
-        if isinstance(value, dict):
-            return {key: ('[REDACTED]' if str(key).lower() in _ERASURE_NETWORK_KEYS else drop_network(item))
+            return {key: ('[REDACTED]' if linked and str(key).lower() in _ERASURE_NETWORK_KEYS
+                          else scrub(item))
                     for key, item in value.items()}
         return value
 
@@ -4181,7 +4177,7 @@ def _erase_audit_identity(details, target):
         original = json.loads(details)
     except (ValueError, TypeError):
         return scrub(details)
-    redacted = drop_network(scrub(original))
+    redacted = scrub(original)
     return json.dumps(redacted, ensure_ascii=False) if redacted != original else details
 
 
@@ -4200,17 +4196,21 @@ def _erasure_identity_pattern(target):
 
 
 def _erasure_peer_rows(db, target):
-    pattern = _erasure_identity_pattern(target)
-    if not pattern:
+    # The only first-party template that writes a user's name into another
+    # user's message is the job-application notice ("<name> applied to your
+    # job."). Match exactly that text on the employers of jobs the target applied
+    # to, so no unrelated message is ever rewritten.
+    if not target['name']:
         return {}
+    message = f"{target['name']} applied to your job."
     found = {}
     for table in _ERASURE_PEER_TABLES:
-        cols = ['title', 'message'] + (['email_to'] if table == 'transactional_email_outbox' else [])
-        rows = []
-        for row in db.execute(f"SELECT id,{','.join(cols)} FROM {table} WHERE user_id!=?", [target['id']]):
-            if any(pattern.search(row[c] or '') for c in cols if c != 'email_to'):
-                rows.append(row['id'])
-        found[table] = rows
+        found[table] = [row[0] for row in db.execute(
+            f"""SELECT id FROM {table} WHERE user_id!=?1 AND message=?2
+                  AND {'type' if table == 'notifications' else 'notification_type'}='new_application'
+                  AND user_id IN (SELECT j.employer_id FROM jobs j JOIN applications a ON a.job_id=j.id
+                                  WHERE a.worker_id=?1)""",
+            [target['id'], message])]
     return found
 
 
@@ -4226,7 +4226,8 @@ def _erasure_plan(db, target):
     anonymized = {
         'users': 1,
         'users_referred_by': db.execute('SELECT count(*) FROM users WHERE referred_by=?', [target_id]).fetchone()[0],
-        'audit_log': sum(_erase_audit_identity(details, target) != details for _, details in audit_rows),
+        'audit_log': sum(_erase_audit_identity(details, target, linked) != details
+                         for _, details, linked in audit_rows),
     }
     blockers = []
     if target['is_admin']:
@@ -14617,24 +14618,20 @@ def _handle_routes(db):
                     WHERE {_ERASURE_OUTBOX_SCRUB}""", [target_id, erased_email]).rowcount
             if scrubbed != anonymized['transactional_email_outbox']:
                 raise RuntimeError('Account erasure count changed: transactional_email_outbox scrub')
-            pattern = _erasure_identity_pattern(target)
             for table, ids in peer_rows.items():
-                cols = ('title', 'message')
                 for row_id in ids:
-                    row = db.execute(f'SELECT title,message FROM {table} WHERE id=?', [row_id]).fetchone()
-                    if not row:
+                    if db.execute(f'UPDATE {table} SET message=? WHERE id=? AND message=?',
+                                  ['A former user applied to your job.', row_id,
+                                   f"{target['name']} applied to your job."]).rowcount != 1:
                         raise RuntimeError(f'Account erasure count changed: peer {table}')
-                    db.execute(f'UPDATE {table} SET title=?, message=? WHERE id=?',
-                               [pattern.sub('A former user', row['title'] or ''),
-                                pattern.sub('A former user', row['message'] or ''), row_id])
             for table, where in _ERASURE_DELETIONS.items():
                 affected = db.execute(f'DELETE FROM {table} WHERE {where}',
                                       values if '?2' in where else values[:1]).rowcount
                 if affected != deleted[table]:
                     raise RuntimeError(f'Account erasure count changed: {table}')
             db.execute('UPDATE users SET referred_by=NULL WHERE referred_by=?', [target_id])
-            for audit_id, details in audit_rows:
-                redacted = _erase_audit_identity(details, target)
+            for audit_id, details, linked in audit_rows:
+                redacted = _erase_audit_identity(details, target, linked)
                 if redacted != details:
                     db.execute('UPDATE audit_log SET details=? WHERE id=?', [redacted, audit_id])
             db.execute("""UPDATE users SET email=?, name='Deleted user', password_hash='',
