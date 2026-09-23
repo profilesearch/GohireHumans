@@ -163,6 +163,22 @@ class PasswordResetTests(unittest.TestCase):
         # Unknown-email requests never create tokens, outbox rows or user-linked audit rows.
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM audit_log WHERE action='password_reset_requested' AND user_id IS NULL").fetchone()[0], 8)
 
+    def test_throttled_requests_write_nothing_and_skip_response_floor(self):
+        import time as _t
+        self.api.PASSWORD_RESET_RESPONSE_FLOOR_SECONDS = 0.3
+        before = self.db.execute('SELECT COUNT(*) FROM audit_log').fetchone()[0]
+        for _ in range(3):
+            self.assertEqual(self.forgot('absent@example.com', ip='flood')[0], 200)
+        after_allowed = self.db.execute('SELECT COUNT(*) FROM audit_log').fetchone()[0]
+        self.assertEqual(after_allowed - before, 3)
+        start = _t.perf_counter()
+        for _ in range(20):
+            status, body = self.forgot('absent@example.com', ip='flood')
+            self.assertEqual(status, 200)
+            self.assertIn('If an eligible account exists', body['message'])
+        self.assertLess(_t.perf_counter() - start, 0.3 * 2)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM audit_log').fetchone()[0], after_allowed)
+
     def test_limits_email_and_ip_and_invalid_password(self):
         self.assertEqual(self.reset('nonsense', 'short')[0], 400)
         self.forgot()

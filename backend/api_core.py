@@ -9796,11 +9796,15 @@ def _handle_routes(db):
         # Every response is held to a fixed floor so request timing does not reveal
         # whether an account exists (work differs by a few ms between paths).
         reset_response_deadline = time.monotonic() + PASSWORD_RESET_RESPONSE_FLOOR_SECONDS
+        # Rate limits depend only on the submitted email and IP, never on whether an
+        # account exists, so a throttled request can return at once: no hashing,
+        # no database write, and no response-floor thread hold.
+        if not password_reset_rate_allowed(email):
+            return json_response(generic)
         # Equalize the dominant CPU work for registered and unknown addresses.
         hashlib.pbkdf2_hmac('sha256', email.encode(), b'password-reset-request', 100000)
-        allowed = password_reset_rate_allowed(email)
         user = db.execute("SELECT id,password_hash,is_active,is_banned,is_suspended FROM users WHERE email=?", [email]).fetchone()
-        eligible = bool(allowed and password_reset_crypto.configured() and user and user['password_hash']
+        eligible = bool(password_reset_crypto.configured() and user and user['password_hash']
                         and user['is_active'] and not user['is_banned'] and not user['is_suspended']
                         and not is_seeded_sample_email(email))
         if not eligible:
