@@ -4408,8 +4408,25 @@ def transactional_email_recipient_is_eligible(db, user_id):
 
 def flush_transactional_notification_emails(
     db, now=None, limit=20, owner_token=None, lease_seconds=120, lease_now=None,
+    only_types=None,
 ):
-    """Claim bounded rows with lease/row fencing and lock-free provider I/O."""
+    """Claim bounded rows with lease/row fencing and lock-free provider I/O.
+
+    ``only_types`` confines every phase (claim recovery, reconciliation,
+    expiry and claiming) to the listed notification types. A reset-only rollout
+    passes ('password_reset',) so it can never claim, suppress, expire or send
+    another type's rows while the general notification transport is off.
+    """
+    if only_types is not None:
+        only_types = tuple(sorted({str(t) for t in only_types}))
+        if not only_types or any(not re.fullmatch(r'[a-z_0-9]+', t) for t in only_types):
+            raise ValueError('only_types must be non-empty notification type names')
+        type_sql = " AND notification_type IN (" + ",".join("?" * len(only_types)) + ")"
+        o_type_sql = " AND o.notification_type IN (" + ",".join("?" * len(only_types)) + ")"
+        type_args = list(only_types)
+    else:
+        type_sql = o_type_sql = ""
+        type_args = []
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     current_sql = current.strftime("%Y-%m-%d %H:%M:%S")
     summary = {
@@ -4437,8 +4454,8 @@ def flush_transactional_notification_emails(
         """UPDATE transactional_email_outbox
            SET state='pending',claimed_at=NULL,claim_token=NULL,
                next_attempt_at=?,last_error='recovered abandoned sender claim'
-           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')""",
-        [current_sql],
+           WHERE state='sending' AND claimed_at < datetime('now','-10 minutes')""" + type_sql,
+        [current_sql, *type_args],
     )
     summary["claimed_recovered"] = int(recovered.rowcount or 0)
     # Durable attempted-send evidence precedes pre-send suppression. Only pending
@@ -4451,9 +4468,9 @@ def flush_transactional_notification_emails(
         """SELECT o.id,o.dedupe_key,l.state,l.provider_id,l.prepared_at
            FROM transactional_email_outbox o JOIN agentmail_send_ledger l
              ON l.outbox_id=o.id AND l.key_digest=agentmail_key_digest(o.dedupe_key)
-           WHERE o.state='pending' AND l.state IN ('prepared','unknown','accepted')
+           WHERE o.state='pending' AND l.state IN ('prepared','unknown','accepted')""" + o_type_sql + """
            ORDER BY o.id LIMIT ?""",
-        [batch_limit],
+        [*type_args, batch_limit],
     ).fetchall()
     for intent in attempted:
         accepted = intent["state"] == "accepted"
@@ -4489,8 +4506,8 @@ def flush_transactional_notification_emails(
                    ELSE 'notification validity window expired' END,
                next_attempt_at=NULL,claimed_at=NULL,claim_token=NULL,
                email_to='',title='',message='',link=''
-           WHERE state='pending' AND (expires_at IS NULL OR expires_at <= ?)""",
-        [current_sql],
+           WHERE state='pending' AND (expires_at IS NULL OR expires_at <= ?)""" + type_sql,
+        [current_sql, *type_args],
     )
     summary["stale_skipped"] = int(stale.rowcount or 0)
     db.commit()
@@ -4508,9 +4525,9 @@ def flush_transactional_notification_emails(
             """SELECT * FROM transactional_email_outbox
                WHERE state='pending'
                  AND expires_at IS NOT NULL AND expires_at > ?
-                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)""" + type_sql + """
                ORDER BY id LIMIT 1""",
-            [current_sql, current_sql],
+            [current_sql, current_sql, *type_args],
         ).fetchone()
         if row is None:
             db.commit()
@@ -5107,11 +5124,17 @@ def run_notification_maintenance_once(
                 "email_delivery": {**empty_delivery, "lease_lost": 1},
                 "lease_lost": 1,
             }
-        if (email_provider_configuration()['provider_configured']
-                or agentmail_transport.reset_config()[0] is not None):
+        if email_provider_configuration()['provider_configured']:
             delivery = flush_transactional_notification_emails(
                 db, now=now, limit=20, owner_token=owner_token,
                 lease_seconds=lease_seconds, lease_now=lease_now,
+            )
+        elif agentmail_transport.reset_config()[0] is not None:
+            # Reset-only rollout: never touch other notification types' rows.
+            delivery = flush_transactional_notification_emails(
+                db, now=now, limit=20, owner_token=owner_token,
+                lease_seconds=lease_seconds, lease_now=lease_now,
+                only_types=('password_reset',),
             )
         else:
             delivery = {**empty_delivery, "provider_unavailable": 1}
@@ -14249,6 +14272,10 @@ def _handle_routes(db):
             "UPDATE users SET password_hash=?, updated_at=datetime('now') WHERE id=?",
             [hash_password(new_password), target_id]
         )
+        # A rotated password must not be overridable by a reset link issued before it.
+        db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
+                   [target_id])
+        invalidate_password_reset_emails(db, target_id)
         audit(db, user['id'], "admin_rotate_user_password", "user", target_id, {"target_email": target['email']})
         db.commit()
         return json_response({"ok": True, "user_id": target_id})

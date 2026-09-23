@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
@@ -265,6 +266,76 @@ class PasswordResetTests(unittest.TestCase):
         for index in range(20):
             self.forgot(f'absent-{index}@example.com', ip='one-ip')
         self.assertLessEqual(len(self.api._rate_limit_store), 100)
+
+
+    def _queue_other_type_row(self, notif_type='new_application'):
+        created = self.db.execute(
+            "INSERT INTO notifications(user_id,type,title,message,created_at) VALUES (1,?,'update','hello',datetime('now'))",
+            [notif_type]).lastrowid
+        row_id = self.db.execute("""INSERT INTO transactional_email_outbox
+            (user_id,notification_id,email_to,notification_type,title,message,link,dedupe_context,dedupe_key,
+             state,created_at,expires_at)
+            VALUES (1,?,'',?,'update','hello','#/dashboard','ctx-'||?,'dedupe-'||?,'pending',datetime('now'),
+                    datetime('now','+15 minutes'))""", [created, notif_type, notif_type, notif_type]).lastrowid
+        self.db.commit()
+        return row_id
+
+    def test_reset_only_rollout_never_touches_other_notification_rows(self):
+        # The general transport is off (canary disabled/expired); only the reset gate is ready.
+        for provider, resend_key in (('agentmail', ''), ('resend', ''), ('resend', 'offline-resend-key')):
+            with self.subTest(provider=provider, resend_key=bool(resend_key)):
+                os.environ['EMAIL_PROVIDER'] = provider
+                os.environ['AGENTMAIL_EXPIRES_AT'] = '2026-09-18T00:00:00Z'
+                self.api.RESEND_API_KEY = resend_key
+                self.db.execute("DELETE FROM transactional_email_outbox WHERE notification_type!='password_reset'")
+                self.db.commit()
+                row_id = self._queue_other_type_row()
+                self.assertEqual(self.api.agentmail_transport.reset_config()[1], 'ready')
+                self.assertIsNone(self.api.agentmail_transport.config()[0])
+                if resend_key:
+                    # A configured general provider keeps its existing behaviour.
+                    continue
+                self.db.execute('DELETE FROM notification_worker_leases')
+                self.db.commit()
+                self.assertTrue(self.api.acquire_notification_worker_lease(self.db, 'probe'))
+                response = mock.Mock(status=200)
+                response.read.return_value = b'{"id":"resend-id","message_id":"m","thread_id":"t"}'
+                with mock.patch.object(self.api.urllib.request, 'urlopen', return_value=response) as resend, \
+                        mock.patch.object(self.api.agentmail_transport.urllib.request, 'build_opener') as agent:
+                    self.api.run_notification_maintenance_once(owner_token='probe')
+                    # Even after the other row's validity window, reset-only mode must not expire it.
+                    later = datetime.now(timezone.utc) + timedelta(minutes=30)
+                    self.api.flush_transactional_notification_emails(self.db, now=later, only_types=('password_reset',))
+                row = self.db.execute('SELECT state,attempts,delivery_status FROM transactional_email_outbox WHERE id=?',
+                                      [row_id]).fetchone()
+                self.assertEqual((row['state'], row['attempts']), ('pending', 0))
+                self.assertIsNone(row['delivery_status'])
+                self.assertEqual(resend.call_count, 0)
+                self.assertEqual(agent.call_count, 0)
+
+    def test_admin_password_rotation_revokes_issued_reset_links(self):
+        self.db.execute('UPDATE users SET is_admin=1 WHERE id=1')
+        self.db.commit()
+        self.assertEqual(self.forgot()[0], 200)
+        token = self.tokens[-1]
+        with mock.patch.object(self.api, 'require_admin_step_up', return_value=(None, None)):
+            status, _ = self.request('/admin/users/1/password', {'password': 'admin-rotated-password'},
+                                     method='PUT', token='old-session')
+        self.assertEqual(status, 200)
+        used = self.db.execute('SELECT used_at FROM password_reset_tokens WHERE token_hash=?',
+                               [hashlib.sha256(token.encode()).hexdigest()]).fetchone()['used_at']
+        self.assertIsNotNone(used)
+        pending = self.db.execute("""SELECT COUNT(*) FROM transactional_email_outbox
+            WHERE notification_type='password_reset' AND state='pending'""").fetchone()[0]
+        self.assertEqual(pending, 0)
+        opener = mock.Mock()
+        with mock.patch.object(self.api.agentmail_transport.urllib.request, 'build_opener', return_value=opener):
+            self.api.flush_transactional_notification_emails(self.db)
+        self.assertEqual(opener.open.call_count, 0)
+        before = self.db.execute('SELECT password_hash FROM users WHERE id=1').fetchone()['password_hash']
+        self.assertEqual(self.reset(token, 'attacker-new-password')[0], 400)
+        after = self.db.execute('SELECT password_hash FROM users WHERE id=1').fetchone()['password_hash']
+        self.assertEqual(before, after)
 
 
 if __name__ == '__main__':

@@ -277,8 +277,14 @@ def send(db, outbox_id, claim_token, key, user_id, notification_type):
                 db.rollback()
                 return 'suppressed', None
         else:
-            used = db.execute('SELECT COUNT(*) FROM agentmail_send_ledger WHERE prepared_at>=?', [now[:10]]).fetchone()[0]
-            total = db.execute('SELECT COUNT(*) FROM agentmail_send_ledger WHERE prepared_at IS NOT NULL').fetchone()[0]
+            # Reset mail has its own budget; it never consumes the canary's caps.
+            used = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
+                LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE l.prepared_at>=? AND COALESCE(o.notification_type,'')!='password_reset'""",
+                [now[:10]]).fetchone()[0]
+            total = db.execute("""SELECT COUNT(*) FROM agentmail_send_ledger l
+                LEFT JOIN transactional_email_outbox o ON o.id=l.outbox_id
+                WHERE l.prepared_at IS NOT NULL AND COALESCE(o.notification_type,'')!='password_reset'""").fetchone()[0]
             if used >= cfg['cap'] or total >= cfg['total_cap']:
                 db.rollback()
                 return 'suppressed', None
