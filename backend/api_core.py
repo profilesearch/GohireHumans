@@ -2662,7 +2662,12 @@ def agent_email_domain_sql(user_alias='u'):
     if not domains:
         return '0'
     # Domains have been restricted to alphanumerics, dots and hyphens.
-    host = f"LOWER(TRIM(SUBSTR({user_alias}.email, INSTR({user_alias}.email,'@')+1)))"
+    e = f"LOWER(TRIM({user_alias}.email))"
+    # Mail is routed by the text after the LAST '@' (RFC 5321); strings without
+    # an '@' have no domain. RTRIM with every non-'@' character strips back to
+    # the last '@', and REPLACE removes that prefix.
+    host = (f"(CASE WHEN INSTR({e},'@')>0 "
+            f"THEN REPLACE({e}, RTRIM({e}, REPLACE({e},'@','')), '') ELSE '' END)")
     # Exact domain or a true subdomain ("team.ilands.app"), never suffix look-alikes
     # ("evil-ilands.app"): the character before the domain must be a dot.
     clauses = []

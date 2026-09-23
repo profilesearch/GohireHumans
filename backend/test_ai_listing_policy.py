@@ -193,3 +193,28 @@ class AIListingPolicyReviewRegressions(AIListingPolicyTests):
         self.assertEqual(sub['provider_type'], 'ai')
         self.assertEqual(self.request('GET', f"/services/{sub['id']}")[0], 404)
         self.assertEqual(self.create(12)['provider_type'], 'human')
+
+    def test_malformed_emails_use_last_at_sign_and_require_one(self):
+        db = self.core.get_db()
+        cases = {21: ('ilands.app', False), 22: ('x@evil.com@ilands.app', True),
+                 23: ('x@ilands.app@evil.com', False), 24: ('  Bot@ILANDS.APP  ', True),
+                 25: ('@ilands.app', True), 26: ('bot@', False)}
+        db.executemany('INSERT INTO users (id,email,name,password_hash) VALUES (?,?,?,?)',
+                       [(i, e, 'M', 'x') for i, (e, _) in cases.items()])
+        db.executemany("INSERT INTO sessions (user_id,token,expires_at) VALUES (?,?,datetime('now','+1 day'))",
+                       [(i, f'tok-{i}') for i in cases])
+        db.commit()
+        for uid, (email, agent) in cases.items():
+            with self.subTest(email=email):
+                self.assertEqual(self.core.is_agent_account(db, uid), agent)
+        human = self.create(21)
+        self.assertEqual(human['provider_type'], 'human')
+        self.assertEqual(self.request('GET', f"/services/{human['id']}")[0], 200)
+        bypass = self.create(22)
+        self.assertEqual(bypass['provider_type'], 'ai')
+        self.assertEqual(self.request('GET', f"/services/{bypass['id']}")[0], 404)
+        db.execute("INSERT INTO services (worker_id,title,description,category,status,provider_type) VALUES (22,'Legacy','Old','research','active','human')")
+        db.commit()
+        self.core.init_db()
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM services WHERE worker_id=22 AND provider_type!='ai'").fetchone()[0], 0)
+
