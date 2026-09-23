@@ -327,3 +327,69 @@ class AdminAccountErasureThirdReviewRegressions(AdminAccountErasureTests):
         with self.core.get_db() as db:
             got = json.loads(db.execute("SELECT details FROM audit_log WHERE action='peer_contact'").fetchone()[0])
         self.assertEqual(got, {'message': 'Contacted [REDACTED]', 'ip': '198.51.100.41'})
+
+
+class AdminAccountErasureFourthReviewRegressions(AdminAccountErasureTests):
+    """Blockers from independent review of dc0b2e5."""
+
+    def apply_to_peer_job(self):
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=1 WHERE id=2')
+            job_id = db.execute("INSERT INTO jobs(employer_id,title,description,category,budget_amount) VALUES (3,'Peer job','Job','research',25)").lastrowid
+            db.commit()
+        status, _ = self.request('POST', f'/jobs/{job_id}/apply', {'cover_message': 'work'}, 'old-session')
+        self.assertEqual(status, 201)
+        return job_id
+
+    def peer_texts(self):
+        with self.core.get_db() as db:
+            return ([r[0] for r in db.execute("SELECT message FROM notifications WHERE user_id=3")],
+                    [r[0] for r in db.execute("SELECT message FROM transactional_email_outbox WHERE user_id=3")])
+
+    def test_rename_after_applying_still_scrubs_peer_notice(self):
+        self.apply_to_peer_job()
+        status, _ = self.request('PUT', '/profile', {'name': 'Renamed Person'}, 'old-session')
+        self.assertEqual(status, 200)
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=0 WHERE id=2')
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        notices, outbox = self.peer_texts()
+        for text in notices + outbox:
+            self.assertNotIn('Unique Erasure Person', text)
+            self.assertNotIn('Renamed Person', text)
+        self.assertIn('A former user applied to your job.', notices)
+        self.assertIn('A former user applied to your job.', outbox)
+
+    def test_other_applicants_notice_with_same_template_is_untouched(self):
+        job_id = self.apply_to_peer_job()
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO notifications(user_id,type,title,message,link) VALUES (3,'new_application','New application: Peer job','Someone Else applied to your job.',?)",
+                       [f'/jobs/{job_id}/applications'])
+            db.execute("UPDATE notifications SET created_at=datetime('now','-1 day') WHERE message='Someone Else applied to your job.'")
+            db.execute('UPDATE users SET is_active=0 WHERE id=2')
+            db.commit()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        notices, _ = self.peer_texts()
+        self.assertIn('Someone Else applied to your job.', notices)
+
+    def test_target_email_in_audit_key_is_redacted_and_admin_update_no_longer_echoes_keys(self):
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES (1,'legacy','user',2,?)",
+                       [json.dumps({self.EMAIL: 'support metadata', 'payment': 'kept'})])
+            db.commit()
+        status, _ = self.request('PUT', '/admin/users/2', {'admin_password': self.ADMIN_PASSWORD, 'is_suspended': False,
+                                                          self.EMAIL: 'support metadata'})
+        self.assertEqual(status, 200)
+        with self.core.get_db() as db:
+            details = db.execute("SELECT details FROM audit_log WHERE action='admin_update_user' ORDER BY id DESC LIMIT 1").fetchone()[0]
+        self.assertEqual(json.loads(details), {'is_suspended': False})
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            for (d,) in db.execute('SELECT details FROM audit_log WHERE details IS NOT NULL'):
+                self.assertNotIn(self.EMAIL.lower(), d.lower())
+            legacy = json.loads(db.execute("SELECT details FROM audit_log WHERE action='legacy'").fetchone()[0])
+        self.assertEqual(legacy, {'[REDACTED]': 'support metadata', 'payment': 'kept'})

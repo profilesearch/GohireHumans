@@ -4162,15 +4162,34 @@ def _erase_audit_identity(details, target, linked):
     # details use a literal fallback.
     pattern = _erasure_identity_pattern(target)
 
+    email_pattern = re.compile(re.escape(target['email']), re.IGNORECASE) if target['email'] else None
+
+    def scrub_key(key):
+        if not isinstance(key, str):
+            return key
+        if email_pattern:
+            key = email_pattern.sub('[REDACTED]', key)
+        # Field-name style keys ("payment", "status") are schema, not identity.
+        if linked and pattern and not re.fullmatch(r'[a-z_][a-z0-9_]*', key):
+            key = pattern.sub('[REDACTED]', key)
+        return key
+
     def scrub(value):
         if isinstance(value, str):
             return pattern.sub('[REDACTED]', value) if pattern else value
         if isinstance(value, list):
             return [scrub(item) for item in value]
         if isinstance(value, dict):
-            return {key: ('[REDACTED]' if linked and str(key).lower() in _ERASURE_NETWORK_KEYS
-                          else scrub(item))
-                    for key, item in value.items()}
+            out = {}
+            for key, item in value.items():
+                new_key = scrub_key(key)
+                suffix = 2
+                while new_key in out:
+                    new_key = f"{scrub_key(key)}#{suffix}"
+                    suffix += 1
+                out[new_key] = ('[REDACTED]' if linked and str(key).lower() in _ERASURE_NETWORK_KEYS
+                                else scrub(item))
+            return out
         return value
 
     try:
@@ -4195,23 +4214,56 @@ def _erasure_identity_pattern(target):
     return re.compile('|'.join(parts), re.IGNORECASE) if parts else None
 
 
+_ERASURE_APPLICATION_NOTICE_SUFFIX = ' applied to your job.'
+_ERASURE_APPLICATION_NOTICE_REPLACEMENT = 'A former user applied to your job.'
+
+
 def _erasure_peer_rows(db, target):
-    # The only first-party template that writes a user's name into another
-    # user's message is the job-application notice ("<name> applied to your
-    # job."). Match exactly that text on the employers of jobs the target applied
-    # to, so no unrelated message is ever rewritten.
-    if not target['name']:
-        return {}
-    message = f"{target['name']} applied to your job."
-    found = {}
-    for table in _ERASURE_PEER_TABLES:
-        found[table] = [row[0] for row in db.execute(
-            f"""SELECT id FROM {table} WHERE user_id!=?1 AND message=?2
-                  AND {'type' if table == 'notifications' else 'notification_type'}='new_application'
-                  AND user_id IN (SELECT j.employer_id FROM jobs j JOIN applications a ON a.job_id=j.id
-                                  WHERE a.worker_id=?1)""",
-            [target['id'], message])]
-    return found
+    """Employer notices created by the target's own job applications.
+
+    The only first-party template that writes one user's name into another
+    user's message is the job-application notice ("<name> applied to your
+    job."). Rows are bound to the target's applications, never matched by name,
+    so a later rename cannot hide them and a common-word name cannot select
+    unrelated rows. Email notices carry dedupe_context 'application:<id>' and
+    the notification id; in-app-only notices are matched by employer, job link,
+    template and creation time. Ambiguity blocks the erasure instead of guessing.
+    Returns ({table: [(row_id, planned_message)]}, blockers).
+    """
+    outbox, notices, blockers = {}, {}, []
+    applications = db.execute(
+        """SELECT a.id, a.job_id, a.created_at, j.employer_id FROM applications a
+           JOIN jobs j ON j.id=a.job_id WHERE a.worker_id=? AND j.employer_id!=?""",
+        [target['id'], target['id']]).fetchall()
+    for app in applications:
+        linked_notification = None
+        for row in db.execute(
+                """SELECT id, message, notification_id FROM transactional_email_outbox
+                   WHERE user_id=? AND notification_type='new_application' AND dedupe_context=?""",
+                [app['employer_id'], f"application:{app['id']}"]):
+            if (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+                outbox[row['id']] = row['message']
+            linked_notification = row['notification_id'] or linked_notification
+        if linked_notification is not None:
+            row = db.execute("SELECT id, message FROM notifications WHERE id=? AND user_id=? AND type='new_application'",
+                             [linked_notification, app['employer_id']]).fetchone()
+            if row and (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+                notices[row['id']] = row['message']
+            continue
+        candidates = [r for r in db.execute(
+            """SELECT id, message FROM notifications
+               WHERE user_id=? AND type='new_application' AND link=?
+                 AND created_at >= ? AND created_at <= datetime(?, '+5 seconds')
+                 AND id NOT IN (SELECT notification_id FROM transactional_email_outbox
+                                WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
+            [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
+            if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
+        if len(candidates) > 1:
+            blockers.append('ambiguous_peer_notice')
+        elif candidates:
+            notices[candidates[0]['id']] = candidates[0]['message']
+    found = {'notifications': sorted(notices.items()), 'transactional_email_outbox': sorted(outbox.items())}
+    return found, sorted(set(blockers))
 
 
 def _erasure_plan(db, target):
@@ -4250,9 +4302,10 @@ def _erasure_plan(db, target):
         '(SELECT id FROM transactional_email_outbox WHERE user_id=?1)', values[:1]).fetchone()[0]
     anonymized['transactional_email_outbox'] = db.execute(
         f'SELECT count(*) FROM transactional_email_outbox WHERE {_ERASURE_OUTBOX_SCRUB}', values[:1]).fetchone()[0]
-    peer_rows = _erasure_peer_rows(db, target)
-    for table, ids in peer_rows.items():
-        anonymized[f'peer_{table}'] = len(ids)
+    peer_rows, peer_blockers = _erasure_peer_rows(db, target)
+    blockers.extend(peer_blockers)
+    for table, rows in peer_rows.items():
+        anonymized[f'peer_{table}'] = len(rows)
     return deleted, anonymized, retained, blockers, audit_rows, peer_rows
 
 
@@ -14568,7 +14621,8 @@ def _handle_routes(db):
             vals.append(target_id)
             db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", vals)
 
-        audit_details = {k: v for k, v in body.items() if k != 'admin_password'}
+        # Only fields this route acts on are recorded; arbitrary keys are not echoed.
+        audit_details = {k: bool(body[k]) for k in ('is_active', 'is_suspended', 'is_banned', 'is_admin') if k in body}
         audit(db, user['id'], "admin_update_user", "user", target_id, audit_details)
         db.commit()
         return json_response({"ok": True})
@@ -14618,11 +14672,11 @@ def _handle_routes(db):
                     WHERE {_ERASURE_OUTBOX_SCRUB}""", [target_id, erased_email]).rowcount
             if scrubbed != anonymized['transactional_email_outbox']:
                 raise RuntimeError('Account erasure count changed: transactional_email_outbox scrub')
-            for table, ids in peer_rows.items():
-                for row_id in ids:
+            for table, rows in peer_rows.items():
+                for row_id, planned_message in rows:
                     if db.execute(f'UPDATE {table} SET message=? WHERE id=? AND message=?',
-                                  ['A former user applied to your job.', row_id,
-                                   f"{target['name']} applied to your job."]).rowcount != 1:
+                                  [_ERASURE_APPLICATION_NOTICE_REPLACEMENT, row_id,
+                                   planned_message]).rowcount != 1:
                         raise RuntimeError(f'Account erasure count changed: peer {table}')
             for table, where in _ERASURE_DELETIONS.items():
                 affected = db.execute(f'DELETE FROM {table} WHERE {where}',
