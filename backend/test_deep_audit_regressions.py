@@ -1330,8 +1330,9 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("admin_password: adminPassword", text)
         self.assertNotIn("manual_money_movement_confirmed: true", text)
         self.assertNotIn("processor_reference: processorReference", text)
-        self.assertIn("Issue task-amount refund", text)
-        self.assertIn("Stripe processing and the 1% platform fee are not automatically refunded", text)
+        self.assertIn("If a job hire was charged but never started, the full charge including fees is refunded.", text)
+        self.assertIn("Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.", text)
+        self.assertIn("result.refund_scope === 'full_charge'", text)
         self.assertIn("/trust-safety.html", text)
 
     def test_first_task_wizard_and_measurement_invariants(self):
