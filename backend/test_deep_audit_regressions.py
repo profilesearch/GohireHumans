@@ -3831,11 +3831,25 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                     "metadata": kwargs["metadata"],
                 })()
 
+        class FakeAccount:
+            # Hiring now proves the worker's live Connect account can be paid first.
+            @staticmethod
+            def retrieve(account_id):
+                return {
+                    "id": account_id,
+                    "charges_enabled": True,
+                    "payouts_enabled": True,
+                    "details_submitted": True,
+                    "capabilities": {"transfers": "active"},
+                    "requirements": {"currently_due": [], "past_due": [], "disabled_reason": None},
+                }
+
         module.stripe = type(
             "FakeStripe",
             (),
             {
                 "PaymentIntent": FakePaymentIntent,
+                "Account": FakeAccount,
                 "error": type("FakeStripeErrors", (), {"StripeError": Exception}),
             },
         )()
@@ -3844,7 +3858,10 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         try:
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker@example.com','x','Worker')")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'employer@example.com','x','Employer')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute(
+                "INSERT INTO worker_profiles (user_id,payout_account_id,payout_method) "
+                "VALUES (1,'acct_ready_worker','stripe_connect_active')"
+            )
             db.execute(
                 "INSERT INTO employer_profiles (user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_mock','pm_mock')"
             )

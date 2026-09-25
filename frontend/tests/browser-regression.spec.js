@@ -1115,6 +1115,90 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(hireBody).toBeNull();
   });
 
+  test('released fixed-price hiring shows Hire only for payout-ready applicants and posts once', async ({ page }) => {
+    const hireBodies = [];
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/jobs/12' && route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 12, employer_id: 2, title: 'Fixed QA pass', budget_type: 'fixed', budget_amount: 25,
+          status: 'open', hiring_enabled: true
+        }) });
+      }
+      if (url.pathname === '/jobs/12/applications') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+          { id: 44, worker_id: 1, worker_name: 'Ready Worker', cover_message: 'Ready', status: 'pending', worker_payout_ready: true },
+          { id: 45, worker_id: 3, worker_name: '<img src=x onerror=window.__pwned=1>', cover_message: 'Soon', status: 'pending', worker_payout_ready: false },
+          { id: 46, worker_id: 4, worker_name: 'Truthy String', cover_message: 'x', status: 'shortlisted', worker_payout_ready: 'true' }
+        ]) });
+      }
+      if (url.pathname === '/payments/status') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employer_ready: true }) });
+      }
+      if (url.pathname === '/jobs/12/hire') {
+        hireBodies.push(route.request().postDataJSON());
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 91 }) });
+      }
+      if (url.pathname === '/orders') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orders: [] }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.goto('/#/jobs/12/applicants', { waitUntil: 'domcontentloaded' });
+    const hire = page.getByRole('button', { name: 'Hire', exact: true });
+    await expect(hire).toHaveCount(1);
+    await expect(page.getByText("Can't be hired until they finish payout setup")).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Hiring temporarily paused' })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+    expect(hireBodies).toEqual([]);
+
+    await hire.click();
+    await expect(page.getByText('Confirm Hire')).toBeVisible();
+    await expect(page.locator('#hire-total')).toHaveText('$26.00');
+    expect(hireBodies).toEqual([]);
+    const confirm = page.getByRole('button', { name: 'Confirm & Fund Payment' });
+    await confirm.dblclick();
+    await expect(page).toHaveURL(/#\/orders$/);
+    expect(hireBodies).toEqual([
+      { application_id: 44, milestones: [{ description: 'Full project completion', amount: 25 }] }
+    ]);
+  });
+
+  test('applicant page keeps hiring paused when the server gate is off or missing', async ({ page }) => {
+    let hireCalls = 0;
+    await page.addInitScript(() => {
+      sessionStorage.setItem('ghh_token', 'employer-token');
+      localStorage.setItem('ghh_user', JSON.stringify({ id: 2, name: 'Employer', is_admin: false }));
+    });
+    await page.route('https://gohirehumans-production.up.railway.app/**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/jobs/12' && route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: 12, employer_id: 2, title: 'Fixed QA pass', budget_type: 'fixed', budget_amount: 25,
+          status: 'open', hiring_enabled: 'true'
+        }) });
+      }
+      if (url.pathname === '/jobs/12/applications') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+          { id: 44, worker_id: 1, worker_name: 'Ready Worker', cover_message: 'Ready', status: 'pending', worker_payout_ready: true }
+        ]) });
+      }
+      if (url.pathname === '/jobs/12/hire') { hireCalls += 1; }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+    await page.goto('/#/jobs/12/applicants', { waitUntil: 'domcontentloaded' });
+    const paused = page.getByRole('button', { name: 'Hiring temporarily paused' });
+    await expect(paused).toBeVisible();
+    await expect(paused).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Hire', exact: true })).toHaveCount(0);
+    expect(hireCalls).toBe(0);
+  });
+
   test('unknown public path returns true 404 page', async ({ page }) => {
     const response = await page.goto('/no-such-route-ui-audit', { waitUntil: 'domcontentloaded' });
     expect(response.status()).toBe(404);

@@ -3390,7 +3390,7 @@ async function renderJobApplicants(id) {
               ${safeExternalHref(a.portfolio_url) ? `<a class="text-sm" href="${esc(safeExternalHref(a.portfolio_url))}" target="_blank" rel="noopener">View Portfolio →</a>` : ''}
             </div>
             <div class="applicant-actions">
-              ${a.status === 'pending' ? `<button class="btn btn-secondary btn-sm" disabled title="Payment safeguards are being finalized">Hiring temporarily paused</button>` : ''}
+              ${applicantHireAction(job, a)}
             </div>
           </div>
         </div>`).join('') : `
@@ -3405,6 +3405,21 @@ async function renderJobApplicants(id) {
     if (!isCurrent()) return;
     shellError(err, 'my-jobs');
   }
+}
+
+// Hire control for one applicant. The server reports whether fixed-price hiring is
+// live (job.hiring_enabled) and re-checks worker payout readiness before any charge;
+// this only mirrors that state so buyers never see a Hire button that can't work.
+function applicantHireAction(job, a) {
+  if (!['pending', 'shortlisted'].includes(a.status)) return '';
+  if (!['open', 'reviewing'].includes(job.status)) return '';
+  if (job.hiring_enabled !== true) {
+    return `<button class="btn btn-secondary btn-sm" disabled title="Payment safeguards are being finalized">Hiring temporarily paused</button>`;
+  }
+  if (a.worker_payout_ready !== true) {
+    return `<span class="applicant-hire-note">Can't be hired until they finish payout setup</span>`;
+  }
+  return `<button class="btn btn-primary btn-sm" onclick="handleHire(${jsArg(job.id)},${jsArg(a.id)},${jsArg(job.budget_type)},${jsArg(job.budget_amount)})">Hire</button>`;
 }
 
 async function handleHire(jobId, applicationId, budgetType, budgetAmount) {
