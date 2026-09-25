@@ -1924,6 +1924,9 @@ def _init_db_connection_steps(db):
         ("orders", "deadline_at", "ALTER TABLE orders ADD COLUMN deadline_at TEXT"),
         ("orders", "submitted_at", "ALTER TABLE orders ADD COLUMN submitted_at TEXT"),
         ("orders", "revision_requested_at", "ALTER TABLE orders ADD COLUMN revision_requested_at TEXT"),
+        # Payout account proven live-ready before a fixed hire was charged; activation
+        # refuses to proceed if the worker's binding no longer matches it.
+        ("orders", "hire_payout_account_id", "ALTER TABLE orders ADD COLUMN hire_payout_account_id TEXT"),
     ]:
         ensure_column(db, table_name, column_name, col_sql)
     db.execute(
@@ -9179,19 +9182,27 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
         )
     # The funding helper committed and released the writer lock, so the worker's
     # pre-charge eligibility may be stale. Re-check it under this fresh writer
-    # before activating the hire; the committed hold stays for manual review.
-    worker_account = db.execute(
-        "SELECT is_active,is_banned,is_suspended FROM users WHERE id=?",
+    # before activating the hire; the committed hold stays for manual review
+    # (dispute -> admin refund_to_employer) instead of activating an unpayable hire.
+    worker_state = db.execute(
+        """SELECT u.is_active, u.is_banned, u.is_suspended, wp.payout_account_id
+           FROM users u LEFT JOIN worker_profiles wp ON wp.user_id=u.id
+           WHERE u.id=?""",
         [application["worker_id"]],
     ).fetchone()
     if (
-        not worker_account
-        or not worker_account["is_active"]
-        or worker_account["is_banned"]
-        or worker_account["is_suspended"]
+        not worker_state
+        or not worker_state["is_active"]
+        or worker_state["is_banned"]
+        or worker_state["is_suspended"]
     ):
         raise FundingConflict(
             "The worker's account is no longer eligible; this funded hire needs manual review."
+        )
+    charged_binding = order["hire_payout_account_id"]
+    if charged_binding is not None and worker_state["payout_account_id"] != charged_binding:
+        raise FundingConflict(
+            "The worker's payout account changed after funding; this funded hire needs manual review."
         )
 
     updated_milestone = db.execute(
@@ -9247,7 +9258,11 @@ def _job_hire_new_operation_snapshot(db, job_id, application_id):
         """SELECT j.employer_id, j.status AS job_status, j.budget_type, j.budget_amount,
                   a.status AS application_status, a.worker_id,
                   u.is_active, u.is_banned, u.is_suspended,
-                  wp.user_id AS worker_profile_user_id, wp.payout_account_id
+                  wp.user_id AS worker_profile_user_id, wp.payout_account_id,
+                  EXISTS(SELECT 1 FROM payment_setup_operations pso
+                         WHERE pso.user_id=a.worker_id
+                           AND pso.operation_kind='admin_payout_binding_reset'
+                           AND pso.status='unknown') AS payout_reset_pending
            FROM jobs j
            JOIN applications a ON a.id=? AND a.job_id=j.id
            JOIN users u ON u.id=a.worker_id
@@ -9267,6 +9282,7 @@ def _job_hire_worker_ineligibility(snapshot):
     if (
         snapshot["worker_profile_user_id"] is None
         or not payout_account_id
+        or snapshot["payout_reset_pending"]
         or (PRODUCTION_MODE and payout_account_id.startswith("acct_sim_"))
     ):
         return "This worker hasn't finished payout setup, so they can't be hired yet."
@@ -9294,7 +9310,7 @@ def _job_hire_snapshot_unchanged(before, after):
     stable = (
         "employer_id", "budget_type", "budget_amount", "application_status", "worker_id",
         "is_active", "is_banned", "is_suspended", "worker_profile_user_id",
-        "payout_account_id",
+        "payout_account_id", "payout_reset_pending",
     )
     return (
         all(before[key] == after[key] for key in stable)
@@ -11796,8 +11812,9 @@ def _handle_routes(db):
             cursor = db.execute(
                 """INSERT INTO orders
                    (type, job_id, worker_id, employer_id, status, total_amount,
-                    creation_idempotency_key, creation_request_fingerprint)
-                   VALUES ('job_hire', ?, ?, ?, 'in_progress', ?, ?, ?)""",
+                    creation_idempotency_key, creation_request_fingerprint,
+                    hire_payout_account_id)
+                   VALUES ('job_hire', ?, ?, ?, 'in_progress', ?, ?, ?, ?)""",
                 [
                     job_id,
                     worker_id,
@@ -11805,6 +11822,7 @@ def _handle_routes(db):
                     total_amount,
                     hire_operation_key,
                     hire_request_fingerprint,
+                    fresh_snapshot["payout_account_id"],
                 ]
             )
         except sqlite3.IntegrityError:

@@ -275,6 +275,151 @@ class JobHiringReleaseTests(unittest.TestCase):
         self.assertEqual(self.payment_create.call_count, 1)
         self.assertEqual(durable_state(), ("open", "pending", "pending", "held", 0))
 
+    def _funded_hire_with_post_commit_change(self, sql):
+        """Run a hire whose funding commits, then apply `sql` from another connection."""
+        real_commit = self.api._commit_funding_attempt
+
+        def commit_then_change(db, attempt, processor_intent_id):
+            real_commit(db, attempt, processor_intent_id)
+            writer = sqlite3.connect(self.api._get_db_path())
+            try:
+                writer.execute(sql)
+                writer.commit()
+            finally:
+                writer.close()
+
+        self.set_account_retrieve(fixtures.ready_connect_account)
+        with mock.patch.object(self.api, "_commit_funding_attempt", side_effect=commit_then_change):
+            return self.hire_job_one()
+
+    def _funded_but_unactivated_state(self):
+        with self.api.get_db() as db:
+            return (
+                db.execute("SELECT status FROM jobs WHERE id=1").fetchone()[0],
+                db.execute("SELECT status FROM applications WHERE id=14").fetchone()[0],
+                db.execute("SELECT status FROM milestones").fetchone()[0],
+                db.execute("SELECT status FROM escrow_holds").fetchone()[0],
+                db.execute("SELECT COUNT(*) FROM notifications WHERE type='job_hired'").fetchone()[0],
+            )
+
+    def test_payout_binding_removed_after_hold_commit_does_not_activate_hire(self):
+        # Reviewer reproducer (PR #149 NO-GO): binding cleared after the hold commits.
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE worker_profiles SET payout_account_id=NULL,payout_method='pending_setup' WHERE user_id=1"
+        )
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        self.assertEqual(self._funded_but_unactivated_state(), ("open", "pending", "pending", "held", 0))
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        self.assertEqual(self._funded_but_unactivated_state(), ("open", "pending", "pending", "held", 0))
+
+    def test_payout_binding_swapped_after_hold_commit_does_not_activate_hire(self):
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE worker_profiles SET payout_account_id='acct_swapped_in' WHERE user_id=1"
+        )
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, 1)
+        self.assertEqual(self._funded_but_unactivated_state(), ("open", "pending", "pending", "held", 0))
+        # Exact retry must not activate against the swapped account either.
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self._funded_but_unactivated_state(), ("open", "pending", "pending", "held", 0))
+
+    def test_stranded_funded_hire_is_refundable_through_admin_dispute_path(self):
+        from types import SimpleNamespace
+        import stripe as stripe_sdk
+
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE users SET is_banned=1 WHERE id=1"
+        )
+        self.assertEqual(status, 409, result)
+        with self.api.get_db() as db:
+            order_id, total = db.execute("SELECT id,total_amount FROM orders").fetchone()
+            charged = db.execute("SELECT charged_total_cents,stripe_payment_intent_id FROM escrow_holds").fetchone()
+            db.execute(
+                "INSERT INTO users (id,email,name,password_hash,is_admin) VALUES (9,'admin@example.com','Admin',?,1)",
+                [self.api.hash_password("correct horse")],
+            )
+            db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (9,'tok-admin',datetime('now','+1 day'))")
+            db.commit()
+
+        refunds = []
+
+        def create_refund(**kwargs):
+            refunds.append(kwargs)
+            evidence = {
+                "id": "re_stranded", "payment_intent": kwargs["payment_intent"],
+                "amount": kwargs["amount"], "currency": "usd",
+                "metadata": kwargs["metadata"], "status": "succeeded",
+            }
+            refund_api.retrieve.return_value = evidence
+            return evidence
+
+        refund_api = SimpleNamespace(
+            create=mock.Mock(side_effect=create_refund), retrieve=mock.Mock(),
+            list=mock.Mock(return_value={"data": []}),
+        )
+        self.api.stripe = SimpleNamespace(
+            PaymentIntent=self.api.stripe.PaymentIntent, Account=self.api.stripe.Account,
+            Refund=refund_api, Webhook=SimpleNamespace(construct_event=mock.Mock()),
+            StripeError=stripe_sdk.StripeError, APIConnectionError=stripe_sdk.APIConnectionError,
+            InvalidRequestError=stripe_sdk.InvalidRequestError,
+        )
+        self.api.STRIPE_ERROR = stripe_sdk.StripeError
+
+        status, dispute = self.request("POST", f"/orders/{order_id}/dispute", payload={"reason": "Hire never started"})
+        self.assertEqual(status, 200, dispute)
+        status, resolved = self.request("POST", "/admin/resolve-dispute", token="tok-admin", payload={
+            "order_id": order_id, "resolution": "refund_to_employer", "admin_password": "correct horse",
+        })
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual(resolved["status"], "succeeded")
+        self.assertEqual(len(refunds), 1)
+        self.assertEqual(refunds[0]["payment_intent"], charged["stripe_payment_intent_id"])
+        self.assertEqual(refunds[0]["amount"], round(total * 100))
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds").fetchone()[0], "refunded")
+            # Existing refund flow closes the order and its job; the buyer can repost.
+            self.assertEqual(db.execute("SELECT status FROM orders").fetchone()[0], "canceled")
+            self.assertEqual(db.execute("SELECT status FROM jobs WHERE id=1").fetchone()[0], "canceled")
+            self.assertEqual(db.execute("SELECT status FROM milestones").fetchone()[0], "pending")
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM notifications WHERE type='job_hired'").fetchone()[0], 0
+            )
+        # Replaying the admin refund is idempotent: no second refund, no new charge.
+        status, replay = self.request("POST", "/admin/resolve-dispute", token="tok-admin", payload={
+            "order_id": order_id, "resolution": "refund_to_employer", "admin_password": "correct horse",
+        })
+        self.assertIn(status, (200, 409), replay)
+        self.assertEqual(len(refunds), 1)
+        self.assertEqual(self.payment_create.call_count, 1)
+
+    def test_pending_admin_payout_reset_blocks_new_hire_before_charge(self):
+        with self.api.get_db() as db:
+            db.execute(
+                """INSERT INTO payment_setup_operations
+                   (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                    processor_idempotency_key,status)
+                   VALUES ('reset:1','admin_payout_binding_reset',1,'fp','{}','reset:1:v1','unknown')"""
+            )
+            db.commit()
+        self.set_account_retrieve(fixtures.ready_connect_account)
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 409, result)
+        self.account_retrieve.assert_not_called()
+        self.assert_no_hire_side_effects()
+
+    def test_new_hire_records_the_payout_account_proven_before_charge(self):
+        self.set_account_retrieve(fixtures.ready_connect_account)
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 201, result)
+        with self.api.get_db() as db:
+            self.assertEqual(
+                db.execute("SELECT hire_payout_account_id FROM orders").fetchone()[0], "acct_live_worker"
+            )
+
     # ── happy path and replay still hold with the new checks ──────────────
     def test_ready_worker_hire_funds_once_and_exact_retry_replays(self):
         self.set_account_retrieve(fixtures.ready_connect_account)
