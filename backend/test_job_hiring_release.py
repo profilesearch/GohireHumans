@@ -438,6 +438,90 @@ class JobHiringReleaseTests(unittest.TestCase):
         self.assertEqual(resolved["refund_scope"], "task_amount")
         self.assertEqual([r["amount"] for r in refunds], [2500])
 
+    def _stranded_order_id(self):
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE users SET is_banned=1 WHERE id=1"
+        )
+        self.assertEqual(status, 409, result)
+        with self.api.get_db() as db:
+            return db.execute("SELECT id FROM orders").fetchone()[0]
+
+    def _assert_full_refund_committed(self, order_id, refunds, status, resolved):
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual((resolved["refund_scope"], resolved["amount_cents"]), ("full_charge", 2600))
+        self.assertEqual([r["amount"] for r in refunds], [2600])
+        with self.api.get_db() as db:
+            attempt = db.execute("SELECT status,lifecycle_status,amount_cents FROM refund_attempts").fetchone()
+            self.assertEqual(tuple(attempt), ("committed", "completed", 2600))
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds").fetchone()[0], "refunded")
+
+    # Independent review of PR #150 (NO-GO): buyer job edits must not shrink the refund.
+    def test_buyer_cancels_unactivated_job_before_dispute_still_gets_full_refund(self):
+        order_id = self._stranded_order_id()
+        self.assertEqual(self.request("DELETE", "/jobs/1")[0], 200)
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self._assert_full_refund_committed(order_id, refunds, status, resolved)
+
+    def test_buyer_marks_unactivated_job_hired_before_dispute_still_gets_full_refund(self):
+        order_id = self._stranded_order_id()
+        self.assertEqual(self.request("PUT", "/jobs/1", payload={"status": "hired"})[0], 200)
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self._assert_full_refund_committed(order_id, refunds, status, resolved)
+
+    def test_buyer_cancel_during_processor_refund_still_settles_full_refund(self):
+        order_id = self._stranded_order_id()
+        refunds = self._install_admin_and_refund_mocks()
+        real_create = self.api.stripe.Refund.create.side_effect
+
+        def refund_then_cancel(**kwargs):
+            evidence = real_create(**kwargs)
+            cancel_status, cancel_body = self.request("DELETE", "/jobs/1")
+            self.assertEqual(cancel_status, 200, cancel_body)
+            return evidence
+
+        self.api.stripe.Refund.create.side_effect = refund_then_cancel
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self._assert_full_refund_committed(order_id, refunds, status, resolved)
+
+    def test_activated_hire_with_recorded_hire_audit_never_gets_full_refund(self):
+        order_id = self._stranded_order_id()
+        # Evidence that a hire activated is permanent even if lifecycle rows are later disturbed.
+        with self.api.get_db() as db:
+            self.api.audit(db, 2, "hire_worker", "order", order_id, {"job_id": 1, "worker_id": 1})
+            db.commit()
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual((resolved["refund_scope"], resolved["amount_cents"]), ("task_amount", 2500))
+        self.assertEqual([r["amount"] for r in refunds], [2500])
+
+    def test_activated_hire_cannot_be_reopened_or_canceled_into_full_refund(self):
+        self.set_account_retrieve(fixtures.ready_connect_account)
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 201, result)
+        self.assertEqual(self.request("PUT", "/jobs/1", payload={"status": "open"})[0], 409)
+        self.assertEqual(self.request("DELETE", "/jobs/1")[0], 409)
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(result["id"])
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual((resolved["refund_scope"], resolved["amount_cents"]), ("task_amount", 2500))
+        self.assertEqual([r["amount"] for r in refunds], [2500])
+
+    def test_stranded_hire_blocks_a_second_charge_on_the_same_job(self):
+        self._stranded_order_id()
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET is_banned=0 WHERE id=1")
+            db.commit()
+        before = self.payment_create.call_count
+        status, result = self.request("POST", "/jobs/1/hire", payload={"application_id": 16})
+        self.assertEqual(status, 409, result)
+        self.assertEqual(self.payment_create.call_count, before)
+        with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders WHERE job_id=1").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM escrow_holds").fetchone()[0], 1)
+
     def test_full_refund_processor_amount_mismatch_freezes_for_manual_review(self):
         status, result = self._funded_hire_with_post_commit_change(
             "UPDATE users SET is_banned=1 WHERE id=1"

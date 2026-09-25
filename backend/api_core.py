@@ -9870,12 +9870,20 @@ def _refund_snapshots(db, hold, dispute, order, funding):
     return (*_refund_json(hold_payload), *_refund_json(lifecycle))
 
 
-def _full_charge_refund_cents(db, order, hold, funding, committed=False):
+# Audit actions written only inside the transaction that activates a job hire.
+JOB_HIRE_ACTIVATION_AUDIT_ACTIONS = ("hire_worker", "recover_hire_worker_after_funding")
+
+
+def _full_charge_refund_cents(db, order, hold, funding):
     """Charged-total cents when a job hire was charged but never activated, else None.
 
     Owner policy (2026-09-25): a buyer whose hire never started gets the whole
-    charge back, fees included. Scope is limited to hires created by the
-    payout-bound flow; legacy and activated orders keep the task-amount refund.
+    charge back, fees included. "Never activated" is decided only from facts the
+    buyer cannot rewrite: the hold's milestone never started, no application was
+    accepted, and no activation audit exists. Job status is deliberately ignored
+    because the buyer can edit or cancel an unactivated job. Scope is limited to
+    hires created by the payout-bound flow; everything else keeps the
+    task-amount refund.
     """
     if order["type"] != "job_hire" or order["job_id"] is None or order["hire_payout_account_id"] is None:
         return None
@@ -9888,18 +9896,20 @@ def _full_charge_refund_cents(db, order, hold, funding, committed=False):
     if total != funding["charged_total_cents"] or total <= hold["base_amount_cents"]:
         return None
     milestone = db.execute(
-        "SELECT order_id,status,escrow_payment_id FROM milestones WHERE id=?", [hold["milestone_id"]]
+        "SELECT order_id,status,escrow_payment_id,funded_at FROM milestones WHERE id=?", [hold["milestone_id"]]
     ).fetchone()
     if (not milestone or milestone["order_id"] != order["id"] or milestone["status"] != "pending"
-            or milestone["escrow_payment_id"] is not None):
+            or milestone["escrow_payment_id"] is not None or milestone["funded_at"] is not None):
         return None
     if db.execute(
         "SELECT 1 FROM applications WHERE job_id=? AND worker_id=? AND status='accepted'",
         [order["job_id"], order["worker_id"]],
     ).fetchone():
         return None
-    job = db.execute("SELECT status FROM jobs WHERE id=?", [order["job_id"]]).fetchone()
-    if not job or job["status"] not in (("canceled",) if committed else ("open", "reviewing")):
+    if db.execute(
+        f"SELECT 1 FROM audit_log WHERE entity_type='order' AND entity_id=? AND action IN ({','.join('?' * len(JOB_HIRE_ACTIVATION_AUDIT_ACTIONS))})",
+        [order["id"], *JOB_HIRE_ACTIVATION_AUDIT_ACTIONS],
+    ).fetchone():
         return None
     return total
 
@@ -9915,7 +9925,7 @@ def _refund_bindings_valid(db, attempt, committed=False):
     funding=db.execute("SELECT * FROM funding_attempts WHERE id=?",[attempt["funding_attempt_id"]]).fetchone()
     if not all((hold,dispute,order,funding)): return False
     if attempt["amount_cents"] != hold["base_amount_cents"]:
-        if attempt["amount_cents"] != _full_charge_refund_cents(db,order,hold,funding,committed): return False
+        if attempt["amount_cents"] != _full_charge_refund_cents(db,order,hold,funding): return False
     if committed:
         if not (hold["status"]=="refunded" and dispute["status"]=="resolved_refund" and order["status"]=="canceled"): return False
         # Compare immutable fields while allowing the three intentional lifecycle transitions.
