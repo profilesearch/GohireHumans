@@ -9870,12 +9870,52 @@ def _refund_snapshots(db, hold, dispute, order, funding):
     return (*_refund_json(hold_payload), *_refund_json(lifecycle))
 
 
+def _full_charge_refund_cents(db, order, hold, funding, committed=False):
+    """Charged-total cents when a job hire was charged but never activated, else None.
+
+    Owner policy (2026-09-25): a buyer whose hire never started gets the whole
+    charge back, fees included. Scope is limited to hires created by the
+    payout-bound flow; legacy and activated orders keep the task-amount refund.
+    """
+    if order["type"] != "job_hire" or order["job_id"] is None or order["hire_payout_account_id"] is None:
+        return None
+    if hold["milestone_id"] is None or funding["error_code"] == LEGACY_REFUND_ONLY_ERROR_CODE:
+        return None
+    total = hold["charged_total_cents"]
+    parts = (hold["base_amount_cents"], hold["platform_fee_cents"], hold["processing_fee_cents"])
+    if not all(type(v) is int and v >= 0 for v in (total, *parts)) or sum(parts) != total:
+        return None
+    if total != funding["charged_total_cents"] or total <= hold["base_amount_cents"]:
+        return None
+    milestone = db.execute(
+        "SELECT order_id,status,escrow_payment_id FROM milestones WHERE id=?", [hold["milestone_id"]]
+    ).fetchone()
+    if (not milestone or milestone["order_id"] != order["id"] or milestone["status"] != "pending"
+            or milestone["escrow_payment_id"] is not None):
+        return None
+    if db.execute(
+        "SELECT 1 FROM applications WHERE job_id=? AND worker_id=? AND status='accepted'",
+        [order["job_id"], order["worker_id"]],
+    ).fetchone():
+        return None
+    job = db.execute("SELECT status FROM jobs WHERE id=?", [order["job_id"]]).fetchone()
+    if not job or job["status"] not in (("canceled",) if committed else ("open", "reviewing")):
+        return None
+    return total
+
+
+def _refund_is_full_charge(attempt):
+    return attempt["amount_cents"] != json.loads(attempt["expected_hold_snapshot_json"])["base_amount_cents"]
+
+
 def _refund_bindings_valid(db, attempt, committed=False):
     hold=db.execute("SELECT * FROM escrow_holds WHERE id=?",[attempt["hold_id"]]).fetchone()
     dispute=db.execute("SELECT * FROM disputes WHERE id=?",[attempt["dispute_id"]]).fetchone()
     order=db.execute("SELECT * FROM orders WHERE id=?",[attempt["order_id"]]).fetchone()
     funding=db.execute("SELECT * FROM funding_attempts WHERE id=?",[attempt["funding_attempt_id"]]).fetchone()
     if not all((hold,dispute,order,funding)): return False
+    if attempt["amount_cents"] != hold["base_amount_cents"]:
+        if attempt["amount_cents"] != _full_charge_refund_cents(db,order,hold,funding,committed): return False
     if committed:
         if not (hold["status"]=="refunded" and dispute["status"]=="resolved_refund" and order["status"]=="canceled"): return False
         # Compare immutable fields while allowing the three intentional lifecycle transitions.
@@ -9988,7 +10028,11 @@ def _settle_refund_attempt(db, attempt_id):
         if (hold.rowcount,dispute.rowcount,order.rowcount)!=(1,1,1):db.rollback();return _freeze_refund_attempt(db,a,"settlement_cas_failed",{})
         fresh_order=db.execute("SELECT * FROM orders WHERE id=?",[a["order_id"]]).fetchone();synchronize_job_terminal_state(db,fresh_order,status="canceled")
         audit(db,a["admin_id"],"resolve_dispute_refund","refund_attempt",a["id"],{"order_id":a["order_id"],"amount_cents":a["amount_cents"],"processor_refund_id":a["processor_refund_id"]})
-        for uid in (a["employer_id"],a["worker_id"]):push_notification(db,uid,f'refund_committed:{a["id"]}',"Task-amount refund issued",f'The funded task amount for order #{a["order_id"]} was refunded.',f'/orders/{a["order_id"]}')
+        if _refund_is_full_charge(a):
+            title,message="Full refund issued",f'The full charge for order #{a["order_id"]}, including fees, was refunded because the hire never started.'
+        else:
+            title,message="Task-amount refund issued",f'The funded task amount for order #{a["order_id"]} was refunded.'
+        for uid in (a["employer_id"],a["worker_id"]):push_notification(db,uid,f'refund_committed:{a["id"]}',title,message,f'/orders/{a["order_id"]}')
         done=db.execute("UPDATE refund_attempts SET status='committed',lifecycle_status='completed',committed_at=datetime('now'),lifecycle_completed_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND status='processor_succeeded' AND lifecycle_status='pending' AND manual_review_required=0",[a["id"]])
         if done.rowcount!=1:db.rollback();return {"outcome":"unresolved"}
         db.commit();return {"outcome":"succeeded","replayed":False}
@@ -10066,9 +10110,10 @@ def issue_dispute_refund(db, order_id, admin_id):
         if dispute["status"]!="open" or order["status"]!="disputed" or hold["status"]!="held":db.rollback();raise ValueError("Refund lifecycle is not eligible")
         _assert_escrow_funding_conflict_free(db,order_id,hold["milestone_id"]);funding=_validate_refund_hold_funding_provenance(db,hold)
         hs,hh,ls,lh=_refund_snapshots(db,hold,dispute,order,funding);n=active["attempt_number"]+1 if active else 1;op=f'dispute-refund:dispute:{dispute["id"]}:hold:{hold["id"]}';key=f'{op}:attempt:{n}'
-        values=[op,n,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],hold["base_amount_cents"],hold["stripe_payment_intent_id"],hs,hh,ls,lh]
+        refund_cents=_full_charge_refund_cents(db,order,hold,funding) or hold["base_amount_cents"]
+        values=[op,n,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],refund_cents,hold["stripe_payment_intent_id"],hs,hh,ls,lh]
         fingerprint=hashlib.sha256(json.dumps(values,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        aid=db.execute("""INSERT INTO refund_attempts(operation_key,attempt_number,request_fingerprint,processor_idempotency_key,admin_id,dispute_id,hold_id,funding_attempt_id,order_id,employer_id,worker_id,amount_cents,currency,payment_intent_id,expected_hold_snapshot_json,expected_hold_snapshot_sha256,expected_lifecycle_snapshot_json,expected_lifecycle_snapshot_sha256,status) VALUES(?,?,?, ?,?,?,?,?,?,?,?,?, 'usd',?,?,?,?,?,'prepared')""",[op,n,fingerprint,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],hold["base_amount_cents"],hold["stripe_payment_intent_id"],hs,hh,ls,lh]).lastrowid
+        aid=db.execute("""INSERT INTO refund_attempts(operation_key,attempt_number,request_fingerprint,processor_idempotency_key,admin_id,dispute_id,hold_id,funding_attempt_id,order_id,employer_id,worker_id,amount_cents,currency,payment_intent_id,expected_hold_snapshot_json,expected_hold_snapshot_sha256,expected_lifecycle_snapshot_json,expected_lifecycle_snapshot_sha256,status) VALUES(?,?,?, ?,?,?,?,?,?,?,?,?, 'usd',?,?,?,?,?,'prepared')""",[op,n,fingerprint,key,admin_id,dispute["id"],hold["id"],funding["id"],order_id,order["employer_id"],order["worker_id"],refund_cents,hold["stripe_payment_intent_id"],hs,hh,ls,lh]).lastrowid
         db.commit();attempt=db.execute("SELECT * FROM refund_attempts WHERE id=?",[aid]).fetchone()
         matches=_try_list_refund_candidates(attempt)
         if matches is None:return {"outcome":"unresolved"}
@@ -15347,8 +15392,10 @@ def _handle_routes(db):
         except (TypeError, ValueError) as exc:
             return error_response(str(exc), 409)
         outcome = result.get("outcome")
+        latest = db.execute("SELECT * FROM refund_attempts WHERE order_id=? ORDER BY id DESC LIMIT 1", [order_id]).fetchone()
+        scope = None if latest is None else {"refund_scope": "full_charge" if _refund_is_full_charge(latest) else "task_amount", "amount_cents": latest["amount_cents"]}
         if outcome == "succeeded":
-            return json_response({"ok":True,"resolution":"refund_to_employer","status":"succeeded","idempotent_replay":bool(result.get("replayed"))})
+            return json_response({"ok":True,"resolution":"refund_to_employer","status":"succeeded","idempotent_replay":bool(result.get("replayed")),**(scope or {})})
         if outcome in ("pending","requires_action","unknown","unresolved"):
             return json_response({"ok":False,"status":outcome,"message":"Refund remains unresolved; no local settlement was applied."},202)
         return error_response("Refund evidence requires manual review or is definitively unsuccessful.",409)

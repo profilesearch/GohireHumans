@@ -327,30 +327,23 @@ class JobHiringReleaseTests(unittest.TestCase):
         self.assertEqual(status, 409, result)
         self.assertEqual(self._funded_but_unactivated_state(), ("open", "pending", "pending", "held", 0))
 
-    def test_stranded_funded_hire_is_refundable_through_admin_dispute_path(self):
+    def _install_admin_and_refund_mocks(self):
         from types import SimpleNamespace
         import stripe as stripe_sdk
 
-        status, result = self._funded_hire_with_post_commit_change(
-            "UPDATE users SET is_banned=1 WHERE id=1"
-        )
-        self.assertEqual(status, 409, result)
         with self.api.get_db() as db:
-            order_id, total = db.execute("SELECT id,total_amount FROM orders").fetchone()
-            charged = db.execute("SELECT charged_total_cents,stripe_payment_intent_id FROM escrow_holds").fetchone()
             db.execute(
                 "INSERT INTO users (id,email,name,password_hash,is_admin) VALUES (9,'admin@example.com','Admin',?,1)",
                 [self.api.hash_password("correct horse")],
             )
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (9,'tok-admin',datetime('now','+1 day'))")
             db.commit()
-
         refunds = []
 
         def create_refund(**kwargs):
             refunds.append(kwargs)
             evidence = {
-                "id": "re_stranded", "payment_intent": kwargs["payment_intent"],
+                "id": f"re_{len(refunds)}", "payment_intent": kwargs["payment_intent"],
                 "amount": kwargs["amount"], "currency": "usd",
                 "metadata": kwargs["metadata"], "status": "succeeded",
             }
@@ -368,33 +361,107 @@ class JobHiringReleaseTests(unittest.TestCase):
             InvalidRequestError=stripe_sdk.InvalidRequestError,
         )
         self.api.STRIPE_ERROR = stripe_sdk.StripeError
+        return refunds
 
+    def _dispute_and_admin_refund(self, order_id):
         status, dispute = self.request("POST", f"/orders/{order_id}/dispute", payload={"reason": "Hire never started"})
         self.assertEqual(status, 200, dispute)
-        status, resolved = self.request("POST", "/admin/resolve-dispute", token="tok-admin", payload={
+        return self.request("POST", "/admin/resolve-dispute", token="tok-admin", payload={
             "order_id": order_id, "resolution": "refund_to_employer", "admin_password": "correct horse",
         })
+
+    def test_never_activated_hire_refunds_the_full_charge_including_fees(self):
+        # Billy 2026-09-25: a buyer whose hire never started gets everything back.
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE users SET is_banned=1 WHERE id=1"
+        )
+        self.assertEqual(status, 409, result)
+        with self.api.get_db() as db:
+            order_id = db.execute("SELECT id FROM orders").fetchone()[0]
+            hold = db.execute(
+                "SELECT base_amount_cents,charged_total_cents,stripe_payment_intent_id FROM escrow_holds"
+            ).fetchone()
+        self.assertEqual((hold["base_amount_cents"], hold["charged_total_cents"]), (2500, 2600))
+        refunds = self._install_admin_and_refund_mocks()
+
+        status, resolved = self._dispute_and_admin_refund(order_id)
         self.assertEqual(status, 200, resolved)
         self.assertEqual(resolved["status"], "succeeded")
+        self.assertEqual(resolved["refund_scope"], "full_charge")
+        self.assertEqual(resolved["amount_cents"], 2600)
         self.assertEqual(len(refunds), 1)
-        self.assertEqual(refunds[0]["payment_intent"], charged["stripe_payment_intent_id"])
-        self.assertEqual(refunds[0]["amount"], round(total * 100))
+        self.assertEqual(refunds[0]["payment_intent"], hold["stripe_payment_intent_id"])
+        self.assertEqual(refunds[0]["amount"], 2600)
         with self.api.get_db() as db:
+            self.assertEqual(db.execute("SELECT amount_cents FROM refund_attempts").fetchone()[0], 2600)
             self.assertEqual(db.execute("SELECT status FROM escrow_holds").fetchone()[0], "refunded")
-            # Existing refund flow closes the order and its job; the buyer can repost.
             self.assertEqual(db.execute("SELECT status FROM orders").fetchone()[0], "canceled")
             self.assertEqual(db.execute("SELECT status FROM jobs WHERE id=1").fetchone()[0], "canceled")
             self.assertEqual(db.execute("SELECT status FROM milestones").fetchone()[0], "pending")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM platform_revenue").fetchone()[0], 0)
             self.assertEqual(
                 db.execute("SELECT COUNT(*) FROM notifications WHERE type='job_hired'").fetchone()[0], 0
             )
-        # Replaying the admin refund is idempotent: no second refund, no new charge.
         status, replay = self.request("POST", "/admin/resolve-dispute", token="tok-admin", payload={
             "order_id": order_id, "resolution": "refund_to_employer", "admin_password": "correct horse",
         })
-        self.assertIn(status, (200, 409), replay)
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(replay["refund_scope"], "full_charge")
         self.assertEqual(len(refunds), 1)
         self.assertEqual(self.payment_create.call_count, 1)
+
+    def test_activated_hire_dispute_still_refunds_task_amount_only(self):
+        self.set_account_retrieve(fixtures.ready_connect_account)
+        status, result = self.hire_job_one()
+        self.assertEqual(status, 201, result)
+        order_id = result["id"]
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual(resolved["refund_scope"], "task_amount")
+        self.assertEqual(resolved["amount_cents"], 2500)
+        self.assertEqual([r["amount"] for r in refunds], [2500])
+
+    def test_legacy_unbound_stranded_hire_keeps_task_amount_refund(self):
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE users SET is_banned=1 WHERE id=1"
+        )
+        self.assertEqual(status, 409, result)
+        with self.api.get_db() as db:
+            order_id = db.execute("SELECT id FROM orders").fetchone()[0]
+            db.execute("UPDATE orders SET hire_payout_account_id=NULL WHERE id=?", [order_id])
+            db.commit()
+        refunds = self._install_admin_and_refund_mocks()
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self.assertEqual(status, 200, resolved)
+        self.assertEqual(resolved["refund_scope"], "task_amount")
+        self.assertEqual([r["amount"] for r in refunds], [2500])
+
+    def test_full_refund_processor_amount_mismatch_freezes_for_manual_review(self):
+        status, result = self._funded_hire_with_post_commit_change(
+            "UPDATE users SET is_banned=1 WHERE id=1"
+        )
+        self.assertEqual(status, 409, result)
+        with self.api.get_db() as db:
+            order_id = db.execute("SELECT id FROM orders").fetchone()[0]
+        refunds = self._install_admin_and_refund_mocks()
+        real_create = self.api.stripe.Refund.create.side_effect
+
+        def short_refund(**kwargs):
+            evidence = real_create(**kwargs)
+            evidence = {**evidence, "amount": 2500}
+            self.api.stripe.Refund.retrieve.return_value = evidence
+            return evidence
+
+        self.api.stripe.Refund.create.side_effect = short_refund
+        status, resolved = self._dispute_and_admin_refund(order_id)
+        self.assertNotEqual(status, 200, resolved)
+        with self.api.get_db() as db:
+            attempt = db.execute("SELECT status,lifecycle_status,error_code FROM refund_attempts").fetchone()
+            self.assertEqual(attempt["lifecycle_status"], "manual_review")
+            self.assertEqual(db.execute("SELECT status FROM escrow_holds").fetchone()[0], "held")
+        self.assertEqual(len(refunds), 1)
 
     def test_pending_admin_payout_reset_blocks_new_hire_before_charge(self):
         with self.api.get_db() as db:

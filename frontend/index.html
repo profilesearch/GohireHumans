@@ -4861,8 +4861,8 @@ async function renderAdminDisputes() {
                 <span>${formatOrderAmount(o)}</span>
               </div>
               <div class="mt-3">
-                <p class="text-xs text-muted mb-2">Refunds the funded task amount only. Stripe processing and the 1% platform fee are not automatically refunded.</p>
-                <button class="btn btn-sm btn-danger" onclick="adminResolveDispute(${jsArg(o.id)},'refund_to_employer')">Issue task-amount refund</button>
+                <p class="text-xs text-muted mb-2">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.</p>
+                <button class="btn btn-sm btn-danger" onclick="adminResolveDispute(${jsArg(o.id)},'refund_to_employer')">Issue refund</button>
               </div>
             </div>`).join('')}
         </div>` : `<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">${I.flag}</div><p>No active disputes.</p></div>`}
@@ -4874,13 +4874,15 @@ async function renderAdminDisputes() {
 }
 
 async function adminResolveDispute(orderId, resolution) {
-  if (resolution !== 'refund_to_employer') { toast('Only task-amount refunds are enabled', 'error'); return; }
-  showModal('Issue task-amount refund', `<p>This initiates a Stripe refund of the funded task amount to the original PaymentIntent.</p><p class="text-xs text-muted">Stripe processing and the 1% platform fee are not automatically refunded.</p>${adminPasswordField()}`, async (overlay) => {
+  if (resolution !== 'refund_to_employer') { toast('Only employer refunds are enabled', 'error'); return; }
+  showModal('Issue refund', `<p>This initiates a Stripe refund to the original PaymentIntent.</p><p class="text-xs text-muted">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.</p>${adminPasswordField()}`, async (overlay) => {
     const adminPassword = readAdminPassword(overlay);
     if (!adminPassword) return false;
     try {
       const result = await api('/admin/resolve-dispute', { method: 'POST', body: { order_id: orderId, resolution: 'refund_to_employer', admin_password: adminPassword } });
-      if (result.status === 'succeeded') toast('Task-amount refund committed', 'success');
+      const refundedCents = Number.isSafeInteger(result.amount_cents) ? result.amount_cents : null;
+      const refundedLabel = refundedCents === null ? '' : ` ($${(refundedCents / 100).toFixed(2)}${result.refund_scope === 'full_charge' ? ', fees included' : ''})`;
+      if (result.status === 'succeeded') toast((result.refund_scope === 'full_charge' ? 'Full refund committed' : 'Task-amount refund committed') + refundedLabel, 'success');
       else toast('Refund is pending processor confirmation; no local settlement was committed.', 'info');
       renderAdminDisputes();
     } catch(err) { toastError(err); }
