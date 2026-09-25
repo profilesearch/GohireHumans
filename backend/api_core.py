@@ -198,8 +198,10 @@ DIAGNOSTIC_SECRET = os.environ.get("DIAGNOSTIC_SECRET", "").strip()
 BACKUP_SECRET = os.environ.get("BACKUP_SECRET", "").strip()
 ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
-# Deliberate code-level release gate for fixed-price hiring.
-JOB_HIRING_ENABLED = False
+# Fixed-price hiring from posted jobs is a payment-moving path and stays OFF unless
+# an operator sets GHH_JOB_HIRING_ENABLED=1 (fail closed; unset/unknown = off).
+# Hourly hiring stays separately disabled in the route regardless of this flag.
+JOB_HIRING_ENABLED = os.environ.get("GHH_JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 # US stays the only onboarding country unless explicitly enabled by an operator.
 CONNECT_INTERNATIONAL_ENABLED = os.environ.get("CONNECT_INTERNATIONAL_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 # Self-serve US-platform cross-border Connect payouts: US, UK, EEA, CA, CH.
@@ -9175,6 +9177,22 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
         raise FundingConflict(
             "Job-hire lifecycle state conflicts with committed-funding recovery."
         )
+    # The funding helper committed and released the writer lock, so the worker's
+    # pre-charge eligibility may be stale. Re-check it under this fresh writer
+    # before activating the hire; the committed hold stays for manual review.
+    worker_account = db.execute(
+        "SELECT is_active,is_banned,is_suspended FROM users WHERE id=?",
+        [application["worker_id"]],
+    ).fetchone()
+    if (
+        not worker_account
+        or not worker_account["is_active"]
+        or worker_account["is_banned"]
+        or worker_account["is_suspended"]
+    ):
+        raise FundingConflict(
+            "The worker's account is no longer eligible; this funded hire needs manual review."
+        )
 
     updated_milestone = db.execute(
         """UPDATE milestones
@@ -9221,6 +9239,68 @@ def _recover_fixed_job_hire_after_funding_commit_owned(
     )
     db.commit()
     return _job_hire_replay_response(db, order["id"], mode)
+
+
+def _job_hire_new_operation_snapshot(db, job_id, application_id):
+    """Everything a new fixed hire's worker-payout decision depends on."""
+    return db.execute(
+        """SELECT j.employer_id, j.status AS job_status, j.budget_type, j.budget_amount,
+                  a.status AS application_status, a.worker_id,
+                  u.is_active, u.is_banned, u.is_suspended,
+                  wp.user_id AS worker_profile_user_id, wp.payout_account_id
+           FROM jobs j
+           JOIN applications a ON a.id=? AND a.job_id=j.id
+           JOIN users u ON u.id=a.worker_id
+           LEFT JOIN worker_profiles wp ON wp.user_id=a.worker_id
+           WHERE j.id=?""",
+        [application_id, job_id],
+    ).fetchone()
+
+
+def _job_hire_worker_ineligibility(snapshot):
+    """Return a buyer-facing reason the worker cannot be hired, or None (local checks only)."""
+    if snapshot is None:
+        return "Eligible application not found for this job"
+    if not snapshot["is_active"] or snapshot["is_banned"] or snapshot["is_suspended"]:
+        return "This worker's account can't accept a new hire."
+    payout_account_id = snapshot["payout_account_id"] or ""
+    if (
+        snapshot["worker_profile_user_id"] is None
+        or not payout_account_id
+        or (PRODUCTION_MODE and payout_account_id.startswith("acct_sim_"))
+    ):
+        return "This worker hasn't finished payout setup, so they can't be hired yet."
+    return None
+
+
+def _job_hire_worker_payout_ready(db, worker_id, payout_account_id):
+    """Live payout readiness for the exact bound account. Call with no writer lock held."""
+    try:
+        if stripe_configured():
+            account = retrieve_live_connect_account(payout_account_id)
+            return bool(
+                stripe_attr(account, "id") == payout_account_id
+                and is_live_connect_account_ready(account)
+            )
+        return bool(worker_has_payout_setup(db, worker_id))
+    except Exception:
+        return False
+
+
+def _job_hire_snapshot_unchanged(before, after):
+    """Allow only benign drift (open -> reviewing from another application)."""
+    if before is None or after is None:
+        return False
+    stable = (
+        "employer_id", "budget_type", "budget_amount", "application_status", "worker_id",
+        "is_active", "is_banned", "is_suspended", "worker_profile_user_id",
+        "payout_account_id",
+    )
+    return (
+        all(before[key] == after[key] for key in stable)
+        and after["job_status"] in ("open", "reviewing")
+        and after["application_status"] in ("pending", "shortlisted")
+    )
 
 
 def _recover_fixed_job_hire_after_funding_commit(
@@ -11277,6 +11357,8 @@ def _handle_routes(db):
         result['application_count'] = db.execute(
             "SELECT COUNT(*) as c FROM applications WHERE job_id = ?", [job_id]
         ).fetchone()['c']
+        # Lets the UI mirror the server's hiring gate instead of guessing.
+        result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and result.get('budget_type') == 'fixed')
         return json_response(result)
 
     elif path == "/jobs" and method == "POST":
@@ -11464,7 +11546,9 @@ def _handle_routes(db):
         applications_sql = """SELECT a.*, u.name as worker_name, u.avatar_url as worker_avatar,
                wp.bio as worker_bio, wp.avg_rating as worker_rating,
                wp.total_reviews as worker_review_count, wp.skills as worker_skills,
-               wp.is_verified as worker_is_verified
+               wp.is_verified as worker_is_verified,
+               CASE WHEN COALESCE(wp.payout_method,'')='stripe_connect_active'
+                    THEN 1 ELSE 0 END as worker_payout_ready
                FROM applications a
                JOIN users u ON a.worker_id = u.id
                LEFT JOIN worker_profiles wp ON a.worker_id = wp.user_id
@@ -11517,7 +11601,11 @@ def _handle_routes(db):
             db.commit()
         else:
             apps = db.execute(applications_sql, [job_id]).fetchall()
-        return json_response([row_to_dict(a) for a in apps])
+        # worker_payout_ready is a synced hint for the UI; /hire re-checks live.
+        return json_response([
+            {**row_to_dict(a), "worker_payout_ready": bool(a["worker_payout_ready"])}
+            for a in apps
+        ])
 
     elif re.match(r"^/jobs/(\d+)/apply$", path) and method == "POST":
         user = authenticate(db)
@@ -11675,6 +11763,33 @@ def _handle_routes(db):
         except ValueError as e:
             return error_response(str(e), 400)
         hire_operation_key = f"job-hire/{job_id}"
+
+        # The buyer is charged at hire, so prove the worker can actually be paid
+        # before any order, attempt, or processor charge exists. The live Connect
+        # lookup runs with no SQLite writer lock; everything it relied on is then
+        # re-read under BEGIN IMMEDIATE, which also covers the order insert.
+        hire_snapshot = _job_hire_new_operation_snapshot(db, job_id, application_id)
+        ineligible = _job_hire_worker_ineligibility(hire_snapshot)
+        if ineligible:
+            if db.in_transaction:
+                db.commit()
+            return error_response(ineligible, 409)
+        if db.in_transaction:
+            db.commit()
+        if not _job_hire_worker_payout_ready(db, worker_id, hire_snapshot["payout_account_id"]):
+            return error_response(
+                "This worker hasn't finished payout setup, so they can't be hired yet.", 409
+            )
+        db.execute("BEGIN IMMEDIATE")
+        fresh_snapshot = _job_hire_new_operation_snapshot(db, job_id, application_id)
+        if not _job_hire_snapshot_unchanged(hire_snapshot, fresh_snapshot):
+            db.rollback()
+            return error_response(
+                "The job, application, or worker changed while payout setup was being checked. "
+                "Refresh and try again.",
+                409,
+            )
+        job = db.execute("SELECT * FROM jobs WHERE id = ?", [job_id]).fetchone()
 
         # Create order
         try:
