@@ -156,6 +156,21 @@ class MCPMatchingTests(unittest.TestCase):
             result = call('get_recommended', {"task_description": "write copy", "budget_range": "$5-10"})
         self.assertNotIn('Over budget', result['content'][0]['text'])
         self.assertIn('No workers', result['content'][0]['text'])
+
+    def test_fallback_runs_when_every_keyword_match_is_over_budget(self):
+        calls = []
+        def search(method, path, params):
+            calls.append(dict(params))
+            return {"services": [SERVICES[2]] if 'search' in params else [SERVICES[2], SERVICES[1]]}
+        with mock.patch.object(mcp, 'api_request', side_effect=search):
+            result = call('get_recommended', {"task_description": "write copy", "budget_range": "under $10"})
+        text = result['content'][0]['text']
+        self.assertEqual(len(calls), 2, calls)
+        self.assertNotIn('search', calls[1])
+        self.assertEqual(calls[1].get('max_price'), calls[0].get('max_price'))
+        self.assertIn('Affordable', text)
+        self.assertNotIn('Over budget', text)
+        self.assertNotIn('No workers', text)
     def test_rating_paginates_past_unrated_first_page(self):
         def pages(method, path, params):
             return {"services": [SERVICES[0]] if params.get('page', 1) == 1 else [SERVICES[1]],

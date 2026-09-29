@@ -11526,7 +11526,11 @@ def _handle_routes(db):
                 'SELECT is_active,is_banned,is_suspended FROM users WHERE id=?', [row['employer_id']]
         ).fetchone()):
             viewer = authenticate(db)
-            if not viewer or (viewer['id'] != row['employer_id'] and not viewer['is_admin']):
+            # Parties keep access to the agreed scope after the listing leaves public view.
+            if not viewer or (viewer['id'] != row['employer_id'] and not viewer['is_admin'] and not db.execute(
+                    """SELECT 1 FROM orders WHERE job_id=? AND worker_id=?
+                       UNION SELECT 1 FROM applications WHERE job_id=? AND worker_id=?""",
+                    [job_id, viewer['id'], job_id, viewer['id']]).fetchone()):
                 return error_response("Job not found", 404)
         result = row_to_dict(row)
         # Count applications (not listing them)
@@ -11656,6 +11660,9 @@ def _handle_routes(db):
             return error_response("Invalid category", 400)
         if merged['budget_type'] not in ('fixed', 'hourly'):
             return error_response("budget_type must be fixed or hourly", 400)
+        if (merged['budget_type'] == 'hourly' and job['budget_type'] != 'hourly'
+                and not HOURLY_JOB_HIRING_ENABLED):
+            return error_response("Only fixed-price jobs can be posted for now; hourly hiring is not available.", 400)
         if merged['location_type'] not in ('remote', 'on_site', 'hybrid'):
             return error_response("location_type must be remote, on_site, or hybrid", 400)
         if merged['location_detail'] is not None and not isinstance(merged['location_detail'], str):

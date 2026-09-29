@@ -57,6 +57,32 @@ class AuditSecurityTests(unittest.TestCase):
                 self.assertEqual(dict(self.db.execute('SELECT * FROM jobs WHERE id=1').fetchone()), before)
         self.assertEqual(self.request('/jobs/1', {'description': 'Updated'}, method='PUT', token='old-session')[0], 200)
 
+    def test_job_edit_cannot_convert_fixed_job_to_disabled_hourly(self):
+        self.db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount) VALUES (1,1,'Job','Description',?,'fixed',25)", [self.api.VALID_CATEGORIES[0]])
+        self.db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount) VALUES (2,1,'Legacy','Hourly',?,'hourly',20)", [self.api.VALID_CATEGORIES[0]])
+        self.db.commit()
+        self.assertFalse(self.api.HOURLY_JOB_HIRING_ENABLED)
+        status, response = self.request('/jobs/1', {'budget_type': 'hourly'}, method='PUT', token='old-session')
+        self.assertEqual(status, 400, response)
+        self.assertEqual(self.db.execute('SELECT budget_type FROM jobs WHERE id=1').fetchone()[0], 'fixed')
+        # Legacy hourly jobs stay editable (content) and may be switched to fixed.
+        self.assertEqual(self.request('/jobs/2', {'description': 'Clarified'}, method='PUT', token='old-session')[0], 200)
+        self.assertEqual(self.request('/jobs/2', {'budget_type': 'fixed'}, method='PUT', token='old-session')[0], 200)
+
+    def test_hired_worker_and_applicant_keep_job_scope_after_listing_closes(self):
+        for uid in (2, 3, 4):
+            self.add_user(uid)
+        self.db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_amount,status) VALUES (1,1,'Job','Agreed scope',?,25,'in_progress')", [self.api.VALID_CATEGORIES[0]])
+        self.db.execute("INSERT INTO applications (job_id,worker_id,cover_message) VALUES (1,3,'hi')")
+        self.db.execute("INSERT INTO orders (type,job_id,worker_id,employer_id,status,total_amount) VALUES ('job_hire',1,2,1,'in_progress',25)")
+        self.db.commit()
+        status, job = self.request('/jobs/1', {}, method='GET', token='session-2')
+        self.assertEqual(status, 200, job)
+        self.assertEqual(job['description'], 'Agreed scope')
+        self.assertEqual(self.request('/jobs/1', {}, method='GET', token='session-3')[0], 200)
+        self.assertEqual(self.request('/jobs/1', {}, method='GET', token='session-4')[0], 404)
+        self.assertEqual(self.request('/jobs/1', {}, method='GET')[0], 404)
+
     def test_public_job_visibility_and_owner_access(self):
         self.add_user(2)
         self.db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_amount) VALUES (1,1,'Job','Private',?,25)", [self.api.VALID_CATEGORIES[0]])

@@ -912,28 +912,26 @@ def handle_get_recommended(args):
         params["category"] = detected_category
     params["search"] = " ".join(task.split()[:5])  # First 5 words as search
     
-    result = api_request("GET", "/services", params=params)
-    
-    if "error" in result:
-        return [{"type": "text", "text": f"Error getting recommendations: {result['error']}"}]
-    
-    services = result.get("services", result.get("data", []))
+    def fetch_matching(query):
+        response = api_request("GET", "/services", params=query)
+        found = response.get("services", response.get("data", []))
+        if bounds:
+            found = [s for s in found if _within_budget(s, bounds)]
+            page = 1
+            while len(found) < limit and page < response.get("total_pages", 1):
+                page += 1
+                next_page = api_request("GET", "/services", params={**query, "page": page})
+                found.extend(s for s in next_page.get("services", []) if _within_budget(s, bounds))
+        return found
+
+    services = fetch_matching(params)
     if not services:
-        # Broaden keywords/category, never the buyer's budget constraint.
+        # Broaden keywords/category, never the buyer's budget constraint. This also runs
+        # when every keyword match was over budget, not only when the raw page was empty.
         fallback_params = {"per_page": params["per_page"]}
         if bounds:
             fallback_params["max_price"] = str(bounds[1])
-        result = api_request("GET", "/services", params=fallback_params)
-        services = result.get("services", result.get("data", []))
-        params = fallback_params
-
-    if bounds:
-        services = [s for s in services if _within_budget(s, bounds)]
-        page = 1
-        while len(services) < limit and page < result.get("total_pages", 1):
-            page += 1
-            next_page = api_request("GET", "/services", params={**params, "page": page})
-            services.extend(s for s in next_page.get("services", []) if _within_budget(s, bounds))
+        services = fetch_matching(fallback_params)
 
     if not services:
         return [{"type": "text", "text": "No workers currently available for this type of task. Check back soon or post a job listing to attract qualified workers."}]
