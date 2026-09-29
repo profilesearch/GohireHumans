@@ -10448,7 +10448,7 @@ def _handle_routes(db):
             "fee_rounding": "round each positive component half-up to cents with a one-cent minimum",
             "platform_fee_basis_points": PLATFORM_FEE_BPS,
             "processing_fee_basis_points": PROCESSING_FEE_BPS,
-            "description": "Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Workers receive the listed payout.",
+            "description": "Where checkout is configured, employers pay a 1% platform fee plus a fixed 3% processing charge on the listed payout. Workers receive the listed payout.",
             "fee_paid_by": "buyer",
             "escrow": False
         })
