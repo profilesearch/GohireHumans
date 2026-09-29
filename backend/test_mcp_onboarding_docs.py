@@ -21,6 +21,8 @@ class MCPOnboardingDocsTests(unittest.TestCase):
         self.assertIn('api_key.key', api)
         self.assertIn('"scopes": ["read"]', api)
         self.assertIn('page, per_page', api)
+        self.assertIn('120 requests per minute per IP', api)
+        self.assertNotIn('1000 requests per hour', api)
         self.assertNotIn('max_price, limit)', api)
         self.assertNotIn('budget_type, limit)', api)
         self.assertNotIn('Settings → API Keys', start)
