@@ -555,7 +555,9 @@ function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelTex
 function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function safeExternalHref(value) {
   try {
-    const url = new URL(String(value || '').trim(), window.location.origin);
+    const raw = String(value ?? '').trim();
+    if (!/^https?:\/\//i.test(raw)) return '';
+    const url = new URL(raw);
     return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
   } catch {
     return '';
@@ -584,14 +586,15 @@ function stars(rating, total) {
   const reviewLabel = hasExplicitCount ? `, ${count} review${count === 1 ? '' : 's'}` : '';
   return `<span class="stars-row" role="img" aria-label="${numericRating.toFixed(1)} out of 5 stars${reviewLabel}">${starsHtml}${hasExplicitCount ? `<span class="stars-count" aria-hidden="true">(${count})</span>` : ''}</span>`;
 }
+function formatUsdAmount(value) { return `$${Number(value || 0).toFixed(2)}`; }
 function formatPrice(service) {
-  if (service.pricing_type === 'fixed') return `$${Number(service.price || 0).toFixed(0)}`;
-  if (service.pricing_type === 'hourly') return `$${Number(service.hourly_rate || 0).toFixed(0)}/hr`;
+  if (service.pricing_type === 'fixed') return formatUsdAmount(service.price);
+  if (service.pricing_type === 'hourly') return `${formatUsdAmount(service.hourly_rate)}/hr`;
   return 'Custom';
 }
 function formatBudget(job) {
-  if (job.budget_type === 'fixed') return `$${Number(job.budget_amount || 0).toFixed(0)} fixed`;
-  return `$${Number(job.budget_amount || 0).toFixed(0)}/hr`;
+  if (job.budget_type === 'fixed') return `${formatUsdAmount(job.budget_amount)} fixed`;
+  return `${formatUsdAmount(job.budget_amount)}/hr`;
 }
 function formatOrderAmount(order) {
   const isHourly = order.contract_type === 'hourly' || order.budget_type === 'hourly' || Boolean(order.hourly_contract);
@@ -2185,7 +2188,6 @@ async function renderJobs() {
             <select class="select" id="job-budget-type" onchange="applyJobFilters()">
               <option value="">Any</option>
               <option value="fixed" ${budgetType==='fixed'?'selected':''}>Fixed Price</option>
-              <option value="hourly" ${budgetType==='hourly'?'selected':''}>Hourly</option>
             </select>
           </div>
           <div class="filter-group">
@@ -3161,7 +3163,7 @@ async function renderPostJob() {
   appShell(`
     <div class="form-page">
       <h1 class="page-title">Post a Job</h1>
-      <p class="page-desc">Describe what you need done and receive applications from skilled workers. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
+      <p class="page-desc">Describe what you need done and receive applications from skilled workers. Fixed-price jobs only for now; hourly hiring is not available. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
       <div class="safety-notice">
         <div class="safety-notice-icon">${I.shield}</div>
         <div class="safety-notice-body">
@@ -3981,7 +3983,7 @@ async function leaveReview(id) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-title">Leave a Review</div>
-      <p class="modal-intro">Your review will be visible after both parties submit.</p>
+      <p class="modal-intro">Your review will be visible after both parties submit or 14 days after completion, whichever comes first.</p>
       <div id="ratingStars" class="stars stars--rating" role="radiogroup" aria-label="Star rating">
         ${[1,2,3,4,5].map(i=>`<button type="button" class="star" role="radio" aria-checked="false" aria-label="${i} star${i === 1 ? '' : 's'}" data-r="${i}">☆</button>`).join('')}
       </div>
