@@ -314,14 +314,19 @@ class PasswordResetTests(unittest.TestCase):
                 self.assertEqual(agent.call_count, 0)
 
     def test_admin_password_rotation_revokes_issued_reset_links(self):
-        self.db.execute('UPDATE users SET is_admin=1 WHERE id=1')
+        self.db.execute("INSERT INTO users (id,email,password_hash,name,is_admin) VALUES (2,'admin@example.com',?,'Admin',1)",
+                        [self.api.hash_password('admin-password')])
+        self.db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'admin-session',datetime('now','+1 day'))")
         self.db.commit()
         self.assertEqual(self.forgot()[0], 200)
         token = self.tokens[-1]
         with mock.patch.object(self.api, 'require_admin_step_up', return_value=(None, None)):
             status, _ = self.request('/admin/users/1/password', {'password': 'admin-rotated-password'},
-                                     method='PUT', token='old-session')
+                                     method='PUT', token='admin-session')
         self.assertEqual(status, 200)
+        self.assertEqual(self.request('/profile', {}, method='GET', token='old-session')[0], 401)
+        self.assertEqual(self.request('/profile', {}, method='GET', api_key='ghh_old-key')[0], 401)
+        self.assertEqual(self.request('/profile', {}, method='GET', token='admin-session')[0], 200)
         used = self.db.execute('SELECT used_at FROM password_reset_tokens WHERE token_hash=?',
                                [hashlib.sha256(token.encode()).hexdigest()]).fetchone()['used_at']
         self.assertIsNotNone(used)

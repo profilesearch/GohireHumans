@@ -4386,7 +4386,7 @@ async function renderNotifications() {
         ${notifs.some(n=>!n.is_read) ? `<div class="page-actions"><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button></div>` : ''}
       </div>
       ${notifs.length ? notifs.map(n => `
-        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" role="button" tabindex="0" onkeydown="cardKeydown(event)" onclick="handleNotificationClick(${Number(n.id) || 0}, '${encodeURIComponent(n.link || '')}')">
+        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" data-link="${esc(n.link || '')}" role="button" tabindex="0">
           <div class="notif-item-title">${esc(n.title||'Notification')}</div>
           <div class="notif-item-body">${esc(n.message||n.body||'')}</div>
           <div class="notif-item-time">${relativeDate(n.created_at)}</div>
