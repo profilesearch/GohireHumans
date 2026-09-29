@@ -35,7 +35,7 @@ Internal working documents (content plans, SEO status, Search Console notes, the
 9. Public pages avoid visible builder/generator attribution and generic CTAs such as `Get started` when a specific action exists.
 10. Use-case pages remain grouped under `Marketplace`; starter QA remains an optional wedge, not the platform-wide identity.
 11. The wordmark's red period is decorative and must stay `aria-hidden="true"` so the accessible name of the logo link is exactly `GoHireHumans`; the nav-label regression helper ignores aria-hidden spans for the same reason. Never add `aria-label` to `.lp-nav-logo`.
-12. The footer tagline carries the pricing framing verbatim: workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured. Nothing in the shell describes GoHireHumans as escrow, a guarantor, or an arbitrator, or claims universal worker verification.
+12. The footer tagline carries the pricing framing verbatim: workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. Nothing in the shell describes GoHireHumans as escrow, a guarantor, or an arbitrator, or claims universal worker verification.
 
 ## Executable contracts
 
