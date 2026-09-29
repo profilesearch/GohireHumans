@@ -291,7 +291,7 @@ function captureResetCapability() {
 captureResetCapability();
 window.addEventListener('hashchange', captureResetCapability, true);
 
-// ─── State ───────────────────────────────────────────────────
+// ─── State ───
 let storedUser = null, storedToken = null;
 try {
   storedToken = sessionStorage.getItem('ghh_token') || localStorage.getItem('ghh_token');
@@ -343,7 +343,7 @@ function isSignedIn() { return !!(state.user && state.token); }
 // Force light theme per design requirements
 document.documentElement.setAttribute('data-theme', 'light');
 
-// ─── Referral tracking ────────────────────────────────────────
+// ─── Referral tracking ───
 (function() {
   const urlParams = new URLSearchParams(window.location.search);
   const ref = urlParams.get('ref');
@@ -375,7 +375,7 @@ function consumeAuthIntent() {
   return `#/${intent}`;
 }
 
-// ─── Google Sign-In callback ──────────────────────────────────
+// ─── Google Sign-In callback ───
 function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
     .then(data => {
@@ -411,7 +411,7 @@ window.addEventListener('load', () => initGoogleSignIn());
 // Also listen for the GSI script's own load callback
 window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 
-// ─── API Client ───────────────────────────────────────────────
+// ─── API Client ───
 async function api(path, opts = {}) {
   const url = `${API}${path}`;
   const headers = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -449,7 +449,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// ─── Toast ────────────────────────────────────────────────────
+// ─── Toast ───
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -484,7 +484,7 @@ function cardKeydown(event) {
   event.currentTarget.click();
 }
 
-// ─── Modal System ────────────────────────────────────────────
+// ─── Modal System ───
 // Shared dialog semantics for every `.modal-overlay`: role/aria wiring, initial
 // focus, focus restore on close, optional Escape/backdrop dismissal.
 let modalSequence = 0;
@@ -553,7 +553,7 @@ function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelTex
   openModalOverlay(overlay, { closeOnEscape: true, closeOnBackdrop: true });
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
+// ─── Helpers ───
 function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function safeExternalHref(value) {
   try {
@@ -743,7 +743,7 @@ function normalizeAnalyticsParams(params = {}) {
 function trackEvent(eventName, params = {}) {
   try {
     const attribution = getStoredAttribution();
-    const eventParams = { ...attribution, ...normalizeAnalyticsParams(params) };
+    const eventParams = { page_location: analyticsLocation(), ...attribution, ...normalizeAnalyticsParams(params) };
     if (typeof window.gtag === 'function') {
       window.gtag('event', eventName, eventParams);
     } else if (Array.isArray(window.dataLayer)) {
@@ -772,33 +772,24 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
   });
 }
 let lastTrackedSpaPath = '';
-const ANALYTICS_ROUTES = new Set(['/', '/login', '/auth', '/register', '/forgot-password',
-  '/reset-password', '/terms', '/privacy', '/guidelines', '/ai-employers', '/services',
-  '/jobs', '/dashboard', '/my-services', '/post-service', '/post-job', '/my-jobs',
-  '/orders', '/payments', '/referrals', '/notifications', '/profile', '/settings',
-  '/admin', '/admin/users', '/admin/orders', '/admin/revenue', '/admin/disputes', '/admin/audit']);
-function analyticsRoute(path) {
-  if (ANALYTICS_ROUTES.has(path)) return path;
-  for (const template of ['/services/:id', '/jobs/:id', '/jobs/:id/applicants', '/orders/:id', '/edit-service/:id']) {
-    const pattern = '^' + template.replace(':id', '[0-9]+') + '$';
-    if (new RegExp(pattern).test(path)) return template;
-  }
-  return '/not-found';
+const ANALYTICS_ROUTE_RE = /^\/(?:|login|auth|register|forgot-password|reset-password|terms|privacy|guidelines|ai-employers|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
+// Analytics sees only known route shapes and allowlisted campaign params, never draft text or emails.
+function analyticsRoute(path) { return ANALYTICS_ROUTE_RE.test(path) ? path : '/not-found'; }
+function analyticsLocation(route = analyticsRoute(currentHashWithoutQuery())) {
+  const src = new URLSearchParams(location.search), q = new URLSearchParams();
+  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid'].forEach(k => { const v = src.get(k); if (v && /^[\w.-]{1,128}$/.test(v)) q.set(k, v); });
+  return location.origin + '/' + (q.toString() ? '?' + q : '') + '#' + route;
 }
 function trackSpaPageView(path) {
   captureResetCapability();
-  const pagePath = analyticsRoute(path);
+  const route = analyticsRoute(path), pagePath = '/#' + route;
   if (lastTrackedSpaPath === pagePath) return;
   lastTrackedSpaPath = pagePath;
-  trackEvent('spa_page_view', { path: pagePath, page_path: pagePath });
+  trackEvent('spa_page_view', { path: route, page_path: pagePath });
   try {
     if (typeof window.gtag === 'function') {
-      window.gtag('event', 'page_view', {
-        page_title: document.title,
-        page_location: location.origin + pagePath,
-        page_path: pagePath,
-        spa_route: pagePath
-      });
+      window.gtag('set', { page_location: analyticsLocation(route) });
+      window.gtag('event', 'page_view', { page_title: document.title, page_location: analyticsLocation(route), page_path: pagePath, spa_route: route });
     }
   } catch (_) {}
 }
@@ -1092,7 +1083,7 @@ function requireAuth(redirect) {
   return true;
 }
 
-// ─── Icons ────────────────────────────────────────────────────
+// ─── Icons ───
 const I = {
   dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
   services: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`,
@@ -1128,7 +1119,7 @@ const I = {
 
 const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="2" fill="#1a1816"/><circle cx="11" cy="10" r="3.5" fill="#f4efe6"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="#f4efe6" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="#f4efe6" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="#f4efe6" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
 
-// ─── Public Nav (top bar) ──────────────────────────────────────
+// ─── Public Nav (top bar) ───
 function renderPublicNav(activePage = '') {
   const navLinks = [
     { label: 'Marketplace', href: '#/services', key: 'services' },
@@ -1247,7 +1238,7 @@ function publicFooter() {
     </footer>`;
 }
 
-// ─── Authenticated Shell (sidebar) ───────────────────────────
+// ─── Authenticated Shell (sidebar) ───
 function appShell(content, activeNav = '') {
   const u = state.user || {};
   const rawName = (u.name || u.email || '?').trim();
@@ -1346,7 +1337,7 @@ function toggleSidebar() {
   if (ov) ov.classList.toggle('active', state.sidebarOpen);
 }
 
-// ─── Skeleton Loader ─────────────────────────────────────────
+// ─── Skeleton Loader ───
 function skeletonCards(count = 6) {
   return Array(count).fill(0).map(() => `
     <div class="skeleton-card">
@@ -1376,9 +1367,9 @@ function pagerHtml(page, totalPages, hrefFor) {
   return out + btn(page + 1, 'Next', { disabled: page >= totalPages, aria: 'Next page' });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // LANDING PAGE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function landingPreviewCards(services) {
   return services.slice(0, 3).map(s => {
     const href = s.id ? `#/services/${esc(String(s.id))}` : '#/services';
@@ -1560,7 +1551,7 @@ async function renderLanding() {
 
 // ═══════════════════════════════════════════════════════════════
 // SERVICES BROWSE — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderServices() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -1833,9 +1824,9 @@ function applyServiceFilters() {
   loadServicesGrid(1, { search, category, minPrice, maxPrice, provider });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // SERVICE DETAIL — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderServiceDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2165,9 +2156,9 @@ async function handleOrderService(id) {
   } catch (err) { close(); toastError(err); }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOBS BROWSE — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobs() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -2410,9 +2401,9 @@ function applyJobFilters() {
   loadJobsList(1, { search, category, budgetType, locationType });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOB DETAIL — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2590,9 +2581,9 @@ async function handleJobApply(id) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // AUTH — LOGIN + REGISTER
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
@@ -2814,9 +2805,9 @@ function logout() {
   navigate('#/');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // DASHBOARD
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderDashboard() {
   if (state.user?.is_admin) return renderAdminDashboard();
   const isCurrent = currentRenderGuard();
@@ -2900,9 +2891,9 @@ async function renderDashboard() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // MY SERVICES
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderMyServices() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -2987,7 +2978,7 @@ async function deleteService(id) {
   }, 'Delete', 'Cancel', true);
 }
 
-// ─── Post/Edit Service Form ───────────────────────────────────
+// ─── Post/Edit Service Form ───
 function renderPostService(editId = null) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -3159,9 +3150,9 @@ async function handlePostService(e, editId) {
   }, editId ? 'Saving…' : 'Posting…');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // POST A JOB
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderPostJob() {
   const isCurrent = currentRenderGuard();
   let cats = [];
@@ -3314,9 +3305,9 @@ async function handlePostJob(e) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // MY JOBS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderMyJobs() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3379,9 +3370,9 @@ async function renderMyJobs() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOB APPLICANTS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobApplicants(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3624,9 +3615,9 @@ async function confirmHire(jobId, applicationId) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ORDERS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderOrders() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -3670,7 +3661,7 @@ async function renderOrders() {
   }
 }
 
-// ─── Order Detail ─────────────────────────────────────────────
+// ─── Order Detail ───
 async function renderOrderDetail(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -4057,9 +4048,9 @@ async function leaveReview(id) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // PAYMENTS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderPayments() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'payments');
   // Return parameters trigger a status check, never a completion claim.
@@ -4092,9 +4083,7 @@ async function renderPayments() {
     if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
     const historyUnavailable = historyData === null;
-    // /payments/history returns escrow_history and fees_paid, not transactions.
-    // Holds are the recorded funded-order ledger; fees_paid are components of
-    // those same charges and must not be shown again as separate payments.
+    // escrow_history is the funded-order ledger; fees_paid are parts of those charges, not extra payments.
     const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
     appShell(`
@@ -4394,9 +4383,9 @@ async function setupWorkerPayment(trigger = null) {
   }, 'Opening secure setup...');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // NOTIFICATIONS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderNotifications() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'notifications');
@@ -4423,13 +4412,8 @@ async function renderNotifications() {
     `, 'notifications');
     document.querySelectorAll('.notif-item[data-notif-id]').forEach(item => {
       const open = () => handleNotificationClick(Number(item.dataset.notifId), item.dataset.link);
-      item.addEventListener('click', open);
-      item.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-          event.preventDefault();
-          open();
-        }
-      });
+      item.onclick = open;
+      item.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
     });
     primeNotifCount(notifs);
   } catch(err) {
@@ -4500,9 +4484,9 @@ async function loadNotifCount(force = false) {
   notifCountCache.pending = null;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // REFERRAL PROGRAM
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderReferrals() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'referrals');
@@ -4551,9 +4535,9 @@ async function renderReferrals() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // PROFILE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderProfile() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'profile');
@@ -4667,9 +4651,9 @@ async function updateProfile(e) {
   }, 'Saving…');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ADMIN
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderAdminDashboard() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'dashboard');
@@ -4951,9 +4935,9 @@ async function renderAdminAudit() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // AI EMPLOYERS PAGE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function renderAIEmployers() {
   document.getElementById('app').innerHTML = `
     <div class="landing">
@@ -5083,9 +5067,9 @@ function renderAIEmployers() {
     </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // STATIC PAGES
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function renderTerms() {
   document.getElementById('app').innerHTML = `
     ${renderPublicNav()}
@@ -5155,9 +5139,9 @@ function renderGuidelines() {
     ${publicFooter()}`;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ROUTER
-// ═══════════════════════════════════════════════════════════════
+// ═══
 let renderGeneration = 0;
 function currentRenderGuard() {
   const generation = renderGeneration;
@@ -5225,7 +5209,7 @@ function render() {
   return view;
 }
 function routeView(path, hash, segments) {
-  // ── Public routes ────────────────────────────────────────
+  // ── Public routes ───
   if (path === '/') {
     if (isSignedIn()) return renderDashboard();
     return renderLanding();
@@ -5239,13 +5223,13 @@ function routeView(path, hash, segments) {
   if (path === '/guidelines') return renderGuidelines();
   if (path === '/ai-employers') return renderAIEmployers();
 
-  // ── Public marketplace (no auth required) ────────────────
+  // ── Public marketplace (no auth required) ───
   if (path === '/services') return renderServices();
   if (path.match(/^\/services\/(\d+)$/)) return renderServiceDetail(segments[1]);
   if (path === '/jobs') return renderJobs();
   if (path.match(/^\/jobs\/(\d+)$/) && !path.includes('/applicants')) return renderJobDetail(segments[1]);
 
-  // ── Auth required ─────────────────────────────────────────
+  // ── Auth required ───
   // Unknown paths are a 404 for everyone; only real account routes ask for sign-in.
   const accountRoute = /^\/(?:dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|jobs\/\d+\/applicants|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings)$/.test(path);
   const adminRoute = /^\/admin(?:\/(?:users|orders|revenue|disputes|audit))?$/.test(path);
@@ -5271,7 +5255,7 @@ function routeView(path, hash, segments) {
   if (path === '/notifications') return renderNotifications();
   if (path === '/profile' || path === '/settings') return renderProfile();
 
-  // ── Admin routes ──────────────────────────────────────────
+  // ── Admin routes ───
   if (path === '/admin') return renderAdminDashboard();
   if (path === '/admin/users') return renderAdminUsers();
   if (path === '/admin/orders') return renderAdminOrders();
@@ -5279,7 +5263,7 @@ function routeView(path, hash, segments) {
   if (path === '/admin/disputes') return renderAdminDisputes();
   if (path === '/admin/audit') return renderAdminAudit();
 
-  // ── Fallback ──────────────────────────────────────────────
+  // ── Fallback ───
   return renderAppNotFound(path);
 }
 

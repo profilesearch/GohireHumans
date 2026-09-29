@@ -11,7 +11,6 @@ test('buyer fee tools use checkout component rounding for awkward cents', async 
   await page.goto('/tools/freelance-fee-calculator.html');
   await page.locator('#role').selectOption('buyer');
   await page.locator('#gross').fill('33.33');
-  console.log('GROSS-DIAG', await page.evaluate(() => ({ valid: document.querySelector('#gross').checkValidity(), invalid: document.querySelector('#gross').getAttribute('aria-invalid'), rows: document.querySelector('#rows').innerText, charge: window.ghhBuyerCharge('33.33'), html: document.querySelector('#gross').outerHTML })));
   await expect(page.locator('.calc-row-featured')).toContainText('$34.66');
   await page.goto('/tools/are-you-overpaying.html');
   await expect(page.locator('body')).not.toContainText('1% plus Stripe processing');
@@ -127,6 +126,25 @@ test('SPA page and form analytics never include draft text or private query stri
   expect(events.some(e => e[1] === 'form_start')).toBe(true);
   expect(JSON.stringify(events)).not.toMatch(/alice(?:%40|@)example|draft_title|draft_description|confidential|private_email/);
   const pageView = events.find(e => e[1] === 'page_view')[2];
-  expect(pageView.page_path).toBe('/post-job');
-  expect(new URL(pageView.page_location).pathname).toBe('/post-job');
+  expect(pageView.page_path).toBe('/#/post-job');
+  expect(pageView.spa_route).toBe('/post-job');
+  expect(new URL(pageView.page_location).hash).toBe('#/post-job');
+  expect(new URL(pageView.page_location).search).toBe('');
+});
+
+test('analytics keeps numeric ids but collapses unknown routes that could hold text', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/?utm_source=newsletter&email=' + encodeURIComponent('dave@example.test') + '#/services/42?note=' + encodeURIComponent('bob@example.test'));
+  await expect.poll(() => page.evaluate(() => window.__events.some(e => e[1] === 'page_view'))).toBe(true);
+  await page.evaluate(() => { location.hash = '#/carol@example.test'; });
+  await expect.poll(() => page.evaluate(() => window.__events.filter(e => e[1] === 'page_view').length)).toBe(2);
+  const views = await page.evaluate(() => window.__events.filter(e => e[1] === 'page_view').map(e => e[2]));
+  expect(views.map(v => v.page_path)).toEqual(['/#/services/42', '/#/not-found']);
+  expect(new URL(views[0].page_location).searchParams.get('utm_source')).toBe('newsletter');
+  const all = JSON.stringify(await page.evaluate(() => window.__events));
+  expect(all).not.toMatch(/bob(?:%40|@)|carol(?:%40|@)|dave(?:%40|@)|email=/);
+  // Every event (and the gtag 'set' default) carries only the sanitized location.
+  const setCalls = await page.evaluate(() => window.__events.filter(e => e[0] === 'set').map(e => e[1].page_location));
+  expect(setCalls.length).toBeGreaterThan(0);
+  for (const loc of setCalls) expect(loc).not.toMatch(/email|note|@/);
 });
