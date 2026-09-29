@@ -17,11 +17,20 @@ class PaycopyContractTests(unittest.TestCase):
         self.assertIn('f"{FRONTEND_URL}/payments?connect=complete&simulated=true"', source)
         self.assertTrue((ROOT / 'frontend/payments/index.html').exists())
 
-    def test_vercel_serves_both_payment_path_spellings_without_redirecting_to_spa_404(self):
+    def test_stripe_payout_return_path_reaches_static_forwarder(self):
+        # Stripe returns workers to /payments?connect=... (non-hash). Follow the repo
+        # trailing-slash convention (/hire -> /hire/): Vercel redirects preserve the
+        # query string, and /payments/index.html forwards to the SPA hash route.
         config = json.loads((ROOT / 'frontend/vercel.json').read_text())
-        for source in ('/payments', '/payments/'):
-            self.assertIn({'source': source, 'destination': '/payments/index.html'}, config.get('rewrites', []))
-        self.assertNotIn('/payments', [r['source'] for r in config.get('redirects', [])])
+        self.assertIn({'source': '/payments', 'destination': '/payments/', 'permanent': True},
+                      config.get('redirects', []))
+        self.assertNotIn('rewrites', config)
+        forwarder = (ROOT / 'frontend/payments/index.html').read_text()
+        self.assertIn('#/payments', forwarder)
+        self.assertIn('location.search', forwarder)
+        backend = (ROOT / 'backend/api_core.py').read_text()
+        self.assertIn('/payments?connect=complete', backend)
+        self.assertIn('/payments?connect=refresh', backend)
 
     def test_public_claims_match_backend_rates_in_metadata_schema_and_body(self):
         backend = (ROOT / 'backend/api_core.py').read_text()

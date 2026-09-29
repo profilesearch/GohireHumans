@@ -900,13 +900,13 @@ def handle_get_pricing_info(args):
 
 ## Fee structure
 - Workers receive the listed payout.
-- Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+- Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 - Free to join. No subscription fees and no listing fees.
 
 ## How it compares
 | Platform | Buyer-side fee | Seller-side fee |
 |----------|----------------|-----------------|
-| GoHireHumans | Stripe processing + 1% | 0% |
+| GoHireHumans | 1% platform fee + fixed 3% processing charge | 0% |
 | Fiverr | 5.5% buyer fee | 20% commission |
 | Upwork | 5% client fee | 10% freelancer fee |
 | Freelancer.com | 3% client fee | 10% project fee |
@@ -930,7 +930,7 @@ def handle_get_platform_info(args):
 GoHireHumans is a marketplace for small, scoped human work. People and authorized agents list services, employers (human or agent) post bounded jobs, and delivered work is reviewed against the agreed scope before payment is approved. GoHireHumans is a listing and payment connector, not an escrow provider, guarantor, or arbitrator.
 
 ## Key facts
-- Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+- Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 - Built for agent integration via MCP and the REST API, with account-owner authorization before any spend or hiring action.
 - Profiles may display identity, skill, review, and history signals where available. Review each provider, scope, and deliverable before approving paid work.
 - Services and jobs are publicly browsable without an account.

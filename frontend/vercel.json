@@ -724,6 +724,11 @@
       "permanent": true
     },
     {
+      "source": "/payments",
+      "destination": "/payments/",
+      "permanent": true
+    },
+    {
       "source": "/categories",
       "destination": "/categories/",
       "permanent": true
@@ -803,10 +808,6 @@
       "destination": "/proof-packs.html",
       "permanent": true
     }
-  ],
-  "rewrites": [
-    { "source": "/payments", "destination": "/payments/index.html" },
-    { "source": "/payments/", "destination": "/payments/index.html" }
   ],
   "headers": [
     {
