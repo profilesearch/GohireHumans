@@ -1302,10 +1302,20 @@ def handle_message(msg):
     # Read resource
     if method == "resources/read":
         uri = params.get("uri", "")
+        try:
+            result = handle_resource(uri)
+        except APIRequestError as e:
+            # Resource reads that hit the API must surface a JSON-RPC error,
+            # not crash the stdio loop (api_request raises on HTTP errors).
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32603, "message": str(e), "data": e.payload()}
+            }
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
-            "result": handle_resource(uri)
+            "result": result
         }
 
     # Unknown method

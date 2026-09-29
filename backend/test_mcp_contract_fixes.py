@@ -74,6 +74,18 @@ class MCPErrorContractTests(unittest.TestCase):
             result = call('release_payment', {"order_id": 1})
         self.assertIs(result['isError'], False)
         self.assertIn('Payment released successfully', result['content'][0]['text'])
+
+    def test_resource_read_api_failure_is_jsonrpc_error_not_crash(self):
+        error = urllib.error.HTTPError('http://127.0.0.1/api/v1/categories', 503, 'down', {},
+                                       io.BytesIO(b'{"error": "Service unavailable"}'))
+        with mock.patch.object(mcp.urllib.request, 'urlopen', side_effect=error):
+            response = mcp.handle_message({"jsonrpc": "2.0", "id": 7, "method": "resources/read",
+                                           "params": {"uri": "gohirehumans://categories"}})
+        self.assertEqual(response['id'], 7)
+        self.assertNotIn('result', response)
+        self.assertEqual(response['error']['data']['http_status'], 503)
+        self.assertEqual(response['error']['data']['category'], 'server_error')
+
     def test_stdio_tool_calls_retain_http_status(self):
         class LocalAPI(BaseHTTPRequestHandler):
             def do_POST(self):
