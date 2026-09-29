@@ -28,14 +28,48 @@ class PaycopyContractTests(unittest.TestCase):
         self.assertRegex(backend, r'PLATFORM_FEE_BPS = 100\b')
         self.assertRegex(backend, r'PROCESSING_FEE_BPS = 300\b')
         self.assertIn('return max(1, (base_cents * basis_points + 5000) // 10000)', backend)
+        from html.parser import HTMLParser
+
+        class Claims(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.meta = {}
+                self.schemas = []
+                self.body = []
+                self.in_schema = False
+                self.in_body = False
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'meta':
+                    self.meta[attrs.get('name') or attrs.get('property')] = attrs.get('content', '')
+                if tag == 'script' and attrs.get('type') == 'application/ld+json':
+                    self.in_schema = True
+                    self.schemas.append('')
+                if tag == 'body':
+                    self.in_body = True
+            def handle_endtag(self, tag):
+                if tag == 'script': self.in_schema = False
+                if tag == 'body': self.in_body = False
+            def handle_data(self, data):
+                if self.in_schema: self.schemas[-1] += data
+                elif self.in_body: self.body.append(data)
+
         for name in ('pricing.html', 'faq.html', 'how-it-works.html'):
             source = (ROOT / 'frontend' / name).read_text()
-            for tag in ('name="description"', 'property="og:description"', 'name="twitter:description"'):
-                self.assertRegex(source, r'<meta ' + tag + r'[^>]*1%[^>]*3%')
-            self.assertRegex(source, r'"description": "[^\"]*1%[^\"]*3%')
-            self.assertIn('1% platform fee plus a fixed 3% processing charge', source)
-            self.assertNotIn('Stripe’s card processing rate', source)
-            self.assertNotIn('per completed task', source)
+            page = Claims()
+            page.feed(source)
+            for tag in ('description', 'og:description', 'twitter:description'):
+                with self.subTest(page=name, surface=tag):
+                    self.assertRegex(page.meta[tag], r'1%.*3%')
+                    self.assertIn('Where checkout is configured', page.meta[tag])
+            schemas = [json.loads(s) for s in page.schemas]
+            schema_text = json.dumps(schemas)
+            self.assertRegex(schema_text, r'1%.*3%')
+            self.assertIn('Where checkout is configured', schema_text)
+            self.assertIn('1% platform fee plus a fixed 3% processing charge', ' '.join(page.body))
+            for surface in (source, schema_text, ' '.join(page.body)):
+                self.assertNotIn('Stripe processing plus', surface)
+                self.assertNotIn('per completed task', surface)
         faq = (ROOT / 'frontend/faq.html').read_text()
         for claim in ('A funded order has no self-serve cancel option', 'full charge including fees', 'base amount only'):
             self.assertGreaterEqual(faq.count(claim), 2, claim)

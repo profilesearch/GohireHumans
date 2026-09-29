@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Freelancer Fee Calculator: Workers Keep the Listed Payout | GoHireHumans</title>
-  <meta name="description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge.">
+  <meta name="description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.">
   <link rel="canonical" href="https://www.gohirehumans.com/tools/fee-calculator.html">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.gohirehumans.com/tools/fee-calculator.html">
   <meta property="og:title" content="Freelancer Fee Calculator: Workers Keep the Listed Payout | GoHireHumans">
-  <meta property="og:description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge.">
+  <meta property="og:description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.">
   <meta property="og:site_name" content="GoHireHumans">
   <meta property="og:image" content="https://www.gohirehumans.com/og-image-v2.png">
   <meta property="og:image:width" content="1200">
@@ -18,7 +18,7 @@
   <meta property="og:image:alt" content="GoHireHumans, a marketplace for small, scoped human help">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Freelancer Fee Calculator: Workers Keep the Listed Payout | GoHireHumans">
-  <meta name="twitter:description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge.">
+  <meta name="twitter:description" content="One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.">
   <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
   <meta name="theme-color" content="#f4efe6">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -45,7 +45,7 @@
   "@context": "https://schema.org",
   "@type": "WebApplication",
   "name": "Freelancer Fee Calculator",
-  "description": "One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge.",
+  "description": "One-project fee breakdown: GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
   "url": "https://www.gohirehumans.com/tools/fee-calculator.html",
   "applicationCategory": "FinanceApplication",
   "operatingSystem": "Web",
@@ -118,7 +118,7 @@
       "name": "Are there hidden fees on GoHireHumans?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. GoHireHumans charges a transparent 1% GoHireHumans fee plus Stripe processing to the employer where payment processing is configured. There are no freelancer fees, no connection fees, and no subscription tiers. Workers receive the listed payout."
+        "text": "No. GoHireHumans charges a transparent 1% platform fee plus fixed 3% processing charge to the employer where payment processing is configured. There are no freelancer fees, no connection fees, and no subscription tiers. Workers receive the listed payout."
       }
     }
   ]
@@ -176,7 +176,7 @@
         <dt>Employer fee</dt>
         <dd>a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</dd>
         <dt>Rates used</dt>
-        <dd>Published standard rates; payment processing left out for every platform.</dd>
+        <dd>Published standard rates; GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.</dd>
       </dl>
       </div>
       <div class="pub-hero-aside">
@@ -233,7 +233,7 @@
           <li>Toptal: no seller fee but a markup on rates. The calculators model the markup at 20% of the billed amount on the seller side and show no separate buyer fee.</li>
           <li>Freelancer.com: a 10% project fee plus a 3% client fee.</li>
           <li>GoHireHumans: Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</li>
-          <li>Payment processing is left out for every platform, and each platform can change its published rates, so confirm current terms before you decide.</li>
+          <li>GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded, and each platform can change its published rates, so confirm current terms before you decide.</li>
         </ul>
       </div>
     </div>
@@ -255,7 +255,7 @@
         </details>
         <details class="disclosure">
           <summary>Are there hidden fees on GoHireHumans?</summary>
-          <div><p>No. GoHireHumans charges a transparent 1% GoHireHumans fee plus Stripe processing to the employer where payment processing is configured. There are no freelancer fees, no connection fees, and no subscription tiers. Workers receive the listed payout.</p></div>
+          <div><p>No. GoHireHumans charges a transparent 1% platform fee plus fixed 3% processing charge to the employer where payment processing is configured. There are no freelancer fees, no connection fees, and no subscription tiers. Workers receive the listed payout.</p></div>
         </details>
       </div>
     </div>
@@ -391,6 +391,7 @@
       amount = value;
       slider.value = String(value);
       amountInput.value = fmtNum(value);
+      amountInput.removeAttribute('aria-invalid');
       render();
       updateURL();
     }
@@ -405,10 +406,19 @@
 
     slider.addEventListener('input', function () { setAmount(parseInt(this.value, 10)); });
     amountInput.addEventListener('input', function () {
-      var parsed = parseInt(this.value.replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(parsed)) { amount = Math.max(100, Math.min(50000, parsed)); slider.value = String(amount); render(); updateURL(); }
+      const charge = window.ghhBuyerCharge(this.value);
+      if (!charge || charge.baseCents > 5000000) {
+        this.setAttribute('aria-invalid', 'true');
+        resultsBody.replaceChildren();
+        return;
+      }
+      this.removeAttribute('aria-invalid');
+      amount = charge.baseCents / 100;
+      slider.value = String(Math.max(100, Math.min(50000, Math.round(amount))));
+      render();
+      updateURL();
     });
-    amountInput.addEventListener('blur', function () { this.value = fmtNum(amount); });
+    amountInput.addEventListener('blur', function () { if (this.getAttribute('aria-invalid') !== 'true') this.value = fmtNum(amount); });
     amountInput.addEventListener('keydown', function (event) { if (event.key === 'Enter') this.blur(); });
     toggleFreelancer.addEventListener('click', function () { setMode('freelancer'); });
     toggleClient.addEventListener('click', function () { setMode('client'); });
@@ -445,12 +455,13 @@
     }
 
     var params = new URLSearchParams(window.location.search);
-    var urlAmount = parseInt(params.get('amount') || '', 10);
-    if (!isNaN(urlAmount) && urlAmount >= 100 && urlAmount <= 50000) amount = urlAmount;
+    var urlCharge = window.ghhBuyerCharge(params.get('amount') || '');
+    if (urlCharge && urlCharge.baseCents <= 5000000) amount = urlCharge.baseCents / 100;
     if (params.get('mode') === 'client') mode = 'client';
     toggleFreelancer.setAttribute('aria-pressed', String(mode === 'freelancer'));
     toggleClient.setAttribute('aria-pressed', String(mode === 'client'));
-    setAmount(amount);
+    if (amount >= 100) setAmount(amount);
+    else { amountInput.value = fmtNum(amount); slider.value = '100'; render(); updateURL(); }
     updateURL();
   })();
   </script>

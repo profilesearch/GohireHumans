@@ -123,7 +123,7 @@
       "name": "How much does GoHireHumans charge?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. On a $100 listing that is a $1 GoHireHumans fee plus Stripe processing, and the worker receives $100."
+        "text": "Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. On a $100 listing that is a $1 platform fee plus $3 fixed processing charge, and the worker receives $100."
       }
     },
     {
@@ -193,7 +193,7 @@
         <dt>Employer fee</dt>
         <dd>a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</dd>
         <dt>Rates used</dt>
-        <dd>Published standard rates; payment processing left out for every platform.</dd>
+        <dd>Published standard rates; GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.</dd>
       </dl>
       </div>
       <div class="pub-hero-aside">
@@ -201,7 +201,7 @@
           <h2 class="card-title mb-4" id="calc-heading">Your numbers</h2>
           <div class="form-group">
             <label class="label" for="gross">Monthly amount (USD)</label>
-            <input class="input" id="gross" type="number" min="0" step="50" value="2000" inputmode="decimal" autocomplete="off">
+            <input class="input" id="gross" type="number" min="0.01" step="0.01" value="2000" inputmode="decimal" autocomplete="off">
             <div class="cluster mt-2" role="group" aria-label="Quick amounts">
               <button type="button" class="btn btn-secondary btn-sm" data-amt="500">$500</button>
               <button type="button" class="btn btn-secondary btn-sm" data-amt="2000">$2,000</button>
@@ -261,7 +261,7 @@
           <li>Toptal: no seller fee but a markup on rates. The calculators model the markup at 20% of the billed amount on the seller side and show no separate buyer fee.</li>
           <li>Freelancer.com: a 10% project fee plus a 3% client fee.</li>
           <li>GoHireHumans: Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</li>
-          <li>Payment processing is left out for every platform, and each platform can change its published rates, so confirm current terms before you decide.</li>
+          <li>GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded, and each platform can change its published rates, so confirm current terms before you decide.</li>
         </ul>
       </div>
     </div>
@@ -287,7 +287,7 @@
         </details>
         <details class="disclosure">
           <summary>How much does GoHireHumans charge?</summary>
-          <div><p>Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. On a $100 listing that is a $1 GoHireHumans fee plus Stripe processing, and the worker receives $100.</p></div>
+          <div><p>Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. On a $100 listing that is a $1 platform fee plus $3 fixed processing charge, and the worker receives $100.</p></div>
         </details>
         <details class="disclosure">
           <summary>Are these numbers current?</summary>
@@ -394,7 +394,7 @@
     var presets = document.querySelectorAll('[data-amt]');
     if (!grossInput || !roleSel || !contractSel || !rowsEl || !headingEl) return;
 
-    var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
+    var fmt = function (n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
     // Published standard rates, applied per side. Toptal charges no seller fee but a
     // markup on rates; the markup is modeled at 20% on the seller side.
@@ -414,7 +414,15 @@
     }
 
     function render() {
-      var gross = Math.max(0, parseFloat(grossInput.value) || 0);
+      var charge = window.ghhBuyerCharge(grossInput.value);
+      if (!charge || !grossInput.checkValidity()) {
+        grossInput.setAttribute('aria-invalid', 'true');
+        rowsEl.replaceChildren();
+        if (differenceEl) differenceEl.textContent = 'Enter a positive amount in dollars and cents.';
+        return;
+      }
+      grossInput.removeAttribute('aria-invalid');
+      var gross = charge.baseCents / 100;
       var role = roleSel.value === 'buyer' ? 'buyer' : 'seller';
       headingEl.textContent = role === 'buyer' ? 'Your total' : 'You net';
       if (grossLabel) grossLabel.textContent = fmt(gross);
@@ -423,18 +431,19 @@
       var worst = null;
       var reference = null;
       PLATFORMS.forEach(function (platform) {
+        var isGhh = platform.name === 'GoHireHumans';
         var rate = platform[role];
-        var take = gross * rate;
+        var take = isGhh && role === 'buyer' ? charge.feeCents / 100 : gross * rate;
         var result = role === 'buyer' ? gross + take : gross - take;
         var row = document.createElement('tr');
-        if (platform.name === 'GoHireHumans') row.className = 'calc-row-featured';
+        if (isGhh) row.className = 'calc-row-featured';
         var nameCell = el('td');
         nameCell.appendChild(el('strong', null, platform.name));
         row.appendChild(nameCell);
-        row.appendChild(el('td', 'num', fmt(take) + ' (' + Math.round(rate * 100) + '%)'));
-        row.appendChild(el('td', 'num net-cell', fmt(result)));
+        row.appendChild(el('td', 'num', fmt(take) + (isGhh && role === 'buyer' ? ' (1% platform + fixed 3% processing)' : ' (' + Math.round(rate * 100) + '%)')));
+        row.appendChild(el('td', 'num net-cell', fmt(isGhh && role === 'buyer' ? charge.totalCents / 100 : result)));
         fragment.appendChild(row);
-        if (platform.name === 'GoHireHumans') reference = { name: platform.name, take: take };
+        if (isGhh) reference = { name: platform.name, take: take };
         else if (!worst || take >= worst.take) worst = { name: platform.name, take: take };
       });
       rowsEl.replaceChildren(fragment);
@@ -442,7 +451,7 @@
       if (differenceEl && worst && reference) {
         var annual = (worst.take - reference.take) * 12;
         differenceEl.textContent = gross > 0
-          ? 'Over 12 months, the modeled platform take on ' + worst.name + ' is ' + fmt(annual) + ' higher than on GoHireHumans, before payment processing on either platform.'
+          ? 'Over 12 months, the modeled fees on ' + worst.name + ' are ' + fmt(annual) + ' higher than on GoHireHumans. GoHireHumans includes its fixed checkout charge; other platforms’ payment processing is excluded.'
           : 'Enter a monthly amount to see the modeled annual difference.';
       }
     }
