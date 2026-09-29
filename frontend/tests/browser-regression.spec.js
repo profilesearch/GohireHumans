@@ -1068,7 +1068,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       return route.fulfill({status:200,contentType:'application/json',body:'{}'});
     });
     await page.goto('/#/admin/disputes', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.')).toBeVisible();
+    await expect(page.getByText('Otherwise the funded task amount is refunded; the fixed processing charge and 1% platform fee are not.')).toBeVisible();
     await page.getByRole('button',{name:'Issue refund'}).first().click();
     await page.locator('#admin-password-confirm').fill('step-up-password');
     await page.locator('.modal-overlay').getByRole('button',{name:'Issue refund'}).click();
