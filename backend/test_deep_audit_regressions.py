@@ -960,15 +960,18 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.RESEND_API_KEY = "configured-for-test"
             self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
+            with self.assertRaisesRegex(ValueError, 'internal route'):
+                self.module.push_notification(
+                    db, 1, "new_application", "New application: Website QA",
+                    "Someone applied to your job.", "https://evil.example/phish", email=True,
+                )
+            # Historical rows can still carry old external links; the email CTA
+            # must remain safe when draining the existing outbox.
             self.module.push_notification(
-                db,
-                1,
-                "new_application",
-                "New application: Website QA",
-                "Someone applied to your job.",
-                "https://evil.example/phish",
-                email=True,
+                db, 1, "new_application", "New application: Website QA",
+                "Someone applied to your job.", "/jobs/1/applications", email=True,
             )
+            db.execute("UPDATE notifications SET link='https://evil.example/phish' WHERE user_id=1")
             db.commit()
             self.module.flush_transactional_notification_emails(db)
 

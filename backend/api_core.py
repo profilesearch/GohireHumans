@@ -12152,9 +12152,21 @@ def _handle_routes(db):
         # Fail closed before the idempotent replay path or any processor I/O.
         if service_owned_by_seeded_sample(db, service_id):
             return error_response("Service not found or unavailable", 404)
+        body = get_body()
+        # Existing idempotent operations can still be inspected/reconciled under
+        # their original funding checks. Never begin a new checkout for an
+        # ineligible seller, even when malformed inputs would otherwise return 400.
+        seller_eligible = db.execute(
+            f'SELECT 1 FROM services s JOIN users u ON u.id=s.worker_id '
+            f'WHERE s.id=? AND {eligible_account_sql()}', [service_id],
+        ).fetchone()
+        if not seller_eligible and not db.execute(
+            'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
+            [user['id'], service_id, body.get('idempotency_key') if isinstance(body, dict) else None],
+        ).fetchone():
+            return error_response("Service not found or unavailable", 404)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
-        body = get_body()
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
             creation_request_fingerprint = service_order_creation_request_fingerprint(
