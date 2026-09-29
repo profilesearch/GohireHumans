@@ -15,10 +15,11 @@ async function localOnly(page) {
     const value = path === '/categories' ? { categories: [{ id: 'testing', name: 'Testing' }] }
       : path === '/services' ? { services: [service], total: 1, page: 1, total_pages: 1 }
       : path === '/services/10' ? service
-      : path === '/users/1/reviews' ? { reviews: [], total: 0 }
+      : path === '/users/1/reviews' ? { reviews: [{ id: 30, rating: 5, reviewer_name: 'Employer', review: 'Public after day 15' }], total: 1 }
       : path === '/jobs' ? { jobs: [job], total: 1, page: 1, total_pages: 1 }
       : path === '/jobs/20' ? job
-      : path === '/jobs/21' ? { ...job, id: 21, budget_type: 'hourly', budget_amount: 12.50 }
+      : path === '/jobs/21' ? { ...job, id: 21, budget_type: 'hourly', budget_amount: 12.50, hiring_enabled: false }
+      : path === '/jobs/21/applications' ? { applications: [{ id: 1, worker_name: 'Worker', status: 'pending', portfolio_url: '', worker_payout_ready: true }] }
       : {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) });
   });
@@ -68,4 +69,19 @@ test('390px posting and browse omit hourly; legacy hourly detail says not hireab
   await expect(page.locator('#job-budget-type option[value="hourly"]')).toHaveCount(0);
   await page.goto('/#/jobs/21');
   await expect(page.locator('.svc-order-card')).toContainText('Hourly hiring is not available yet');
+  await expect(page.locator('.svc-order-card button')).toHaveCount(0);
+  await page.goto('/#/jobs/21/applicants');
+  await expect(page.locator('.applicant')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'View Portfolio' })).toHaveCount(0);
+  await expect(page.locator('.applicant-actions')).toContainText('Hourly hiring is not available yet');
+});
+
+test('revealed review appears as 5.0 and one review on service card and detail', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/#/services');
+  await expect(page.locator('.svc-card-rating [role="img"]')).toHaveAttribute('aria-label', '5.0 out of 5 stars, 1 review');
+  await page.goto('/#/services/10');
+  await expect(page.locator('.svc-worker-sub [role="img"]')).toHaveAttribute('aria-label', '5.0 out of 5 stars, 1 review');
+  await expect(page.locator('.svc-order-card')).toContainText('5.0 rating (1 review)');
+  await expect(page.locator('.reviews-list')).toContainText('Public after day 15');
 });

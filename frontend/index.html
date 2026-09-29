@@ -273,6 +273,8 @@
 // Services + Jobs public browsing with full authenticated app
 // ============================================================
 const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
+// Mirror backend HOURLY_JOB_HIRING_ENABLED; change both together when settlement ships.
+const HOURLY_JOB_HIRING_ENABLED = false;
 
 // Reset links carry a single-use capability in the fragment. Capture it and strip it from
 // the address bar before analytics, attribution, or routing can read location.
@@ -2188,6 +2190,7 @@ async function renderJobs() {
             <select class="select" id="job-budget-type" onchange="applyJobFilters()">
               <option value="">Any</option>
               <option value="fixed" ${budgetType==='fixed'?'selected':''}>Fixed Price</option>
+              ${HOURLY_JOB_HIRING_ENABLED ? `<option value="hourly" ${budgetType==='hourly'?'selected':''}>Hourly</option>` : ''}
             </select>
           </div>
           <div class="filter-group">
@@ -2411,7 +2414,8 @@ async function renderJobDetail(id) {
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = isSignedIn() && String(state.user.id) === String(job.employer_id);
     const acceptsApplications = jobAcceptsApplications(job);
-    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner;
+    const hourlyPaused = !HOURLY_JOB_HIRING_ENABLED && job.budget_type === 'hourly';
+    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2459,7 +2463,9 @@ async function renderJobDetail(id) {
                 ${formatUtcDate(job.due_by) ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${formatUtcDate(job.due_by)}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
-              ${acceptsApplications && !isOwner
+              ${hourlyPaused
+                ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
+                : acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" onclick="handleJobApply(${Number(id)})">${isSignedIn() ? 'Apply to This Job' : 'Sign in to Apply'}</button>
                    <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
                 : !acceptsApplications
@@ -3158,12 +3164,12 @@ async function renderPostJob() {
     required_skills: query.get('draft_skills') || templateDraft.required_skills || storedGuidedDraft.required_skills,
     category: query.get('draft_category') || templateDraft.category || storedGuidedDraft.category,
     budget_amount: query.get('draft_budget') || templateDraft.budget_amount || storedGuidedDraft.budget_amount,
-    budget_type: templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed'
+    budget_type: HOURLY_JOB_HIRING_ENABLED ? (templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed') : 'fixed'
   };
   appShell(`
     <div class="form-page">
       <h1 class="page-title">Post a Job</h1>
-      <p class="page-desc">Describe what you need done and receive applications from skilled workers. Fixed-price jobs only for now; hourly hiring is not available. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
+      <p class="page-desc">Describe what you need done and receive applications from skilled workers. ${HOURLY_JOB_HIRING_ENABLED ? '' : 'Fixed-price jobs only for now; hourly hiring is not available. '}Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
       <div class="safety-notice">
         <div class="safety-notice-icon">${I.shield}</div>
         <div class="safety-notice-body">
@@ -3205,7 +3211,7 @@ async function renderPostJob() {
             <label class="label" for="jobBudgetType">Budget Type *</label>
             <select class="select" name="budget_type" id="jobBudgetType" onchange="toggleEstHours()" required>
               <option value="fixed"${selectedAttr(draft.budget_type, 'fixed')}>Fixed Price</option>
-              <option value="hourly"${selectedAttr(draft.budget_type, 'hourly')}>Hourly Rate</option>
+              ${HOURLY_JOB_HIRING_ENABLED ? `<option value="hourly"${selectedAttr(draft.budget_type, 'hourly')}>Hourly Rate</option>` : ''}
             </select>
           </div>
           <div class="form-group">
@@ -3213,10 +3219,10 @@ async function renderPostJob() {
             <input class="input" type="number" name="budget_amount" id="jobBudgetAmount" min="1" step="0.01" placeholder="25.00" required value="${formValue(draft.budget_amount)}">
           </div>
         </div>
-        <div class="form-group" id="estHoursGroup" hidden>
+        ${HOURLY_JOB_HIRING_ENABLED ? `<div class="form-group" id="estHoursGroup" hidden>
           <label class="label" for="estHours">Estimated Hours</label>
           <input class="input" type="number" name="estimated_hours" id="estHours" min="1" placeholder="20">
-        </div>
+        </div>` : ''}
         <div class="form-group">
           <label class="label" for="job-required-skills">Required Skills <span class="label-hint">(comma-separated)</span></label>
           <input class="input" id="job-required-skills" name="required_skills" placeholder="e.g. website testing, research, phone calls" value="${formValue(draft.required_skills)}">
@@ -3415,6 +3421,9 @@ async function renderJobApplicants(id) {
 function applicantHireAction(job, a) {
   if (!['pending', 'shortlisted'].includes(a.status)) return '';
   if (!['open', 'reviewing'].includes(job.status)) return '';
+  if (job.budget_type === 'hourly' && !HOURLY_JOB_HIRING_ENABLED) {
+    return `<span class="applicant-hire-note">Hourly hiring is not available yet</span>`;
+  }
   if (job.hiring_enabled !== true) {
     return `<button class="btn btn-secondary btn-sm" disabled title="Payment safeguards are being finalized">Hiring temporarily paused</button>`;
   }
