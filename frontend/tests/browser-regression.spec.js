@@ -1096,7 +1096,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByText('Full refund committed ($26.00, fees included)')).toBeVisible();
   });
 
-  test('new job hiring stays visibly paused until payment safeguards ship', async ({ page }) => {
+  test('legacy hourly applicant cannot be hired while hourly settlement is disabled', async ({ page }) => {
     let hireBody = null;
     await page.addInitScript(() => {
       sessionStorage.setItem('ghh_token', 'employer-token');
@@ -1128,9 +1128,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     });
 
     await page.goto('/#/jobs/12/applicants', { waitUntil: 'domcontentloaded' });
-    const paused = page.getByRole('button', { name: 'Hiring temporarily paused' });
-    await expect(paused).toBeVisible();
-    await expect(paused).toBeDisabled();
+    await expect(page.locator('.applicant-actions')).toContainText('Hourly hiring is not available yet');
+    await expect(page.locator('.applicant-actions button')).toHaveCount(0);
     expect(hireBody).toBeNull();
   });
 

@@ -200,7 +200,8 @@ ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
 # Fixed-price hiring from posted jobs is a payment-moving path and stays OFF unless
 # an operator sets GHH_JOB_HIRING_ENABLED=1 (fail closed; unset/unknown = off).
-# Hourly hiring stays separately disabled in the route regardless of this flag.
+# Hourly hiring and NEW hourly posting share one policy gate; settlement is not live.
+HOURLY_JOB_HIRING_ENABLED = False
 JOB_HIRING_ENABLED = os.environ.get("GHH_JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 # US stays the only onboarding country unless explicitly enabled by an operator.
 CONNECT_INTERNATIONAL_ENABLED = os.environ.get("CONNECT_INTERNATIONAL_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
@@ -2710,6 +2711,9 @@ def _init_db_connection(db):
         _prevalidate_financial_schema_before_mutation(db)
         _run_init_db_failure_hook("early")
         _init_db_connection_steps(db)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_visible_recipient ON reviews(to_user_id, is_visible)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_visibility_order ON reviews(is_visible, order_id)")
+        refresh_rating_aggregates(db)
         _run_init_db_failure_hook("late")
         # Final checks execute before COMMIT so every migration is rolled back on failure.
         validate_required_transaction_schema(db)
@@ -5373,6 +5377,66 @@ def generate_application_reminders(
         raise
 
 
+def refresh_rating_aggregates(db, user_ids=None, service_ids=None):
+    """Reconcile cached public ratings from visible reviews, scoped or in bulk.
+
+    A service's rating comes from its own completed service orders, not from
+    unrelated work by the same worker. Updates are no-ops when values agree.
+    """
+    def selection(column, ids):
+        if ids is None:
+            return "", []
+        ids = sorted(set(ids))
+        return (f" AND {column} IN ({','.join('?' for _ in ids)})", ids) if ids else (" AND 0", [])
+
+    for table in ('worker_profiles', 'employer_profiles'):
+        condition, values = selection('user_id', user_ids)
+        review_condition, review_values = selection('to_user_id', user_ids)
+        db.execute(f"""WITH rated AS MATERIALIZED (
+            SELECT to_user_id, AVG(rating) AS average, COUNT(*) AS count
+            FROM reviews WHERE is_visible=1 {review_condition} GROUP BY to_user_id
+        )
+        UPDATE {table} SET
+            avg_rating=COALESCE((SELECT average FROM rated WHERE to_user_id=user_id),0),
+            total_reviews=COALESCE((SELECT count FROM rated WHERE to_user_id=user_id),0)
+        WHERE 1=1 {condition} AND (
+            avg_rating IS NOT COALESCE((SELECT average FROM rated WHERE to_user_id=user_id),0)
+            OR total_reviews IS NOT COALESCE((SELECT count FROM rated WHERE to_user_id=user_id),0)
+        )""", review_values + values)
+    condition, values = selection('id', service_ids)
+    service_condition, service_values = selection('o.service_id', service_ids)
+    db.execute(f"""WITH rated AS MATERIALIZED (
+        SELECT o.service_id, AVG(r.rating) AS average, COUNT(*) AS count
+        FROM reviews r JOIN orders o ON o.id=r.order_id
+        JOIN services s ON s.id=o.service_id AND s.worker_id=r.to_user_id
+        WHERE r.is_visible=1 AND o.service_id IS NOT NULL {service_condition}
+        GROUP BY o.service_id
+    )
+    UPDATE services SET
+        avg_rating=COALESCE((SELECT average FROM rated WHERE service_id=id),0),
+        total_reviews=COALESCE((SELECT count FROM rated WHERE service_id=id),0)
+    WHERE 1=1 {condition} AND (
+        avg_rating IS NOT COALESCE((SELECT average FROM rated WHERE service_id=id),0)
+        OR total_reviews IS NOT COALESCE((SELECT count FROM rated WHERE service_id=id),0)
+    )""", service_values + values)
+
+
+def reveal_mature_reviews(db, now=None, limit=100):
+    """Publish up to limit hidden reviews at 14 days; caller owns transaction."""
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=14)
+    rows = db.execute("""SELECT r.id, r.to_user_id, o.service_id
+        FROM reviews r JOIN orders o ON o.id=r.order_id
+        WHERE r.is_visible=0 AND o.status='completed'
+          AND datetime(o.completed_at) <= ? ORDER BY r.id LIMIT ?""",
+        [cutoff.strftime('%Y-%m-%d %H:%M:%S'), limit]).fetchall()
+    if rows:
+        ids = [r['id'] for r in rows]
+        db.execute(f"UPDATE reviews SET is_visible=1 WHERE is_visible=0 AND id IN ({','.join('?' for _ in ids)})", ids)
+        refresh_rating_aggregates(db, [r['to_user_id'] for r in rows],
+                                  [r['service_id'] for r in rows if r['service_id'] is not None])
+    return len(rows)
+
+
 def run_notification_maintenance_once(
     now=None, owner_token=None, lease_seconds=120, lease_now=None,
 ):
@@ -5399,6 +5463,12 @@ def run_notification_maintenance_once(
                 "email_delivery": {**empty_delivery, "lease_lost": 1},
                 "lease_lost": 1,
             }
+        try:
+            reveal_mature_reviews(db, now=now, limit=100)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         try:
             reminders_created = generate_application_reminders(
                 db, now=now, limit=20, owner_token=owner_token,
@@ -11464,7 +11534,8 @@ def _handle_routes(db):
             "SELECT COUNT(*) as c FROM applications WHERE job_id = ?", [job_id]
         ).fetchone()['c']
         # Lets the UI mirror the server's hiring gate instead of guessing.
-        result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and result.get('budget_type') == 'fixed')
+        result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and
+                                        (result.get('budget_type') == 'fixed' or HOURLY_JOB_HIRING_ENABLED))
         return json_response(result)
 
     elif path == "/jobs" and method == "POST":
@@ -11482,6 +11553,8 @@ def _handle_routes(db):
 
         if body['budget_type'] not in ('fixed', 'hourly'):
             return error_response("budget_type must be fixed or hourly")
+        if body['budget_type'] == 'hourly' and not HOURLY_JOB_HIRING_ENABLED:
+            return error_response("Only fixed-price jobs can be posted for now; hourly hiring is not available.", 400)
 
         try:
             budget_cents = money_to_cents(body['budget_amount'], "budget_amount")
@@ -11825,7 +11898,7 @@ def _handle_routes(db):
             return error_response("Job not found", 404)
         if job['employer_id'] != user['id']:
             return error_response("Forbidden", 403)
-        if job['budget_type'] == 'hourly':
+        if job['budget_type'] == 'hourly' and not HOURLY_JOB_HIRING_ENABLED:
             return error_response(
                 "Hourly hiring and payout settlement are deferred to Task 4.", 503
             )
@@ -13557,24 +13630,12 @@ def _handle_routes(db):
                     pass
 
         if make_visible:
-            db.execute("UPDATE reviews SET is_visible=1 WHERE order_id=?", [order_id])
-
-        # Update average rating for the recipient
-        avg_row = db.execute(
-            "SELECT AVG(rating) as avg, COUNT(*) as cnt FROM reviews WHERE to_user_id=? AND is_visible=1",
-            [to_user_id]
-        ).fetchone()
-        # Update worker or employer profile
-        if db.execute("SELECT user_id FROM worker_profiles WHERE user_id=?", [to_user_id]).fetchone():
-            db.execute(
-                "UPDATE worker_profiles SET avg_rating=?, total_reviews=? WHERE user_id=?",
-                [avg_row['avg'] or 0, avg_row['cnt'] or 0, to_user_id]
-            )
-        if db.execute("SELECT user_id FROM employer_profiles WHERE user_id=?", [to_user_id]).fetchone():
-            db.execute(
-                "UPDATE employer_profiles SET avg_rating=?, total_reviews=? WHERE user_id=?",
-                [avg_row['avg'] or 0, avg_row['cnt'] or 0, to_user_id]
-            )
+            db.execute("UPDATE reviews SET is_visible=1 WHERE order_id=? AND is_visible=0", [order_id])
+            recipients = [r['to_user_id'] for r in db.execute(
+                "SELECT to_user_id FROM reviews WHERE order_id=?", [order_id]
+            ).fetchall()]
+            refresh_rating_aggregates(db, recipients,
+                                      [order['service_id']] if order['service_id'] is not None else [])
 
         audit(db, user['id'], "submit_review", "review", review_id)
         db.commit()

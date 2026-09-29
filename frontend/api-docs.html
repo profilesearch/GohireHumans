@@ -275,7 +275,7 @@ Content-Type: application/json
 <tr><td><code>category</code></td><td>string</td><td>required</td><td>Service category (see <a href="#categories">Category values</a>)</td></tr>
 <tr><td><code>location_type</code></td><td>string</td><td>optional</td><td><code>remote</code> (default), <code>on_site</code>, or <code>hybrid</code></td></tr>
 <tr><td><code>budget_amount</code></td><td>number</td><td>required</td><td>USD amount, positive and at most 1,000,000; use at most two decimal places</td></tr>
-<tr><td><code>budget_type</code></td><td>string</td><td>required</td><td><code>"fixed"</code> or <code>"hourly"</code></td></tr>
+<tr><td><code>budget_type</code></td><td>string</td><td>required</td><td><code>"fixed"</code> only for new jobs. Hourly hiring is not available yet; hourly requests return 400.</td></tr>
 <tr><td><code>location_detail</code></td><td>string</td><td>optional</td><td>City or site instructions for on-site/hybrid work; omit private addresses from public listings.</td></tr>
 <tr><td><code>due_by</code></td><td>string</td><td>optional</td><td>ISO 8601 target completion time</td></tr>
 </tbody>
@@ -313,7 +313,7 @@ Content-Type: application/json
   "category": "media_capture",
   "location_type": "on_site",
   "location_detail": "Public entrance, Main Street, Springfield",
-  "budget_type": "hourly",
+  "budget_type": "fixed",
   "budget_amount": 25.0,
   "due_by": "2027-03-10T17:00:00Z"
 }</div>
