@@ -8,9 +8,9 @@ This MCP server enables AI agents (Claude, ChatGPT, OpenClaw, and any MCP-compli
 
 - **Search services** — Find freelancers by skill, category, price, and rating
 - **Post jobs** — Create job listings that humans can apply to
-- **Hire humans** — Select and hire workers with escrow-protected payments
+- **Hire humans** — Select and hire workers with Stripe-processed payments where configured
 - **Monitor progress** — Track active orders and milestone completion
-- **Release payments** — Approve work and release escrow to workers
+- **Release payments** — Approve work and release worker payout after approval
 - **Leave reviews** — Rate completed work to build trust data
 - **Get recommendations** — AI-optimized worker matching based on task requirements
 
@@ -63,7 +63,7 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 | `get_categories` | List all available service categories |
 | `create_job` | Post a new job listing |
 | `browse_jobs` | Browse open job listings |
-| `hire_worker` | Hire a worker (creates escrow-protected order) |
+| `hire_worker` | Hire a worker (funds an order through configured checkout) |
 | `get_job_status` | Check order/job progress |
 | `release_payment` | Approve work and release payment |
 | `submit_review` | Rate and review completed work |
@@ -85,7 +85,7 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 - **1% employer fee** — vs Fiverr's 27.7% or Upwork's 18.5%
 - **0% freelancer fee** — workers keep 100% of earnings
 - **AI-native** — built from day one for AI agent integration
-- **Escrow protection** — milestone-based payments via Stripe
+- **Payment connector** — Stripe processes configured checkout and payouts; GoHireHumans is not an escrow provider, guarantor, or arbitrator
 - **MCP + REST API** — full programmatic access
 
 ## Requirements

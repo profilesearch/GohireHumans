@@ -717,11 +717,12 @@ function clearHashQueryParam(param) {
 function getStoredAttribution() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const tracked = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'ref'];
+    const tracked = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
     const current = {};
-    tracked.forEach(k => { const v = params.get(k); if (v) current[k] = v; });
+    tracked.forEach(k => { const v = params.get(k); if (v && /^[a-zA-Z0-9_-]{1,64}$/.test(v)) current[k] = v; });
     if (Object.keys(current).length) sessionStorage.setItem('ghh_attribution', JSON.stringify(current));
-    return JSON.parse(sessionStorage.getItem('ghh_attribution') || '{}') || {};
+    const stored = JSON.parse(sessionStorage.getItem('ghh_attribution') || '{}') || {};
+    return Object.fromEntries(tracked.filter(k => typeof stored[k] === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(stored[k])).map(k => [k, stored[k]]));
   } catch (_) { return {}; }
 }
 function normalizeAnalyticsParams(params = {}) {
@@ -766,19 +767,32 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
   });
 }
 let lastTrackedSpaPath = '';
+const ANALYTICS_ROUTES = new Set(['/', '/login', '/auth', '/register', '/forgot-password',
+  '/reset-password', '/terms', '/privacy', '/guidelines', '/ai-employers', '/services',
+  '/jobs', '/dashboard', '/my-services', '/post-service', '/post-job', '/my-jobs',
+  '/orders', '/payments', '/referrals', '/notifications', '/profile', '/settings',
+  '/admin', '/admin/users', '/admin/orders', '/admin/revenue', '/admin/disputes', '/admin/audit']);
+function analyticsRoute(path) {
+  if (ANALYTICS_ROUTES.has(path)) return path;
+  for (const template of ['/services/:id', '/jobs/:id', '/jobs/:id/applicants', '/orders/:id', '/edit-service/:id']) {
+    const pattern = '^' + template.replace(':id', '[0-9]+') + '$';
+    if (new RegExp(pattern).test(path)) return template;
+  }
+  return '/not-found';
+}
 function trackSpaPageView(path) {
   captureResetCapability();
-  const pagePath = location.pathname + location.search + location.hash;
+  const pagePath = analyticsRoute(path);
   if (lastTrackedSpaPath === pagePath) return;
   lastTrackedSpaPath = pagePath;
-  trackEvent('spa_page_view', { path, page_path: pagePath });
+  trackEvent('spa_page_view', { path: pagePath, page_path: pagePath });
   try {
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'page_view', {
         page_title: document.title,
         page_location: location.origin + pagePath,
         page_path: pagePath,
-        spa_route: path
+        spa_route: pagePath
       });
     }
   } catch (_) {}
@@ -791,7 +805,7 @@ function analyticsFormName(form) {
   if (submit.includes('handlePostJob')) return 'post_job';
   if (submit.includes('handlePostService')) return 'post_service';
   if (submit.includes('updateProfile')) return 'profile_update';
-  if (form.id) return form.id;
+  if (form.id && /^(login|register|postJob|postService|profile|payment)[a-zA-Z0-9_-]*$/.test(form.id)) return form.id;
   return 'unnamed_form';
 }
 function installAnalyticsIntentTracking() {
@@ -803,11 +817,11 @@ function installAnalyticsIntentTracking() {
     const formName = analyticsFormName(form);
     if (analyticsSeenForms.has(formName)) return;
     analyticsSeenForms.add(formName);
-    trackEvent('form_start', { form_name: formName, path: location.pathname + location.hash });
+    trackEvent('form_start', { form_name: formName, path: analyticsRoute(currentHashWithoutQuery()) });
   }, true);
   document.addEventListener('submit', (event) => {
     const formName = analyticsFormName(event.target);
-    trackEvent('form_submit_intent', { form_name: formName, path: location.pathname + location.hash });
+    trackEvent('form_submit_intent', { form_name: formName, path: analyticsRoute(currentHashWithoutQuery()) });
   }, true);
   document.addEventListener('click', (event) => {
     const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
@@ -815,13 +829,13 @@ function installAnalyticsIntentTracking() {
     const href = link.getAttribute('href') || '';
     if (href.startsWith('mailto:') || href.startsWith('tel:')) {
       const linkType = href.startsWith('mailto:') ? 'email' : 'phone';
-      trackEvent('contact_click', { link_type: linkType, source: location.pathname + location.hash });
+      trackEvent('contact_click', { link_type: linkType, source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (href.startsWith('#')) {
       // Internal SPA routes (e.g. #/payments) are navigation, not payment intent.
     } else if (/stripe|checkout|buy|payment/i.test(href)) {
-      trackEvent('payment_intent_click', { destination: href, source: location.pathname + location.hash });
+      trackEvent('payment_intent_click', { destination: link.hostname || 'internal', source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (link.hostname && link.hostname !== location.hostname) {
-      trackEvent('outbound_click', { destination: link.href, source: location.pathname + location.hash });
+      trackEvent('outbound_click', { destination: link.hostname, source: analyticsRoute(currentHashWithoutQuery()) });
     }
   }, true);
 }
@@ -4067,7 +4081,10 @@ async function renderPayments() {
     if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
     const historyUnavailable = historyData === null;
-    const history = Array.isArray(historyData) ? historyData : (historyData?.transactions || []);
+    // /payments/history returns escrow_history and fees_paid, not transactions.
+    // Holds are the recorded funded-order ledger; fees_paid are components of
+    // those same charges and must not be shown again as separate payments.
+    const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
     appShell(`
       <h1 class="page-title">Payments</h1>
@@ -4140,9 +4157,9 @@ async function renderPayments() {
             <tbody>
               ${history.map(t => `<tr>
                 <td>${esc(formatUtcDate(t.created_at||t.date, '—'))}</td>
-                <td class="text-xs">${esc(t.description||t.type||'')}</td>
-                <td class="num">${Number(t.amount||0) < 0 ? '−' : ''}$${Math.abs(Number(t.amount||0)).toFixed(2)}</td>
-                <td>${statusBadge(t.status||'completed')}</td>
+                <td class="text-xs">Order #${esc(t.order_id)} · ${esc(t.order_type || 'task')} funding</td>
+                <td class="num">$${(Number.isSafeInteger(t.base_amount_cents) ? t.base_amount_cents / 100 : Number(t.amount || 0)).toFixed(2)}</td>
+                <td>${statusBadge(t.status || 'held')}</td>
               </tr>`).join('')}
             </tbody>
           </table>

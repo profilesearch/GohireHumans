@@ -804,6 +804,10 @@
       "permanent": true
     }
   ],
+  "rewrites": [
+    { "source": "/payments", "destination": "/payments/index.html" },
+    { "source": "/payments/", "destination": "/payments/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
