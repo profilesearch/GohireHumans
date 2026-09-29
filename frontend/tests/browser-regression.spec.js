@@ -1688,7 +1688,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     const starterTop = await page.locator('#starter-packages-heading').evaluate(el => el.getBoundingClientRect().top);
     expect(feeTop).toBeLessThan(starterTop);
     await expect(page.locator('main')).toContainText('Workers receive the listed payout');
-    await expect(page.locator('main')).toContainText('Stripe processing plus a 1% GoHireHumans fee');
+    await expect(page.locator('main')).toContainText('1% platform fee plus a fixed 3% processing charge');
 
     await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('main[data-starter-simplified="true"]')).toBeVisible();
