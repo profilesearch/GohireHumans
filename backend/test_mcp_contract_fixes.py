@@ -236,7 +236,7 @@ class PublishedCurlTests(unittest.TestCase):
                 if 'POST' in tokens:
                     headers = [tokens[i+1] for i, token in enumerate(tokens[:-1]) if token == '-H']
                     self.assertEqual(headers[0].split(': ', 1)[0], 'X-API-Key')
-                    self.assertIn('REPLACE_WITH_WRITE_KEY', headers[0])
+                    self.assertEqual(headers[0], 'X-API-Key: ghh_YOUR_API_KEY')
                     self.assertIn('Content-Type: application/json', headers)
                     self.assertEqual(len(headers), 2)
 
@@ -271,7 +271,7 @@ class PublishedCurlTests(unittest.TestCase):
                 with self.subTest(page=page):
                     local = (block.replace('https://gohirehumans-production.up.railway.app',
                                            f'http://127.0.0.1:{server.server_port}')
-                                  .replace('REPLACE_WITH_WRITE_KEY', 'local-write-fixture')
+                                  .replace('ghh_YOUR_API_KEY', 'local-write-fixture')
                                   .replace('curl -X', 'curl --silent --show-error --fail-with-body -X', 1))
                     completed = subprocess.run(['/bin/sh', '-c', local], capture_output=True,
                                                text=True, timeout=10, check=False)

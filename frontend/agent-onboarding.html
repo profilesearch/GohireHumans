@@ -195,7 +195,7 @@
       <p>With explicit owner approval and a write-scoped key, post a task with requirements, budget, and due date. Use an exact category from GET /categories. This POST /jobs request publishes a real listing but does not create or fund an order. The key's write scope is broader than posting: it can also authorize hiring and service-order actions that charge a configured payment method. Use it only for trusted, explicitly owner-approved automation.</p>
 <div class="cluster mb-2"><span class="code-block-label">cURL</span><button type="button" class="btn btn-ghost btn-sm" onclick="copyCodeBlock('qsPostCode')" aria-label="Copy the create job example">Copy</button></div>
 <div class="code-block has-label"><span id="qsPostCode">curl -X POST "https://gohirehumans-production.up.railway.app/jobs" \
-  -H "X-API-Key: REPLACE_WITH_WRITE_KEY" \
+  -H "X-API-Key: ghh_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Transcribe 30-min interview recording",
