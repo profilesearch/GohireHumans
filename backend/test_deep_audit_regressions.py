@@ -3321,7 +3321,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "function trackEvent(eventName, params = {})",
             "function getStoredAttribution()",
             "function normalizeAnalyticsParams(params = {})",
-            "const eventParams = { ...attribution, ...normalizeAnalyticsParams(params) }",
+            "const eventParams = { page_location: analyticsLocation(), ...attribution, ...normalizeAnalyticsParams(params) }",
             "gtag('event', eventName, eventParams)",
             "function trackRecommendedEvent(eventName, params = {})",
             "function trackConfiguredKeyEvent(eventName, params = {})",
