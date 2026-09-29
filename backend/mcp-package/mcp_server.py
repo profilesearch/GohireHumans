@@ -40,6 +40,7 @@ import re
 import urllib.request
 import urllib.error
 import urllib.parse
+from decimal import Decimal, InvalidOperation
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -48,6 +49,38 @@ API_KEY = os.environ.get("GOHIREHUMANS_API_KEY", "")
 AUTH_TOKEN = os.environ.get("GOHIREHUMANS_AUTH_TOKEN", "")
 
 # ─── API Helper ───────────────────────────────────────────────────────────────
+
+class APIRequestError(Exception):
+    """An upstream HTTP failure, retaining status and operation identity."""
+
+    def __init__(self, status, message, method, idempotent=False):
+        super().__init__(message)
+        self.status = status
+        self.method = method
+        self.idempotent = idempotent
+
+    def payload(self):
+        message = str(self)
+        lower = message.lower()
+        if self.status in (401, 403):
+            category = "auth"
+        elif self.status == 402 or (self.status == 409 and
+                ("payment" in lower or "billing" in lower or "stripe" in lower) and
+                ("setup" in lower or "set up" in lower or "method" in lower)):
+            category = "payment_setup_required"
+        elif self.status == 409:
+            category = "lifecycle_conflict"
+        elif self.status in (400, 422):
+            category = "validation"
+        elif self.status == 429:
+            category = "rate_limit"
+        elif self.status is not None and 500 <= self.status < 600:
+            category = "server_error"
+        else:
+            category = "api_error" if self.status is not None else "transport_error"
+        return {"category": category, "http_status": self.status, "message": message,
+                "retry_safe": category == "server_error" and self.idempotent}
+
 
 def api_request(method, path, body=None, params=None):
     """Make an HTTP request to the GoHireHumans API."""
@@ -70,11 +103,14 @@ def api_request(method, path, body=None, params=None):
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
         try:
-            return json.loads(error_body)
+            parsed = json.loads(error_body)
+            message = parsed.get("error", parsed.get("message", error_body[:500])) if isinstance(parsed, dict) else error_body[:500]
         except json.JSONDecodeError:
-            return {"error": f"HTTP {e.code}: {error_body[:500]}"}
-    except Exception as e:
-        return {"error": str(e)}
+            message = error_body[:500]
+        raise APIRequestError(e.code, str(message), method,
+                              method in ("GET", "HEAD") or bool(isinstance(body, dict) and body.get("idempotency_key"))) from e
+    except urllib.error.URLError as e:
+        raise APIRequestError(None, str(e), method) from e
 
 # ─── MCP Protocol ─────────────────────────────────────────────────────────────
 
@@ -325,7 +361,7 @@ TOOLS = [
                 },
                 "min_rating": {
                     "type": "number",
-                    "description": "Minimum average rating (1-5)",
+                    "description": "Minimum profile/listing average rating (1-5); applied locally to returned services (unrated workers excluded)",
                     "minimum": 1,
                     "maximum": 5
                 },
@@ -353,7 +389,7 @@ TOOLS = [
                 },
                 "budget_range": {
                     "type": "string",
-                    "description": "Budget range (e.g., '$50-200' or 'under $100')"
+                    "description": "USD listed service price range: '$50-200' or 'under $100'. Filtered locally before ranking; unrated providers can still match."
                 },
                 "urgency": {
                     "type": "string",
@@ -740,7 +776,9 @@ def handle_search_workers(args):
     """Search for workers by skills, category, rating."""
     # Workers are discoverable through their services
     limit = min(args.get("limit", 10), 50)
-    params = {"per_page": limit}  # GET /services paginates with page/per_page
+    # Rating is not a GET /services query parameter; filter returned profile
+    # ratings locally. Fetch a full page before applying the output limit.
+    params = {"per_page": 100 if args.get("min_rating") else limit}
     
     if args.get("category"):
         params["category"] = args["category"]
@@ -755,6 +793,24 @@ def handle_search_workers(args):
         return [{"type": "text", "text": f"Error searching workers: {result['error']}"}]
     
     services = result.get("services", result.get("data", []))
+    min_rating = args.get("min_rating")
+    if min_rating is not None:
+        def meets_rating(service):
+            try:
+                return float(_service_rating(service, default=0)) >= min_rating
+            except (ValueError, TypeError):
+                return False
+
+        services = [s for s in services if meets_rating(s)]
+        def worker_key(service):
+            return service.get("worker_id", service.get("user_id", _service_worker_name(service)))
+
+        page = 1
+        while (len({worker_key(s) for s in services}) < limit and
+               page < result.get("total_pages", 1)):
+            page += 1
+            result = api_request("GET", "/services", params={**params, "page": page})
+            services.extend(s for s in result.get("services", []) if meets_rating(s))
     
     # Deduplicate by worker/provider
     seen_workers = {}
@@ -780,9 +836,7 @@ def handle_search_workers(args):
     if not seen_workers:
         return [{"type": "text", "text": "No workers found matching your criteria. Try broadening your search."}]
     
-    # Filter by min_rating if specified
-    min_rating = args.get("min_rating", 0)
-    
+    # Rating is enforced on service rows above, before worker deduplication.
     output = f"Found {len(seen_workers)} worker(s):\n\n"
     for wid, w in list(seen_workers.items())[:limit]:
         output += f"**{w['name']}**\n"
@@ -792,8 +846,36 @@ def handle_search_workers(args):
     return [{"type": "text", "text": output}]
 
 
+def _budget_bounds(value):
+    """Parse the two advertised USD formats; never silently drop a constraint."""
+    if not value:
+        return None
+    amount = r"\$?([0-9]+(?:\.[0-9]{1,2})?)"
+    match = re.fullmatch(rf"\s*(?:under|up to)\s+{amount}\s*", value, re.I)
+    if match:
+        return (Decimal(0), Decimal(match.group(1)), not value.strip().lower().startswith("under"))
+    match = re.fullmatch(rf"\s*{amount}\s*-\s*{amount}\s*", value)
+    if match:
+        low, high = (Decimal(n) for n in match.groups())
+        if low <= high:
+            return (low, high, True)
+    raise ValueError("budget_range must be 'under $100' or '$50-200' (USD)")
+
+
+def _within_budget(service, bounds):
+    try:
+        price = Decimal(str(service.get("price")))
+        return price.is_finite() and bounds[0] <= price and (price <= bounds[1] if bounds[2] else price < bounds[1])
+    except (InvalidOperation, TypeError):
+        return False
+
+
 def handle_get_recommended(args):
     """Get AI-optimized worker recommendations based on task description."""
+    try:
+        bounds = _budget_bounds(args.get("budget_range"))
+    except (ValueError, TypeError) as e:
+        return [{"type": "text", "text": f"Error getting recommendations: {e}"}]
     task = args["task_description"]
     urgency = args.get("urgency", "medium")
     limit = min(args.get("limit", 5), 10)
@@ -821,7 +903,11 @@ def handle_get_recommended(args):
             detected_category = cat
             break
     
-    params = {"per_page": min(limit * 2, 100)}  # Fetch extra to filter
+    params = {"per_page": 100 if bounds else min(limit * 2, 100)}
+    if bounds:
+        # GET /services max_price is an OR over fixed price and hourly rate;
+        # client-side price filtering below remains authoritative.
+        params["max_price"] = str(bounds[1])
     if detected_category:
         params["category"] = detected_category
     params["search"] = " ".join(task.split()[:5])  # First 5 words as search
@@ -832,12 +918,23 @@ def handle_get_recommended(args):
         return [{"type": "text", "text": f"Error getting recommendations: {result['error']}"}]
     
     services = result.get("services", result.get("data", []))
-    
     if not services:
-        # Broaden search
-        result = api_request("GET", "/services", params={"per_page": min(limit * 2, 100)})
+        # Broaden keywords/category, never the buyer's budget constraint.
+        fallback_params = {"per_page": params["per_page"]}
+        if bounds:
+            fallback_params["max_price"] = str(bounds[1])
+        result = api_request("GET", "/services", params=fallback_params)
         services = result.get("services", result.get("data", []))
-    
+        params = fallback_params
+
+    if bounds:
+        services = [s for s in services if _within_budget(s, bounds)]
+        page = 1
+        while len(services) < limit and page < result.get("total_pages", 1):
+            page += 1
+            next_page = api_request("GET", "/services", params={**params, "page": page})
+            services.extend(s for s in next_page.get("services", []) if _within_budget(s, bounds))
+
     if not services:
         return [{"type": "text", "text": "No workers currently available for this type of task. Check back soon or post a job listing to attract qualified workers."}]
     
@@ -1008,8 +1105,7 @@ def handle_resource(uri):
 - `GET /payments/history` — Get payment history
 
 ## Rate Limits
-- 100 requests per minute per IP
-- 1000 requests per hour per authenticated user
+- 120 requests per minute per IP (in-process limiter; deployments with multiple workers may vary). No per-user hourly limit is enforced by this endpoint.
 
 ## Response Format
 All responses are JSON. Successful responses include the requested data. Error responses include an `error` field with a human-readable message.
@@ -1170,10 +1266,20 @@ def handle_message(msg):
 
         try:
             content = handler(tool_args)
+            local_error = any(item.get("type") == "text" and
+                              item.get("text", "").startswith(("Error ", "Please provide "))
+                              for item in content)
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {"content": content, "isError": False}
+                "result": {"content": content, "isError": local_error}
+            }
+        except APIRequestError as e:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"content": [{"type": "text", "text": json.dumps(e.payload())}],
+                           "isError": True}
             }
         except Exception as e:
             return {
