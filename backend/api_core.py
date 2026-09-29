@@ -200,7 +200,8 @@ ENABLE_AUTO_SEED = os.environ.get("ENABLE_AUTO_SEED", "").strip().lower() in {"1
 PRODUCTION_MODE = os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
 # Fixed-price hiring from posted jobs is a payment-moving path and stays OFF unless
 # an operator sets GHH_JOB_HIRING_ENABLED=1 (fail closed; unset/unknown = off).
-# Hourly hiring stays separately disabled in the route regardless of this flag.
+# Hourly hiring and NEW hourly posting share one policy gate; settlement is not live.
+HOURLY_JOB_HIRING_ENABLED = False
 JOB_HIRING_ENABLED = os.environ.get("GHH_JOB_HIRING_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 # US stays the only onboarding country unless explicitly enabled by an operator.
 CONNECT_INTERNATIONAL_ENABLED = os.environ.get("CONNECT_INTERNATIONAL_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
@@ -2710,6 +2711,9 @@ def _init_db_connection(db):
         _prevalidate_financial_schema_before_mutation(db)
         _run_init_db_failure_hook("early")
         _init_db_connection_steps(db)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_visible_recipient ON reviews(to_user_id, is_visible)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_visibility_order ON reviews(is_visible, order_id)")
+        refresh_rating_aggregates(db)
         _run_init_db_failure_hook("late")
         # Final checks execute before COMMIT so every migration is rolled back on failure.
         validate_required_transaction_schema(db)
@@ -3883,7 +3887,7 @@ def authenticate_session(db):
     ).fetchone()
     if row:
         user = db.execute("SELECT * FROM users WHERE id = ?", [row['user_id']]).fetchone()
-        if user and user['is_active'] and not user['is_banned'] and not user['is_suspended']:
+        if user and eligible_account(user):
             return row_to_dict(user)
     return None
 
@@ -3905,6 +3909,20 @@ def api_key_expired(expires_at):
     return expiry < datetime.now(timezone.utc)
 
 
+def eligible_account(row):
+    return bool(row['is_active'] and not row['is_banned'] and not row['is_suspended'])
+
+
+def eligible_account_sql(alias='u'):
+    return f"{alias}.is_active=1 AND {alias}.is_banned=0 AND {alias}.is_suspended=0"
+
+
+def revoke_credentials(db, user_id):
+    """Revoke all sessions and API keys in the caller's password-change transaction."""
+    db.execute('DELETE FROM sessions WHERE user_id=?', [user_id])
+    db.execute('UPDATE api_keys SET is_active=0 WHERE user_id=?', [user_id])
+
+
 def authenticate_api_key(db):
     api_key = (getattr(_request_ctx, 'http_x_api_key', '') or os.environ.get('HTTP_X_API_KEY', '')).strip()
     if not api_key or not api_key.startswith('ghh_'):
@@ -3922,7 +3940,7 @@ def authenticate_api_key(db):
         return None
     if api_key_expired(row['expires_at']):
         return None
-    if not row['is_active'] or row['is_banned'] or row['is_suspended']:
+    if not eligible_account(row):
         return None
     user = row_to_dict(row)
     try:
@@ -5184,11 +5202,22 @@ def notification_delivery_health(db):
     }
 
 
+def valid_notification_link(link):
+    """Only internal SPA routes; reject scheme-relative and browser-normalized escapes."""
+    return (link is None or link == '' or
+            (isinstance(link, str) and (link.startswith('#/') or link.startswith('/'))
+             and not link.startswith('//') and not any(
+                 ord(char) < 32 or ord(char) == 127 or char == '\\' for char in link
+             )))
+
+
 def push_notification(
     db, user_id, notif_type, title, message=None, link=None, email=False,
     email_message=None, email_dedupe=None, email_expires_at=None,
     email_reminder_binding=None,
 ):
+    if not valid_notification_link(link):
+        raise ValueError('Notification link must be an internal route')
     cursor = db.execute(
         "INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
         [user_id, notif_type, title, message or "", link or ""]
@@ -5348,6 +5377,66 @@ def generate_application_reminders(
         raise
 
 
+def refresh_rating_aggregates(db, user_ids=None, service_ids=None):
+    """Reconcile cached public ratings from visible reviews, scoped or in bulk.
+
+    A service's rating comes from its own completed service orders, not from
+    unrelated work by the same worker. Updates are no-ops when values agree.
+    """
+    def selection(column, ids):
+        if ids is None:
+            return "", []
+        ids = sorted(set(ids))
+        return (f" AND {column} IN ({','.join('?' for _ in ids)})", ids) if ids else (" AND 0", [])
+
+    for table in ('worker_profiles', 'employer_profiles'):
+        condition, values = selection('user_id', user_ids)
+        review_condition, review_values = selection('to_user_id', user_ids)
+        db.execute(f"""WITH rated AS MATERIALIZED (
+            SELECT to_user_id, AVG(rating) AS average, COUNT(*) AS count
+            FROM reviews WHERE is_visible=1 {review_condition} GROUP BY to_user_id
+        )
+        UPDATE {table} SET
+            avg_rating=COALESCE((SELECT average FROM rated WHERE to_user_id=user_id),0),
+            total_reviews=COALESCE((SELECT count FROM rated WHERE to_user_id=user_id),0)
+        WHERE 1=1 {condition} AND (
+            avg_rating IS NOT COALESCE((SELECT average FROM rated WHERE to_user_id=user_id),0)
+            OR total_reviews IS NOT COALESCE((SELECT count FROM rated WHERE to_user_id=user_id),0)
+        )""", review_values + values)
+    condition, values = selection('id', service_ids)
+    service_condition, service_values = selection('o.service_id', service_ids)
+    db.execute(f"""WITH rated AS MATERIALIZED (
+        SELECT o.service_id, AVG(r.rating) AS average, COUNT(*) AS count
+        FROM reviews r JOIN orders o ON o.id=r.order_id
+        JOIN services s ON s.id=o.service_id AND s.worker_id=r.to_user_id
+        WHERE r.is_visible=1 AND o.service_id IS NOT NULL {service_condition}
+        GROUP BY o.service_id
+    )
+    UPDATE services SET
+        avg_rating=COALESCE((SELECT average FROM rated WHERE service_id=id),0),
+        total_reviews=COALESCE((SELECT count FROM rated WHERE service_id=id),0)
+    WHERE 1=1 {condition} AND (
+        avg_rating IS NOT COALESCE((SELECT average FROM rated WHERE service_id=id),0)
+        OR total_reviews IS NOT COALESCE((SELECT count FROM rated WHERE service_id=id),0)
+    )""", service_values + values)
+
+
+def reveal_mature_reviews(db, now=None, limit=100):
+    """Publish up to limit hidden reviews at 14 days; caller owns transaction."""
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=14)
+    rows = db.execute("""SELECT r.id, r.to_user_id, o.service_id
+        FROM reviews r JOIN orders o ON o.id=r.order_id
+        WHERE r.is_visible=0 AND o.status='completed'
+          AND datetime(o.completed_at) <= ? ORDER BY r.id LIMIT ?""",
+        [cutoff.strftime('%Y-%m-%d %H:%M:%S'), limit]).fetchall()
+    if rows:
+        ids = [r['id'] for r in rows]
+        db.execute(f"UPDATE reviews SET is_visible=1 WHERE is_visible=0 AND id IN ({','.join('?' for _ in ids)})", ids)
+        refresh_rating_aggregates(db, [r['to_user_id'] for r in rows],
+                                  [r['service_id'] for r in rows if r['service_id'] is not None])
+    return len(rows)
+
+
 def run_notification_maintenance_once(
     now=None, owner_token=None, lease_seconds=120, lease_now=None,
 ):
@@ -5374,6 +5463,12 @@ def run_notification_maintenance_once(
                 "email_delivery": {**empty_delivery, "lease_lost": 1},
                 "lease_lost": 1,
             }
+        try:
+            reveal_mature_reviews(db, now=now, limit=100)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         try:
             reminders_created = generate_application_reminders(
                 db, now=now, limit=20, owner_token=owner_token,
@@ -10353,7 +10448,7 @@ def _handle_routes(db):
             "fee_rounding": "round each positive component half-up to cents with a one-cent minimum",
             "platform_fee_basis_points": PLATFORM_FEE_BPS,
             "processing_fee_basis_points": PROCESSING_FEE_BPS,
-            "description": "Employers pay Stripe processing plus a 1% GoHireHumans fee where configured. Workers receive the listed payout.",
+            "description": "Where checkout is configured, employers pay a 1% platform fee plus a fixed 3% processing charge on the listed payout. Workers receive the listed payout.",
             "fee_paid_by": "buyer",
             "escrow": False
         })
@@ -10586,8 +10681,7 @@ def _handle_routes(db):
             db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
                        [row['user_id']])
             invalidate_password_reset_emails(db, row['user_id'])
-            db.execute('DELETE FROM sessions WHERE user_id=?', [row['user_id']])
-            db.execute('UPDATE api_keys SET is_active=0 WHERE user_id=?', [row['user_id']])
+            revoke_credentials(db, row['user_id'])
             audit(db, row['user_id'], 'password_reset_completed', 'user', row['user_id'])
             db.commit()
         except Exception:
@@ -10927,7 +11021,7 @@ def _handle_routes(db):
         provider_type = params.get("provider_type")
 
         conditions = ["s.status = 'active'", f"s.worker_id NOT IN ({public_non_seeded_user_subquery()})",
-                      public_service_visibility_sql()]
+                      eligible_account_sql(), public_service_visibility_sql()]
         values = seeded_sample_email_values()
 
         if category:
@@ -11050,7 +11144,9 @@ def _handle_routes(db):
         ).fetchone()
         if not row:
             return error_response("Service not found", 404)
-        hidden = service_hidden_for_unverified_agent(db, service_id)
+        hidden = service_hidden_for_unverified_agent(db, service_id) or not eligible_account(
+            db.execute('SELECT is_active,is_banned,is_suspended FROM users WHERE id=?', [row['worker_id']]).fetchone()
+        )
         viewer = authenticate(db) if hidden else None
         privileged = bool(viewer and (viewer['id'] == row['worker_id'] or viewer['is_admin']))
         if hidden and not privileged:
@@ -11300,6 +11396,8 @@ def _handle_routes(db):
         min_budget = params.get("min_budget")
         max_budget = params.get("max_budget")
         status_filter = params.get("status")
+        if status_filter and status_filter not in ('open', 'reviewing'):
+            return error_response("Invalid public status. Use /me/jobs for private statuses", 400)
         if status_filter:
             status_condition = "j.status = ?"
             status_values = [status_filter]
@@ -11307,7 +11405,8 @@ def _handle_routes(db):
             status_condition = "j.status IN (?, ?)"
             status_values = ["open", "reviewing"]
 
-        conditions = [status_condition, f"j.employer_id NOT IN ({public_non_seeded_user_subquery()})"]
+        conditions = [status_condition, f"j.employer_id NOT IN ({public_non_seeded_user_subquery()})",
+                      f"EXISTS (SELECT 1 FROM users u WHERE u.id=j.employer_id AND {eligible_account_sql()})"]
         values = status_values + seeded_sample_email_values()
 
         if category:
@@ -11423,13 +11522,24 @@ def _handle_routes(db):
         ).fetchone()
         if not row:
             return error_response("Job not found", 404)
+        if row['status'] not in ('open', 'reviewing') or not eligible_account(db.execute(
+                'SELECT is_active,is_banned,is_suspended FROM users WHERE id=?', [row['employer_id']]
+        ).fetchone()):
+            viewer = authenticate(db)
+            # Parties keep access to the agreed scope after the listing leaves public view.
+            if not viewer or (viewer['id'] != row['employer_id'] and not viewer['is_admin'] and not db.execute(
+                    """SELECT 1 FROM orders WHERE job_id=? AND worker_id=?
+                       UNION SELECT 1 FROM applications WHERE job_id=? AND worker_id=?""",
+                    [job_id, viewer['id'], job_id, viewer['id']]).fetchone()):
+                return error_response("Job not found", 404)
         result = row_to_dict(row)
         # Count applications (not listing them)
         result['application_count'] = db.execute(
             "SELECT COUNT(*) as c FROM applications WHERE job_id = ?", [job_id]
         ).fetchone()['c']
         # Lets the UI mirror the server's hiring gate instead of guessing.
-        result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and result.get('budget_type') == 'fixed')
+        result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and
+                                        (result.get('budget_type') == 'fixed' or HOURLY_JOB_HIRING_ENABLED))
         return json_response(result)
 
     elif path == "/jobs" and method == "POST":
@@ -11447,6 +11557,8 @@ def _handle_routes(db):
 
         if body['budget_type'] not in ('fixed', 'hourly'):
             return error_response("budget_type must be fixed or hourly")
+        if body['budget_type'] == 'hourly' and not HOURLY_JOB_HIRING_ENABLED:
+            return error_response("Only fixed-price jobs can be posted for now; hourly hiring is not available.", 400)
 
         try:
             budget_cents = money_to_cents(body['budget_amount'], "budget_amount")
@@ -11536,6 +11648,45 @@ def _handle_routes(db):
             return error_response("Can only edit open or reviewing jobs", 409)
 
         body = get_body()
+        editable = {'title', 'description', 'category', 'location_type', 'location_detail',
+                    'budget_type', 'budget_amount', 'estimated_hours', 'due_by', 'required_skills'}
+        if not isinstance(body, dict) or set(body) - editable:
+            return error_response("Only job content and terms can be edited; use lifecycle endpoints for status", 400)
+        merged = {field: body.get(field, job[field]) for field in editable}
+        if any(not isinstance(merged[field], str) or not merged[field].strip()
+               for field in ('title', 'description')):
+            return error_response("title and description are required", 400)
+        if merged['category'] not in VALID_CATEGORIES:
+            return error_response("Invalid category", 400)
+        if merged['budget_type'] not in ('fixed', 'hourly'):
+            return error_response("budget_type must be fixed or hourly", 400)
+        if (merged['budget_type'] == 'hourly' and job['budget_type'] != 'hourly'
+                and not HOURLY_JOB_HIRING_ENABLED):
+            return error_response("Only fixed-price jobs can be posted for now; hourly hiring is not available.", 400)
+        if merged['location_type'] not in ('remote', 'on_site', 'hybrid'):
+            return error_response("location_type must be remote, on_site, or hybrid", 400)
+        if merged['location_detail'] is not None and not isinstance(merged['location_detail'], str):
+            return error_response("location_detail must be text", 400)
+        hours = merged['estimated_hours']
+        if hours is not None and (isinstance(hours, bool) or not isinstance(hours, (int, float))
+                                 or not math.isfinite(hours) or hours <= 0):
+            return error_response("estimated_hours must be positive", 400)
+        due = merged['due_by']
+        if due is not None:
+            if not isinstance(due, str) or not due.strip():
+                return error_response("due_by must be an ISO date or datetime", 400)
+            try:
+                datetime.fromisoformat(due.strip().replace('Z', '+00:00'))
+            except ValueError:
+                return error_response("due_by must be an ISO date or datetime", 400)
+        if 'required_skills' in body and not isinstance(body['required_skills'], (str, list)):
+            return error_response("required_skills must be a list or text", 400)
+        try:
+            effective_cents = money_to_cents(merged['budget_amount'], 'budget_amount')
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if effective_cents <= 0 or effective_cents > 100000000:
+            return error_response("budget_amount must be positive and <= 1,000,000", 400)
         update_text_parts = [
             body.get('title', job['title']),
             body.get('description', job['description']),
@@ -11557,7 +11708,7 @@ def _handle_routes(db):
         updates = []
         vals = []
         for field in ['title', 'description', 'category', 'location_type', 'location_detail',
-                      'budget_type', 'estimated_hours', 'due_by', 'status']:
+                      'budget_type', 'estimated_hours', 'due_by']:
             if field in body:
                 updates.append(f"{field} = ?")
                 vals.append(body[field])
@@ -11686,7 +11837,9 @@ def _handle_routes(db):
         job = db.execute("SELECT * FROM jobs WHERE id = ?", [job_id]).fetchone()
         if not job:
             return error_response("Job not found", 404)
-        if job['status'] not in ('open', 'reviewing'):
+        if job['status'] not in ('open', 'reviewing') or not db.execute(
+            f'SELECT 1 FROM users u WHERE u.id=? AND {eligible_account_sql()}', [job['employer_id']]
+        ).fetchone():
             return error_response("This job is not accepting applications", 409)
         if job['employer_id'] == user['id']:
             return error_response("You cannot apply to your own job", 403)
@@ -11752,7 +11905,7 @@ def _handle_routes(db):
             return error_response("Job not found", 404)
         if job['employer_id'] != user['id']:
             return error_response("Forbidden", 403)
-        if job['budget_type'] == 'hourly':
+        if job['budget_type'] == 'hourly' and not HOURLY_JOB_HIRING_ENABLED:
             return error_response(
                 "Hourly hiring and payout settlement are deferred to Task 4.", 503
             )
@@ -12053,7 +12206,8 @@ def _handle_routes(db):
         if not user:
             return error_response("Unauthorized", 401)
         service_id = int(re.match(r"^/services/(\d+)/quote$", path).group(1))
-        svc = db.execute("SELECT * FROM services WHERE id=? AND status='active'", [service_id]).fetchone()
+        svc = db.execute(f"""SELECT * FROM services WHERE id=? AND status='active'
+            AND EXISTS (SELECT 1 FROM users u WHERE u.id=services.worker_id AND {eligible_account_sql()})""", [service_id]).fetchone()
         if not svc or service_owned_by_seeded_sample(db, service_id):
             return error_response("Service not found or unavailable", 404)
         if svc['worker_id'] == user['id']:
@@ -12078,9 +12232,21 @@ def _handle_routes(db):
         # Fail closed before the idempotent replay path or any processor I/O.
         if service_owned_by_seeded_sample(db, service_id):
             return error_response("Service not found or unavailable", 404)
+        body = get_body()
+        # Existing idempotent operations can still be inspected/reconciled under
+        # their original funding checks. Never begin a new checkout for an
+        # ineligible seller, even when malformed inputs would otherwise return 400.
+        seller_eligible = db.execute(
+            f'SELECT 1 FROM services s JOIN users u ON u.id=s.worker_id '
+            f'WHERE s.id=? AND {eligible_account_sql()}', [service_id],
+        ).fetchone()
+        if not seller_eligible and not db.execute(
+            'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
+            [user['id'], service_id, body.get('idempotency_key') if isinstance(body, dict) else None],
+        ).fetchone():
+            return error_response("Service not found or unavailable", 404)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
-        body = get_body()
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
             creation_request_fingerprint = service_order_creation_request_fingerprint(
@@ -12162,7 +12328,8 @@ def _handle_routes(db):
             result['funding_mode'] = mode
             return json_response(result, 200)
 
-        svc = db.execute("SELECT * FROM services WHERE id = ? AND status = 'active'", [service_id]).fetchone()
+        svc = db.execute(f"""SELECT * FROM services WHERE id = ? AND status = 'active'
+            AND EXISTS (SELECT 1 FROM users u WHERE u.id=services.worker_id AND {eligible_account_sql()})""", [service_id]).fetchone()
         if "quote_token" in body:
             # This branch runs only after the writer-serialized lookup proved no
             # order exists. Never mark an existing operation safe to replace.
@@ -13470,24 +13637,12 @@ def _handle_routes(db):
                     pass
 
         if make_visible:
-            db.execute("UPDATE reviews SET is_visible=1 WHERE order_id=?", [order_id])
-
-        # Update average rating for the recipient
-        avg_row = db.execute(
-            "SELECT AVG(rating) as avg, COUNT(*) as cnt FROM reviews WHERE to_user_id=? AND is_visible=1",
-            [to_user_id]
-        ).fetchone()
-        # Update worker or employer profile
-        if db.execute("SELECT user_id FROM worker_profiles WHERE user_id=?", [to_user_id]).fetchone():
-            db.execute(
-                "UPDATE worker_profiles SET avg_rating=?, total_reviews=? WHERE user_id=?",
-                [avg_row['avg'] or 0, avg_row['cnt'] or 0, to_user_id]
-            )
-        if db.execute("SELECT user_id FROM employer_profiles WHERE user_id=?", [to_user_id]).fetchone():
-            db.execute(
-                "UPDATE employer_profiles SET avg_rating=?, total_reviews=? WHERE user_id=?",
-                [avg_row['avg'] or 0, avg_row['cnt'] or 0, to_user_id]
-            )
+            db.execute("UPDATE reviews SET is_visible=1 WHERE order_id=? AND is_visible=0", [order_id])
+            recipients = [r['to_user_id'] for r in db.execute(
+                "SELECT to_user_id FROM reviews WHERE order_id=?", [order_id]
+            ).fetchall()]
+            refresh_rating_aggregates(db, recipients,
+                                      [order['service_id']] if order['service_id'] is not None else [])
 
         audit(db, user['id'], "submit_review", "review", review_id)
         db.commit()
@@ -14696,7 +14851,10 @@ def _handle_routes(db):
         user_ids = body.get("user_ids", [])
         title = (body.get("title") or "").strip()
         message = (body.get("message") or "").strip()
-        link = (body.get("link") or "#/jobs").strip()
+        raw_link = body.get("link")
+        link = raw_link if raw_link is not None else "#/jobs"
+        if not valid_notification_link(link):
+            return error_response("link must be an internal route", 400)
         if not isinstance(user_ids, list) or not user_ids:
             return error_response("user_ids must be a non-empty list")
         if not title or not message:
@@ -15133,6 +15291,7 @@ def _handle_routes(db):
         db.execute("UPDATE password_reset_tokens SET used_at=datetime('now') WHERE user_id=? AND used_at IS NULL",
                    [target_id])
         invalidate_password_reset_emails(db, target_id)
+        revoke_credentials(db, target_id)
         audit(db, user['id'], "admin_rotate_user_password", "user", target_id, {"target_email": target['email']})
         db.commit()
         return json_response({"ok": True, "user_id": target_id})
@@ -15855,7 +16014,7 @@ def _handle_routes(db):
             return error_response("Authentication required", 401)
         body = get_body()
         key_name = (body or {}).get("name", "Default Key")[:100]
-        scopes = (body or {}).get("scopes", ["read", "write"])
+        scopes = (body or {}).get("scopes", ["read"])
         if not isinstance(scopes, list):
             return error_response("scopes must be a list", 400)
         if not scopes:
@@ -15995,13 +16154,14 @@ def _handle_routes(db):
 
         key_hash_val = hashlib.sha256(api_key.encode()).hexdigest()
         key_row = db.execute(
-            """SELECT ak.*, u.name, u.email, u.id as uid
+            """SELECT ak.*, ak.name AS key_name, u.name AS user_name, u.email, u.id as uid,
+                      u.is_active AS user_active, u.is_banned, u.is_suspended
                FROM api_keys ak JOIN users u ON ak.user_id = u.id
                WHERE ak.key_hash = ? AND ak.is_active = 1""",
             [key_hash_val]
         ).fetchone()
 
-        if not key_row:
+        if not key_row or not (key_row['user_active'] and not key_row['is_banned'] and not key_row['is_suspended']):
             return error_response("Invalid or revoked API key", 401)
 
         # Check expiry (same timezone-aware rule as header authentication)
@@ -16019,12 +16179,12 @@ def _handle_routes(db):
             "valid": True,
             "user": {
                 "id": key_row['uid'],
-                "name": key_row['name'],
+                "name": key_row['user_name'],
                 "email": key_row['email']
             },
             "key": {
                 "id": key_row['id'],
-                "name": key_row['name'],
+                "name": key_row['key_name'],
                 "scopes": json.loads(key_row['scopes']),
                 "rate_limit": key_row['rate_limit']
             }

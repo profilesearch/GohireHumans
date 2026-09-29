@@ -15,7 +15,7 @@ test('agency pre-handoff page shows honest sample, scope, fees, and draft route'
   await expect(page.getByRole('heading', { name: 'Scope card' })).toBeVisible();
   await expect(page.getByText('Sample — illustrative, not a real client')).toBeVisible();
   await expect(page.locator('#sample-report tbody tr')).toHaveCount(8);
-  await expect(page.locator('#scope-card')).toContainText('Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.');
+  await expect(page.locator('#scope-card')).toContainText('Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.');
   const draft = page.getByRole('link', { name: 'Draft this task' }).first();
   await expect(draft).toHaveAttribute('href', '/#/post-job?template=automation_verification');
   await expect(page.getByRole('link', { name: 'Email the operations team' })).toHaveAttribute('href', 'mailto:gohirehumans.operations@agentmail.to');

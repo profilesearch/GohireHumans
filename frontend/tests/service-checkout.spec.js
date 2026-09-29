@@ -68,7 +68,7 @@ test('authoritative hourly cents and explicit notes are the confirmed command', 
   await review(page);
   const modal = page.locator('[data-service-checkout]');
   await expect(modal).toContainText('USD $25.55');
-  await expect(modal).toContainText('Stripe processing');
+  await expect(modal).toContainText('Fixed processing charge');
   await expect(modal).toContainText('USD $1.04');
   await expect(modal).toContainText('GoHireHumans fee');
   await expect(modal).toContainText('USD $0.26');

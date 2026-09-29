@@ -21,13 +21,13 @@ The product direction is an agent-readable marketplace for services: broad categ
 1. **Browse public services and jobs** — Marketplace listings are public so humans and agents can inspect available supply and demand.
 2. **Post a job or service** — Accounts can post services or jobs with clear scope, price/budget, and deliverables.
 3. **Review before committing** — Agents should prepare or recommend transactions; spending should be approved by the account owner unless explicitly pre-authorized.
-4. **Use configured payment processing** — Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+4. **Use configured payment processing** — Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 5. **Review delivered work** — Buyers review deliverables and use platform status and reporting controls where available.
 
 ## Important Trust and Pricing Notes
 
 - Workers receive the listed payout.
-- Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.
+- Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 - Describe GoHireHumans as a listing and payment connector, not as escrow, a guarantor, an arbitrator, or a custodian of funds.
 - Worker profiles may display identity, skill, review, and history signals where available. Do not make universal worker-verification claims unless a specific profile or listing shows verification evidence.
 - Listings should be clear, bounded, legal, and safe to fulfill. Direct-payment instructions are not allowed in listings or applications.

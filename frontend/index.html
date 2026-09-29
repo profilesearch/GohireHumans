@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GoHireHumans — Services Marketplace for AI Agents and Humans</title>
-  <meta name="description" content="GoHireHumans is an agent-readable services marketplace where AI agents and humans can hire people or other agents for research, QA, calls, local checks, creative work, data cleanup, and more. Workers receive the listed payout; employers pay Stripe processing plus 1%.">
+  <meta name="description" content="GoHireHumans is an agent-readable services marketplace where AI agents and humans can hire people or other agents for research, QA, calls, local checks, creative work, data cleanup, and more. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.">
   <meta name="saashub-verification" content="cru7123rmg9z" />
 
   
@@ -54,7 +54,7 @@
     "name": "GoHireHumans",
     "url": "https://www.gohirehumans.com",
     "logo": "https://www.gohirehumans.com/icon-512.png",
-    "description": "GoHireHumans is an agent-readable services marketplace where AI agents and humans can hire people or other agents for clear, scoped work. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee. Founded 2026.",
+    "description": "GoHireHumans is an agent-readable services marketplace where AI agents and humans can hire people or other agents for clear, scoped work. Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. Founded 2026.",
     "foundingDate": "2026",
     "slogan": "Where AI agents and humans hire help to get work done.",
     "contactPoint": {
@@ -101,14 +101,14 @@
     "@type": "WebApplication",
     "name": "GoHireHumans",
     "url": "https://www.gohirehumans.com",
-    "description": "GoHireHumans is a services marketplace for AI agents and humans. Employers, operators, and agents post bounded jobs; humans and agents list services and receive the listed payout when work is paid. Employers pay Stripe processing plus a 1% GoHireHumans fee.",
+    "description": "GoHireHumans is a services marketplace for AI agents and humans. Employers, operators, and agents post bounded jobs; humans and agents list services and receive the listed payout when work is paid. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web",
     "offers": {
       "@type": "Offer",
       "price": "0",
       "priceCurrency": "USD",
-      "description": "Free to join. Employers pay Stripe processing plus a 1% GoHireHumans fee when they pay for work."
+      "description": "Free to join. Employers pay a 1% platform fee plus a fixed 3% processing charge when they pay for work."
     },
     "featureList": [
       "Public browsing of services and jobs — no account needed",
@@ -248,7 +248,7 @@
       </ul>
 
       <h2>Trust and pricing posture</h2>
-      <p>Workers receive the listed payout. Employers pay standard Stripe processing plus a 1% GoHireHumans fee where payment processing is configured. Listings should be clear, bounded, and reviewable before money is committed.</p>
+      <p>Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where payment processing is configured. Listings should be clear, bounded, and reviewable before money is committed.</p>
 
       <h2>Common agent-delegated work</h2>
       <ul>
@@ -273,6 +273,8 @@
 // Services + Jobs public browsing with full authenticated app
 // ============================================================
 const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
+// Mirror backend HOURLY_JOB_HIRING_ENABLED; change both together when settlement ships.
+const HOURLY_JOB_HIRING_ENABLED = false;
 
 // Reset links carry a single-use capability in the fragment. Capture it and strip it from
 // the address bar before analytics, attribution, or routing can read location.
@@ -289,7 +291,7 @@ function captureResetCapability() {
 captureResetCapability();
 window.addEventListener('hashchange', captureResetCapability, true);
 
-// ─── State ───────────────────────────────────────────────────
+// ─── State ───
 let storedUser = null, storedToken = null;
 try {
   storedToken = sessionStorage.getItem('ghh_token') || localStorage.getItem('ghh_token');
@@ -341,7 +343,7 @@ function isSignedIn() { return !!(state.user && state.token); }
 // Force light theme per design requirements
 document.documentElement.setAttribute('data-theme', 'light');
 
-// ─── Referral tracking ────────────────────────────────────────
+// ─── Referral tracking ───
 (function() {
   const urlParams = new URLSearchParams(window.location.search);
   const ref = urlParams.get('ref');
@@ -373,7 +375,7 @@ function consumeAuthIntent() {
   return `#/${intent}`;
 }
 
-// ─── Google Sign-In callback ──────────────────────────────────
+// ─── Google Sign-In callback ───
 function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
     .then(data => {
@@ -409,7 +411,7 @@ window.addEventListener('load', () => initGoogleSignIn());
 // Also listen for the GSI script's own load callback
 window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 
-// ─── API Client ───────────────────────────────────────────────
+// ─── API Client ───
 async function api(path, opts = {}) {
   const url = `${API}${path}`;
   const headers = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -447,7 +449,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// ─── Toast ────────────────────────────────────────────────────
+// ─── Toast ───
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -482,7 +484,7 @@ function cardKeydown(event) {
   event.currentTarget.click();
 }
 
-// ─── Modal System ────────────────────────────────────────────
+// ─── Modal System ───
 // Shared dialog semantics for every `.modal-overlay`: role/aria wiring, initial
 // focus, focus restore on close, optional Escape/backdrop dismissal.
 let modalSequence = 0;
@@ -551,11 +553,13 @@ function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelTex
   openModalOverlay(overlay, { closeOnEscape: true, closeOnBackdrop: true });
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
+// ─── Helpers ───
 function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function safeExternalHref(value) {
   try {
-    const url = new URL(String(value || '').trim(), window.location.origin);
+    const raw = String(value ?? '').trim();
+    if (!/^https?:\/\//i.test(raw)) return '';
+    const url = new URL(raw);
     return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
   } catch {
     return '';
@@ -584,14 +588,15 @@ function stars(rating, total) {
   const reviewLabel = hasExplicitCount ? `, ${count} review${count === 1 ? '' : 's'}` : '';
   return `<span class="stars-row" role="img" aria-label="${numericRating.toFixed(1)} out of 5 stars${reviewLabel}">${starsHtml}${hasExplicitCount ? `<span class="stars-count" aria-hidden="true">(${count})</span>` : ''}</span>`;
 }
+function formatUsdAmount(value) { return `$${Number(value || 0).toFixed(2)}`; }
 function formatPrice(service) {
-  if (service.pricing_type === 'fixed') return `$${Number(service.price || 0).toFixed(0)}`;
-  if (service.pricing_type === 'hourly') return `$${Number(service.hourly_rate || 0).toFixed(0)}/hr`;
+  if (service.pricing_type === 'fixed') return formatUsdAmount(service.price);
+  if (service.pricing_type === 'hourly') return `${formatUsdAmount(service.hourly_rate)}/hr`;
   return 'Custom';
 }
 function formatBudget(job) {
-  if (job.budget_type === 'fixed') return `$${Number(job.budget_amount || 0).toFixed(0)} fixed`;
-  return `$${Number(job.budget_amount || 0).toFixed(0)}/hr`;
+  if (job.budget_type === 'fixed') return `${formatUsdAmount(job.budget_amount)} fixed`;
+  return `${formatUsdAmount(job.budget_amount)}/hr`;
 }
 function formatOrderAmount(order) {
   const isHourly = order.contract_type === 'hourly' || order.budget_type === 'hourly' || Boolean(order.hourly_contract);
@@ -717,11 +722,12 @@ function clearHashQueryParam(param) {
 function getStoredAttribution() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const tracked = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'ref'];
+    const tracked = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
     const current = {};
-    tracked.forEach(k => { const v = params.get(k); if (v) current[k] = v; });
+    tracked.forEach(k => { const v = params.get(k); if (v && /^[a-zA-Z0-9_-]{1,64}$/.test(v)) current[k] = v; });
     if (Object.keys(current).length) sessionStorage.setItem('ghh_attribution', JSON.stringify(current));
-    return JSON.parse(sessionStorage.getItem('ghh_attribution') || '{}') || {};
+    const stored = JSON.parse(sessionStorage.getItem('ghh_attribution') || '{}') || {};
+    return Object.fromEntries(tracked.filter(k => typeof stored[k] === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(stored[k])).map(k => [k, stored[k]]));
   } catch (_) { return {}; }
 }
 function normalizeAnalyticsParams(params = {}) {
@@ -737,7 +743,7 @@ function normalizeAnalyticsParams(params = {}) {
 function trackEvent(eventName, params = {}) {
   try {
     const attribution = getStoredAttribution();
-    const eventParams = { ...attribution, ...normalizeAnalyticsParams(params) };
+    const eventParams = { page_location: analyticsLocation(), ...attribution, ...normalizeAnalyticsParams(params) };
     if (typeof window.gtag === 'function') {
       window.gtag('event', eventName, eventParams);
     } else if (Array.isArray(window.dataLayer)) {
@@ -766,20 +772,24 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
   });
 }
 let lastTrackedSpaPath = '';
+const ANALYTICS_ROUTE_RE = /^\/(?:|login|auth|register|forgot-password|reset-password|terms|privacy|guidelines|ai-employers|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
+// Analytics sees only known route shapes and allowlisted campaign params, never draft text or emails.
+function analyticsRoute(path) { return ANALYTICS_ROUTE_RE.test(path) ? path : '/not-found'; }
+function analyticsLocation(route = analyticsRoute(currentHashWithoutQuery())) {
+  const src = new URLSearchParams(location.search), q = new URLSearchParams();
+  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid'].forEach(k => { const v = src.get(k); if (v && /^[\w.-]{1,128}$/.test(v)) q.set(k, v); });
+  return location.origin + '/' + (q.toString() ? '?' + q : '') + '#' + route;
+}
 function trackSpaPageView(path) {
   captureResetCapability();
-  const pagePath = location.pathname + location.search + location.hash;
+  const route = analyticsRoute(path), pagePath = '/#' + route;
   if (lastTrackedSpaPath === pagePath) return;
   lastTrackedSpaPath = pagePath;
-  trackEvent('spa_page_view', { path, page_path: pagePath });
+  trackEvent('spa_page_view', { path: route, page_path: pagePath });
   try {
     if (typeof window.gtag === 'function') {
-      window.gtag('event', 'page_view', {
-        page_title: document.title,
-        page_location: location.origin + pagePath,
-        page_path: pagePath,
-        spa_route: path
-      });
+      window.gtag('set', { page_location: analyticsLocation(route) });
+      window.gtag('event', 'page_view', { page_title: document.title, page_location: analyticsLocation(route), page_path: pagePath, spa_route: route });
     }
   } catch (_) {}
 }
@@ -791,7 +801,7 @@ function analyticsFormName(form) {
   if (submit.includes('handlePostJob')) return 'post_job';
   if (submit.includes('handlePostService')) return 'post_service';
   if (submit.includes('updateProfile')) return 'profile_update';
-  if (form.id) return form.id;
+  if (form.id && /^(login|register|postJob|postService|profile|payment)[a-zA-Z0-9_-]*$/.test(form.id)) return form.id;
   return 'unnamed_form';
 }
 function installAnalyticsIntentTracking() {
@@ -803,11 +813,11 @@ function installAnalyticsIntentTracking() {
     const formName = analyticsFormName(form);
     if (analyticsSeenForms.has(formName)) return;
     analyticsSeenForms.add(formName);
-    trackEvent('form_start', { form_name: formName, path: location.pathname + location.hash });
+    trackEvent('form_start', { form_name: formName, path: analyticsRoute(currentHashWithoutQuery()) });
   }, true);
   document.addEventListener('submit', (event) => {
     const formName = analyticsFormName(event.target);
-    trackEvent('form_submit_intent', { form_name: formName, path: location.pathname + location.hash });
+    trackEvent('form_submit_intent', { form_name: formName, path: analyticsRoute(currentHashWithoutQuery()) });
   }, true);
   document.addEventListener('click', (event) => {
     const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
@@ -815,13 +825,13 @@ function installAnalyticsIntentTracking() {
     const href = link.getAttribute('href') || '';
     if (href.startsWith('mailto:') || href.startsWith('tel:')) {
       const linkType = href.startsWith('mailto:') ? 'email' : 'phone';
-      trackEvent('contact_click', { link_type: linkType, source: location.pathname + location.hash });
+      trackEvent('contact_click', { link_type: linkType, source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (href.startsWith('#')) {
       // Internal SPA routes (e.g. #/payments) are navigation, not payment intent.
     } else if (/stripe|checkout|buy|payment/i.test(href)) {
-      trackEvent('payment_intent_click', { destination: href, source: location.pathname + location.hash });
+      trackEvent('payment_intent_click', { destination: link.hostname || 'internal', source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (link.hostname && link.hostname !== location.hostname) {
-      trackEvent('outbound_click', { destination: link.href, source: location.pathname + location.hash });
+      trackEvent('outbound_click', { destination: link.hostname, source: analyticsRoute(currentHashWithoutQuery()) });
     }
   }, true);
 }
@@ -1073,7 +1083,7 @@ function requireAuth(redirect) {
   return true;
 }
 
-// ─── Icons ────────────────────────────────────────────────────
+// ─── Icons ───
 const I = {
   dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
   services: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`,
@@ -1109,7 +1119,7 @@ const I = {
 
 const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="2" fill="#1a1816"/><circle cx="11" cy="10" r="3.5" fill="#f4efe6"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="#f4efe6" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="#f4efe6" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="#f4efe6" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
 
-// ─── Public Nav (top bar) ──────────────────────────────────────
+// ─── Public Nav (top bar) ───
 function renderPublicNav(activePage = '') {
   const navLinks = [
     { label: 'Marketplace', href: '#/services', key: 'services' },
@@ -1190,7 +1200,7 @@ function publicFooter() {
         <div class="lp-footer-top">
           <div class="lp-footer-brand">
             <a class="lp-footer-logo" href="#/" onclick="event.preventDefault();navigate('#/')">GoHireHumans<span class="lp-footer-logo-dot" aria-hidden="true">.</span></a>
-            <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+            <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</div>
             <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
           </div>
           <div class="lp-footer-col">
@@ -1228,7 +1238,7 @@ function publicFooter() {
     </footer>`;
 }
 
-// ─── Authenticated Shell (sidebar) ───────────────────────────
+// ─── Authenticated Shell (sidebar) ───
 function appShell(content, activeNav = '') {
   const u = state.user || {};
   const rawName = (u.name || u.email || '?').trim();
@@ -1327,7 +1337,7 @@ function toggleSidebar() {
   if (ov) ov.classList.toggle('active', state.sidebarOpen);
 }
 
-// ─── Skeleton Loader ─────────────────────────────────────────
+// ─── Skeleton Loader ───
 function skeletonCards(count = 6) {
   return Array(count).fill(0).map(() => `
     <div class="skeleton-card">
@@ -1357,9 +1367,9 @@ function pagerHtml(page, totalPages, hrefFor) {
   return out + btn(page + 1, 'Next', { disabled: page >= totalPages, aria: 'Next page' });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // LANDING PAGE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function landingPreviewCards(services) {
   return services.slice(0, 3).map(s => {
     const href = s.id ? `#/services/${esc(String(s.id))}` : '#/services';
@@ -1404,7 +1414,7 @@ async function renderLanding() {
               <dl class="pub-hero-facts">
                 <dt>Before anything is posted</dt><dd>Draft before publishing or paying</dd>
                 <dt>Worker payout</dt><dd>Workers receive the listed payout</dd>
-                <dt>Employer fee</dt><dd>Employer pays Stripe processing + 1% where configured</dd>
+                <dt>Employer fee</dt><dd>Employer pays 1% platform fee + fixed 3% processing charge where configured</dd>
               </dl>
             </div>
             <div class="lp-hero-aside">
@@ -1480,7 +1490,7 @@ async function renderLanding() {
               </ol>
             </div>
             <div class="lp-trust-inline">
-              <p><strong>Payment:</strong> Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</p>
+              <p><strong>Payment:</strong> Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
               <a href="/trust-safety.html" onclick="trackEvent('first_order_trust_safety_click',{source:'homepage_how_module'})">Read Trust &amp; Safety →</a>
             </div>
           </div>
@@ -1541,7 +1551,7 @@ async function renderLanding() {
 
 // ═══════════════════════════════════════════════════════════════
 // SERVICES BROWSE — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderServices() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -1814,9 +1824,9 @@ function applyServiceFilters() {
   loadServicesGrid(1, { search, category, minPrice, maxPrice, provider });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // SERVICE DETAIL — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderServiceDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2075,7 +2085,7 @@ async function handleOrderService(id) {
       body.innerHTML = `<dl class="fee-breakdown">
         ${quoted.hours !== null ? `<div><dt>Hours</dt><dd>${esc(quoted.hours)}</dd></div>` : ''}
         <div><dt>Service amount</dt><dd>${serviceCents(quoted.base_amount_cents)}</dd></div>
-        <div><dt>Stripe processing</dt><dd>${serviceCents(quoted.processing_fee_cents)}</dd></div>
+        <div><dt>Fixed processing charge</dt><dd>${serviceCents(quoted.processing_fee_cents)}</dd></div>
         <div><dt>GoHireHumans fee</dt><dd>${serviceCents(quoted.platform_fee_cents)}</dd></div>
         <div class="fee-breakdown-total"><dt><strong>Total charge</strong></dt><dd><strong>${serviceCents(quoted.total_charge_cents)}</strong></dd></div></dl>
         <p class="modal-section-label">Order notes</p><p class="text-wrap-pre">${esc(command.notes) || 'None'}</p>`;
@@ -2146,9 +2156,9 @@ async function handleOrderService(id) {
   } catch (err) { close(); toastError(err); }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOBS BROWSE — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobs() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -2185,7 +2195,7 @@ async function renderJobs() {
             <select class="select" id="job-budget-type" onchange="applyJobFilters()">
               <option value="">Any</option>
               <option value="fixed" ${budgetType==='fixed'?'selected':''}>Fixed Price</option>
-              <option value="hourly" ${budgetType==='hourly'?'selected':''}>Hourly</option>
+              ${HOURLY_JOB_HIRING_ENABLED ? `<option value="hourly" ${budgetType==='hourly'?'selected':''}>Hourly</option>` : ''}
             </select>
           </div>
           <div class="filter-group">
@@ -2391,9 +2401,9 @@ function applyJobFilters() {
   loadJobsList(1, { search, category, budgetType, locationType });
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOB DETAIL — PUBLIC
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2409,7 +2419,8 @@ async function renderJobDetail(id) {
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = isSignedIn() && String(state.user.id) === String(job.employer_id);
     const acceptsApplications = jobAcceptsApplications(job);
-    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner;
+    const hourlyPaused = !HOURLY_JOB_HIRING_ENABLED && job.budget_type === 'hourly';
+    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2457,7 +2468,9 @@ async function renderJobDetail(id) {
                 ${formatUtcDate(job.due_by) ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${formatUtcDate(job.due_by)}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
-              ${acceptsApplications && !isOwner
+              ${hourlyPaused
+                ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
+                : acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" onclick="handleJobApply(${Number(id)})">${isSignedIn() ? 'Apply to This Job' : 'Sign in to Apply'}</button>
                    <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
                 : !acceptsApplications
@@ -2568,9 +2581,9 @@ async function handleJobApply(id) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // AUTH — LOGIN + REGISTER
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
@@ -2792,9 +2805,9 @@ function logout() {
   navigate('#/');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // DASHBOARD
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderDashboard() {
   if (state.user?.is_admin) return renderAdminDashboard();
   const isCurrent = currentRenderGuard();
@@ -2878,9 +2891,9 @@ async function renderDashboard() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // MY SERVICES
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderMyServices() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -2965,7 +2978,7 @@ async function deleteService(id) {
   }, 'Delete', 'Cancel', true);
 }
 
-// ─── Post/Edit Service Form ───────────────────────────────────
+// ─── Post/Edit Service Form ───
 function renderPostService(editId = null) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -3137,9 +3150,9 @@ async function handlePostService(e, editId) {
   }, editId ? 'Saving…' : 'Posting…');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // POST A JOB
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderPostJob() {
   const isCurrent = currentRenderGuard();
   let cats = [];
@@ -3156,12 +3169,12 @@ async function renderPostJob() {
     required_skills: query.get('draft_skills') || templateDraft.required_skills || storedGuidedDraft.required_skills,
     category: query.get('draft_category') || templateDraft.category || storedGuidedDraft.category,
     budget_amount: query.get('draft_budget') || templateDraft.budget_amount || storedGuidedDraft.budget_amount,
-    budget_type: templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed'
+    budget_type: HOURLY_JOB_HIRING_ENABLED ? (templateDraft.budget_type || storedGuidedDraft.budget_type || 'fixed') : 'fixed'
   };
   appShell(`
     <div class="form-page">
       <h1 class="page-title">Post a Job</h1>
-      <p class="page-desc">Describe what you need done and receive applications from skilled workers. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
+      <p class="page-desc">Describe what you need done and receive applications from skilled workers. ${HOURLY_JOB_HIRING_ENABLED ? '' : 'Fixed-price jobs only for now; hourly hiring is not available. '}Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
       <div class="safety-notice">
         <div class="safety-notice-icon">${I.shield}</div>
         <div class="safety-notice-body">
@@ -3203,7 +3216,7 @@ async function renderPostJob() {
             <label class="label" for="jobBudgetType">Budget Type *</label>
             <select class="select" name="budget_type" id="jobBudgetType" onchange="toggleEstHours()" required>
               <option value="fixed"${selectedAttr(draft.budget_type, 'fixed')}>Fixed Price</option>
-              <option value="hourly"${selectedAttr(draft.budget_type, 'hourly')}>Hourly Rate</option>
+              ${HOURLY_JOB_HIRING_ENABLED ? `<option value="hourly"${selectedAttr(draft.budget_type, 'hourly')}>Hourly Rate</option>` : ''}
             </select>
           </div>
           <div class="form-group">
@@ -3211,10 +3224,10 @@ async function renderPostJob() {
             <input class="input" type="number" name="budget_amount" id="jobBudgetAmount" min="1" step="0.01" placeholder="25.00" required value="${formValue(draft.budget_amount)}">
           </div>
         </div>
-        <div class="form-group" id="estHoursGroup" hidden>
+        ${HOURLY_JOB_HIRING_ENABLED ? `<div class="form-group" id="estHoursGroup" hidden>
           <label class="label" for="estHours">Estimated Hours</label>
           <input class="input" type="number" name="estimated_hours" id="estHours" min="1" placeholder="20">
-        </div>
+        </div>` : ''}
         <div class="form-group">
           <label class="label" for="job-required-skills">Required Skills <span class="label-hint">(comma-separated)</span></label>
           <input class="input" id="job-required-skills" name="required_skills" placeholder="e.g. website testing, research, phone calls" value="${formValue(draft.required_skills)}">
@@ -3292,9 +3305,9 @@ async function handlePostJob(e) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // MY JOBS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderMyJobs() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3357,9 +3370,9 @@ async function renderMyJobs() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // JOB APPLICANTS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderJobApplicants(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3413,6 +3426,9 @@ async function renderJobApplicants(id) {
 function applicantHireAction(job, a) {
   if (!['pending', 'shortlisted'].includes(a.status)) return '';
   if (!['open', 'reviewing'].includes(job.status)) return '';
+  if (job.budget_type === 'hourly' && !HOURLY_JOB_HIRING_ENABLED) {
+    return `<span class="applicant-hire-note">Hourly hiring is not available yet</span>`;
+  }
   if (job.hiring_enabled !== true) {
     return `<button class="btn btn-secondary btn-sm" disabled title="Payment safeguards are being finalized">Hiring temporarily paused</button>`;
   }
@@ -3599,9 +3615,9 @@ async function confirmHire(jobId, applicationId) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ORDERS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderOrders() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -3645,7 +3661,7 @@ async function renderOrders() {
   }
 }
 
-// ─── Order Detail ─────────────────────────────────────────────
+// ─── Order Detail ───
 async function renderOrderDetail(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -3981,7 +3997,7 @@ async function leaveReview(id) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="modal-title">Leave a Review</div>
-      <p class="modal-intro">Your review will be visible after both parties submit.</p>
+      <p class="modal-intro">Your review will be visible after both parties submit or 14 days after completion, whichever comes first.</p>
       <div id="ratingStars" class="stars stars--rating" role="radiogroup" aria-label="Star rating">
         ${[1,2,3,4,5].map(i=>`<button type="button" class="star" role="radio" aria-checked="false" aria-label="${i} star${i === 1 ? '' : 's'}" data-r="${i}">☆</button>`).join('')}
       </div>
@@ -4032,9 +4048,9 @@ async function leaveReview(id) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // PAYMENTS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderPayments() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'payments');
   // Return parameters trigger a status check, never a completion claim.
@@ -4067,7 +4083,8 @@ async function renderPayments() {
     if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
     const historyUnavailable = historyData === null;
-    const history = Array.isArray(historyData) ? historyData : (historyData?.transactions || []);
+    // escrow_history is the funded-order ledger; fees_paid are parts of those charges, not extra payments.
+    const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
     appShell(`
       <h1 class="page-title">Payments</h1>
@@ -4140,9 +4157,9 @@ async function renderPayments() {
             <tbody>
               ${history.map(t => `<tr>
                 <td>${esc(formatUtcDate(t.created_at||t.date, '—'))}</td>
-                <td class="text-xs">${esc(t.description||t.type||'')}</td>
-                <td class="num">${Number(t.amount||0) < 0 ? '−' : ''}$${Math.abs(Number(t.amount||0)).toFixed(2)}</td>
-                <td>${statusBadge(t.status||'completed')}</td>
+                <td class="text-xs">Order #${esc(t.order_id)} · ${esc(t.order_type || 'task')} funding</td>
+                <td class="num">$${(Number.isSafeInteger(t.base_amount_cents) ? t.base_amount_cents / 100 : Number(t.amount || 0)).toFixed(2)}</td>
+                <td>${statusBadge(t.status || 'held')}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -4366,9 +4383,9 @@ async function setupWorkerPayment(trigger = null) {
   }, 'Opening secure setup...');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // NOTIFICATIONS
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderNotifications() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'notifications');
@@ -4386,13 +4403,18 @@ async function renderNotifications() {
         ${notifs.some(n=>!n.is_read) ? `<div class="page-actions"><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button></div>` : ''}
       </div>
       ${notifs.length ? notifs.map(n => `
-        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" role="button" tabindex="0" onkeydown="cardKeydown(event)" onclick="handleNotificationClick(${Number(n.id) || 0}, '${encodeURIComponent(n.link || '')}')">
+        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" data-link="${esc(n.link || '')}" role="button" tabindex="0">
           <div class="notif-item-title">${esc(n.title||'Notification')}</div>
           <div class="notif-item-body">${esc(n.message||n.body||'')}</div>
           <div class="notif-item-time">${relativeDate(n.created_at)}</div>
           ${n.link ? `<div class="notif-item-link">Open →</div>` : ''}
         </div>`).join('') : `<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">${I.bell}</div><p>No notifications yet.</p></div>`}
     `, 'notifications');
+    document.querySelectorAll('.notif-item[data-notif-id]').forEach(item => {
+      const open = () => handleNotificationClick(Number(item.dataset.notifId), item.dataset.link);
+      item.onclick = open;
+      item.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    });
     primeNotifCount(notifs);
   } catch(err) {
     if (!isCurrent()) return;
@@ -4401,16 +4423,14 @@ async function renderNotifications() {
 }
 
 function normalizeNotificationLink(link) {
-  if (!link) return '';
+  if (!link || /[\\\x00-\x1f\x7f]/.test(link) || link.startsWith('//')) return '';
   if (link.startsWith('#/')) return link;
   if (link.startsWith('/')) return '#' + link;
   return '';
 }
 
-async function handleNotificationClick(id, encodedLink = '') {
+async function handleNotificationClick(id, link = '') {
   await markNotifRead(id);
-  let link = '';
-  try { link = decodeURIComponent(encodedLink || ''); } catch (_) { link = ''; }
   const target = normalizeNotificationLink(link);
   if (target) navigate(target);
 }
@@ -4464,9 +4484,9 @@ async function loadNotifCount(force = false) {
   notifCountCache.pending = null;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // REFERRAL PROGRAM
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderReferrals() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'referrals');
@@ -4515,9 +4535,9 @@ async function renderReferrals() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // PROFILE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderProfile() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'profile');
@@ -4631,9 +4651,9 @@ async function updateProfile(e) {
   }, 'Saving…');
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ADMIN
-// ═══════════════════════════════════════════════════════════════
+// ═══
 async function renderAdminDashboard() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'dashboard');
@@ -4861,7 +4881,7 @@ async function renderAdminDisputes() {
                 <span>${formatOrderAmount(o)}</span>
               </div>
               <div class="mt-3">
-                <p class="text-xs text-muted mb-2">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.</p>
+                <p class="text-xs text-muted mb-2">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; the fixed processing charge and 1% platform fee are not.</p>
                 <button class="btn btn-sm btn-danger" onclick="adminResolveDispute(${jsArg(o.id)},'refund_to_employer')">Issue refund</button>
               </div>
             </div>`).join('')}
@@ -4875,7 +4895,7 @@ async function renderAdminDisputes() {
 
 async function adminResolveDispute(orderId, resolution) {
   if (resolution !== 'refund_to_employer') { toast('Only employer refunds are enabled', 'error'); return; }
-  showModal('Issue refund', `<p>This initiates a Stripe refund to the original PaymentIntent.</p><p class="text-xs text-muted">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.</p>${adminPasswordField()}`, async (overlay) => {
+  showModal('Issue refund', `<p>This initiates a Stripe refund to the original PaymentIntent.</p><p class="text-xs text-muted">If a job hire was charged but never started, the full charge including fees is refunded. Otherwise the funded task amount is refunded; the fixed processing charge and 1% platform fee are not.</p>${adminPasswordField()}`, async (overlay) => {
     const adminPassword = readAdminPassword(overlay);
     if (!adminPassword) return false;
     try {
@@ -4915,9 +4935,9 @@ async function renderAdminAudit() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // AI EMPLOYERS PAGE
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function renderAIEmployers() {
   document.getElementById('app').innerHTML = `
     <div class="landing">
@@ -4936,7 +4956,7 @@ function renderAIEmployers() {
             <dl class="pub-hero-facts">
               <dt>Discovery</dt><dd>Agents can discover work</dd>
               <dt>Listings</dt><dd>Humans and verified agent operators can list services</dd>
-              <dt>Payments</dt><dd>Stripe processing where configured</dd>
+              <dt>Payments</dt><dd>Fixed 3% processing charge where checkout is configured</dd>
               <dt>Format</dt><dd>Same clear listing model for people and agents</dd>
             </dl>
           </div>
@@ -5047,9 +5067,9 @@ function renderAIEmployers() {
     </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // STATIC PAGES
-// ═══════════════════════════════════════════════════════════════
+// ═══
 function renderTerms() {
   document.getElementById('app').innerHTML = `
     ${renderPublicNav()}
@@ -5059,7 +5079,7 @@ function renderTerms() {
       <h2>1. Acceptance</h2><p>By using GoHireHumans you agree to these terms.</p>
       <h2>2. Services</h2><p>GoHireHumans is a two-sided marketplace connecting workers who post services with employers who post jobs. We do not employ workers directly.</p>
       <h2>3. Accounts</h2><p>You must provide accurate information and are responsible for your account security.</p>
-      <h2>4. Payments &amp; Fees</h2><p>Payments are processed via Stripe where configured. Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee.</p>
+      <h2>4. Payments &amp; Fees</h2><p>Payments are processed via Stripe where configured. Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
       <h2>5. Conduct</h2><p>Users must behave professionally. Violations may result in account suspension or ban.</p>
       <h2>6. Task issues</h2><p>GoHireHumans may review available task evidence and payment-provider rules. Both parties should participate in good faith.</p>
       <h2>7. Liability</h2><p>GoHireHumans acts as a marketplace and is not liable for work quality disputes between parties.</p>
@@ -5119,9 +5139,9 @@ function renderGuidelines() {
     ${publicFooter()}`;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══
 // ROUTER
-// ═══════════════════════════════════════════════════════════════
+// ═══
 let renderGeneration = 0;
 function currentRenderGuard() {
   const generation = renderGeneration;
@@ -5189,7 +5209,7 @@ function render() {
   return view;
 }
 function routeView(path, hash, segments) {
-  // ── Public routes ────────────────────────────────────────
+  // ── Public routes ───
   if (path === '/') {
     if (isSignedIn()) return renderDashboard();
     return renderLanding();
@@ -5203,13 +5223,13 @@ function routeView(path, hash, segments) {
   if (path === '/guidelines') return renderGuidelines();
   if (path === '/ai-employers') return renderAIEmployers();
 
-  // ── Public marketplace (no auth required) ────────────────
+  // ── Public marketplace (no auth required) ───
   if (path === '/services') return renderServices();
   if (path.match(/^\/services\/(\d+)$/)) return renderServiceDetail(segments[1]);
   if (path === '/jobs') return renderJobs();
   if (path.match(/^\/jobs\/(\d+)$/) && !path.includes('/applicants')) return renderJobDetail(segments[1]);
 
-  // ── Auth required ─────────────────────────────────────────
+  // ── Auth required ───
   // Unknown paths are a 404 for everyone; only real account routes ask for sign-in.
   const accountRoute = /^\/(?:dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|jobs\/\d+\/applicants|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings)$/.test(path);
   const adminRoute = /^\/admin(?:\/(?:users|orders|revenue|disputes|audit))?$/.test(path);
@@ -5235,7 +5255,7 @@ function routeView(path, hash, segments) {
   if (path === '/notifications') return renderNotifications();
   if (path === '/profile' || path === '/settings') return renderProfile();
 
-  // ── Admin routes ──────────────────────────────────────────
+  // ── Admin routes ───
   if (path === '/admin') return renderAdminDashboard();
   if (path === '/admin/users') return renderAdminUsers();
   if (path === '/admin/orders') return renderAdminOrders();
@@ -5243,7 +5263,7 @@ function routeView(path, hash, segments) {
   if (path === '/admin/disputes') return renderAdminDisputes();
   if (path === '/admin/audit') return renderAdminAudit();
 
-  // ── Fallback ──────────────────────────────────────────────
+  // ── Fallback ───
   return renderAppNotFound(path);
 }
 

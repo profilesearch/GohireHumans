@@ -1068,7 +1068,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
       return route.fulfill({status:200,contentType:'application/json',body:'{}'});
     });
     await page.goto('/#/admin/disputes', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.')).toBeVisible();
+    await expect(page.getByText('Otherwise the funded task amount is refunded; the fixed processing charge and 1% platform fee are not.')).toBeVisible();
     await page.getByRole('button',{name:'Issue refund'}).first().click();
     await page.locator('#admin-password-confirm').fill('step-up-password');
     await page.locator('.modal-overlay').getByRole('button',{name:'Issue refund'}).click();
@@ -1096,7 +1096,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     await expect(page.getByText('Full refund committed ($26.00, fees included)')).toBeVisible();
   });
 
-  test('new job hiring stays visibly paused until payment safeguards ship', async ({ page }) => {
+  test('legacy hourly applicant cannot be hired while hourly settlement is disabled', async ({ page }) => {
     let hireBody = null;
     await page.addInitScript(() => {
       sessionStorage.setItem('ghh_token', 'employer-token');
@@ -1128,9 +1128,8 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     });
 
     await page.goto('/#/jobs/12/applicants', { waitUntil: 'domcontentloaded' });
-    const paused = page.getByRole('button', { name: 'Hiring temporarily paused' });
-    await expect(paused).toBeVisible();
-    await expect(paused).toBeDisabled();
+    await expect(page.locator('.applicant-actions')).toContainText('Hourly hiring is not available yet');
+    await expect(page.locator('.applicant-actions button')).toHaveCount(0);
     expect(hireBody).toBeNull();
   });
 
@@ -1689,7 +1688,7 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     const starterTop = await page.locator('#starter-packages-heading').evaluate(el => el.getBoundingClientRect().top);
     expect(feeTop).toBeLessThan(starterTop);
     await expect(page.locator('main')).toContainText('Workers receive the listed payout');
-    await expect(page.locator('main')).toContainText('Stripe processing plus a 1% GoHireHumans fee');
+    await expect(page.locator('main')).toContainText('1% platform fee plus a fixed 3% processing charge');
 
     await page.goto('/starter-offers.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('main[data-starter-simplified="true"]')).toBeVisible();

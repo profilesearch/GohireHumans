@@ -145,9 +145,9 @@
         <dt>Worker payout</dt>
         <dd>Workers receive the listed payout.</dd>
         <dt>Employer fee</dt>
-        <dd>Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</dd>
+        <dd>a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</dd>
         <dt>Rates used</dt>
-        <dd>Published standard rates; payment processing left out for every platform.</dd>
+        <dd>Published standard rates; GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.</dd>
       </dl>
       </div>
       <div class="pub-hero-aside">
@@ -181,7 +181,7 @@
             <p>An estimate is fine. The annual figure depends on this.</p>
             <div class="form-group">
               <label class="label" for="amount">Monthly amount in USD</label>
-              <input id="amount" class="input" type="number" min="0" step="50" inputmode="decimal" autocomplete="off" aria-describedby="q3-help">
+              <input id="amount" class="input" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" aria-describedby="q3-help">
               <p class="form-help" id="q3-help">Use a typical month, or pick a quick amount.</p>
               <div class="cluster mt-2" role="group" aria-label="Quick amounts">
                 <button type="button" class="btn btn-secondary btn-sm" data-amt="500">$500</button>
@@ -264,8 +264,8 @@
           <li>Upwork: a 10% freelancer fee plus a 5% client fee.</li>
           <li>Toptal: no seller fee but a markup on rates. The calculators model the markup at 20% of the billed amount on the seller side and show no separate buyer fee.</li>
           <li>Freelancer.com: a 10% project fee plus a 3% client fee.</li>
-          <li>GoHireHumans: Workers receive the listed payout. Employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</li>
-          <li>Payment processing is left out for every platform, and each platform can change its published rates, so confirm current terms before you decide.</li>
+          <li>GoHireHumans: Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</li>
+          <li>GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded, and each platform can change its published rates, so confirm current terms before you decide.</li>
         </ul>
       </div>
     </div>
@@ -288,7 +288,7 @@
     <div class="pub-inner">
       <div class="pub-cta">
         <h2>Draft a task and see the fee before you publish</h2>
-        <p>Describe the work, set a fixed payout, and review the draft. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</p>
+        <p>Describe the work, set a fixed payout, and review the draft. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
         <div class="pub-cta-actions">
           <a class="btn btn-primary" href="/#/post-job">Post a task</a>
           <a class="btn btn-ghost" href="/#/services">Browse services</a>
@@ -302,7 +302,7 @@
     <div class="lp-footer-top">
       <div class="lp-footer-brand">
         <a class="lp-footer-logo" href="/">GoHireHumans<span class="lp-footer-logo-dot" aria-hidden="true">.</span></a>
-        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured.</div>
+        <div class="lp-footer-tagline">A marketplace for small, scoped human help. Free to join. Workers receive the listed payout; buyers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</div>
         <div class="lp-footer-meta">Founded 2026 &middot; United States &middot; <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a></div>
       </div>
       <div class="lp-footer-col">
@@ -338,8 +338,9 @@
     </div>
   </div>
 </footer>
-  <script>
-  (function () {
+  <script src="/tools/checkout-fees.js"></script>
+     <script>
+     (function () {
     // Published standard rates. Toptal charges no seller fee but a markup on rates,
     // modeled at 20% on the seller side, the same as the fee calculators.
     var PLATFORM_FEES = {
@@ -349,7 +350,8 @@
       freelancer: { seller: 0.10, buyer: 0.03,  name: 'Freelancer.com' },
       other:      { seller: 0.10, buyer: 0.03,  name: 'a typical marketplace' }
     };
-    var GHH_FEE = 0.01; // employer side; Stripe processing is separate
+    // Each monthly checkout rounds its two components independently; annual
+    // comparisons sum twelve such charges rather than rounding a yearly gross.
 
     var TOTAL = 5;
     var current = 1;
@@ -357,7 +359,7 @@
 
     var $$ = function (selector, root) { return Array.prototype.slice.call((root || document).querySelectorAll(selector)); };
     var $ = function (selector, root) { return (root || document).querySelector(selector); };
-    var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
+    var fmt = function (n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     var pct = function (rate) { var value = rate * 100; return (Math.abs(value - Math.round(value)) < 0.01 ? Math.round(value) : value.toFixed(1)) + '%'; };
 
     var result = $('#result');
@@ -396,19 +398,20 @@
       var annual = monthly * 12;
       var currentRate = role === 'buyer' ? fees.buyer : fees.seller;
       var currentFee = annual * currentRate;
-      var ghhFee = role === 'buyer' ? annual * GHH_FEE : 0;
+      var monthlyCharge = window.ghhBuyerCharge(monthly);
+      var ghhFee = role === 'buyer' && monthlyCharge ? monthlyCharge.feeCents * 12 / 100 : 0;
       var difference = currentFee - ghhFee;
 
       $('#r-amount').textContent = fmt(Math.max(difference, 0));
       $('#r-headline').textContent = difference > 0 ? 'Estimated annual difference' : 'No modeled fee difference';
       $('#r-sub').textContent = difference > 0
-        ? 'per year on GoHireHumans compared with ' + fees.name + ', before payment processing on either platform.'
+        ? 'per year on GoHireHumans compared with ' + fees.name + '. GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.'
         : 'Your path on ' + fees.name + ' is already modeled at zero platform fee.';
 
       $('#b-gross').textContent = fmt(annual);
       $('#b-current-label').textContent = fees.name.charAt(0).toUpperCase() + fees.name.slice(1) + ' fee (' + pct(currentRate) + ')';
       $('#b-current').textContent = fmt(currentFee);
-      $('#b-ghh').textContent = role === 'buyer' ? fmt(ghhFee) + ' (1% plus Stripe processing)' : '$0 (workers receive the listed payout)';
+      $('#b-ghh').textContent = role === 'buyer' ? fmt(ghhFee) + ' (1% platform fee + fixed 3% processing charge per monthly checkout)' : '$0.00 (workers receive the listed payout)';
       $('#b-savings').textContent = fmt(difference) + ' per year';
 
       var params = new URLSearchParams({ p: platform, r: role, a: String(monthly), c: answers.cat || 'other' });
@@ -443,9 +446,10 @@
     });
 
     function updateAmount() {
-      var value = parseFloat(amountInput.value);
-      answers.amount = value > 0 ? value : 0;
-      nextButton.disabled = !(value > 0);
+      var charge = window.ghhBuyerCharge(amountInput.value);
+      answers.amount = charge && amountInput.checkValidity() ? charge.baseCents / 100 : 0;
+      amountInput.setAttribute('aria-invalid', String(!answers.amount));
+      nextButton.disabled = !answers.amount;
     }
     amountInput.addEventListener('input', updateAmount);
     $$('[data-amt]').forEach(function (button) {
@@ -469,10 +473,14 @@
     if (url.has('p') && url.has('r') && url.has('a')) {
       answers.platform = url.get('p');
       answers.role = url.get('r');
-      answers.amount = parseFloat(url.get('a')) || 2000;
-      answers.cat = url.get('c') || 'other';
-      answers.bid = 'yes';
-      showResult();
+      var urlCharge = window.ghhBuyerCharge(url.get('a'));
+      if (urlCharge) {
+        answers.amount = urlCharge.baseCents / 100;
+        amountInput.value = String(answers.amount);
+        answers.cat = url.get('c') || 'other';
+        answers.bid = 'yes';
+        showResult();
+      }
     }
   })();
   </script>

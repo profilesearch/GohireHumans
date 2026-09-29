@@ -45,13 +45,15 @@ test('fee calculator labels buyer total and seller net without changing modeled 
   // Synthetic inputs; these rates lock existing behavior, NOT a pricing audit.
   const rates = {
     seller: { GoHireHumans: 0, Upwork: 0.10, Toptal: 0.20, Fiverr: 0.20, 'Freelancer.com': 0.10 },
-    buyer: { GoHireHumans: 0.01, Upwork: 0.05, Toptal: 0, Fiverr: 0.055, 'Freelancer.com': 0.03 },
+    buyer: { Upwork: 0.05, Toptal: 0, Fiverr: 0.055, 'Freelancer.com': 0.03 },
   };
-  const money = n => '$' + Math.round(n).toLocaleString('en-US');
+  const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // GoHireHumans buyer side mirrors checkout: 1% + fixed 3%, each rounded half-up to the cent.
+  const ghhBuyerFee = amount => { const c = Math.round(amount * 100); return (Math.max(1, Math.floor((c * 100 + 5000) / 10000)) + Math.max(1, Math.floor((c * 300 + 5000) / 10000))) / 100; };
   for (const role of ['buyer', 'seller', 'buyer', 'seller']) {
     await page.locator('#role').selectOption(role);
     await expect(resultHeading).toHaveText(role === 'buyer' ? 'Your total' : 'You net');
-    for (const amount of [2000, 500, 0]) {
+    for (const amount of [2000, 500, 33.33]) {
       await page.locator('#gross').fill(String(amount));
       for (const contract of ['fixed', 'hourly']) {
         await page.locator('#contract').selectOption(contract);
@@ -62,9 +64,18 @@ test('fee calculator labels buyer total and seller net without changing modeled 
           await expect(row.locator('td').nth(1)).toHaveText(`${money(amount * rate)} (${Math.round(rate * 100)}%)`);
           await expect(row.locator('.net-cell')).toHaveText(money(role === 'buyer' ? amount + amount * rate : amount - amount * rate));
         }
+        if (role === 'buyer') {
+          const ghh = page.locator('#rows tr').filter({ has: page.getByText('GoHireHumans', { exact: true }) });
+          const fee = ghhBuyerFee(amount);
+          await expect(ghh.locator('td').nth(1)).toHaveText(`${money(fee)} (1% platform + fixed 3% processing)`);
+          await expect(ghh.locator('.net-cell')).toHaveText(money(Math.round((amount + fee) * 100) / 100));
+        }
       }
     }
   }
+  // Zero or negative amounts are rejected instead of rendering a misleading $0 table.
+  await page.locator('#gross').fill('0');
+  await expect(page.locator('#rows tr')).toHaveCount(0);
 });
 
 async function expectCurrentBrief(page, fragments) {

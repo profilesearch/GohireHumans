@@ -960,15 +960,18 @@ class BackendRegressionTests(unittest.TestCase):
             self.module.RESEND_API_KEY = "configured-for-test"
             self.module.send_email = lambda to, subject, html: sent.append((to, subject, html)) or "provider-test-id"
 
+            with self.assertRaisesRegex(ValueError, 'internal route'):
+                self.module.push_notification(
+                    db, 1, "new_application", "New application: Website QA",
+                    "Someone applied to your job.", "https://evil.example/phish", email=True,
+                )
+            # Historical rows can still carry old external links; the email CTA
+            # must remain safe when draining the existing outbox.
             self.module.push_notification(
-                db,
-                1,
-                "new_application",
-                "New application: Website QA",
-                "Someone applied to your job.",
-                "https://evil.example/phish",
-                email=True,
+                db, 1, "new_application", "New application: Website QA",
+                "Someone applied to your job.", "/jobs/1/applications", email=True,
             )
+            db.execute("UPDATE notifications SET link='https://evil.example/phish' WHERE user_id=1")
             db.commit()
             self.module.flush_transactional_notification_emails(db)
 
@@ -1331,7 +1334,7 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertNotIn("manual_money_movement_confirmed: true", text)
         self.assertNotIn("processor_reference: processorReference", text)
         self.assertIn("If a job hire was charged but never started, the full charge including fees is refunded.", text)
-        self.assertIn("Otherwise the funded task amount is refunded; Stripe processing and the 1% platform fee are not.", text)
+        self.assertIn("Otherwise the funded task amount is refunded; the fixed processing charge and 1% platform fee are not.", text)
         self.assertIn("result.refund_scope === 'full_charge'", text)
         self.assertIn("/trust-safety.html", text)
 
@@ -2183,7 +2186,7 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertNotIn(name, pricing)
         self.assertIn("Other marketplaces", pricing)
         self.assertIn("Varies; confirm current terms", pricing)
-        self.assertIn("1% + Stripe processing where checkout is configured", pricing)
+        self.assertIn("1% platform fee + fixed 3% processing charge where checkout is configured", pricing)
         structured_blocks = re.findall(
             r'<script type="application/ld\+json">\s*(.*?)\s*</script>', pricing, re.DOTALL
         )
@@ -2389,7 +2392,7 @@ class BackendRegressionTests(unittest.TestCase):
         status, body = parse_cgi_output(out.getvalue())
         self.assertEqual(status, 200, body)
         self.assertEqual(body["service_fee_rate"], self.module.SERVICE_FEE_RATE)
-        self.assertIn("Stripe processing plus a 1% GoHireHumans fee", body["description"])
+        self.assertIn("1% platform fee plus a fixed 3% processing charge", body["description"])
         self.assertIn("Workers receive the listed payout", body["description"])
         self.assertFalse(body["escrow"])
         self.assertNotIn("4%", body["description"])
@@ -3105,7 +3108,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")
             for required in [
                 "Workers receive the listed payout",
-                "Stripe processing plus a 1% GoHireHumans fee",
+                "1% platform fee plus a fixed 3% processing charge",
             ]:
                 if required not in text:
                     failures.append(f"{rel}: missing {required}")
@@ -3318,7 +3321,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "function trackEvent(eventName, params = {})",
             "function getStoredAttribution()",
             "function normalizeAnalyticsParams(params = {})",
-            "const eventParams = { ...attribution, ...normalizeAnalyticsParams(params) }",
+            "const eventParams = { page_location: analyticsLocation(), ...attribution, ...normalizeAnalyticsParams(params) }",
             "gtag('event', eventName, eventParams)",
             "function trackRecommendedEvent(eventName, params = {})",
             "function trackConfiguredKeyEvent(eventName, params = {})",
@@ -3455,7 +3458,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "Some work still needs a person.",
             "Start with QA",
             "Agents can search public listings, recommend opportunities, and prepare requests for human approval.",
-            "Employer pays Stripe processing + 1% where configured",
+            "Employer pays 1% platform fee + fixed 3% processing charge where configured",
             "where checkout is configured",
         ]:
             self.assertIn(snippet, text)
@@ -3471,7 +3474,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "does not publish, contact workers, charge a card, or promise a match",
             "Draft before publishing or paying",
             "Workers receive the listed payout",
-            "Employer pays Stripe processing + 1% where configured",
+            "Employer pays 1% platform fee + fixed 3% processing charge where configured",
         ]:
             self.assertIn(snippet, text)
         task_draft_block = text[text.index('id="guided-task-intake"'):text.index('data-home-section="how"')]
@@ -3484,8 +3487,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         public_landing = text[:text.index("// ═══════════════════════════════════════════════════════════════\n// SERVICES BROWSE")]
         for snippet in [
             "Workers receive the listed payout",
-            "Stripe processing plus a 1% GoHireHumans fee",
-            "Employer pays Stripe processing + 1% where configured",
+            "1% platform fee plus a fixed 3% processing charge",
+            "Employer pays 1% platform fee + fixed 3% processing charge where configured",
         ]:
             self.assertIn(snippet, public_landing)
         forbidden_terms = [
@@ -3543,7 +3546,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 "Suggested payout ranges",
                 "Connector framing",
                 "Workers receive the listed payout",
-                "Stripe processing plus a 1% GoHireHumans fee",
+                "1% platform fee plus a fixed 3% processing charge",
             ]:
                 if phrase not in text:
                     missing.append(f"{rel}: {phrase}")
@@ -3619,7 +3622,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         lower = hire_index.lower()
         for phrase in [
             "workers receive the listed payout",
-            "employers pay stripe processing plus 1%",
+            "employers pay a 1% platform fee plus a fixed 3% processing charge",
             "website-testers.html",
             "lead-researchers.html",
             "ai-reviewers.html",

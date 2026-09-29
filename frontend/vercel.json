@@ -724,6 +724,11 @@
       "permanent": true
     },
     {
+      "source": "/payments",
+      "destination": "/payments/",
+      "permanent": true
+    },
+    {
       "source": "/categories",
       "destination": "/categories/",
       "permanent": true
