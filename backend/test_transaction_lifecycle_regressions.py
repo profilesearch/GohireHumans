@@ -988,6 +988,27 @@ class TransactionLifecycleRegressionTests(unittest.TestCase):
         self.assertEqual(order["total_amount"], 25)
         self.assertTrue(order["creation_request_fingerprint"])
 
+    def test_paid_order_remains_visible_to_buyer_after_seller_becomes_ineligible(self):
+        payload = {"amount": "25.00", "idempotency_key": "ineligible-seller-checkout-0001"}
+        status, created = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 201, created)
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET is_suspended=1 WHERE id=1")
+            db.commit()
+        status, replay = self.request("POST", "/services/1/order", payload=payload)
+        self.assertEqual(status, 200, replay)
+        self.assertEqual(replay['id'], created['id'])
+        self.assertEqual(self.request("POST", "/services/1/order", payload={
+            **payload, 'idempotency_key': 'ineligible-seller-new-order-0001',
+        })[0], 404)
+        status, detail = self.request("GET", f"/orders/{created['id']}")
+        self.assertEqual(status, 200, detail)
+        self.assertEqual(detail['id'], created['id'])
+        status, listing = self.request("GET", "/orders")
+        self.assertEqual(status, 200, listing)
+        self.assertIn(created['id'], [order['id'] for order in listing['orders']])
+        self.payment_create.assert_called_once()
+
     def test_service_order_response_loss_replay_returns_existing_order_without_recharging(self):
         payload = {"amount": "25.55", "idempotency_key": "service-checkout-replay123"}
         status, first = self.request("POST", "/services/1/order", payload=payload)

@@ -4386,13 +4386,23 @@ async function renderNotifications() {
         ${notifs.some(n=>!n.is_read) ? `<div class="page-actions"><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button></div>` : ''}
       </div>
       ${notifs.length ? notifs.map(n => `
-        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" role="button" tabindex="0" onkeydown="cardKeydown(event)" onclick="handleNotificationClick(${Number(n.id) || 0}, '${encodeURIComponent(n.link || '')}')">
+        <div class="notif-item ${n.is_read?'':'unread'}" data-notif-id="${esc(String(n.id))}" data-link="${esc(n.link || '')}" role="button" tabindex="0">
           <div class="notif-item-title">${esc(n.title||'Notification')}</div>
           <div class="notif-item-body">${esc(n.message||n.body||'')}</div>
           <div class="notif-item-time">${relativeDate(n.created_at)}</div>
           ${n.link ? `<div class="notif-item-link">Open →</div>` : ''}
         </div>`).join('') : `<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">${I.bell}</div><p>No notifications yet.</p></div>`}
     `, 'notifications');
+    document.querySelectorAll('.notif-item[data-notif-id]').forEach(item => {
+      const open = () => handleNotificationClick(Number(item.dataset.notifId), item.dataset.link);
+      item.addEventListener('click', open);
+      item.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
     primeNotifCount(notifs);
   } catch(err) {
     if (!isCurrent()) return;
@@ -4401,16 +4411,14 @@ async function renderNotifications() {
 }
 
 function normalizeNotificationLink(link) {
-  if (!link) return '';
+  if (!link || /[\\\x00-\x1f\x7f]/.test(link) || link.startsWith('//')) return '';
   if (link.startsWith('#/')) return link;
   if (link.startsWith('/')) return '#' + link;
   return '';
 }
 
-async function handleNotificationClick(id, encodedLink = '') {
+async function handleNotificationClick(id, link = '') {
   await markNotifRead(id);
-  let link = '';
-  try { link = decodeURIComponent(encodedLink || ''); } catch (_) { link = ''; }
   const target = normalizeNotificationLink(link);
   if (target) navigate(target);
 }

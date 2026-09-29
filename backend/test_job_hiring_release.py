@@ -463,9 +463,14 @@ class JobHiringReleaseTests(unittest.TestCase):
         status, resolved = self._dispute_and_admin_refund(order_id)
         self._assert_full_refund_committed(order_id, refunds, status, resolved)
 
-    def test_buyer_marks_unactivated_job_hired_before_dispute_still_gets_full_refund(self):
+    def test_legacy_unactivated_job_hired_before_dispute_still_gets_full_refund(self):
         order_id = self._stranded_order_id()
-        self.assertEqual(self.request("PUT", "/jobs/1", payload={"status": "hired"})[0], 200)
+        # A historical or repaired status must not turn an unactivated hire
+        # into a partial refund. The public edit route cannot set status now.
+        self.assertEqual(self.request("PUT", "/jobs/1", payload={"status": "hired"})[0], 400)
+        with self.api.get_db() as db:
+            db.execute("UPDATE jobs SET status='hired' WHERE id=1")
+            db.commit()
         refunds = self._install_admin_and_refund_mocks()
         status, resolved = self._dispute_and_admin_refund(order_id)
         self._assert_full_refund_committed(order_id, refunds, status, resolved)
