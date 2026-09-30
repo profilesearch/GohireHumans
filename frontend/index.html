@@ -1063,7 +1063,15 @@ function getDraftCategoryOptions(cats, draftCategory) {
   if (draftCategory && !cats.some(c => (c.slug || c.name) === draftCategory)) {
     options = `<option value="${formValue(draftCategory)}" selected>${esc(formatCategory(draftCategory))}</option>` + options;
   }
+  // No draft category: make the buyer choose. Defaulting to the first option filed
+  // writing jobs under Web Development and matched them to the wrong workers.
+  if (options && !draftCategory) options = '<option value="" selected disabled>Choose a category</option>' + options;
   return options || '<option value="other">Other</option>';
+}
+// Drafting instructions from the guided intake are for the buyer, not the public listing.
+function stripDraftReviewNote(text) {
+  const stripped = String(text || '').replace(/\s*Please review this draft(?: and edit the scope)? before publishing\.(?: Nothing is submitted until you post the listing\.)?\s*$/, '').trim();
+  return stripped || String(text || '');
 }
 function getPath() {
   const h = routeHash().slice(1) || '/';
@@ -2565,6 +2573,7 @@ async function handleJobApply(id) {
       trackConfiguredKeyEvent('qualify_lead', { lead_type: 'job_application_completed', job_id: String(id) });
       overlay.remove();
       toast('Application submitted!', 'success');
+      promptPayoutSetupAfterApply(id);
     } catch(err) {
       const message = err?.message || 'Application could not be submitted. Please try again.';
       errorBox.textContent = message;
@@ -2579,6 +2588,22 @@ async function handleJobApply(id) {
       toastError(err, message);
     }
   };
+}
+
+// Buyers cannot hire an applicant until the applicant's payout account is ready,
+// so tell the worker right after they apply instead of letting the application stall.
+async function promptPayoutSetupAfterApply(jobId) {
+  let status;
+  try { status = await api('/payments/status'); } catch (_) { return; }
+  if (!status || status.worker_ready === true) return;
+  trackEvent('apply_payout_prompt_shown', { job_id: String(jobId), source: 'job_apply_modal' });
+  showModal(
+    'One more step before you can be hired',
+    'Your application is in. The buyer can only hire workers who have finished payout setup, so connect a bank account now. It takes a few minutes through Stripe and nothing is charged.',
+    () => { trackEvent('apply_payout_prompt_accepted', { job_id: String(jobId) }); navigate('#/payments'); },
+    'Finish payout setup',
+    'Later'
+  );
 }
 
 // ═══
@@ -3273,6 +3298,7 @@ async function handlePostJob(e) {
   }
   const fd = new FormData(e.target);
   const body = Object.fromEntries(fd);
+  body.description = stripDraftReviewNote(body.description);
   body.budget_amount = parseFloat(body.budget_amount);
   if (body.required_skills) body.required_skills = body.required_skills.split(',').map(s=>s.trim()).filter(Boolean);
   else delete body.required_skills;
@@ -3388,8 +3414,42 @@ async function renderJobApplicants(id) {
     appShell(`
       <a class="detail-back" href="#/my-jobs">${I.back} My Jobs</a>
       <h1 class="page-title mt-4">${esc(job.title)}</h1>
-      <p class="page-desc">${apps.length} applicant${apps.length !== 1 ? 's' : ''}</p>
-      ${apps.length ? apps.map(a => `
+      ${apps.length ? applicantList(job, apps) : `
+        <div class="empty-state">
+          <div class="empty-state-icon" aria-hidden="true">${I.inbox}</div>
+          <h2>No applications yet</h2>
+          <p>Share your job listing to get more applicants.</p>
+          <a class="btn btn-secondary" href="#/jobs/${esc(String(id))}">View Job Post</a>
+        </div>`}
+    `, 'my-jobs');
+  } catch(err) {
+    if (!isCurrent()) return;
+    shellError(err, 'my-jobs');
+  }
+}
+
+// Buyers can only hire applicants who finished payout setup (/hire re-checks live).
+// When hiring is live, group those first so a buyer never scrolls past 100
+// unhireable applicants to find the one they can pay.
+function jobAcceptsHires(job) {
+  return ['open', 'reviewing'].includes(job.status) && job.hiring_enabled === true
+    && !(job.budget_type === 'hourly' && !HOURLY_JOB_HIRING_ENABLED);
+}
+function applicantList(job, apps) {
+  const count = `${apps.length} applicant${apps.length !== 1 ? 's' : ''}`;
+  const cards = list => list.map(a => applicantCard(job, a)).join('');
+  if (!jobAcceptsHires(job)) return `<p class="page-desc">${count}</p>${cards(apps)}`;
+  const open = a => ['pending', 'shortlisted'].includes(a.status);
+  const ready = apps.filter(a => open(a) && a.worker_payout_ready === true);
+  const waiting = apps.filter(a => open(a) && a.worker_payout_ready !== true);
+  const rest = apps.filter(a => !open(a));
+  const group = (title, list) => list.length ? `<h2 class="dash-section-title mt-6">${title} (${list.length})</h2>${cards(list)}` : '';
+  return `<p class="page-desc">${count} · ${ready.length} ready to hire</p>
+    ${ready.length ? '' : `<div class="app-notice app-notice--boxed">${I.alert}<span>No applicant can be hired yet. Workers must finish payout setup first; a Hire button appears here as soon as one does.</span></div>`}
+    ${group('Ready to hire', ready)}${group('Waiting on payout setup', waiting)}${group('Other applicants', rest)}`;
+}
+function applicantCard(job, a) {
+  return `
         <div class="card mb-4">
           <div class="applicant">
             <div class="avatar-md" aria-hidden="true">${esc((a.worker_name||'?').slice(0,2).toUpperCase())}</div>
@@ -3406,18 +3466,7 @@ async function renderJobApplicants(id) {
               ${applicantHireAction(job, a)}
             </div>
           </div>
-        </div>`).join('') : `
-        <div class="empty-state">
-          <div class="empty-state-icon" aria-hidden="true">${I.inbox}</div>
-          <h2>No applications yet</h2>
-          <p>Share your job listing to get more applicants.</p>
-          <a class="btn btn-secondary" href="#/jobs/${esc(String(id))}">View Job Post</a>
-        </div>`}
-    `, 'my-jobs');
-  } catch(err) {
-    if (!isCurrent()) return;
-    shellError(err, 'my-jobs');
-  }
+        </div>`;
 }
 
 // Hire control for one applicant. The server reports whether fixed-price hiring is
