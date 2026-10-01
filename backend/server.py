@@ -198,7 +198,10 @@ def _notification_worker_loop():
                 _NOTIFICATION_WORKER_STOP.wait(interval)
                 continue
             delivery = result["email_delivery"]
+            digest = result.get("applicant_digest") or {}
             if result["application_reminders_created"] or any(
+                digest.get(key, 0) for key in ("attempted", "accepted", "unknown", "withheld")
+            ) or digest.get("status") == "error" or any(
                 delivery.get(key, 0) for key in (
                     "sent", "deferred", "failed", "claimed_recovered",
                     "suppressed", "claim_lost", "lease_lost",

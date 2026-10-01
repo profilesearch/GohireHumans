@@ -26,6 +26,8 @@ SKIP_DIRS = {'node_modules', 'test-results', 'playwright-report', 'partials', '.
 # This noindex Stripe return bridge is not a public content page: it must have
 # no shared shell or analytics bootstrap, and does not belong in the sitemap.
 RETURN_BRIDGE = Path('payments/index.html')
+# Token-only email-preference page: same rules as the return bridge.
+EMAIL_PREFERENCES = Path('email-preferences/index.html')
 
 REQUIRED_FILES = [
     'frontend/partials/public-nav.html',
@@ -78,7 +80,7 @@ def public_pages():
     pages = []
     for path in sorted(FRONTEND.rglob('*.html')):
         rel = path.relative_to(FRONTEND)
-        if SKIP_DIRS.intersection(rel.parts[:-1]) or rel == RETURN_BRIDGE:
+        if SKIP_DIRS.intersection(rel.parts[:-1]) or rel in (RETURN_BRIDGE, EMAIL_PREFERENCES):
             continue
         pages.append(path)
     return pages
