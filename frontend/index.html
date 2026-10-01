@@ -291,7 +291,7 @@ function captureResetCapability() {
 captureResetCapability();
 window.addEventListener('hashchange', captureResetCapability, true);
 
-// ─── State ───
+// State
 let storedUser = null, storedToken = null;
 try {
   storedToken = sessionStorage.getItem('ghh_token') || localStorage.getItem('ghh_token');
@@ -343,7 +343,7 @@ function isSignedIn() { return !!(state.user && state.token); }
 // Force light theme per design requirements
 document.documentElement.setAttribute('data-theme', 'light');
 
-// ─── Referral tracking ───
+// Referral tracking
 (function() {
   const urlParams = new URLSearchParams(window.location.search);
   const ref = urlParams.get('ref');
@@ -375,7 +375,7 @@ function consumeAuthIntent() {
   return `#/${intent}`;
 }
 
-// ─── Google Sign-In callback ───
+// Google Sign-In callback
 function handleGoogleCredential(response) {
   api('/auth/google', { method: 'POST', body: { credential: response.credential } })
     .then(data => {
@@ -411,7 +411,7 @@ window.addEventListener('load', () => initGoogleSignIn());
 // Also listen for the GSI script's own load callback
 window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 
-// ─── API Client ───
+// API Client
 async function api(path, opts = {}) {
   const url = `${API}${path}`;
   const headers = { 'X-Requested-With': 'XMLHttpRequest' };
@@ -449,7 +449,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// ─── Toast ───
+// Toast
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -484,7 +484,7 @@ function cardKeydown(event) {
   event.currentTarget.click();
 }
 
-// ─── Modal System ───
+// Modal System
 // Shared dialog semantics for every `.modal-overlay`: role/aria wiring, initial
 // focus, focus restore on close, optional Escape/backdrop dismissal.
 let modalSequence = 0;
@@ -553,7 +553,7 @@ function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelTex
   openModalOverlay(overlay, { closeOnEscape: true, closeOnBackdrop: true });
 }
 
-// ─── Helpers ───
+// Helpers
 function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function safeExternalHref(value) {
   try {
@@ -1091,7 +1091,7 @@ function requireAuth(redirect) {
   return true;
 }
 
-// ─── Icons ───
+// Icons
 const I = {
   dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
   services: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`,
@@ -1127,7 +1127,7 @@ const I = {
 
 const LOGO = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="2" fill="#1a1816"/><circle cx="11" cy="10" r="3.5" fill="#f4efe6"/><path d="M4.5 22c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="#f4efe6" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="22" cy="12" r="2.5" fill="#f4efe6" opacity="0.75"/><path d="M17.5 22c0-2.8 2-5 4.5-5.5" stroke="#f4efe6" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.75"/></svg>`;
 
-// ─── Public Nav (top bar) ───
+// Public Nav (top bar)
 function renderPublicNav(activePage = '') {
   const navLinks = [
     { label: 'Marketplace', href: '#/services', key: 'services' },
@@ -1246,7 +1246,7 @@ function publicFooter() {
     </footer>`;
 }
 
-// ─── Authenticated Shell (sidebar) ───
+// Authenticated Shell (sidebar)
 function appShell(content, activeNav = '') {
   const u = state.user || {};
   const rawName = (u.name || u.email || '?').trim();
@@ -1345,7 +1345,7 @@ function toggleSidebar() {
   if (ov) ov.classList.toggle('active', state.sidebarOpen);
 }
 
-// ─── Skeleton Loader ───
+// Skeleton Loader
 function skeletonCards(count = 6) {
   return Array(count).fill(0).map(() => `
     <div class="skeleton-card">
@@ -2427,8 +2427,18 @@ async function renderJobDetail(id) {
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = isSignedIn() && String(state.user.id) === String(job.employer_id);
     const acceptsApplications = jobAcceptsApplications(job);
+    const myApplication = !isOwner && job.viewer_application ? job.viewer_application : null;
+    const myApplicationOpen = Boolean(myApplication) && ['pending', 'shortlisted'].includes(myApplication.status);
+    // The server is authoritative (open, unhired, own application); older API builds omit the flag.
+    const canWithdraw = myApplicationOpen && (typeof job.viewer_can_withdraw === 'boolean' ? job.viewer_can_withdraw : acceptsApplications);
+    const applyBlocked = isSignedIn() && !isOwner && !myApplication && job.viewer_can_apply === false;
+    const myApplicationNote = !myApplication ? ''
+      : myApplication.status === 'accepted' ? 'You were hired for this job.'
+      : myApplication.status === 'rejected' ? 'The buyer chose another applicant.'
+      : acceptsApplications ? 'The buyer can see your application.'
+      : 'This job is no longer accepting new applications.';
     const hourlyPaused = !HOURLY_JOB_HIRING_ENABLED && job.budget_type === 'hourly';
-    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused;
+    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused && !myApplication && !applyBlocked;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2476,8 +2486,14 @@ async function renderJobDetail(id) {
                 ${formatUtcDate(job.due_by) ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${formatUtcDate(job.due_by)}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
-              ${hourlyPaused
+              ${myApplication
+                ? `<p class="svc-order-note" role="status">You applied ${esc(relativeDate(myApplication.created_at))}. ${esc(myApplicationNote)}</p>
+                   ${hourlyPaused ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>` : ''}
+                   ${canWithdraw ? `<button class="btn btn-secondary" onclick="withdrawJobApplication(${Number(id)})">Withdraw application</button>` : ''}`
+                : hourlyPaused
                 ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
+                : applyBlocked && acceptsApplications
+                ? `<p class="svc-order-note" role="status">You've withdrawn from this job twice, so you can't apply to it again.</p>`
                 : acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" onclick="handleJobApply(${Number(id)})">${isSignedIn() ? 'Apply to This Job' : 'Sign in to Apply'}</button>
                    <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
@@ -2588,6 +2604,30 @@ async function handleJobApply(id) {
       toastError(err, message);
     }
   };
+}
+
+// A worker can take back an application while the buyer is still choosing.
+function withdrawJobApplication(jobId) {
+  trackEvent('job_application_withdraw_intent', { job_id: String(jobId), source: 'job_detail' });
+  showModal(
+    'Withdraw your application?',
+    "The buyer will no longer see it. If you've already withdrawn from this job once, this withdrawal is final and you can't apply again.",
+    async () => {
+      let result;
+      try {
+        result = await api(`/jobs/${jobId}/apply`, { method: 'DELETE' });
+      } catch (err) {
+        toastError(err, 'Your application could not be withdrawn. Please try again.');
+        return false;
+      }
+      trackEvent('job_application_withdrawn', { job_id: String(jobId), source: 'job_detail' });
+      toast(result && result.can_reapply === false ? "Application withdrawn. You can't apply to this job again." : 'Application withdrawn', 'success');
+      renderJobDetail(jobId);
+    },
+    'Withdraw',
+    'Keep it',
+    true
+  );
 }
 
 // Buyers cannot hire an applicant until the applicant's payout account is ready,
@@ -3003,7 +3043,7 @@ async function deleteService(id) {
   }, 'Delete', 'Cancel', true);
 }
 
-// ─── Post/Edit Service Form ───
+// Post/Edit Service Form
 function renderPostService(editId = null) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -3710,7 +3750,7 @@ async function renderOrders() {
   }
 }
 
-// ─── Order Detail ───
+// Order Detail
 async function renderOrderDetail(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -5142,23 +5182,50 @@ function renderPrivacy() {
     ${renderPublicNav()}
     <div class="page-narrow prose legal-page">
       <h1>Privacy Policy</h1>
-      <p class="legal-meta">Last updated: September 2026</p>
+      <p class="legal-meta">Last updated: October 1, 2026</p>
       <h2>1. Information We Collect</h2>
       <p>When you create an account, we collect your name, email address, and password (stored as a secure hash). When you set up payment, Stripe securely processes your payment details &mdash; we never store your card number. We also collect usage data such as pages visited, services browsed, and interactions to improve the platform.</p>
       <h2>2. How We Use Your Information</h2>
       <p>We use your information to: provide and maintain the GoHireHumans marketplace; process transactions and payment processing; match workers with employers; send essential account and transaction notifications; improve our services and user experience; prevent fraud and enforce our terms.</p>
       <h2>3. Information Sharing</h2>
-      <p>We do not sell your personal data. We share information only with: <strong>Stripe</strong> for payment processing; <strong>other users</strong> as needed for marketplace transactions (e.g., your public profile and service listings are visible to all users); <strong>law enforcement</strong> if required by law.</p>
+      <p>We do not sell your personal data. We share information only with the following, and only as needed to run the marketplace:</p>
+      <ul>
+        <li><strong>Stripe</strong>, to process payments and worker payouts, including identity and payout verification.</li>
+        <li><strong>Other users</strong>, for marketplace transactions. For example, your public profile, listings and reviews are visible to everyone, and order details are shared with the other party.</li>
+        <li><strong>Service providers that operate the platform on our behalf:</strong>
+          <ul>
+            <li>hosting and database: Railway (our servers) and Vercel (our website);</li>
+            <li>transactional email: currently AgentMail, which receives your email address and the content of account and order notifications;</li>
+            <li>analytics: Google Analytics (see section 5);</li>
+            <li>sign-in: Google, only if you choose &ldquo;Sign in with Google&rdquo;.</li>
+          </ul>
+        </li>
+        <li><strong>Law enforcement or other parties</strong> when required by law, or to protect users and the platform from fraud or abuse.</li>
+      </ul>
       <h2>4. Data Security</h2>
       <p>We protect your data using industry-standard encryption, secure servers, and access controls. All payment transactions are processed through Stripe&rsquo;s PCI-compliant infrastructure. Passwords are hashed using secure algorithms and never stored in plain text.</p>
-      <h2>5. Cookies &amp; Tracking</h2>
-      <p>We use essential cookies (session tokens) to keep you logged in. We may use analytics tools (such as Google Analytics) to understand how the platform is used. You can disable cookies in your browser settings, though some features may not function properly.</p>
+      <h2>5. Cookies, Local Storage &amp; Analytics</h2>
+      <ul>
+        <li><strong>Sign-in:</strong> we keep you signed in with a login token stored in your browser&rsquo;s session storage. It is cleared when you close the tab or log out. We also store your basic profile in local storage so the site can show your name.</li>
+        <li><strong>Analytics:</strong> we use Google Analytics to understand how the site is used, such as pages viewed, device type, approximate location and referring site. Google Analytics sets its own cookies.</li>
+        <li><strong>Privacy in analytics:</strong> we do not send your name, email address or the text of your jobs or messages to Google Analytics.</li>
+        <li><strong>Opting out:</strong> you can block analytics cookies in your browser settings or with Google&rsquo;s opt-out add-on without affecting how the marketplace works.</li>
+        <li><strong>Security:</strong> we process IP addresses for security and rate limiting, and some security logs record them.</li>
+      </ul>
       <h2>6. Your Rights</h2>
       <p>You can: access and update your account data at any time through your profile settings; request a copy of your data by contacting us; opt out of non-essential communications. To delete your account and associated data, email <a href="mailto:gohirehumans.operations@agentmail.to">gohirehumans.operations@agentmail.to</a> from your account email and we will confirm the deletion.</p>
       <h2>7. Data Retention</h2>
       <p>We retain your account data for as long as your account is active. Transaction records are kept for 7 years for legal and tax compliance. You may request deletion of your account and associated data at any time.</p>
       <h2>8. Third-Party Services</h2>
-      <p>Our platform integrates with third-party services including Stripe (payments), and may integrate with AI services for marketplace functionality. Each third-party service has its own privacy policy governing the data they process.</p>
+      <p>The providers listed in section 3 each process data under their own privacy policies:</p>
+      <ul>
+        <li>Stripe (<a href="https://stripe.com/privacy" rel="noopener noreferrer">stripe.com/privacy</a>)</li>
+        <li>Google (<a href="https://policies.google.com/privacy" rel="noopener noreferrer">policies.google.com/privacy</a>)</li>
+        <li>AgentMail (<a href="https://agentmail.to" rel="noopener noreferrer">agentmail.to</a>)</li>
+        <li>Railway (<a href="https://railway.com/legal/privacy" rel="noopener noreferrer">railway.com/legal/privacy</a>)</li>
+        <li>Vercel (<a href="https://vercel.com/legal/privacy-policy" rel="noopener noreferrer">vercel.com/legal/privacy-policy</a>)</li>
+      </ul>
+      <p>We may change providers; when we do, we will update this page.</p>
       <h2>9. Children&rsquo;s Privacy</h2>
       <p>GoHireHumans is not intended for users under 18. We do not knowingly collect data from minors.</p>
       <h2>10. Changes to This Policy</h2>

@@ -21,7 +21,7 @@ FRONTEND = ROOT / "frontend"
 SITE = "https://www.gohirehumans.com"
 DESC = (
     "Articles from GoHireHumans, a marketplace for small, scoped human work. Workers receive the "
-    "listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured."
+    "listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured."
 )
 
 

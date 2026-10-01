@@ -2131,7 +2131,27 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIn("Where GoHireHumans checkout is configured, Stripe processes payments", faq)
         self.assertIn("published listings and task content may be public", faq)
         self.assertNotIn("service providers and marketplace participants as described in the Privacy Policy", faq)
-        self.assertIn("with Stripe for configured payment processing, with other users as needed for marketplace transactions, and with law enforcement when required", faq)
+        self.assertIn("with Stripe for configured payment processing, with other users as needed for marketplace transactions, with service providers that run the platform (hosting, email, analytics, and Google sign-in if you use it), and with law enforcement when required", faq)
+
+    def test_privacy_policy_names_every_processor_the_site_uses(self):
+        """The policy's provider list must match what actually loads or receives data."""
+        app = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
+        bootstrap = (REPO_ROOT / "frontend/analytics-bootstrap.js").read_text(encoding="utf-8", errors="ignore")
+        core = (REPO_ROOT / "backend/api_core.py").read_text(encoding="utf-8", errors="ignore")
+        policy = app[app.index("function renderPrivacy() {"):app.index("function renderGuidelines() {")]
+        self.assertNotIn("We share information only with: <strong>Stripe</strong>", policy)
+        self.assertNotIn("essential cookies (session tokens)", policy)
+        self.assertNotIn("We may use analytics tools", policy)
+        for provider in ("Stripe", "Railway", "Vercel", "AgentMail", "Google Analytics", "Sign in with Google"):
+            self.assertIn(provider, policy, provider)
+        self.assertIn("session storage", policy)
+        self.assertIn("IP addresses", policy)
+        self.assertIn("we do not send your name, email address or the text of your jobs or messages to Google Analytics", policy)
+        # Each named processor is backed by real code, so the list can't silently drift.
+        self.assertIn("googletagmanager.com/gtag/js", bootstrap)
+        self.assertIn("accounts.google.com/gsi/client", app)
+        self.assertIn("agentmail", core.lower())
+        self.assertIn("import stripe", core)
 
     def test_starter_offer_taxonomy_matches_pricing_and_draft_defaults(self):
         pricing = (REPO_ROOT / "frontend/pricing.html").read_text(encoding="utf-8", errors="ignore")
