@@ -305,13 +305,27 @@ def _opener():
     return urllib.request.build_opener(_NoRedirect())
 
 
-def _recipient_email(db, employer_id):
-    """Current address if the owner may still be emailed, else None."""
+def _recipient_email(db, employer_id, agent_sql, sample_emails):
+    """Current address if the owner may still be emailed, else None.
+
+    Same exclusions as eligible_owners (agent, sample, admin, inactive, banned,
+    suspended, opted out), so a change after selection is caught before I/O.
+    """
+    excluded, args = _excluded_owner_sql(agent_sql, sample_emails)
     row = db.execute(
-        """SELECT LOWER(TRIM(u.email)) AS email FROM users u LEFT JOIN email_preferences p ON p.user_id=u.id
-           WHERE u.id=? AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
-             AND COALESCE(p.applicant_digest_opt_out,0)=0""", [employer_id]).fetchone()
+        f"""SELECT LOWER(TRIM(u.email)) AS email FROM users u LEFT JOIN email_preferences p ON p.user_id=u.id
+            WHERE u.id=? AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
+              AND COALESCE(p.applicant_digest_opt_out,0)=0
+              AND NOT {excluded}""", [employer_id, *args]).fetchone()
     return row[0] if row else None
+
+
+def _is_owner_day_collision(exc):
+    """True only for the UNIQUE(employer_id, digest_date) violation."""
+    name = getattr(exc, 'sqlite_errorname', None)
+    if name is not None and name != 'SQLITE_CONSTRAINT_UNIQUE':
+        return False
+    return 'applicant_digest_sends.employer_id, applicant_digest_sends.digest_date' in str(exc)
 
 
 def _halted(db, now):
@@ -341,6 +355,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
              hiring_enabled=False, audit=None, opener=None):
     """One bounded pass. Returns aggregate counts only (no recipient data)."""
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    sample_emails = tuple(sample_emails)
     summary = dict(status='idle', attempted=0, accepted=0, unknown=0, withheld=0, skipped=0)
     cfg, reason = config(now)
     if cfg is None:
@@ -372,7 +387,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
         try:
             jobs = candidate_jobs(db, employer_id, now, cfg['lookback'], hiring_enabled)
             used = db.execute('SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=?', [today]).fetchone()[0]
-            if not jobs or used >= cfg['cap'] or _recipient_email(db, employer_id) != email:
+            if not jobs or used >= cfg['cap'] or _recipient_email(db, employer_id, agent_sql, sample_emails) != email:
                 db.rollback()
                 summary['skipped'] += 1
                 continue
@@ -386,11 +401,10 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
                        VALUES(?,?,'prepared',?,?,?,?,?)""",
                     [employer_id, today, fingerprint, len(jobs), total, ready,
                      now.strftime('%Y-%m-%d %H:%M:%S')]).lastrowid
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError as exc:
+                if not _is_owner_day_collision(exc):
+                    raise  # any other constraint is a real bug: outer handler rolls back
                 db.rollback()
-                if db.execute('SELECT 1 FROM applicant_digest_sends WHERE employer_id=? AND digest_date=?',
-                              [employer_id, today]).fetchone() is None:
-                    raise  # some other constraint: a real bug, surface it
                 summary['skipped'] += 1  # a concurrent worker already owns today's email
                 continue
             for j in jobs:
@@ -421,7 +435,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
             break
         if db.in_transaction:
             db.commit()
-        if _recipient_email(db, employer_id) != email:
+        if _recipient_email(db, employer_id, agent_sql, sample_emails) != email:
             if db.in_transaction:
                 db.commit()
             _resolve(db, send_id, 'withheld')

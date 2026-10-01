@@ -412,6 +412,68 @@ class ApplicantDigestTests(unittest.TestCase):
         self.assertEqual(result["withheld"], 1)
         self.assertEqual([r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")], ["withheld"])
 
+    def test_admin_or_agent_promotion_after_intent_withholds(self):
+        for column, value in (("is_admin", 1), ("is_ai_agent", 1)):
+            with self.subTest(column=column):
+                with self.api.get_db() as db:
+                    db.execute("DELETE FROM applicant_digest_items")
+                    db.execute("DELETE FROM applicant_digest_sends")
+                    db.execute("UPDATE users SET is_admin=0, is_ai_agent=0 WHERE id=1")
+                    db.commit()
+                self.enable()
+                if not self.rows("SELECT id FROM applications WHERE job_id=10"):
+                    self.add_app(10, 2)
+
+                def promote(column=column, value=value):
+                    other = self.api.get_db()
+                    try:
+                        other.execute(f"UPDATE users SET {column}=? WHERE id=1", [value])
+                        other.commit()
+                    finally:
+                        other.close()
+                original, hooked = self._after_intent(promote)
+                self.api.applicant_digest.config = hooked
+                try:
+                    result, opener = self.run_digest()
+                finally:
+                    self.api.applicant_digest.config = original
+                self.assertEqual(opener.requests, [])
+                self.assertEqual(result["withheld"], 1)
+
+    def test_non_unique_constraint_error_is_not_mistaken_for_a_race(self):
+        # Stale selection: owner 1 already has today's row (another worker), and
+        # this worker's insert also violates a CHECK. That must surface, not be
+        # silently treated as the benign UNIQUE race.
+        self.enable()
+        self.add_app(10, 2)
+        original_digest = self.api.applicant_digest._digest
+        original_select = self.api.applicant_digest.eligible_owners
+
+        def stale_selection(*args, **kwargs):
+            owners = original_select(*args, **kwargs)
+            other = self.api.get_db()
+            try:
+                other.execute("""INSERT INTO applicant_digest_sends
+                    (employer_id,digest_date,state,fingerprint,jobs_count,applications_count,ready_count,prepared_at)
+                    VALUES(1,'2026-10-02','withheld',?,1,1,0,'2026-10-02 15:00:00')""", ["a" * 64])
+                other.commit()
+            finally:
+                other.close()
+            return owners
+        self.api.applicant_digest._digest = lambda value: "short"  # violates CHECK(length=64)
+        self.api.applicant_digest.eligible_owners = stale_selection
+        try:
+            with self.api.get_db() as db:
+                with self.assertRaises(Exception):
+                    self.api.applicant_digest.run_once(
+                        db, now=NOW, opener=FakeOpener(), agent_sql=self.api.agent_account_sql("u"),
+                        sample_emails=sorted(self.api.SEEDED_SAMPLE_EMAILS), hiring_enabled=True)
+                self.assertFalse(db.in_transaction)
+        finally:
+            self.api.applicant_digest._digest = original_digest
+            self.api.applicant_digest.eligible_owners = original_select
+        self.assertEqual([r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")], ["withheld"])
+
     def test_lease_lost_after_intent_withholds_and_stops(self):
         self.enable()
         self.add_app(10, 2)
