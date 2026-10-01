@@ -274,6 +274,43 @@ class JobApplicationWithdrawTests(unittest.TestCase):
             "SELECT details FROM audit_log WHERE action='withdraw_application' ORDER BY id DESC LIMIT 1")[0])
         self.assertTrue(details["employer_notice_ambiguous"])
 
+    def test_lone_unbound_notice_from_another_worker_is_never_rewritten(self):
+        self.assertEqual(self.apply("tok-1")[0], 201)
+        self.assertEqual(self.apply("tok-3")[0], 201)
+        with self.api.get_db() as db:
+            db.execute("UPDATE audit_log SET details=NULL WHERE action='apply_job'")
+            db.execute("UPDATE notifications SET created_at=(SELECT MIN(created_at) FROM notifications)")
+            db.execute("UPDATE applications SET created_at=(SELECT MIN(created_at) FROM applications)")
+            db.commit()
+        self.drop_email_rows()
+        with self.api.get_db() as db:
+            # The withdrawing worker's own notice is gone; only the other worker's remains.
+            db.execute("DELETE FROM notifications WHERE message='Worker One applied to your job.'")
+            db.commit()
+        status, body = self.request("DELETE", "/jobs/7/apply", "tok-1")
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["employer_notice_updated"])
+        self.assertEqual(self.db_one("SELECT COUNT(*) FROM notifications WHERE message='Other Worker applied to your job.'")[0], 1)
+        self.assertEqual(self.db_one("SELECT COUNT(*) FROM notifications WHERE message LIKE 'An applicant applied, then withdrew%'")[0], 0)
+
+    def test_viewer_can_apply_matches_server_rules_for_closed_jobs_and_ineligible_employers(self):
+        self.assertEqual(self.request("DELETE", "/jobs/7", "tok-2")[0], 200)  # buyer cancels
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET is_admin=1 WHERE id=3")  # admins may still view canceled jobs
+            db.commit()
+        status, detail = self.request("GET", "/jobs/7", "tok-3")
+        self.assertEqual(status, 200, detail)
+        self.assertFalse(detail["viewer_can_apply"])
+        self.assertEqual(self.request("POST", "/jobs/7/apply", "tok-3", {"cover_message": "hi"})[0], 409)
+        with self.api.get_db() as db:
+            db.execute("UPDATE jobs SET status='open' WHERE id=7")
+            db.execute("UPDATE users SET is_suspended=1 WHERE id=2")
+            db.commit()
+        status, detail = self.request("GET", "/jobs/7", "tok-3")
+        if status == 200:
+            self.assertFalse(detail["viewer_can_apply"])
+        self.assertEqual(self.request("POST", "/jobs/7/apply", "tok-3", {"cover_message": "hi"})[0], 409)
+
     def test_job_detail_reports_apply_and_withdraw_eligibility(self):
         status, detail = self.request("GET", "/jobs/7", "tok-1")
         self.assertEqual((detail["viewer_can_apply"], detail["viewer_can_withdraw"]), (True, False))

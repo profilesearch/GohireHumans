@@ -101,6 +101,20 @@ test('worker keeps seeing and can withdraw their application after the job close
   await expect.poll(() => state.deletes).toBe(1);
 });
 
+test('closed hourly job still shows the worker their application and Withdraw', async ({ page }) => {
+  await workerSession(page);
+  const state = { deletes: 0, canReapply: true, job: { status: 'canceled', budget_type: 'hourly', viewer_can_withdraw: true, viewer_can_apply: false,
+    viewer_application: { id: 501, status: 'pending', created_at: '2026-09-30T10:00:00Z' } } };
+  await jobRoute(page, state);
+  await page.goto('/#/jobs/33', { waitUntil: 'domcontentloaded' });
+  const card = page.locator('.svc-order-card');
+  await expect(card).toContainText('You applied');
+  await expect(card).toContainText('Hourly hiring is not available yet');
+  await page.getByRole('button', { name: 'Withdraw application' }).click();
+  await page.locator('.modal-dialog').getByRole('button', { name: 'Withdraw', exact: true }).click();
+  await expect.poll(() => state.deletes).toBe(1);
+});
+
 test('server says withdrawal is not allowed: no Withdraw button', async ({ page }) => {
   await workerSession(page);
   const state = { deletes: 0, canReapply: true, job: { viewer_can_withdraw: false,

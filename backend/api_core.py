@@ -4284,10 +4284,14 @@ def _application_notice_rows(db, app, exact_message=None):
                             WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
         [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
         if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
-    if len(candidates) > 1 and exact_message is not None:
+    if exact_message is not None:
+        # Withdrawal: an unbound notice is rewritten only when its text proves it is
+        # this applicant's; a lone candidate from someone else is never touched.
         exact = [r for r in candidates if r['message'] == exact_message]
         if len(exact) == 1:
-            candidates = exact
+            notices[exact[0]['id']] = exact[0]['message']
+            return outbox, notices, False
+        return outbox, notices, bool(candidates)
     if len(candidates) > 1:
         return outbox, notices, True
     if candidates:
@@ -11583,10 +11587,16 @@ def _handle_routes(db):
                    WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
                 [viewer_for_application['id'], job_id],
             ).fetchone()[0]
-            # Mirrors POST /apply's withdrawal cap so the page never offers an Apply
-            # button that the server would refuse.
+            # Mirrors POST /apply exactly (job status, employer eligibility, not the
+            # owner, no existing application, withdrawal cap) so the page never
+            # offers an Apply button that the server would refuse.
+            employer_ok = eligible_account(db.execute(
+                'SELECT is_active,is_banned,is_suspended FROM users WHERE id=?', [row['employer_id']]
+            ).fetchone())
             result['viewer_can_apply'] = bool(
-                not mine
+                row['status'] in ('open', 'reviewing')
+                and employer_ok
+                and not mine
                 and viewer_for_application['id'] != row['employer_id']
                 and viewer_withdrawals < MAX_APPLICATION_WITHDRAWALS_PER_JOB
             )

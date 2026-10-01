@@ -2486,11 +2486,12 @@ async function renderJobDetail(id) {
                 ${formatUtcDate(job.due_by) ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${formatUtcDate(job.due_by)}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
-              ${hourlyPaused
-                ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
-                : myApplication
+              ${myApplication
                 ? `<p class="svc-order-note" role="status">You applied ${esc(relativeDate(myApplication.created_at))}. ${esc(myApplicationNote)}</p>
+                   ${hourlyPaused ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>` : ''}
                    ${canWithdraw ? `<button class="btn btn-secondary" onclick="withdrawJobApplication(${Number(id)})">Withdraw application</button>` : ''}`
+                : hourlyPaused
+                ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
                 : applyBlocked && acceptsApplications
                 ? `<p class="svc-order-note" role="status">You've withdrawn from this job twice, so you can't apply to it again.</p>`
                 : acceptsApplications && !isOwner
