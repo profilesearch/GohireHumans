@@ -19,6 +19,8 @@ import hmac
 import json
 import os
 import re
+import sqlite3
+import unicodedata
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -177,8 +179,10 @@ def opt_out(db, user_id):
 
 # ── selection (pure reads) ──────────────────────────────────────────────────
 def _clean_title(title):
-    text = re.sub(r'[\x00-\x1f\x7f\u2028\u2029]+', ' ', str(title or '')).strip()
-    text = re.sub(r'\s+', ' ', text)
+    # Cc (C0/C1 controls), Cf (bidi overrides, zero-width), Zl/Zp (line/para separators)
+    text = ''.join(' ' if unicodedata.category(ch) in ('Cc', 'Cf', 'Zl', 'Zp', 'Cs', 'Co', 'Cn') else ch
+                   for ch in str(title or ''))
+    text = re.sub(r'\s+', ' ', text).strip()
     return (text[:MAX_TITLE_CHARS - 1].rstrip() + '…') if len(text) > MAX_TITLE_CHARS else (text or 'Your job')
 
 
@@ -301,6 +305,15 @@ def _opener():
     return urllib.request.build_opener(_NoRedirect())
 
 
+def _recipient_email(db, employer_id):
+    """Current address if the owner may still be emailed, else None."""
+    row = db.execute(
+        """SELECT LOWER(TRIM(u.email)) AS email FROM users u LEFT JOIN email_preferences p ON p.user_id=u.id
+           WHERE u.id=? AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
+             AND COALESCE(p.applicant_digest_opt_out,0)=0""", [employer_id]).fetchone()
+    return row[0] if row else None
+
+
 def _halted(db, now):
     since = (now - HALT_WINDOW).strftime('%Y-%m-%d %H:%M:%S')
     return db.execute("""SELECT 1 FROM applicant_digest_sends
@@ -359,22 +372,27 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
         try:
             jobs = candidate_jobs(db, employer_id, now, cfg['lookback'], hiring_enabled)
             used = db.execute('SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=?', [today]).fetchone()[0]
-            current = db.execute(
-                """SELECT LOWER(TRIM(u.email)) AS email FROM users u LEFT JOIN email_preferences p ON p.user_id=u.id
-                   WHERE u.id=? AND u.is_active=1 AND u.is_banned=0 AND u.is_suspended=0
-                     AND COALESCE(p.applicant_digest_opt_out,0)=0""", [employer_id]).fetchone()
-            if not jobs or used >= cfg['cap'] or current is None or current['email'] != email:
+            if not jobs or used >= cfg['cap'] or _recipient_email(db, employer_id) != email:
                 db.rollback()
                 summary['skipped'] += 1
                 continue
             payload, total, ready = render(jobs, unsubscribe_token(employer_id, cfg['secret']))
             payload['to'] = [email]
             fingerprint = _digest(json.dumps([employer_id, today, payload], sort_keys=True, separators=(',', ':')))
-            send_id = db.execute(
-                """INSERT INTO applicant_digest_sends
-                   (employer_id,digest_date,state,fingerprint,jobs_count,applications_count,ready_count,prepared_at)
-                   VALUES(?,?,'prepared',?,?,?,?,?)""",
-                [employer_id, today, fingerprint, len(jobs), total, ready, now.strftime('%Y-%m-%d %H:%M:%S')]).lastrowid
+            try:
+                send_id = db.execute(
+                    """INSERT INTO applicant_digest_sends
+                       (employer_id,digest_date,state,fingerprint,jobs_count,applications_count,ready_count,prepared_at)
+                       VALUES(?,?,'prepared',?,?,?,?,?)""",
+                    [employer_id, today, fingerprint, len(jobs), total, ready,
+                     now.strftime('%Y-%m-%d %H:%M:%S')]).lastrowid
+            except sqlite3.IntegrityError:
+                db.rollback()
+                if db.execute('SELECT 1 FROM applicant_digest_sends WHERE employer_id=? AND digest_date=?',
+                              [employer_id, today]).fetchone() is None:
+                    raise  # some other constraint: a real bug, surface it
+                summary['skipped'] += 1  # a concurrent worker already owns today's email
+                continue
             for j in jobs:
                 db.execute("""INSERT INTO applicant_digest_items(send_id,job_id,max_application_id,applications_count,ready_count)
                               VALUES(?,?,?,?,?)""", [send_id, j['job_id'], j['max_application_id'], j['count'], j['ready']])
@@ -386,13 +404,31 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
             db.rollback()
             raise
         summary['attempted'] += 1
-        # Re-check the gate right before I/O; withhold (known not sent) if it changed.
+        # Fence right before I/O. Anything that changed since the intent commit
+        # withholds this email (known not sent): gate, lease, or the recipient's
+        # own eligibility (opt-out, ban, address change). An opt-out that lands
+        # after this point races the provider call and cannot be recalled.
         current_cfg, _ = config(datetime.now(timezone.utc))
         if current_cfg is None or current_cfg['allow'] != cfg['allow'] or current_cfg['key'] != cfg['key']:
             _resolve(db, send_id, 'withheld')
             summary['withheld'] += 1
             summary['status'] = 'gate_changed'
             break
+        if renew_lease is not None and not renew_lease():
+            _resolve(db, send_id, 'withheld')
+            summary['withheld'] += 1
+            summary['status'] = 'lease_lost'
+            break
+        if db.in_transaction:
+            db.commit()
+        if _recipient_email(db, employer_id) != email:
+            if db.in_transaction:
+                db.commit()
+            _resolve(db, send_id, 'withheld')
+            summary['withheld'] += 1
+            continue
+        if db.in_transaction:
+            db.commit()
         request = urllib.request.Request(
             SEND_URL, data=json.dumps(payload, separators=(',', ':')).encode('utf-8'), method='POST',
             headers={'Authorization': 'Bearer ' + cfg['key'], 'Content-Type': 'application/json',

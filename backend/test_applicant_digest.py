@@ -379,6 +379,90 @@ class ApplicantDigestTests(unittest.TestCase):
         self.assertEqual(result["withheld"], 1)
         self.assertEqual([r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")], ["withheld"])
 
+    def _after_intent(self, side_effect):
+        """Run side_effect once, right after the intent commit (the post-intent gate recheck)."""
+        original = self.api.applicant_digest.config
+        calls = {"n": 0}
+
+        def hooked(now=None):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                side_effect()
+            return original(now)
+        return original, hooked
+
+    def test_opt_out_after_intent_but_before_send_withholds(self):
+        self.enable()
+        self.add_app(10, 2)
+
+        def opt_out():
+            other = self.api.get_db()
+            try:
+                self.api.applicant_digest.opt_out(other, 1)
+                other.commit()
+            finally:
+                other.close()
+        original, hooked = self._after_intent(opt_out)
+        self.api.applicant_digest.config = hooked
+        try:
+            result, opener = self.run_digest()
+        finally:
+            self.api.applicant_digest.config = original
+        self.assertEqual(opener.requests, [])
+        self.assertEqual(result["withheld"], 1)
+        self.assertEqual([r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")], ["withheld"])
+
+    def test_lease_lost_after_intent_withholds_and_stops(self):
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        answers = iter([True, False])
+        opener = FakeOpener()
+        with self.api.get_db() as db:
+            result = self.api.applicant_digest.run_once(
+                db, now=NOW, renew_lease=lambda: next(answers, False), opener=opener,
+                agent_sql=self.api.agent_account_sql("u"), sample_emails=sorted(self.api.SEEDED_SAMPLE_EMAILS),
+                hiring_enabled=True)
+        self.assertEqual(opener.requests, [])
+        self.assertEqual((result["status"], result["withheld"]), ("lease_lost", 1))
+        self.assertEqual([r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")], ["withheld"])
+
+    def test_concurrent_worker_owning_todays_email_is_skipped_not_fatal(self):
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        original = self.api.applicant_digest.eligible_owners
+
+        def stale_selection(*args, **kwargs):
+            owners = original(*args, **kwargs)
+            other = self.api.get_db()  # another worker commits owner 1's intent first
+            try:
+                other.execute("""INSERT INTO applicant_digest_sends
+                    (employer_id,digest_date,state,fingerprint,jobs_count,applications_count,ready_count,prepared_at,
+                     resolved_at,message_id,thread_id)
+                    VALUES(1,'2026-10-02','accepted',?,1,1,0,'2026-10-02 15:00:00','2026-10-02 15:00:01','<x@y>','t')""",
+                              ["a" * 64])
+                other.commit()
+            finally:
+                other.close()
+            return owners
+        self.api.applicant_digest.eligible_owners = stale_selection
+        try:
+            result, opener = self.run_digest()
+        finally:
+            self.api.applicant_digest.eligible_owners = original
+        self.assertNotEqual(result.get("status"), "error")
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual([r["body"]["to"] for r in opener.requests], [["owner2@example.com"]])
+
+    def test_title_drops_bidi_zero_width_and_c1_controls(self):
+        clean = self.api.applicant_digest._clean_title(
+            "Normal\u0085NEXT\u202eSpoof\u200bZW\u2066iso\u2069\u2028end")
+        for ch in ("\u0085", "\u202e", "\u200b", "\u2066", "\u2069", "\u2028"):
+            self.assertNotIn(ch, clean)
+        self.assertEqual(clean, "Normal NEXT Spoof ZW iso end")
+        self.assertEqual(self.api.applicant_digest._clean_title("Caf\u00e9 \u65e5\u672c \U0001F600"), "Caf\u00e9 \u65e5\u672c \U0001F600")
+
     def test_no_sqlite_writer_is_held_during_provider_io(self):
         self.enable()
         self.add_app(10, 2)
