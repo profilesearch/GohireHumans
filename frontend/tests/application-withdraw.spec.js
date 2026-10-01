@@ -78,3 +78,35 @@ test('worker without an application still gets the Apply button', async ({ page 
   await expect(page.getByRole('button', { name: 'Apply to This Job' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Withdraw application' })).toHaveCount(0);
 });
+
+test('after the final withdrawal the page shows why there is no Apply button', async ({ page }) => {
+  await workerSession(page);
+  const state = { deletes: 0, canReapply: false, job: { viewer_application: null, viewer_can_apply: false, viewer_can_withdraw: false } };
+  await jobRoute(page, state);
+  await page.goto('/#/jobs/33?apply=1', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.svc-order-card')).toContainText("You've withdrawn from this job twice");
+  await expect(page.getByRole('button', { name: 'Apply to This Job' })).toHaveCount(0);
+  await expect(page.locator('#applyForm')).toHaveCount(0);
+});
+
+test('worker keeps seeing and can withdraw their application after the job closes', async ({ page }) => {
+  await workerSession(page);
+  const state = { deletes: 0, canReapply: true, job: { status: 'canceled', viewer_can_withdraw: true, viewer_can_apply: false,
+    viewer_application: { id: 501, status: 'pending', created_at: '2026-09-30T10:00:00Z' } } };
+  await jobRoute(page, state);
+  await page.goto('/#/jobs/33', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.svc-order-card')).toContainText('no longer accepting new applications');
+  await page.getByRole('button', { name: 'Withdraw application' }).click();
+  await page.locator('.modal-dialog').getByRole('button', { name: 'Withdraw', exact: true }).click();
+  await expect.poll(() => state.deletes).toBe(1);
+});
+
+test('server says withdrawal is not allowed: no Withdraw button', async ({ page }) => {
+  await workerSession(page);
+  const state = { deletes: 0, canReapply: true, job: { viewer_can_withdraw: false,
+    viewer_application: { id: 501, status: 'pending', created_at: '2026-09-30T10:00:00Z' } } };
+  await jobRoute(page, state);
+  await page.goto('/#/jobs/33', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.svc-order-card')).toContainText('You applied');
+  await expect(page.getByRole('button', { name: 'Withdraw application' })).toHaveCount(0);
+});

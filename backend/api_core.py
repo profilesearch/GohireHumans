@@ -4249,13 +4249,17 @@ _WITHDRAWN_APPLICATION_NOTICE = 'An applicant applied, then withdrew their appli
 MAX_APPLICATION_WITHDRAWALS_PER_JOB = 2
 
 
-def _application_notice_rows(db, app):
+def _application_notice_rows(db, app, exact_message=None):
     """The employer's "<name> applied to your job." notices for one application.
 
     Email notices carry dedupe_context 'application:<id>' and the notification
     id; in-app-only notices are matched by employer, job link, template and
     creation time. Returns ({outbox_id: message}, {notification_id: message},
     ambiguous) so callers can block instead of guessing.
+
+    exact_message (withdrawal only) breaks a time-window tie when exactly one
+    candidate carries that exact text; erasure never passes it, because a rename
+    must not be able to hide or redirect its rows.
     """
     outbox, notices = {}, {}
     linked_notification = None
@@ -4280,6 +4284,10 @@ def _application_notice_rows(db, app):
                             WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
         [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
         if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
+    if len(candidates) > 1 and exact_message is not None:
+        exact = [r for r in candidates if r['message'] == exact_message]
+        if len(exact) == 1:
+            candidates = exact
     if len(candidates) > 1:
         return outbox, notices, True
     if candidates:
@@ -11570,6 +11578,22 @@ def _handle_routes(db):
                 [job_id, viewer_for_application['id']],
             ).fetchone()
             result['viewer_application'] = row_to_dict(mine) if mine else None
+            viewer_withdrawals = db.execute(
+                """SELECT COUNT(*) FROM audit_log
+                   WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
+                [viewer_for_application['id'], job_id],
+            ).fetchone()[0]
+            # Mirrors POST /apply's withdrawal cap so the page never offers an Apply
+            # button that the server would refuse.
+            result['viewer_can_apply'] = bool(
+                not mine
+                and viewer_for_application['id'] != row['employer_id']
+                and viewer_withdrawals < MAX_APPLICATION_WITHDRAWALS_PER_JOB
+            )
+            result['viewer_can_withdraw'] = bool(
+                mine and mine['status'] in ('pending', 'shortlisted')
+                and not db.execute("SELECT 1 FROM orders WHERE type='job_hire' AND job_id=?", [job_id]).fetchone()
+            )
         return json_response(result)
 
     elif path == "/jobs" and method == "POST":
@@ -11930,14 +11954,17 @@ def _handle_routes(db):
         )
 
         # Notify employer
-        push_notification(db, job['employer_id'], "new_application",
+        employer_notice_id = push_notification(db, job['employer_id'], "new_application",
             f"New application: {job['title']}",
             f"{user['name']} applied to your job.",
             f"/jobs/{job_id}/applications",
             email=True,
             email_dedupe=f"application:{app_id}")
 
-        audit(db, user['id'], "apply_job", "application", app_id)
+        # Binding the employer notice to the application lets a later withdrawal
+        # neutralize exactly this notice, even when no email row exists.
+        audit(db, user['id'], "apply_job", "application", app_id,
+              {"employer_notification_id": employer_notice_id} if employer_notice_id else None)
         db.commit()
         app = db.execute("SELECT * FROM applications WHERE id = ?", [app_id]).fetchone()
         return json_response(row_to_dict(app), 201)
@@ -11961,13 +11988,34 @@ def _handle_routes(db):
         if not app:
             db.rollback()
             return error_response("You don't have an application on this job", 404)
-        if app['status'] not in ('pending', 'shortlisted') or db.execute(
-                "SELECT 1 FROM orders WHERE type='job_hire' AND job_id=?", [job_id]).fetchone():
+        if app['status'] not in ('pending', 'shortlisted'):
+            db.rollback()
+            return error_response("This application can't be withdrawn because the buyer has already decided on it", 409)
+        if db.execute("SELECT 1 FROM orders WHERE type='job_hire' AND job_id=?", [job_id]).fetchone():
             db.rollback()
             return error_response("This application can't be withdrawn because the buyer has already hired", 409)
-        notice_outbox, notices, _ambiguous = _application_notice_rows(
+        notice_outbox, notices, ambiguous_notice = _application_notice_rows(
             db, {'id': app['id'], 'job_id': job_id, 'employer_id': job['employer_id'],
-                 'created_at': app['created_at']})
+                 'created_at': app['created_at']},
+            exact_message=f"{user['name']}{_ERASURE_APPLICATION_NOTICE_SUFFIX}")
+        bound = db.execute(
+            """SELECT details FROM audit_log
+               WHERE action='apply_job' AND entity_type='application' AND entity_id=? AND user_id=?
+               ORDER BY id DESC LIMIT 1""",
+            [app['id'], user['id']],
+        ).fetchone()
+        try:
+            bound_notice_id = int(json.loads(bound['details'] or '{}').get('employer_notification_id') or 0) if bound else 0
+        except (TypeError, ValueError, AttributeError):
+            bound_notice_id = 0
+        if bound_notice_id:
+            row = db.execute(
+                "SELECT id, message FROM notifications WHERE id=? AND user_id=? AND type='new_application'",
+                [bound_notice_id, job['employer_id']],
+            ).fetchone()
+            notices = ({row['id']: row['message']}
+                       if row and (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX) else {})
+            ambiguous_notice = False
         for outbox_id in notice_outbox:
             # Unsent "<name> applied" emails are dropped; anything already handed to
             # the mail provider is left alone.
@@ -11980,9 +12028,11 @@ def _handle_routes(db):
                      AND id NOT IN (SELECT outbox_id FROM agentmail_send_ledger)""",
                 [outbox_id],
             )
+        notice_updated = False
         for notification_id, planned_message in notices.items():
-            db.execute("UPDATE notifications SET message=? WHERE id=? AND message=?",
-                       [_WITHDRAWN_APPLICATION_NOTICE, notification_id, planned_message])
+            notice_updated = db.execute(
+                "UPDATE notifications SET message=? WHERE id=? AND message=?",
+                [_WITHDRAWN_APPLICATION_NOTICE, notification_id, planned_message]).rowcount == 1 or notice_updated
         if db.execute("DELETE FROM applications WHERE id=? AND status IN ('pending','shortlisted')",
                       [app['id']]).rowcount != 1:
             db.rollback()
@@ -11993,17 +12043,22 @@ def _handle_routes(db):
                  AND NOT EXISTS (SELECT 1 FROM applications WHERE job_id=?)""",
             [job_id, job_id],
         )
-        audit(db, user['id'], "withdraw_application", "job", job_id, {"application_id": app['id']})
+        audit(db, user['id'], "withdraw_application", "job", job_id,
+              {"application_id": app['id'], "employer_notice_updated": notice_updated,
+               "employer_notice_ambiguous": bool(ambiguous_notice and not notice_updated)})
         withdrawals = db.execute(
             """SELECT COUNT(*) FROM audit_log
                WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
             [user['id'], job_id],
         ).fetchone()[0]
         db.commit()
+        # employer_notice_updated is reported, never assumed: a legacy in-app notice
+        # that can't be tied to this application is left as it was.
         return json_response({
             "ok": True,
             "withdrawn_application_id": app['id'],
             "can_reapply": withdrawals < MAX_APPLICATION_WITHDRAWALS_PER_JOB,
+            "employer_notice_updated": notice_updated,
         })
 
     # ═══════════════════════════════════════════════════════════════════════════

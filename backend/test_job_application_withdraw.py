@@ -111,7 +111,8 @@ class JobApplicationWithdrawTests(unittest.TestCase):
 
         status, body = self.request("DELETE", "/jobs/7/apply", "tok-1")
         self.assertEqual(status, 200, body)
-        self.assertEqual(body, {"ok": True, "withdrawn_application_id": app["id"], "can_reapply": True})
+        self.assertEqual(body, {"ok": True, "withdrawn_application_id": app["id"], "can_reapply": True,
+                                "employer_notice_updated": True})
         self.assertIsNone(self.db_one("SELECT id FROM applications WHERE id=?", [app["id"]]))
         self.assertEqual(self.db_one("SELECT status FROM jobs WHERE id=7")[0], "open")
         self.assertEqual(self.db_one("SELECT message FROM notifications WHERE id=?", [notice["id"]])[0],
@@ -207,6 +208,98 @@ class JobApplicationWithdrawTests(unittest.TestCase):
         status, detail = self.request("GET", "/jobs/7")
         self.assertEqual(status, 200, detail)
         self.assertNotIn("viewer_application", detail)
+        self.assertNotIn("viewer_can_apply", detail)
+
+    def drop_email_rows(self):
+        """Simulate in-app-only notices (no email row links a notice to its application)."""
+        with self.api.get_db() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='agentmail_send_ledger'").fetchone():
+                db.execute("DELETE FROM agentmail_send_ledger")
+            db.execute("DELETE FROM transactional_email_outbox")
+            db.commit()
+
+    # ── review follow-ups ─────────────────────────────────────────────────
+    def test_same_second_applications_without_email_each_neutralize_their_own_notice(self):
+        # No email transport: notices are in-app only, so only the bound id can tell them apart.
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET name='Same Name' WHERE id IN (1,3)")
+            db.commit()
+        self.assertEqual(self.apply("tok-1")[0], 201)
+        self.assertEqual(self.apply("tok-3")[0], 201)
+        with self.api.get_db() as db:
+            db.execute("UPDATE notifications SET created_at=(SELECT MIN(created_at) FROM notifications)")
+            db.execute("UPDATE applications SET created_at=(SELECT MIN(created_at) FROM applications)")
+            db.commit()
+        self.drop_email_rows()
+        status, body = self.request("DELETE", "/jobs/7/apply", "tok-1")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["employer_notice_updated"])
+        messages = [r[0] for r in self.api.get_db().execute(
+            "SELECT message FROM notifications WHERE user_id=2 ORDER BY id").fetchall()]
+        self.assertEqual(messages, ["An applicant applied, then withdrew their application.",
+                                    "Same Name applied to your job."])
+
+    def test_legacy_unbound_notice_is_matched_by_exact_name_or_left_untouched(self):
+        # Simulate applications made before this release: no notice id in the audit row.
+        self.assertEqual(self.apply("tok-1")[0], 201)
+        self.assertEqual(self.apply("tok-3")[0], 201)
+        with self.api.get_db() as db:
+            db.execute("UPDATE audit_log SET details=NULL WHERE action='apply_job'")
+            db.execute("UPDATE notifications SET created_at=(SELECT MIN(created_at) FROM notifications)")
+            db.execute("UPDATE applications SET created_at=(SELECT MIN(created_at) FROM applications)")
+            db.commit()
+        self.drop_email_rows()
+        status, body = self.request("DELETE", "/jobs/7/apply", "tok-1")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["employer_notice_updated"])
+        self.assertEqual(self.db_one("SELECT COUNT(*) FROM notifications WHERE message='Other Worker applied to your job.'")[0], 1)
+        # Identical names and no binding: the notice is left alone and the API says so.
+        with self.api.get_db() as db:
+            db.execute("UPDATE users SET name='Other Worker' WHERE id=1")
+            db.commit()
+        self.assertEqual(self.apply("tok-1")[0], 201)
+        with self.api.get_db() as db:
+            db.execute("UPDATE audit_log SET details=NULL WHERE action='apply_job'")
+            db.execute("UPDATE notifications SET created_at=(SELECT MIN(created_at) FROM notifications)")
+            db.execute("UPDATE applications SET created_at=(SELECT MIN(created_at) FROM applications)")
+            db.commit()
+        self.drop_email_rows()
+        before = [r[0] for r in self.api.get_db().execute("SELECT message FROM notifications ORDER BY id").fetchall()]
+        status, body = self.request("DELETE", "/jobs/7/apply", "tok-1")
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["employer_notice_updated"])
+        after = [r[0] for r in self.api.get_db().execute("SELECT message FROM notifications ORDER BY id").fetchall()]
+        self.assertEqual(before, after)
+        details = json.loads(self.db_one(
+            "SELECT details FROM audit_log WHERE action='withdraw_application' ORDER BY id DESC LIMIT 1")[0])
+        self.assertTrue(details["employer_notice_ambiguous"])
+
+    def test_job_detail_reports_apply_and_withdraw_eligibility(self):
+        status, detail = self.request("GET", "/jobs/7", "tok-1")
+        self.assertEqual((detail["viewer_can_apply"], detail["viewer_can_withdraw"]), (True, False))
+        status, detail = self.request("GET", "/jobs/7", "tok-2")
+        self.assertFalse(detail["viewer_can_apply"], "the job owner can't apply to their own job")
+        self.assertEqual(self.apply()[0], 201)
+        status, detail = self.request("GET", "/jobs/7", "tok-1")
+        self.assertEqual((detail["viewer_can_apply"], detail["viewer_can_withdraw"]), (False, True))
+        self.assertEqual(self.request("DELETE", "/jobs/7/apply", "tok-1")[0], 200)
+        self.assertEqual(self.apply()[0], 201)
+        self.assertEqual(self.request("DELETE", "/jobs/7/apply", "tok-1")[0], 200)
+        status, detail = self.request("GET", "/jobs/7", "tok-1")
+        self.assertIsNone(detail["viewer_application"])
+        self.assertEqual((detail["viewer_can_apply"], detail["viewer_can_withdraw"]), (False, False))
+
+    def test_withdraw_still_works_and_is_reported_after_job_is_canceled(self):
+        self.assertEqual(self.apply()[0], 201)
+        self.assertEqual(self.request("DELETE", "/jobs/7", "tok-2")[0], 200)
+        status, detail = self.request("GET", "/jobs/7", "tok-1")
+        self.assertEqual(status, 200, detail)
+        self.assertEqual(detail["status"], "canceled")
+        self.assertTrue(detail["viewer_can_withdraw"])
+        self.assertEqual(self.request("DELETE", "/jobs/7/apply", "tok-1")[0], 200)
+        self.assertEqual(self.db_one("SELECT status FROM jobs WHERE id=7")[0], "canceled")
+        # The job is closed and the worker no longer applied, so the scope is private again.
+        self.assertEqual(self.request("GET", "/jobs/7", "tok-1")[0], 404)
 
 
 if __name__ == "__main__":
