@@ -729,6 +729,11 @@
       "permanent": true
     },
     {
+      "source": "/email-preferences",
+      "destination": "/email-preferences/",
+      "permanent": true
+    },
+    {
       "source": "/categories",
       "destination": "/categories/",
       "permanent": true

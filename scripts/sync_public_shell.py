@@ -19,6 +19,7 @@ NAV = NAV_PATH.read_text(encoding="utf-8").strip()
 FOOTER = FOOTER_PATH.read_text(encoding="utf-8").strip()
 GENERATED_DIRS = {"node_modules", "test-results", "playwright-report", ".git", "dist", "build"}
 RETURN_BRIDGE = FRONTEND / "payments/index.html"  # noindex, no shell, no analytics
+EMAIL_PREFERENCES = FRONTEND / "email-preferences/index.html"  # same: token-only page
 NAV_MARKER = '<div class="lp-nav-wrap">'
 MOBILE_MENU_MARKER = 'class="lp-mobile-menu"'
 FOOTER_BLOCK = re.compile(r'<footer class="lp-footer".*?</footer>', re.DOTALL)
@@ -88,7 +89,7 @@ def source_html_pages() -> list[Path]:
         relative_parts = path.relative_to(FRONTEND).parts
         if any(part in GENERATED_DIRS for part in relative_parts):
             continue
-        if path in (FRONTEND / "index.html", RETURN_BRIDGE):
+        if path in (FRONTEND / "index.html", RETURN_BRIDGE, EMAIL_PREFERENCES):
             continue
         pages.append(path)
     return sorted(pages)

@@ -45,6 +45,19 @@ except ModuleNotFoundError as exc:
     agentmail_transport = importlib.util.module_from_spec(_agentmail_spec)
     _agentmail_spec.loader.exec_module(agentmail_transport)
 try:
+    import applicant_digest
+except ModuleNotFoundError as exc:
+    if exc.name != "applicant_digest":
+        raise
+    import importlib.util
+    _digest_spec = importlib.util.spec_from_file_location(
+        "applicant_digest", os.path.join(os.path.dirname(__file__), "applicant_digest.py"),
+    )
+    if _digest_spec is None or _digest_spec.loader is None:
+        raise ImportError("Applicant digest module is unavailable")
+    applicant_digest = importlib.util.module_from_spec(_digest_spec)
+    _digest_spec.loader.exec_module(applicant_digest)
+try:
     import password_reset_crypto
 except ModuleNotFoundError as exc:
     if exc.name != "password_reset_crypto":
@@ -2722,6 +2735,7 @@ def _init_db_connection(db):
         validate_required_refund_schema(db)
         validate_required_notification_schema(db)
         agentmail_transport.init_schema(db)
+        applicant_digest.init_schema(db)
         _prevalidate_financial_schema_before_mutation(db)
         db.commit()
     except Exception:
@@ -4124,6 +4138,9 @@ _ERASURE_ORDER = 'SELECT id FROM orders WHERE worker_id=?1 OR employer_id=?1'
 _ERASURE_DELETIONS = {
     'transactional_email_delivery_events': 'provider_email_id IN (SELECT provider_email_id FROM transactional_email_outbox WHERE user_id=?1) AND provider_email_id IS NOT NULL',
     'transactional_email_outbox': 'user_id=?1 AND id NOT IN (SELECT outbox_id FROM agentmail_send_ledger)',
+    'applicant_digest_items': 'send_id IN (SELECT id FROM applicant_digest_sends WHERE employer_id=?1)',
+    'applicant_digest_sends': 'employer_id=?1',
+    'email_preferences': 'user_id=?1',
     'order_reminders': 'recipient_user_id=?1',
     'job_application_reminders': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
     'job_application_views': 'employer_id=?1 OR job_id IN (SELECT id FROM jobs WHERE employer_id=?1)',
@@ -5227,6 +5244,7 @@ def notification_delivery_health(db):
         },
         "delivery_events_24h": delivery_events,
         "application_reminders": reminder_counts,
+        "applicant_digest": applicant_digest.health(db),
         "worker": {
             "lease_active": bool(worker_lease and worker_lease["active"]),
             "last_heartbeat_at": worker_lease["heartbeat_at"] if worker_lease else None,
@@ -5535,15 +5553,36 @@ def run_notification_maintenance_once(
             )
         else:
             delivery = {**empty_delivery, "provider_unavailable": 1}
+        digest = run_applicant_digest_once(
+            db, now=now, owner_token=owner_token, lease_seconds=lease_seconds, lease_now=lease_now,
+        )
         return {
             "application_reminders_created": reminders_created,
             "email_delivery": delivery,
-            "lease_lost": int(delivery.get("lease_lost", 0) > 0),
+            "applicant_digest": digest,
+            "lease_lost": int(delivery.get("lease_lost", 0) > 0 or digest.get("status") == "lease_lost"),
         }
     finally:
         if db.in_transaction:
             db.rollback()
         db.close()
+
+
+def run_applicant_digest_once(db, now=None, owner_token=None, lease_seconds=120, lease_now=None, opener=None):
+    """Daily applicant summary for job owners. Default off; failures never break maintenance."""
+    try:
+        return applicant_digest.run_once(
+            db, now=now,
+            renew_lease=(lambda: renew_notification_worker_lease(
+                db, owner_token, lease_seconds=lease_seconds, now=lease_now)) if owner_token else None,
+            agent_sql=agent_account_sql('u'), sample_emails=sorted(SEEDED_SAMPLE_EMAILS),
+            hiring_enabled=JOB_HIRING_ENABLED, audit=audit, opener=opener,
+        )
+    except Exception as exc:
+        if db.in_transaction:
+            db.rollback()
+        print(f"[GoHireHumans] applicant digest pass failed: {type(exc).__name__}", file=sys.stderr)
+        return {"status": "error"}
 
 
 def generate_order_reminders(db, user_id, now=None):
@@ -10547,7 +10586,8 @@ def _handle_routes(db):
         })
 
     # Centralized JSON body guard for mutating methods
-    if method in ("POST", "PUT", "PATCH") and path != "/webhooks/stripe":
+    # RFC 8058 one-click unsubscribe posts a form body, not JSON; it reads only the query token.
+    if method in ("POST", "PUT", "PATCH") and path not in ("/webhooks/stripe", "/email-preferences/one-click"):
         if get_body() is None:
             return error_response("Invalid JSON in request body", 400)
 
@@ -10632,6 +10672,30 @@ def _handle_routes(db):
         print()
         print(json.dumps({'available': agentmail_transport.reset_config()[0] is not None}))
         return
+
+    elif path in ("/email-preferences/one-click", "/email-preferences/unsubscribe") and method == "POST":
+        # Token-authenticated; no session. RFC 8058 one-click posts a form body,
+        # the preferences page posts JSON. Both just set the opt-out flag.
+        token = params.get("t") or ""
+        if not token and path == "/email-preferences/unsubscribe":
+            body = get_body()
+            token = body.get("token", "") if isinstance(body, dict) else ""
+        user_id = applicant_digest.verify_unsubscribe_token(token)
+        if user_id is None:
+            return error_response("This unsubscribe link is not valid.", 400)
+        if db.in_transaction:
+            db.commit()
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            if not applicant_digest.opt_out(db, user_id):
+                db.rollback()
+                return error_response("This unsubscribe link is not valid.", 400)
+            audit(db, user_id, "applicant_digest_opt_out", "user", user_id, {"via": path.rsplit("/", 1)[-1]})
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return json_response({"unsubscribed": True})
 
     elif path == "/auth/forgot-password" and method == "POST":
         body = get_body() or {}
