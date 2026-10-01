@@ -95,7 +95,7 @@
 <p class="docs-toc-group">Auth endpoints</p>
 <ul><li><a href="#auth-register">POST /auth/register</a></li><li><a href="#auth-login">POST /auth/login</a></li><li><a href="#auth-me">GET /profile</a></li></ul>
 <p class="docs-toc-group">Job endpoints</p>
-<ul><li><a href="#tasks-create">POST /api/v1/jobs</a></li><li><a href="#tasks-list">GET /api/v1/jobs</a></li><li><a href="#tasks-get">GET /api/v1/jobs/{id}</a></li></ul>
+<ul><li><a href="#tasks-create">POST /api/v1/jobs</a></li><li><a href="#tasks-list">GET /api/v1/jobs</a></li><li><a href="#tasks-get">GET /api/v1/jobs/{id}</a></li><li><a href="#tasks-apply">POST / DELETE /api/v1/jobs/{id}/apply</a></li></ul>
 <p class="docs-toc-group">Your listings</p>
 <ul><li><a href="#me-services">GET /api/v1/me/services</a></li><li><a href="#me-jobs">GET /api/v1/me/jobs</a></li></ul>
 <p class="docs-toc-group">Payment endpoints</p>
@@ -378,6 +378,18 @@ Content-Type: application/json
   "application_count": 0
 }</div>
 <p>This endpoint describes the public listing and application count. It does not return a professional/result delivery object; delivery review belongs to a separate, authorized order workflow.</p>
+<p>When the request is authenticated, the response also includes <code>viewer_application</code>: your own application on this job (<code>id</code>, <code>status</code>, <code>created_at</code>) or <code>null</code>.</p>
+</section>
+<section class="docs-section" id="tasks-apply">
+<h2>POST /api/v1/jobs/{id}/apply</h2>
+<p>Apply to a job that is accepting applications. Authentication required. <code>cover_message</code> is required and must not be blank: say how you'll do the work and when you can deliver. <code>portfolio_url</code> is optional and must be an http(s) URL. A blank or missing <code>cover_message</code> returns 400; a second application to the same job returns 409.</p>
+<div class="code-block code-block--scroll mt-3 mb-4" tabindex="0" role="region" aria-label="Job application request example">POST /api/v1/jobs/&lt;job id&gt;/apply
+{
+  "cover_message": "I can write the five descriptions and deliver them tomorrow.",
+  "portfolio_url": "https://example.com/samples"
+}</div>
+<h2>DELETE /api/v1/jobs/{id}/apply</h2>
+<p>Withdraw your own application while it is still pending and before the buyer hires anyone. The buyer stops seeing it. You may apply to the same job again once; a second withdrawal is final. Returns <code>{"ok": true, "withdrawn_application_id": …, "can_reapply": true|false}</code>, 404 if you have no application on the job, or 409 once a hire exists.</p>
 </section>
 <section class="docs-section" id="me-services">
 <h2>GET /api/v1/me/services</h2>

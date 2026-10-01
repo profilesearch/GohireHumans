@@ -237,7 +237,8 @@ GohireHumans/
 | `GET` | `/me/services` | The caller's own services in every status (auth required; `page`, `per_page`, `status`, `include_removed`) |
 | `GET` | `/me/jobs` | The caller's own jobs in every status, with `application_count` (auth required) |
 | `POST` | `/jobs` | Create a job |
-| `POST` | `/jobs/{id}/apply` | Apply to a job |
+| `POST` | `/jobs/{id}/apply` | Apply to a job; non-empty `cover_message` required, optional http(s) `portfolio_url` |
+| `DELETE` | `/jobs/{id}/apply` | Withdraw your own pending application before a hire; one reapply allowed per job |
 | `POST` | `/jobs/{id}/hire` | Hire an applicant |
 | `GET` | `/services/{id}/quote` | Preview an authenticated, itemized service charge without creating an order |
 | `POST` | `/services/{id}/order` | Order a listed service; optionally bind the request to a quote |

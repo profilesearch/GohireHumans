@@ -4243,6 +4243,48 @@ def _erasure_identity_pattern(target):
 
 _ERASURE_APPLICATION_NOTICE_SUFFIX = ' applied to your job.'
 _ERASURE_APPLICATION_NOTICE_REPLACEMENT = 'A former user applied to your job.'
+_WITHDRAWN_APPLICATION_NOTICE = 'An applicant applied, then withdrew their application.'
+# A worker may withdraw and reapply to the same job once; a second withdrawal is
+# final, so a withdraw/reapply loop cannot keep re-notifying the employer.
+MAX_APPLICATION_WITHDRAWALS_PER_JOB = 2
+
+
+def _application_notice_rows(db, app):
+    """The employer's "<name> applied to your job." notices for one application.
+
+    Email notices carry dedupe_context 'application:<id>' and the notification
+    id; in-app-only notices are matched by employer, job link, template and
+    creation time. Returns ({outbox_id: message}, {notification_id: message},
+    ambiguous) so callers can block instead of guessing.
+    """
+    outbox, notices = {}, {}
+    linked_notification = None
+    for row in db.execute(
+            """SELECT id, message, notification_id FROM transactional_email_outbox
+               WHERE user_id=? AND notification_type='new_application' AND dedupe_context=?""",
+            [app['employer_id'], f"application:{app['id']}"]):
+        if (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+            outbox[row['id']] = row['message']
+        linked_notification = row['notification_id'] or linked_notification
+    if linked_notification is not None:
+        row = db.execute("SELECT id, message FROM notifications WHERE id=? AND user_id=? AND type='new_application'",
+                         [linked_notification, app['employer_id']]).fetchone()
+        if row and (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
+            notices[row['id']] = row['message']
+        return outbox, notices, False
+    candidates = [r for r in db.execute(
+        """SELECT id, message FROM notifications
+           WHERE user_id=? AND type='new_application' AND link=?
+             AND created_at >= ? AND created_at <= datetime(?, '+5 seconds')
+             AND id NOT IN (SELECT notification_id FROM transactional_email_outbox
+                            WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
+        [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
+        if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
+    if len(candidates) > 1:
+        return outbox, notices, True
+    if candidates:
+        notices[candidates[0]['id']] = candidates[0]['message']
+    return outbox, notices, False
 
 
 def _erasure_peer_rows(db, target):
@@ -4263,32 +4305,11 @@ def _erasure_peer_rows(db, target):
            JOIN jobs j ON j.id=a.job_id WHERE a.worker_id=? AND j.employer_id!=?""",
         [target['id'], target['id']]).fetchall()
     for app in applications:
-        linked_notification = None
-        for row in db.execute(
-                """SELECT id, message, notification_id FROM transactional_email_outbox
-                   WHERE user_id=? AND notification_type='new_application' AND dedupe_context=?""",
-                [app['employer_id'], f"application:{app['id']}"]):
-            if (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
-                outbox[row['id']] = row['message']
-            linked_notification = row['notification_id'] or linked_notification
-        if linked_notification is not None:
-            row = db.execute("SELECT id, message FROM notifications WHERE id=? AND user_id=? AND type='new_application'",
-                             [linked_notification, app['employer_id']]).fetchone()
-            if row and (row['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX):
-                notices[row['id']] = row['message']
-            continue
-        candidates = [r for r in db.execute(
-            """SELECT id, message FROM notifications
-               WHERE user_id=? AND type='new_application' AND link=?
-                 AND created_at >= ? AND created_at <= datetime(?, '+5 seconds')
-                 AND id NOT IN (SELECT notification_id FROM transactional_email_outbox
-                                WHERE notification_type='new_application' AND notification_id IS NOT NULL)""",
-            [app['employer_id'], f"/jobs/{app['job_id']}/applications", app['created_at'], app['created_at']])
-            if (r['message'] or '').endswith(_ERASURE_APPLICATION_NOTICE_SUFFIX)]
-        if len(candidates) > 1:
+        app_outbox, app_notices, ambiguous = _application_notice_rows(db, app)
+        outbox.update(app_outbox)
+        notices.update(app_notices)
+        if ambiguous:
             blockers.append('ambiguous_peer_notice')
-        elif candidates:
-            notices[candidates[0]['id']] = candidates[0]['message']
     found = {'notifications': sorted(notices.items()), 'transactional_email_outbox': sorted(outbox.items())}
     return found, sorted(set(blockers))
 
@@ -11540,6 +11561,15 @@ def _handle_routes(db):
         # Lets the UI mirror the server's hiring gate instead of guessing.
         result['hiring_enabled'] = bool(JOB_HIRING_ENABLED and
                                         (result.get('budget_type') == 'fixed' or HOURLY_JOB_HIRING_ENABLED))
+        # A signed-in worker sees their own application so the page can offer
+        # "Withdraw" instead of an Apply button that would only return a 409.
+        viewer_for_application = authenticate(db)
+        if viewer_for_application:
+            mine = db.execute(
+                "SELECT id, status, created_at FROM applications WHERE job_id=? AND worker_id=?",
+                [job_id, viewer_for_application['id']],
+            ).fetchone()
+            result['viewer_application'] = row_to_dict(mine) if mine else None
         return json_response(result)
 
     elif path == "/jobs" and method == "POST":
@@ -11848,8 +11878,29 @@ def _handle_routes(db):
         ensure_worker_profile(db, user['id'])
 
         body = get_body()
-        cover_message = body.get("cover_message", "")
-        portfolio_url = body.get("portfolio_url", "")
+        cover_message = body.get("cover_message")
+        portfolio_url = body.get("portfolio_url")
+        if cover_message is None:
+            cover_message = ""
+        if portfolio_url is None:
+            portfolio_url = ""
+        if not isinstance(cover_message, str) or not isinstance(portfolio_url, str):
+            return error_response("cover_message and portfolio_url must be strings", 400)
+        # The web form requires a message; API callers must send one too, so a
+        # buyer never receives an empty application.
+        cover_message = cover_message.strip()
+        portfolio_url = portfolio_url.strip()
+        if not cover_message:
+            return error_response(
+                "cover_message is required: say how you'll do the work and when you can deliver", 400
+            )
+        prior_withdrawals = db.execute(
+            """SELECT COUNT(*) FROM audit_log
+               WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
+            [user['id'], job_id],
+        ).fetchone()[0]
+        if prior_withdrawals >= MAX_APPLICATION_WITHDRAWALS_PER_JOB:
+            return error_response("You've withdrawn from this job twice, so you can't apply to it again", 409)
         application_safety_text = " ".join([str(cover_message or ""), str(portfolio_url or "")])
         safe, msg = check_content_safety(application_safety_text)
         if not safe:
@@ -11890,6 +11941,70 @@ def _handle_routes(db):
         db.commit()
         app = db.execute("SELECT * FROM applications WHERE id = ?", [app_id]).fetchone()
         return json_response(row_to_dict(app), 201)
+
+    elif re.match(r"^/jobs/(\d+)/apply$", path) and method == "DELETE":
+        # A worker withdraws their own application while the buyer is still choosing.
+        user = authenticate(db)
+        if not user:
+            return error_response("Unauthorized", 401)
+        job_id = int(re.match(r"^/jobs/(\d+)/apply$", path).group(1))
+        if db.in_transaction:
+            db.commit()
+        # The hire route re-reads the application under its own BEGIN IMMEDIATE and
+        # aborts if it vanished, so a withdrawal can never race a funded hire.
+        db.execute("BEGIN IMMEDIATE")
+        job = db.execute("SELECT id, employer_id, status FROM jobs WHERE id = ?", [job_id]).fetchone()
+        app = db.execute(
+            "SELECT id, job_id, status, created_at FROM applications WHERE job_id = ? AND worker_id = ?",
+            [job_id, user['id']],
+        ).fetchone() if job else None
+        if not app:
+            db.rollback()
+            return error_response("You don't have an application on this job", 404)
+        if app['status'] not in ('pending', 'shortlisted') or db.execute(
+                "SELECT 1 FROM orders WHERE type='job_hire' AND job_id=?", [job_id]).fetchone():
+            db.rollback()
+            return error_response("This application can't be withdrawn because the buyer has already hired", 409)
+        notice_outbox, notices, _ambiguous = _application_notice_rows(
+            db, {'id': app['id'], 'job_id': job_id, 'employer_id': job['employer_id'],
+                 'created_at': app['created_at']})
+        for outbox_id in notice_outbox:
+            # Unsent "<name> applied" emails are dropped; anything already handed to
+            # the mail provider is left alone.
+            db.execute(
+                """UPDATE transactional_email_outbox
+                   SET state='failed',delivery_status='suppressed',last_error='application withdrawn',
+                       claimed_at=NULL,claim_token=NULL,next_attempt_at=NULL,
+                       email_to='',title='',message='',link=''
+                   WHERE id=? AND state='pending'
+                     AND id NOT IN (SELECT outbox_id FROM agentmail_send_ledger)""",
+                [outbox_id],
+            )
+        for notification_id, planned_message in notices.items():
+            db.execute("UPDATE notifications SET message=? WHERE id=? AND message=?",
+                       [_WITHDRAWN_APPLICATION_NOTICE, notification_id, planned_message])
+        if db.execute("DELETE FROM applications WHERE id=? AND status IN ('pending','shortlisted')",
+                      [app['id']]).rowcount != 1:
+            db.rollback()
+            return error_response("This application changed; refresh and try again", 409)
+        db.execute(
+            """UPDATE jobs SET status='open', updated_at=datetime('now')
+               WHERE id=? AND status='reviewing'
+                 AND NOT EXISTS (SELECT 1 FROM applications WHERE job_id=?)""",
+            [job_id, job_id],
+        )
+        audit(db, user['id'], "withdraw_application", "job", job_id, {"application_id": app['id']})
+        withdrawals = db.execute(
+            """SELECT COUNT(*) FROM audit_log
+               WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
+            [user['id'], job_id],
+        ).fetchone()[0]
+        db.commit()
+        return json_response({
+            "ok": True,
+            "withdrawn_application_id": app['id'],
+            "can_reapply": withdrawals < MAX_APPLICATION_WITHDRAWALS_PER_JOB,
+        })
 
     # ═══════════════════════════════════════════════════════════════════════════
     # HIRING FLOW

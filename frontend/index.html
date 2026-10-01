@@ -2427,8 +2427,10 @@ async function renderJobDetail(id) {
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = isSignedIn() && String(state.user.id) === String(job.employer_id);
     const acceptsApplications = jobAcceptsApplications(job);
+    const myApplication = !isOwner && job.viewer_application ? job.viewer_application : null;
+    const canWithdraw = Boolean(myApplication) && acceptsApplications && ['pending', 'shortlisted'].includes(myApplication.status);
     const hourlyPaused = !HOURLY_JOB_HIRING_ENABLED && job.budget_type === 'hourly';
-    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused;
+    const shouldAutoApply = getQuery().get('apply') === '1' && isSignedIn() && acceptsApplications && !isOwner && !hourlyPaused && !myApplication;
 
     document.getElementById('app').innerHTML = `
       ${renderPublicNav('jobs')}
@@ -2478,6 +2480,9 @@ async function renderJobDetail(id) {
               </div>
               ${hourlyPaused
                 ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
+                : myApplication && acceptsApplications
+                ? `<p class="svc-order-note" role="status">You applied ${esc(relativeDate(myApplication.created_at))}. The buyer can see your application.</p>
+                   ${canWithdraw ? `<button class="btn btn-secondary" onclick="withdrawJobApplication(${Number(id)})">Withdraw application</button>` : ''}`
                 : acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" onclick="handleJobApply(${Number(id)})">${isSignedIn() ? 'Apply to This Job' : 'Sign in to Apply'}</button>
                    <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
@@ -2588,6 +2593,30 @@ async function handleJobApply(id) {
       toastError(err, message);
     }
   };
+}
+
+// A worker can take back an application while the buyer is still choosing.
+function withdrawJobApplication(jobId) {
+  trackEvent('job_application_withdraw_intent', { job_id: String(jobId), source: 'job_detail' });
+  showModal(
+    'Withdraw your application?',
+    "The buyer will no longer see it. If you've already withdrawn from this job once, this withdrawal is final and you can't apply again.",
+    async () => {
+      let result;
+      try {
+        result = await api(`/jobs/${jobId}/apply`, { method: 'DELETE' });
+      } catch (err) {
+        toastError(err, 'Your application could not be withdrawn. Please try again.');
+        return false;
+      }
+      trackEvent('job_application_withdrawn', { job_id: String(jobId), source: 'job_detail' });
+      toast(result && result.can_reapply === false ? "Application withdrawn. You can't apply to this job again." : 'Application withdrawn', 'success');
+      renderJobDetail(jobId);
+    },
+    'Withdraw',
+    'Keep it',
+    true
+  );
 }
 
 // Buyers cannot hire an applicant until the applicant's payout account is ready,
