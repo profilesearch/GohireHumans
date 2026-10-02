@@ -63,6 +63,34 @@ test('Upwork project and quiz fees label the freelancer example and exact Basic 
   }
 });
 
+test('project fee calculator differences reconcile with the cent-rounded fees each row shows', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/tools/fee-calculator.html');
+  const money = text => Number(text.replace(/[^0-9.]/g, ''));
+  for (const mode of ['#toggleFreelancer', '#toggleClient']) {
+    await page.locator(mode).click();
+    for (const amount of ['33.33', '100.01', '1,234.56', '2000']) {
+      await page.locator('#amountInput').fill(amount);
+      const featured = page.locator('.calc-row-featured');
+      const reference = money(await featured.locator('td').nth(1).locator('.amt').innerText())
+        + money(await featured.locator('td').nth(2).locator('.amt').innerText());
+      const rows = page.locator('#resultsBody tr:not(.calc-row-featured)');
+      await expect(rows).toHaveCount(4);
+      for (let i = 0; i < 4; i++) {
+        const row = rows.nth(i);
+        const fees = money(await row.locator('td').nth(1).locator('.amt').innerText())
+          + money(await row.locator('td').nth(2).locator('.amt').innerText());
+        const expected = Math.round((fees - reference) * 100) / 100;
+        const shown = await row.locator('td').nth(4).innerText();
+        if (expected > 0) expect(money(shown), `${amount} ${await row.locator('td').first().innerText()}`).toBe(expected);
+        else expect(shown).toBe('Same or lower');
+      }
+    }
+  }
+  await page.locator('#amountInput').fill('33.33');
+  await expect(page.locator('#resultsBody tr').filter({ hasText: 'Upwork' }).locator('td').nth(4)).toHaveText('$4.66 more in platform fees');
+});
+
 async function localOnly(page) {
   await page.route('**/*', route => {
     const url = new URL(route.request().url());

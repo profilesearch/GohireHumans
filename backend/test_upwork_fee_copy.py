@@ -41,6 +41,21 @@ class UpworkFeeCopyTests(unittest.TestCase):
                         failures.append(f"{path.relative_to(ROOT)}: {pattern}")
         self.assertEqual(failures, [])
 
+    def test_upwork_client_ceiling_is_always_qualified_as_basic_plan(self):
+        failures = []
+        for folder in ("frontend", "backend"):
+            for path in (ROOT / folder).rglob("*"):
+                if path.is_symlink() or "node_modules" in path.parts or "tests" in path.parts or path.name.startswith("test"):
+                    continue
+                if path.suffix not in {".html", ".xml", ".txt", ".json", ".md", ".py", ".js"}:
+                    continue
+                source = path.read_text(encoding="utf-8", errors="ignore")
+                for match in re.finditer(r"up to 7\.99%", source, re.I):
+                    window = source[max(0, match.start() - 120): match.end() + 60]
+                    if "basic" not in window.lower():
+                        failures.append(f"{path.relative_to(ROOT)}: {window.strip()[:160]}")
+        self.assertEqual(failures, [])
+
     def test_mcp_copies_keep_identical_current_upwork_fee_row(self):
         expected = "| Upwork | Up to 7.99% client fee (Basic) | 0–15% freelancer fee per contract |"
         for rel in ("backend/mcp_server.py", "backend/mcp-package/mcp_server.py"):
