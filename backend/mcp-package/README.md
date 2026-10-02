@@ -82,7 +82,7 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 
 ## Why GoHireHumans?
 
-- **1% employer fee** — vs Fiverr's 27.7% or Upwork's 18.5%
+- **1% employer fee** — vs Fiverr's 27.7% or Upwork's up to 7.99% Basic client fee plus a 0–15% freelancer fee per contract
 - **0% freelancer fee** — workers keep 100% of earnings
 - **AI-native** — built from day one for AI agent integration
 - **Payment connector** — Stripe processes configured checkout and payouts; GoHireHumans is not an escrow provider, guarantor, or arbitrator

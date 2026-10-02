@@ -147,7 +147,7 @@
         <dt>Employer fee</dt>
         <dd>a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</dd>
         <dt>Rates used</dt>
-        <dd>Published standard rates; GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.</dd>
+        <dd>Published rates and examples; GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded. Upwork contract initiation fees and taxes are also excluded.</dd>
       </dl>
       </div>
       <div class="pub-hero-aside">
@@ -256,12 +256,12 @@
     <div class="pub-inner pub-inner--narrow">
       <div class="section-head">
         <h2 id="method-heading">How the estimate works</h2>
-        <p>The quiz multiplies your monthly amount by twelve and applies the published seller-side or buyer-side rate for the platform you picked.</p>
+        <p>The quiz multiplies your monthly amount by twelve and applies the modeled seller-side or buyer-side rate for the platform you picked. Upwork uses a 10% freelancer example and the Basic client maximum.</p>
       </div>
       <div class="prose">
         <ul>
           <li>Fiverr: a 20% seller commission plus a 5.5% buyer fee.</li>
-          <li>Upwork: a 10% freelancer fee plus a 5% client fee.</li>
+          <li>Upwork: 10% example; actual fee is 0&ndash;15% per contract, plus up to 7.99% client fee on Basic (3% when a qualifying U.S. client pays by bank account). Upwork’s separate one-time contract initiation fee ($0.99 to $14.99) and any taxes are excluded from these figures.</li>
           <li>Toptal: no seller fee but a markup on rates. The calculators model the markup at 20% of the billed amount on the seller side and show no separate buyer fee.</li>
           <li>Freelancer.com: a 10% project fee plus a 3% client fee.</li>
           <li>GoHireHumans: Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</li>
@@ -341,11 +341,11 @@
   <script src="/tools/checkout-fees.js"></script>
      <script>
      (function () {
-    // Published standard rates. Toptal charges no seller fee but a markup on rates,
+    // Published rates and examples; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a markup on rates,
     // modeled at 20% on the seller side, the same as the fee calculators.
     var PLATFORM_FEES = {
       fiverr:     { seller: 0.20, buyer: 0.055, name: 'Fiverr' },
-      upwork:     { seller: 0.10, buyer: 0.05,  name: 'Upwork' },
+      upwork:     { seller: 0.10, buyer: 0.0799, name: 'Upwork' },
       toptal:     { seller: 0.20, buyer: 0,     name: 'Toptal' },
       freelancer: { seller: 0.10, buyer: 0.03,  name: 'Freelancer.com' },
       other:      { seller: 0.10, buyer: 0.03,  name: 'a typical marketplace' }
@@ -360,7 +360,7 @@
     var $$ = function (selector, root) { return Array.prototype.slice.call((root || document).querySelectorAll(selector)); };
     var $ = function (selector, root) { return (root || document).querySelector(selector); };
     var fmt = function (n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-    var pct = function (rate) { var value = rate * 100; return (Math.abs(value - Math.round(value)) < 0.01 ? Math.round(value) : value.toFixed(1)) + '%'; };
+    var pct = function (rate) { return (rate * 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%'; };
 
     var result = $('#result');
     var progress = $('#prog');
@@ -405,11 +405,15 @@
       $('#r-amount').textContent = fmt(Math.max(difference, 0));
       $('#r-headline').textContent = difference > 0 ? 'Estimated annual difference' : 'No modeled fee difference';
       $('#r-sub').textContent = difference > 0
-        ? 'per year on GoHireHumans compared with ' + fees.name + '. GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded.'
+        ? 'per year on GoHireHumans compared with ' + fees.name + '. GoHireHumans includes its fixed checkout charge; other platforms’ processing is excluded. Upwork contract initiation fees and taxes are also excluded.'
         : 'Your path on ' + fees.name + ' is already modeled at zero platform fee.';
 
       $('#b-gross').textContent = fmt(annual);
-      $('#b-current-label').textContent = fees.name.charAt(0).toUpperCase() + fees.name.slice(1) + ' fee (' + pct(currentRate) + ')';
+      var feeLabel = platform === 'upwork'
+        ? (role === 'buyer' ? 'up to 7.99% client fee, Basic' : '10% example; actual fee is 0–15% per contract')
+        : pct(currentRate);
+      $('#b-current-label').textContent = fees.name.charAt(0).toUpperCase() + fees.name.slice(1) + ' fee (' + feeLabel + ')';
+      if (platform === 'upwork') $('#r-sub').textContent += ' Modeled Upwork fees: a 10% freelancer example or up to 7.99% Basic client fee; actual fees vary by contract and billing method.';
       $('#b-current').textContent = fmt(currentFee);
       $('#b-ghh').textContent = role === 'buyer' ? fmt(ghhFee) + ' (1% platform fee + fixed 3% processing charge per monthly checkout)' : '$0.00 (workers receive the listed payout)';
       $('#b-savings').textContent = fmt(difference) + ' per year';
@@ -417,7 +421,7 @@
       var params = new URLSearchParams({ p: platform, r: role, a: String(monthly), c: answers.cat || 'other' });
       var shareUrl = 'https://www.gohirehumans.com/tools/are-you-overpaying.html?' + params.toString();
       var shareText = difference > 0
-        ? 'By the published rates I would keep ' + fmt(difference) + ' more per year on GoHireHumans than on ' + fees.name + '. Check yours:'
+        ? 'By the modeled fees I would keep ' + fmt(difference) + ' more per year on GoHireHumans than on ' + fees.name + '. Check yours:'
         : 'No modeled fee difference for my case. Try the quiz:';
       $('#share-x').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(shareUrl);
       $('#share-li').href = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(shareUrl);

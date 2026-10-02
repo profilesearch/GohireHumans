@@ -4,7 +4,7 @@ const path = require('path');
 
 // Synthetic customer input/clipboard/mail activation only. Serve real repository
 // HTML/assets from disk; intercept ALL browser requests, never contact a server.
-const origin = 'http://127.0.0.1:4192';
+const origin = `http://127.0.0.1:${process.env.PW_PORT || 4173}`;
 const root = path.resolve(__dirname, '..');
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ context, page }) => {
@@ -42,10 +42,10 @@ test('fee calculator labels buyer total and seller net without changing modeled 
   await page.goto(`${origin}/tools/freelance-fee-calculator.html`);
   const resultHeading = page.locator('.compare-table thead th').nth(2);
   await expect(resultHeading).toHaveText('You net');
-  // Synthetic inputs; these rates lock existing behavior, NOT a pricing audit.
+  // Synthetic inputs; Upwork models a 10% freelancer example and the Basic client maximum.
   const rates = {
     seller: { GoHireHumans: 0, Upwork: 0.10, Toptal: 0.20, Fiverr: 0.20, 'Freelancer.com': 0.10 },
-    buyer: { Upwork: 0.05, Toptal: 0, Fiverr: 0.055, 'Freelancer.com': 0.03 },
+    buyer: { Upwork: 0.0799, Toptal: 0, Fiverr: 0.055, 'Freelancer.com': 0.03 },
   };
   const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // GoHireHumans buyer side mirrors checkout: 1% + fixed 3%, each rounded half-up to the cent.
@@ -61,7 +61,11 @@ test('fee calculator labels buyer total and seller net without changing modeled 
         await expect(page.locator('#rows tr')).toHaveCount(5);
         for (const [platform, rate] of Object.entries(rates[role])) {
           const row = page.locator('#rows tr').filter({ has: page.getByText(platform, { exact: true }) });
-          await expect(row.locator('td').nth(1)).toHaveText(`${money(amount * rate)} (${Math.round(rate * 100)}%)`);
+          const percentage = (rate * 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+          const label = platform === 'Upwork'
+            ? (role === 'seller' ? '10% example; actual fee is 0–15% per contract' : 'up to 7.99% client fee, Basic')
+            : `${percentage}%`;
+          await expect(row.locator('td').nth(1)).toHaveText(`${money(amount * rate)} (${label})`);
           await expect(row.locator('.net-cell')).toHaveText(money(role === 'buyer' ? amount + amount * rate : amount - amount * rate));
         }
         if (role === 'buyer') {

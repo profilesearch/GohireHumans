@@ -1003,9 +1003,11 @@ def handle_get_pricing_info(args):
 |----------|----------------|-----------------|
 | GoHireHumans | 1% platform fee + fixed 3% processing charge | 0% |
 | Fiverr | 5.5% buyer fee | 20% commission |
-| Upwork | 5% client fee | 10% freelancer fee |
+| Upwork | Up to 7.99% client fee (Basic) | 0–15% freelancer fee per contract |
 | Freelancer.com | 3% client fee | 10% project fee |
 | Toptal | Markup on rates | 0% |
+
+Upwork freelancer fees are shown before a proposal or offer is sent and locked per contract. Qualifying U.S. Basic clients paying by bank account pay 3%; Business Plus client fees are higher.
 
 Competitor figures are published rates as of 2026; confirm current terms on each platform.
 

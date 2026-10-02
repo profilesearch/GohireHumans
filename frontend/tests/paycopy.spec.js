@@ -39,6 +39,30 @@ test('buyer fee tools use backend component rounding including minimum cents and
   await expect(page.locator('#b-ghh')).toContainText('$15.96');
 });
 
+test('Upwork project and quiz fees label the freelancer example and exact Basic client maximum', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/tools/fee-calculator.html?amount=1000');
+  await page.locator('#amountInput').fill('1000');
+  const row = page.locator('#resultsBody tr').filter({ hasText: 'Upwork' });
+  await expect(row.locator('td').nth(1)).toHaveText('$100.0010% example; actual fee is 0–15% per contract');
+  await expect(row.locator('td').nth(2)).toHaveText('$79.90Up to 7.99% client fee (Basic)');
+  await expect(row.locator('td').nth(3)).toHaveText('$900.00');
+  await page.locator('#toggleClient').click();
+  await expect(row.locator('td').nth(3)).toHaveText('$1,079.90');
+  for (const [role, label, fee, difference] of [
+    ['buyer', 'Upwork fee (up to 7.99% client fee, Basic)', '$958.80', '$478.80'],
+    ['seller', 'Upwork fee (10% example; actual fee is 0–15% per contract)', '$1,200.00', '$1,200.00'],
+  ]) {
+    await page.goto(`/tools/are-you-overpaying.html?p=upwork&r=${role}&a=1000&c=other`);
+    await expect(page.locator('#b-current-label')).toHaveText(label);
+    await expect(page.locator('#b-current')).toHaveText(fee);
+    await expect(page.locator('#r-amount')).toHaveText(difference);
+    await expect(page.locator('#r-sub')).toContainText('Modeled Upwork fees');
+    const shared = new URL(await page.locator('#share-x').getAttribute('href'));
+    expect(shared.searchParams.get('text')).toContain('modeled fees');
+  }
+});
+
 async function localOnly(page) {
   await page.route('**/*', route => {
     const url = new URL(route.request().url());
