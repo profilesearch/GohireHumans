@@ -18,6 +18,7 @@ any drift. The contract is documented in docs/design-system/public-shell.md.
 """
 from collections import Counter
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,9 @@ SKIP_DIRS = {'node_modules', 'test-results', 'playwright-report', 'partials', '.
 RETURN_BRIDGE = Path('payments/index.html')
 # Token-only email-preference page: same rules as the return bridge.
 EMAIL_PREFERENCES = Path('email-preferences/index.html')
+# Google Search Console ownership token (google<hex>.html): a one-line file Google
+# fetches to verify the site. It must stay byte-exact and is not a page.
+SEARCH_CONSOLE_TOKEN = re.compile(r'google[0-9a-f]{16}\.html')
 
 REQUIRED_FILES = [
     'frontend/partials/public-nav.html',
@@ -81,6 +85,8 @@ def public_pages():
     for path in sorted(FRONTEND.rglob('*.html')):
         rel = path.relative_to(FRONTEND)
         if SKIP_DIRS.intersection(rel.parts[:-1]) or rel in (RETURN_BRIDGE, EMAIL_PREFERENCES):
+            continue
+        if len(rel.parts) == 1 and SEARCH_CONSOLE_TOKEN.fullmatch(rel.name):
             continue
         pages.append(path)
     return pages
