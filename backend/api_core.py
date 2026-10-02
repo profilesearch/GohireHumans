@@ -380,11 +380,13 @@ def _earlier_bound_peer_accounts(db, user_id, account_id, limit=3):
 
 
 def connected_account_reported_missing(db, exc, account_id, user_id):
-    """True only when Stripe definitively says a bound Connect account is unknown AND the
-    current key is proven to be the platform that created it. Proof: another worker's
-    account, created by this app before this one and still bound, retrieves with the
-    matching id and owner. A healthy key for a different platform cannot pass. Any
-    other failure, or any doubt, returns False (fail closed). No writer is held."""
+    """Necessary (not sufficient) evidence that a bound Connect account is gone: Stripe
+    says 403 account_invalid for it, AND the same key still retrieves another worker's
+    account that this app created earlier and still binds (matching id and owner), so
+    the key is not broken or simply pointed at an unrelated platform. It cannot prove
+    which platform created the target (a deleted account leaves no trace), so callers
+    must also require an explicit admin attestation. Any doubt returns False (fail
+    closed). No SQLite writer is held during the Stripe calls."""
     if not STRIPE_AVAILABLE or not isinstance(exc, stripe.PermissionError):
         return False
     if getattr(exc, 'http_status', None) != 403:
@@ -15287,8 +15289,11 @@ def _handle_routes(db):
             return error_response(step_error, step_status)
         dry_run = body.get('dry_run', True)
         delete_stripe_account = body.get('delete_stripe_account', True)
+        attest_account_missing = body.get('attest_account_missing', False)
         if not isinstance(dry_run, bool) or not isinstance(delete_stripe_account, bool):
             return error_response('dry_run and delete_stripe_account must be booleans', 400)
+        if not isinstance(attest_account_missing, bool):
+            return error_response('attest_account_missing must be a boolean', 400)
         profile = db.execute(
             'SELECT payout_account_id,payout_account_country FROM worker_profiles WHERE user_id=?',
             [target_id],
@@ -15373,11 +15378,15 @@ def _handle_routes(db):
                     acct = None
                     account_missing = connected_account_reported_missing(db, exc, account_id, target_id)
                 if account_missing:
-                    # Stripe definitively reports the bound account gone (e.g. deleted in
-                    # the Dashboard). There is no account or balance left to inspect or
-                    # delete; only the stale local binding remains, and it blocks setup.
+                    # Stripe reports the bound account unknown to this key, and the key
+                    # still controls an earlier peer. A deleted account leaves no Stripe
+                    # evidence of which platform created it, so code cannot prove it was
+                    # ours: an admin must explicitly attest before the binding is cleared.
+                    # Clearing never deletes at Stripe or moves money.
                     result['stripe_account_missing'] = True
                     result['will_delete_stripe_account'] = False
+                    if attest_account_missing is not True:
+                        blockers.append('account_missing_unattested')
                 elif not acct:
                     blockers.append('account_unverified')
                 else:
@@ -15505,6 +15514,7 @@ def _handle_routes(db):
                            'stripe_deleted': stripe_deleted}
                 if account_missing:
                     details['stripe_account_missing'] = True
+                    details['stripe_account_missing_attested'] = True
                 audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id, details)
                 db.commit()
             except Exception:

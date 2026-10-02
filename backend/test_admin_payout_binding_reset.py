@@ -831,11 +831,15 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
             retrieve.side_effect = self.router()
             status, body = self.reset()
             self.assertEqual(status, 200, body)
-            self.assertTrue(body['eligible'], body)
-            self.assertEqual(body['blockers'], [])
+            self.assertFalse(body['eligible'], body)
+            self.assertEqual(body['blockers'], ['account_missing_unattested'])
             self.assertTrue(body['stripe_account_missing'])
             self.assertFalse(body['will_delete_stripe_account'])
             self.assertEqual([c.args[0] for c in retrieve.call_args_list], [self.ACCOUNT, self.PEER])
+            status, body = self.reset(attest_account_missing=True)
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body['eligible'], body)
+            self.assertEqual(body['blockers'], [])
             balance.assert_not_called()
             delete.assert_not_called()
         self.assertEqual(self.snapshot(), before)
@@ -845,7 +849,7 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
         p_config, p_retrieve, p_balance, p_delete = self.mocks()
         with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
             retrieve.side_effect = self.router()
-            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
             self.assertEqual(status, 200, body)
             self.assertFalse(body['stripe_deleted'])
             self.assertTrue(body['stripe_account_missing'])
@@ -864,7 +868,8 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='admin_payout_binding_reset'").fetchone()[0], 0)
             audit = db.execute("SELECT details FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()
             self.assertEqual(json.loads(audit[0]), {'old_account_suffix': '123456', 'old_country': 'US',
-                                                    'stripe_deleted': False, 'stripe_account_missing': True})
+                                                    'stripe_deleted': False, 'stripe_account_missing': True,
+                                                    'stripe_account_missing_attested': True})
         self.assertFalse(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
         # The worker can now start over: setup creates a fresh account instead of reusing the dead id.
         with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
@@ -880,12 +885,12 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
         p_config, p_retrieve, p_balance, p_delete = self.mocks()
         with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
             retrieve.side_effect = retrieve_effect
-            status, body = self.reset()
+            status, body = self.reset(attest_account_missing=True)
             self.assertEqual(status, 200, body)
             self.assertFalse(body['eligible'])
             self.assertIn('account_unverified', body['blockers'])
             self.assertFalse(body['stripe_account_missing'])
-            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
             self.assertEqual(status, 409, body)
             balance.assert_not_called()
             delete.assert_not_called()
@@ -985,7 +990,7 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
         p_config, p_retrieve, p_balance, p_delete = self.mocks()
         with p_config, p_retrieve as retrieve, p_balance, p_delete as delete:
             retrieve.side_effect = self.router()
-            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
             self.assertEqual(status, 409, body)
             self.assertIn('financial_history', body['blockers'])
             retrieve.assert_not_called()
@@ -1003,7 +1008,7 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
         p_config, p_retrieve, p_balance, p_delete = self.mocks()
         with p_config, p_retrieve as retrieve, p_balance, p_delete as delete:
             retrieve.side_effect = self.router(hook=rebind)
-            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
             self.assertEqual(status, 409, body)
             delete.assert_not_called()
         self.assertEqual(self.snapshot()[0][0], new_id)
@@ -1027,7 +1032,53 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
         with mock.patch.object(self.core, 'get_db', side_effect=track_db), p_config, \
              p_retrieve as retrieve, p_balance, p_delete:
             retrieve.side_effect = self.router(hook=probe)
-            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
         self.assertEqual(status, 200, body)
         self.assertTrue(body['stripe_account_missing'])
         self.assertEqual(seen, [self.ACCOUNT, self.PEER])
+
+    def test_unattested_missing_account_is_never_cleared(self):
+        # Review of 824b93d: an earlier peer cannot prove the target's creating platform
+        # (the key may have pointed at another platform when the target was created).
+        # Without an explicit attestation nothing is cleared, dry run or live.
+        self.prepare_missing()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete:
+            retrieve.side_effect = self.router()
+            for attest in (None, False):
+                extra = {} if attest is None else {'attest_account_missing': attest}
+                status, body = self.reset(dry_run=False, confirm_account_suffix='123456', **extra)
+                self.assertEqual(status, 409, body)
+                self.assertTrue(body['stripe_account_missing'])
+                self.assertIn('account_missing_unattested', body['blockers'])
+            balance.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_attestation_must_be_boolean(self):
+        self.prepare_missing()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        with p_config, p_retrieve as retrieve, p_balance, p_delete as delete:
+            retrieve.side_effect = self.router()
+            for bad in ('true', 1, 'yes', [], {}):
+                status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=bad)
+                self.assertEqual(status, 400, body)
+            retrieve.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_attestation_has_no_effect_on_a_retrievable_account(self):
+        # An account Stripe still returns goes through the normal checks; attesting
+        # "missing" cannot bypass them.
+        self.prepare_missing()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete = self.mocks(account=self.account(payouts_enabled=True))
+        with p_config, p_retrieve, p_balance as balance, p_delete as delete:
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456', attest_account_missing=True)
+            self.assertEqual(status, 409, body)
+            self.assertIn('payouts_enabled', body['blockers'])
+            self.assertFalse(body['stripe_account_missing'])
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
