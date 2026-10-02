@@ -6,7 +6,7 @@
     <atom:link href="https://www.gohirehumans.com/feed.xml" rel="self" type="application/rss+xml" />
     <description>Articles from GoHireHumans, a marketplace for small, scoped human work. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</description>
     <language>en-us</language>
-    <lastBuildDate>Thu, 01 Oct 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Fri, 02 Oct 2026 00:00:00 +0000</lastBuildDate>
     <ttl>1440</ttl>
     <item>
       <title>Fiverr vs Upwork vs GoHireHumans (2026)</title>
@@ -30,10 +30,10 @@
       <pubDate>Thu, 30 Apr 2026 00:00:00 +0000</pubDate>
     </item>
     <item>
-      <title>Why Freelancers Switch to Lower-Fee Platforms</title>
+      <title>How Freelance Platform Fees Work in 2026</title>
       <link>https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html</link>
       <guid isPermaLink="true">https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html</guid>
-      <description>Fiverr takes 20% from sellers and Upwork 10%. See the numbers behind the move to lower-fee platforms, what to check before switching, and how to move clients.</description>
+      <description>Who pays what on Fiverr, Upwork, Freelancer.com, and GoHireHumans: freelancer fees, client fees, the math on $50K a year, and what to check before you switch.</description>
       <pubDate>Tue, 17 Mar 2026 00:00:00 +0000</pubDate>
     </item>
     <item>
@@ -65,10 +65,10 @@
       <pubDate>Mon, 16 Mar 2026 00:00:00 +0000</pubDate>
     </item>
     <item>
-      <title>Freelance Platforms With Payment Review</title>
+      <title>Best Freelance Platforms for Payments in 2026</title>
       <link>https://www.gohirehumans.com/blog/best-freelance-platforms-escrow.html</link>
       <guid isPermaLink="true">https://www.gohirehumans.com/blog/best-freelance-platforms-escrow.html</guid>
-      <description>Compare freelance platforms with payment review workflows, what each charges buyers and sellers, and how GoHireHumans handles Stripe checkout where configured.</description>
+      <description>How GoHireHumans, Upwork, Fiverr, and Freelancer.com handle payment: who pays which fees, when buyers approve the work, and when freelancers get paid.</description>
       <pubDate>Mon, 16 Mar 2026 00:00:00 +0000</pubDate>
     </item>
     <item>
