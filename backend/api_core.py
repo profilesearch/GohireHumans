@@ -357,6 +357,31 @@ def retrieve_live_connect_account(account_id):
     return stripe.Account.retrieve(account_id)
 
 
+def retrieve_platform_account():
+    """GET /v1/account: the platform's own account, used to prove the key works."""
+    return stripe.Account.retrieve()
+
+
+def connected_account_reported_missing(exc, account_id):
+    """True only when Stripe definitively says a bound Connect account is unknown to
+    this platform (deleted, or no longer connected) and the platform key itself is
+    proven healthy. Any other failure, or any doubt, returns False (fail closed)."""
+    if not STRIPE_AVAILABLE or not isinstance(exc, stripe.PermissionError):
+        return False
+    if getattr(exc, 'http_status', None) != 403:
+        return False
+    error = stripe_attr(getattr(exc, 'json_body', None) or {}, 'error') or {}
+    if stripe_attr(error, 'code') != 'account_invalid':
+        return False
+    # A broken or revoked platform key must never look like a missing account.
+    try:
+        platform_id = stripe_attr(retrieve_platform_account(), 'id')
+    except Exception:
+        return False
+    return (isinstance(platform_id, str) and platform_id.startswith('acct_')
+            and platform_id != account_id)
+
+
 def sync_worker_payout_readiness(db, user_id, account_id, acct):
     """Persist a retrieved/signed live account's readiness against its current binding.
 
@@ -15310,15 +15335,24 @@ def _handle_routes(db):
             result = {'dry_run': dry_run, 'eligible': False, 'blockers': blockers,
                       'account_id_suffix': suffix, 'account_country': profile['payout_account_country'],
                       'details_submitted': None, 'payouts_enabled': None,
-                      'will_delete_stripe_account': delete_stripe_account}
+                      'will_delete_stripe_account': delete_stripe_account,
+                      'stripe_account_missing': False}
+            account_missing = False
             # No Stripe I/O when local evidence alone disqualifies the binding.
             if not blockers:
                 db.commit()  # Authentication/step-up must not hold a writer across Stripe I/O.
                 try:
                     acct = retrieve_live_connect_account(account_id)
-                except STRIPE_ERROR:
+                except STRIPE_ERROR as exc:
                     acct = None
-                if not acct:
+                    account_missing = connected_account_reported_missing(exc, account_id)
+                if account_missing:
+                    # Stripe definitively reports the bound account gone (e.g. deleted in
+                    # the Dashboard). There is no account or balance left to inspect or
+                    # delete; only the stale local binding remains, and it blocks setup.
+                    result['stripe_account_missing'] = True
+                    result['will_delete_stripe_account'] = False
+                elif not acct:
                     blockers.append('account_unverified')
                 else:
                     result['details_submitted'] = stripe_attr(acct, 'details_submitted')
@@ -15363,7 +15397,7 @@ def _handle_routes(db):
 
             stripe_deleted = False
             lock_id = None
-            if delete_stripe_account:
+            if delete_stripe_account and not account_missing:
                 # Serialize against /payments/setup-worker: re-check under the writer
                 # lock and record an unresolved lock row that setup operations refuse
                 # on, so no setup can start between this check and the local clear.
@@ -15441,15 +15475,18 @@ def _handle_routes(db):
                                       error_code='admin_payout_binding_reset',committed_at=datetime('now'),
                                       updated_at=datetime('now')
                                   WHERE id=? AND status='unknown'""", [lock_id])
-                audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id,
-                      {'old_account_suffix': suffix, 'old_country': profile['payout_account_country'],
-                       'stripe_deleted': stripe_deleted})
+                details = {'old_account_suffix': suffix, 'old_country': profile['payout_account_country'],
+                           'stripe_deleted': stripe_deleted}
+                if account_missing:
+                    details['stripe_account_missing'] = True
+                audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id, details)
                 db.commit()
             except Exception:
                 if db.in_transaction:
                     db.rollback()
                 raise
             return json_response({'ok': True, 'dry_run': False, 'stripe_deleted': stripe_deleted,
+                                  'stripe_account_missing': account_missing,
                                   'account_id_suffix': suffix})
         finally:
             binding_lock.release()

@@ -75,7 +75,8 @@ class AdminPayoutBindingResetTests(unittest.TestCase):
             self.assertEqual(body, {'dry_run': True, 'eligible': True, 'blockers': [],
                                     'account_id_suffix': '123456', 'account_country': 'US',
                                     'details_submitted': False, 'payouts_enabled': False,
-                                    'will_delete_stripe_account': True})
+                                    'will_delete_stripe_account': True,
+                                    'stripe_account_missing': False})
             retrieve.assert_called_once_with(self.ACCOUNT)
             balance.assert_called_once_with(stripe_account=self.ACCOUNT)
             delete.assert_not_called()
@@ -766,3 +767,194 @@ class AdminPayoutBindingResetDryRunLockRegression(AdminPayoutBindingResetTests):
         self.assertEqual(seen['setup'][0], 200, seen['setup'])
         self.assertEqual(seen['dry'][0], 200, seen['dry'])
         self.assertEqual(delete.call_count, 0)
+
+
+class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
+    """A bound Connect account Stripe definitively reports as unknown (deleted outside
+    the app) must be clearable, so the worker can set up payouts again."""
+
+    PLATFORM = {'id': 'acct_platform_000001'}
+
+    @staticmethod
+    def missing_error(code='account_invalid', http_status=403, cls=None):
+        cls = cls or stripe.PermissionError
+        extra = {'param': 'account'} if cls is stripe.InvalidRequestError else {}
+        return cls('The provided key does not have access to account (or that account does not exist).',
+                   http_status=http_status,
+                   json_body={'error': {'type': 'api_error', 'code': code, 'message': 'no access'}}, **extra)
+
+    def missing_mocks(self, error=None, platform=None):
+        p_config, p_retrieve, p_balance, p_delete = self.mocks()
+        p_platform = mock.patch.object(self.core, 'retrieve_platform_account',
+                                       return_value=self.PLATFORM if platform is None else platform)
+        return p_config, p_retrieve, p_balance, p_delete, p_platform, (error or self.missing_error())
+
+    def test_missing_account_dry_run_is_eligible_and_read_only(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete, p_platform as platform:
+            retrieve.side_effect = error
+            status, body = self.reset()
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body['eligible'], body)
+            self.assertEqual(body['blockers'], [])
+            self.assertTrue(body['stripe_account_missing'])
+            self.assertFalse(body['will_delete_stripe_account'])
+            platform.assert_called_once_with()
+            balance.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_missing_account_live_clears_binding_without_stripe_delete(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("""INSERT INTO payment_setup_operations
+                (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                 processor_idempotency_key,status,processor_object_id,result_json)
+                VALUES ('old-us','account_create',3,'hash',?,'old-us:v1','committed',?,?)""",
+                (json.dumps({'country': 'US', 'agreement': 'full'}), self.ACCOUNT,
+                 json.dumps({'account_id': self.ACCOUNT, 'processor_object_id': self.ACCOUNT})))
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete, p_platform:
+            retrieve.side_effect = error
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 200, body)
+            self.assertFalse(body['stripe_deleted'])
+            self.assertTrue(body['stripe_account_missing'])
+            balance.assert_not_called()
+            delete.assert_not_called()
+        with self.core.get_db() as db:
+            row = db.execute('SELECT payout_account_id,payout_method,payout_account_country,payout_service_agreement,payout_method_details FROM worker_profiles WHERE user_id=3').fetchone()
+            self.assertEqual(tuple(row), (None, 'pending_setup', None, None, None))
+            old = db.execute("SELECT status,error_code FROM payment_setup_operations WHERE operation_key='old-us'").fetchone()
+            self.assertEqual(tuple(old), ('committed', 'admin_payout_binding_reset'))
+            # No lock row is needed when there is nothing to delete at Stripe.
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_setup_operations WHERE operation_kind='admin_payout_binding_reset'").fetchone()[0], 0)
+            audit = db.execute("SELECT details FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()
+            self.assertEqual(json.loads(audit[0]), {'old_account_suffix': '123456', 'old_country': 'US',
+                                                    'stripe_deleted': False, 'stripe_account_missing': True})
+        self.assertFalse(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
+        # The worker can now start over: setup creates a fresh account instead of reusing the dead id.
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Account, 'create', return_value=SimpleNamespace(id='acct_new_us_654321')) as created, \
+             mock.patch.object(self.core.stripe.AccountLink, 'create', return_value=SimpleNamespace(url='https://example.invalid/onboard', expires_at=9999999999)):
+            status, body = self.request('POST', '/payments/setup-worker', {'country': 'US'}, 'tok-3')
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body['account_id'], 'acct_new_us_654321')
+        created.assert_called_once()
+
+    def test_other_stripe_failures_still_refuse(self):
+        self.prepare()
+        before = self.snapshot()
+        cases = {
+            'permission_other_code': self.missing_error(code='secret_key_required'),
+            'permission_no_code': self.missing_error(code=None),
+            'account_invalid_not_403': self.missing_error(http_status=400),
+            'invalid_request_resource_missing': self.missing_error(code='resource_missing', http_status=404,
+                                                                   cls=stripe.InvalidRequestError),
+            'authentication': stripe.AuthenticationError('bad key', http_status=401),
+            'connection': stripe.APIConnectionError('offline'),
+            'rate_limit': stripe.RateLimitError('slow down', http_status=429),
+        }
+        for name, error in cases.items():
+            with self.subTest(case=name):
+                p_config, p_retrieve, p_balance, p_delete, p_platform, _ = self.missing_mocks()
+                with p_config, p_retrieve as retrieve, p_balance, p_delete as delete, p_platform:
+                    retrieve.side_effect = error
+                    status, body = self.reset()
+                    self.assertEqual(status, 200, body)
+                    self.assertFalse(body['eligible'])
+                    self.assertIn('account_unverified', body['blockers'])
+                    self.assertFalse(body['stripe_account_missing'])
+                    status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+                    self.assertEqual(status, 409, body)
+                    delete.assert_not_called()
+                self.assertEqual(self.snapshot(), before)
+
+    def test_unverified_platform_key_refuses_missing_account(self):
+        self.prepare()
+        before = self.snapshot()
+        cases = {
+            'platform_auth_error': stripe.AuthenticationError('bad key', http_status=401),
+            'platform_permission_error': self.missing_error(),
+            'platform_runtime_error': RuntimeError('bad response'),
+            'platform_no_id': {},
+            'platform_same_id': {'id': self.ACCOUNT},
+            'platform_bad_id': {'id': 'cus_123'},
+        }
+        for name, outcome in cases.items():
+            with self.subTest(case=name):
+                p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+                with p_config, p_retrieve as retrieve, p_balance, p_delete as delete, p_platform as platform:
+                    retrieve.side_effect = error
+                    if isinstance(outcome, Exception):
+                        platform.side_effect = outcome
+                    else:
+                        platform.return_value = outcome
+                    status, body = self.reset()
+                    self.assertEqual(status, 200, body)
+                    self.assertIn('account_unverified', body['blockers'])
+                    self.assertFalse(body['stripe_account_missing'])
+                    self.assertEqual(self.reset(dry_run=False, confirm_account_suffix='123456')[0], 409)
+                    delete.assert_not_called()
+                self.assertEqual(self.snapshot(), before)
+
+    def test_missing_account_still_respects_local_blockers(self):
+        self.prepare()
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'completed',25)")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+        with p_config, p_retrieve as retrieve, p_balance, p_delete as delete, p_platform as platform:
+            retrieve.side_effect = error
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+            self.assertIn('financial_history', body['blockers'])
+            retrieve.assert_not_called()
+            platform.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot()[0][0], self.ACCOUNT)
+
+    def test_rebind_during_missing_check_is_not_cleared(self):
+        self.prepare()
+        new_id = 'acct_rebound_654321'
+        def rebind_then_platform():
+            with self.core.get_db() as db:
+                db.execute('UPDATE worker_profiles SET payout_account_id=? WHERE user_id=3', (new_id,))
+                db.commit()
+            return self.PLATFORM
+        p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+        with p_config, p_retrieve as retrieve, p_balance, p_delete as delete, p_platform as platform:
+            retrieve.side_effect = error
+            platform.side_effect = rebind_then_platform
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+            self.assertEqual(status, 409, body)
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot()[0][0], new_id)
+
+    def test_stripe_io_runs_without_a_writer_lock(self):
+        self.prepare()
+        route_connections = []
+        real_get_db = self.core.get_db
+        def track_db():
+            conn = real_get_db()
+            route_connections.append(conn)
+            return conn
+        def probe():
+            self.assertFalse(route_connections[-1].in_transaction)
+            with sqlite3.connect(self.core._get_db_path(), timeout=0.2) as contender:
+                contender.execute('BEGIN IMMEDIATE')
+                contender.rollback()
+        p_config, p_retrieve, p_balance, p_delete, p_platform, error = self.missing_mocks()
+        def failing_retrieve(*args):
+            probe()
+            raise error
+        with mock.patch.object(self.core, 'get_db', side_effect=track_db), p_config, \
+             p_retrieve as retrieve, p_balance, p_delete, p_platform as platform:
+            retrieve.side_effect = failing_retrieve
+            platform.side_effect = lambda: (probe(), self.PLATFORM)[1]
+            status, body = self.reset(dry_run=False, confirm_account_suffix='123456')
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body['stripe_account_missing'])
