@@ -337,18 +337,20 @@
 
     // Published rates and examples; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a markup on rates,
     // modeled here at 20% on the freelancer side, the same as the freelance fee calculator.
+    // Modeled competitor fees use whole cents and basis points, rounded half-up once (the same rule as GHH checkout),
+    // so every displayed fee is exact and the difference column reconciles with the cells shown.
+    function rateFee(cents, bps) { return Math.floor((cents * bps + 5000) / 10000) / 100; }
     function getPlatforms(v) {
+      var c = Math.round(Number(v) * 100) || 0;
       return [
         { name: 'GoHireHumans', featured: true, fFee: 0, cFee: (window.ghhBuyerCharge(v)?.feeCents || 0) / 100, fDesc: 'No seller fee; workers receive the listed payout', cDesc: '1% platform fee plus fixed 3% processing charge at checkout (each at least $0.01)' },
-        { name: 'Upwork', fFee: v * 0.10, cFee: v * 0.0799, fDesc: '10% example; actual fee is 0–15% per contract', cDesc: 'Up to 7.99% client fee (Basic)' },
-        { name: 'Fiverr', fFee: v * 0.20, cFee: v * 0.055, fDesc: '20% seller commission', cDesc: '5.5% buyer fee' },
-        { name: 'Freelancer.com', fFee: v * 0.10, cFee: v * 0.03, fDesc: '10% project fee', cDesc: '3% client fee' },
-        { name: 'Toptal', fFee: v * 0.20, cFee: 0, fDesc: 'No seller fee; markup on rates modeled at 20%', cDesc: 'Built into the client rate' }
+        { name: 'Upwork', fFee: rateFee(c, 1000), cFee: rateFee(c, 799), fDesc: '10% example; actual fee is 0–15% per contract', cDesc: 'Up to 7.99% client fee (Basic)' },
+        { name: 'Fiverr', fFee: rateFee(c, 2000), cFee: rateFee(c, 550), fDesc: '20% seller commission', cDesc: '5.5% buyer fee' },
+        { name: 'Freelancer.com', fFee: rateFee(c, 1000), cFee: rateFee(c, 300), fDesc: '10% project fee', cDesc: '3% client fee' },
+        { name: 'Toptal', fFee: rateFee(c, 2000), cFee: 0, fDesc: 'No seller fee; markup on rates modeled at 20%', cDesc: 'Built into the client rate' }
       ];
     }
 
-    // Round each modeled fee to the cent once, so the row cells and the difference column always reconcile.
-    function toCents(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
     function fmt(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function fmtNum(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
     function el(tag, className, text) {
@@ -366,10 +368,9 @@
 
     function render() {
       var isFreelancer = mode === 'freelancer';
-      var platforms = getPlatforms(amount).map(function (p) {
-        return Object.assign({}, p, { fFee: toCents(p.fFee), cFee: toCents(p.cFee) });
-      });
-      var reference = platforms[0].fFee + platforms[0].cFee;
+      var platforms = getPlatforms(amount);
+      function feeCentsOf(p) { return Math.round(p.fFee * 100) + Math.round(p.cFee * 100); }
+      var reference = feeCentsOf(platforms[0]);
 
       resultsHeading.textContent = isFreelancer ? 'What you keep as a freelancer' : 'What you pay as a client';
       colNet.textContent = isFreelancer ? 'You keep' : 'Total you pay';
@@ -383,7 +384,7 @@
         row.appendChild(feeCell(p.fFee, p.fDesc));
         row.appendChild(feeCell(p.cFee, p.cDesc));
         row.appendChild(el('td', 'amt', fmt(isFreelancer ? amount - p.fFee : amount + p.cFee)));
-        var difference = toCents((p.fFee + p.cFee) - reference);
+        var difference = (feeCentsOf(p) - reference) / 100;
         row.appendChild(el('td', null, p.featured ? 'Reference row' : (difference > 0 ? fmt(difference) + ' more in platform fees' : 'Same or lower')));
         fragment.appendChild(row);
       });

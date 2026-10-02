@@ -89,6 +89,20 @@ test('project fee calculator differences reconcile with the cent-rounded fees ea
   }
   await page.locator('#amountInput').fill('33.33');
   await expect(page.locator('#resultsBody tr').filter({ hasText: 'Upwork' }).locator('td').nth(4)).toHaveText('$4.66 more in platform fees');
+  // Half-cent oracle: fees are exact decimal products rounded half-up to the cent (no binary-float drift).
+  await page.locator('#toggleFreelancer').click();
+  for (const [amount, expected] of [
+    ['40.15', { Upwork: ['$4.02', '$3.21'], Fiverr: ['$8.03', '$2.21'], 'Freelancer.com': ['$4.02', '$1.20'] }],
+    ['12.35', { Upwork: ['$1.24', '$0.99'], Fiverr: ['$2.47', '$0.68'], 'Freelancer.com': ['$1.24', '$0.37'] }],
+    ['1000', { Upwork: ['$100.00', '$79.90'], Fiverr: ['$200.00', '$55.00'], 'Freelancer.com': ['$100.00', '$30.00'] }],
+  ]) {
+    await page.locator('#amountInput').fill(amount);
+    for (const [name, [seller, buyer]] of Object.entries(expected)) {
+      const row = page.locator('#resultsBody tr').filter({ has: page.getByText(name, { exact: true }) });
+      await expect(row.locator('td').nth(1).locator('.amt'), `${amount} ${name} seller`).toHaveText(seller);
+      await expect(row.locator('td').nth(2).locator('.amt'), `${amount} ${name} buyer`).toHaveText(buyer);
+    }
+  }
 });
 
 async function localOnly(page) {
