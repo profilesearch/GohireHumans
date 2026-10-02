@@ -357,29 +357,55 @@ def retrieve_live_connect_account(account_id):
     return stripe.Account.retrieve(account_id)
 
 
-def retrieve_platform_account():
-    """GET /v1/account: the platform's own account, used to prove the key works."""
-    return stripe.Account.retrieve()
+def _earlier_bound_peer_accounts(db, user_id, account_id, limit=3):
+    """Other workers' accounts, created by this app before `account_id` and still bound,
+    newest first. Empty when `account_id` has no committed creation record."""
+    own = db.execute(
+        """SELECT MIN(id) FROM payment_setup_operations WHERE user_id=? AND operation_kind='account_create'
+           AND status='committed' AND processor_object_id=?""",
+        [user_id, account_id],
+    ).fetchone()[0]
+    if own is None:
+        return []
+    rows = db.execute(
+        """SELECT o.user_id, o.processor_object_id FROM payment_setup_operations o
+           JOIN worker_profiles w ON w.user_id=o.user_id AND w.payout_account_id=o.processor_object_id
+           WHERE o.operation_kind='account_create' AND o.status='committed' AND o.id<? AND o.user_id!=?
+             AND o.processor_object_id!=? AND substr(o.processor_object_id,1,5)='acct_'
+             AND substr(o.processor_object_id,1,9)!='acct_sim_'
+           ORDER BY o.id DESC LIMIT ?""",
+        [own, user_id, account_id, limit],
+    ).fetchall()
+    return [(row[0], row[1]) for row in rows]
 
 
-def connected_account_reported_missing(exc, account_id):
-    """True only when Stripe definitively says a bound Connect account is unknown to
-    this platform (deleted, or no longer connected) and the platform key itself is
-    proven healthy. Any other failure, or any doubt, returns False (fail closed)."""
+def connected_account_reported_missing(db, exc, account_id, user_id):
+    """True only when Stripe definitively says a bound Connect account is unknown AND the
+    current key is proven to be the platform that created it. Proof: another worker's
+    account, created by this app before this one and still bound, retrieves with the
+    matching id and owner. A healthy key for a different platform cannot pass. Any
+    other failure, or any doubt, returns False (fail closed). No writer is held."""
     if not STRIPE_AVAILABLE or not isinstance(exc, stripe.PermissionError):
         return False
     if getattr(exc, 'http_status', None) != 403:
         return False
-    error = stripe_attr(getattr(exc, 'json_body', None) or {}, 'error') or {}
-    if stripe_attr(error, 'code') != 'account_invalid':
+    body = getattr(exc, 'json_body', None)
+    error = stripe_attr(body, 'error') if isinstance(body, dict) else None
+    if not isinstance(error, dict) or error.get('code') != 'account_invalid':
         return False
-    # A broken or revoked platform key must never look like a missing account.
-    try:
-        platform_id = stripe_attr(retrieve_platform_account(), 'id')
-    except Exception:
-        return False
-    return (isinstance(platform_id, str) and platform_id.startswith('acct_')
-            and platform_id != account_id)
+    peers = _earlier_bound_peer_accounts(db, user_id, account_id)
+    if db.in_transaction:
+        db.commit()  # reads only; never hold SQLite across Stripe I/O
+    for peer_user_id, peer_account_id in peers:
+        try:
+            peer = retrieve_live_connect_account(peer_account_id)
+        except Exception:
+            continue
+        metadata = stripe_attr(peer, 'metadata', {}) or {}
+        if (peer and stripe_attr(peer, 'id') == peer_account_id
+                and stripe_attr(metadata, 'user_id') == str(peer_user_id)):
+            return True
+    return False
 
 
 def sync_worker_payout_readiness(db, user_id, account_id, acct):
@@ -15345,7 +15371,7 @@ def _handle_routes(db):
                     acct = retrieve_live_connect_account(account_id)
                 except STRIPE_ERROR as exc:
                     acct = None
-                    account_missing = connected_account_reported_missing(exc, account_id)
+                    account_missing = connected_account_reported_missing(db, exc, account_id, target_id)
                 if account_missing:
                     # Stripe definitively reports the bound account gone (e.g. deleted in
                     # the Dashboard). There is no account or balance left to inspect or
