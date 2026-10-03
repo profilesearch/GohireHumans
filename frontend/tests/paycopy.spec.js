@@ -39,6 +39,158 @@ test('buyer fee tools use backend component rounding including minimum cents and
   await expect(page.locator('#b-ghh')).toContainText('$15.96');
 });
 
+test('Upwork project and quiz fees label the freelancer example and exact Basic client maximum', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/tools/fee-calculator.html?amount=1000');
+  await page.locator('#amountInput').fill('1000');
+  const row = page.locator('#resultsBody tr').filter({ hasText: 'Upwork' });
+  await expect(row.locator('td').nth(1)).toHaveText('$100.0010% example; actual fee is 0–15% per contract');
+  await expect(row.locator('td').nth(2)).toHaveText('$79.90Up to 7.99% client fee (Basic)');
+  await expect(row.locator('td').nth(3)).toHaveText('$900.00');
+  await page.locator('#toggleClient').click();
+  await expect(row.locator('td').nth(3)).toHaveText('$1,079.90');
+  for (const [role, label, fee, difference] of [
+    ['buyer', 'Upwork fee (up to 7.99% client fee, Basic)', '$958.80', '$478.80'],
+    ['seller', 'Upwork fee (10% example; actual fee is 0–15% per contract)', '$1,200.00', '$1,200.00'],
+  ]) {
+    await page.goto(`/tools/are-you-overpaying.html?p=upwork&r=${role}&a=1000&c=other`);
+    await expect(page.locator('#b-current-label')).toHaveText(label);
+    await expect(page.locator('#b-current')).toHaveText(fee);
+    await expect(page.locator('#r-amount')).toHaveText(difference);
+    await expect(page.locator('#r-sub')).toContainText('Modeled Upwork fees');
+    const shared = new URL(await page.locator('#share-x').getAttribute('href'));
+    expect(shared.searchParams.get('text')).toContain('modeled fees');
+  }
+});
+
+test('project fee calculator differences reconcile with the cent-rounded fees each row shows', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/tools/fee-calculator.html');
+  const money = text => Number(text.replace(/[^0-9.]/g, ''));
+  for (const mode of ['#toggleFreelancer', '#toggleClient']) {
+    await page.locator(mode).click();
+    for (const amount of ['33.33', '100.01', '1,234.56', '2000']) {
+      await page.locator('#amountInput').fill(amount);
+      const featured = page.locator('.calc-row-featured');
+      const reference = money(await featured.locator('td').nth(1).locator('.amt').innerText())
+        + money(await featured.locator('td').nth(2).locator('.amt').innerText());
+      const rows = page.locator('#resultsBody tr:not(.calc-row-featured)');
+      await expect(rows).toHaveCount(4);
+      for (let i = 0; i < 4; i++) {
+        const row = rows.nth(i);
+        const fees = money(await row.locator('td').nth(1).locator('.amt').innerText())
+          + money(await row.locator('td').nth(2).locator('.amt').innerText());
+        const expected = Math.round((fees - reference) * 100) / 100;
+        const shown = await row.locator('td').nth(4).innerText();
+        if (expected > 0) expect(money(shown), `${amount} ${await row.locator('td').first().innerText()}`).toBe(expected);
+        else expect(shown).toBe('Same or lower');
+      }
+    }
+  }
+  await page.locator('#amountInput').fill('33.33');
+  await expect(page.locator('#resultsBody tr').filter({ hasText: 'Upwork' }).locator('td').nth(4)).toHaveText('$4.66 more in platform fees');
+  // Half-cent oracle: fees are exact decimal products rounded half-up to the cent (no binary-float drift).
+  // Expected values come from Python Decimal ROUND_HALF_UP. 40.15 catches float drift on seller fees, 73 and
+  // 68.50 on buyer fees; 12.35 and 1000 are deliberate guards that also pass on float rounding.
+  await page.locator('#toggleFreelancer').click();
+  for (const [amount, expected] of [
+    ['40.15', { Upwork: ['$4.02', '$3.21'], Fiverr: ['$8.03', '$2.21'], 'Freelancer.com': ['$4.02', '$1.20'] }],
+    ['73', { Upwork: ['$7.30', '$5.83'], Fiverr: ['$14.60', '$4.02'], 'Freelancer.com': ['$7.30', '$2.19'] }],
+    ['68.50', { Upwork: ['$6.85', '$5.47'], Fiverr: ['$13.70', '$3.77'], 'Freelancer.com': ['$6.85', '$2.06'] }],
+    ['12.35', { Upwork: ['$1.24', '$0.99'], Fiverr: ['$2.47', '$0.68'], 'Freelancer.com': ['$1.24', '$0.37'] }],
+    ['1000', { Upwork: ['$100.00', '$79.90'], Fiverr: ['$200.00', '$55.00'], 'Freelancer.com': ['$100.00', '$30.00'] }],
+  ]) {
+    await page.locator('#amountInput').fill(amount);
+    for (const [name, [seller, buyer]] of Object.entries(expected)) {
+      const row = page.locator('#resultsBody tr').filter({ has: page.getByText(name, { exact: true }) });
+      await expect(row.locator('td').nth(1).locator('.amt'), `${amount} ${name} seller`).toHaveText(seller);
+      await expect(row.locator('td').nth(2).locator('.amt'), `${amount} ${name} buyer`).toHaveText(buyer);
+    }
+  }
+});
+
+test('project fee calculator share links keep cents for amounts of $100 or more', async ({ page }) => {
+  await localOnly(page);
+  await page.goto('/tools/fee-calculator.html?amount=100.01&mode=client');
+  await expect(page.locator('#amountInput')).toHaveValue('100.01');
+  await expect(page.locator('.calc-row-featured td').nth(3)).toHaveText('$104.01');
+  await expect(page).toHaveURL(/[?&]amount=100\.01(&|$)/);
+  await page.goto('/tools/fee-calculator.html?amount=1234.56');
+  await expect(page.locator('#amountInput')).toHaveValue('1,234.56');
+  await expect(page.locator('.calc-row-featured td').nth(3)).toHaveText('$1,234.56');
+  await expect(page).toHaveURL(/[?&]amount=1234\.56(&|$)/);
+  // Typed amounts keep cents through blur.
+  await page.locator('#amountInput').fill('250.75');
+  await page.locator('#amountInput').blur();
+  await expect(page.locator('#amountInput')).toHaveValue('250.75');
+  await expect(page).toHaveURL(/[?&]amount=250\.75(&|$)/);
+});
+
+test('monthly fee tools cap amounts at $1,000,000 so every figure stays exact to the cent', async ({ page }) => {
+  await localOnly(page);
+  // Expected values come from Python Decimal ROUND_HALF_UP.
+  await page.goto('/tools/freelance-fee-calculator.html');
+  const row = name => page.locator('#rows tr').filter({ has: page.getByText(name, { exact: true }) });
+  await page.locator('#role').selectOption('seller');
+  await page.locator('#gross').fill('999999.95');
+  await expect(row('Upwork').locator('.net-cell')).toHaveText('$899,999.95');
+  await expect(row('Fiverr').locator('td').nth(1)).toHaveText('$199,999.99 (20%)');
+  await expect(row('Fiverr').locator('.net-cell')).toHaveText('$799,999.96');
+  for (const amount of ['1000000.01', '1000000000000.05']) {
+    await page.locator('#gross').fill(amount);
+    await expect(page.locator('#gross')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#rows tr')).toHaveCount(0);
+    await expect(page.locator('#difference-text')).toContainText('$1,000,000');
+  }
+  await page.locator('#gross').fill('1000000');
+  await expect(page.locator('#rows tr')).toHaveCount(5);
+  await page.goto('/tools/are-you-overpaying.html?p=upwork&r=seller&a=999999.95&c=other');
+  await expect(page.locator('#b-gross')).toHaveText('$11,999,999.40');
+  await expect(page.locator('#b-current')).toHaveText('$1,200,000.00');
+  for (const amount of ['1000000.01', '1000000000000.05']) {
+    await page.goto(`/tools/are-you-overpaying.html?p=upwork&r=seller&a=${amount}&c=other`);
+    await expect(page.locator('#result')).not.toHaveClass(/is-active/);
+  }
+  await page.goto('/tools/are-you-overpaying.html');
+  await page.evaluate(() => {
+    const input = document.getElementById('amount');
+    input.value = '1000000.01';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.locator('#q3-next')).toBeDisabled();
+  await expect(page.locator('#amount')).toHaveAttribute('aria-invalid', 'true');
+});
+
+test('sibling fee tools round each modeled fee to the cent so fee, net and difference reconcile', async ({ page }) => {
+  await localOnly(page);
+  // Expected values come from Python Decimal ROUND_HALF_UP on whole-cent amounts, not from the formula under test.
+  await page.goto('/tools/freelance-fee-calculator.html');
+  const row = name => page.locator('#rows tr').filter({ has: page.getByText(name, { exact: true }) });
+  await page.locator('#role').selectOption('seller');
+  await page.locator('#gross').fill('40.15');
+  await expect(row('Upwork').locator('td').nth(1)).toHaveText('$4.02 (10% example; actual fee is 0–15% per contract)');
+  await expect(row('Upwork').locator('.net-cell')).toHaveText('$36.13');
+  await expect(row('Freelancer.com').locator('.net-cell')).toHaveText('$36.13');
+  await expect(page.locator('#difference-text')).toContainText('on Fiverr are $96.36 higher');
+  await page.locator('#role').selectOption('buyer');
+  await page.locator('#gross').fill('5.50');
+  await expect(row('Freelancer.com').locator('td').nth(1)).toHaveText('$0.17 (3%)');
+  await expect(row('Freelancer.com').locator('.net-cell')).toHaveText('$5.67');
+  await expect(row('Upwork').locator('td').nth(1)).toHaveText('$0.44 (up to 7.99% client fee, Basic)');
+  await expect(page.locator('#difference-text')).toContainText('on Upwork are $2.52 higher');
+  // The quiz models twelve monthly payments, each fee rounded to the cent like the GoHireHumans side.
+  for (const [query, current, difference] of [
+    ['p=upwork&r=seller&a=40.15', '$48.24', '$48.24'],
+    ['p=upwork&r=buyer&a=33.33', '$31.92', '$15.96'],
+    ['p=fiverr&r=buyer&a=73', '$48.24', '$13.20'],
+    ['p=upwork&r=buyer&a=1000', '$958.80', '$478.80'],
+  ]) {
+    await page.goto(`/tools/are-you-overpaying.html?${query}&c=other`);
+    await expect(page.locator('#b-current'), query).toHaveText(current);
+    await expect(page.locator('#r-amount'), query).toHaveText(difference);
+  }
+});
+
 async function localOnly(page) {
   await page.route('**/*', route => {
     const url = new URL(route.request().url());

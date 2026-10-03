@@ -3,7 +3,7 @@
   <title>GoHireHumans Blog</title>
   <link href="https://www.gohirehumans.com/blog/" />
   <link rel="self" href="https://www.gohirehumans.com/atom.xml" />
-  <updated>2026-10-01T00:00:00Z</updated>
+  <updated>2026-10-02T00:00:00Z</updated>
   <id>https://www.gohirehumans.com/blog/</id>
   <subtitle>Articles from GoHireHumans, a marketplace for small, scoped human work. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</subtitle>
   <author><name>GoHireHumans Team</name></author>
@@ -13,7 +13,7 @@
     <id>https://www.gohirehumans.com/blog/fiverr-vs-upwork-vs-gohirehumans.html</id>
     <updated>2026-04-30T00:00:00Z</updated>
     <published>2026-04-30T00:00:00Z</published>
-    <summary>Side-by-side fees for Fiverr (20% seller plus 5.5% buyer), Upwork (10% plus 5% client), and GoHireHumans (a 1% platform fee plus a fixed 3% processing charge), with worked examples.</summary>
+    <summary>Compare Fiverr, Upwork, and GoHireHumans fees, including Upwork's 0–15% freelancer range and up to 7.99% Basic client fee, with worked examples.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
@@ -35,12 +35,12 @@
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
-    <title>Why Freelancers Switch to Lower-Fee Platforms</title>
+    <title>How Freelance Platform Fees Work in 2026</title>
     <link href="https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html" />
     <id>https://www.gohirehumans.com/blog/freelancers-switching-lower-fee-platforms.html</id>
     <updated>2026-03-17T00:00:00Z</updated>
     <published>2026-03-17T00:00:00Z</published>
-    <summary>Fiverr takes 20% from sellers and Upwork 10%. See the numbers behind the move to lower-fee platforms, what to check before switching, and how to move clients.</summary>
+    <summary>Who pays what on Fiverr, Upwork, Freelancer.com, and GoHireHumans: freelancer fees, client fees, the math on $50K a year, and what to check before you switch.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
@@ -80,12 +80,12 @@
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
-    <title>Freelance Platforms With Payment Review</title>
+    <title>Best Freelance Platforms for Payments in 2026</title>
     <link href="https://www.gohirehumans.com/blog/best-freelance-platforms-escrow.html" />
     <id>https://www.gohirehumans.com/blog/best-freelance-platforms-escrow.html</id>
     <updated>2026-03-16T00:00:00Z</updated>
     <published>2026-03-16T00:00:00Z</published>
-    <summary>Compare freelance platforms with payment review workflows, what each charges buyers and sellers, and how GoHireHumans handles Stripe checkout where configured.</summary>
+    <summary>How GoHireHumans, Upwork, Fiverr, and Freelancer.com handle payment: who pays which fees, when buyers approve the work, and when freelancers get paid.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
