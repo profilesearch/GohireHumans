@@ -201,7 +201,7 @@
           <h2 class="card-title mb-4" id="calc-heading">Your numbers</h2>
           <div class="form-group">
             <label class="label" for="gross">Monthly amount (USD)</label>
-            <input class="input" id="gross" type="number" min="0.01" step="0.01" value="2000" inputmode="decimal" autocomplete="off">
+            <input class="input" id="gross" type="number" min="0.01" max="1000000" step="0.01" value="2000" inputmode="decimal" autocomplete="off">
             <div class="cluster mt-2" role="group" aria-label="Quick amounts">
               <button type="button" class="btn btn-secondary btn-sm" data-amt="500">$500</button>
               <button type="button" class="btn btn-secondary btn-sm" data-amt="2000">$2,000</button>
@@ -407,6 +407,8 @@
       { name: 'Freelancer.com', seller: 1000, buyer: 300 }
     ];
     function feeCents(cents, bps) { return Math.floor((cents * bps + 5000) / 10000); }
+    // Monthly amounts above $1,000,000 are rejected so every fee and annual total stays an exact whole number of cents.
+    var MAX_MONTHLY_CENTS = 100000000;
 
     function el(tag, className, text) {
       var node = document.createElement(tag);
@@ -417,10 +419,10 @@
 
     function render() {
       var charge = window.ghhBuyerCharge(grossInput.value);
-      if (!charge || !grossInput.checkValidity()) {
+      if (!charge || !grossInput.checkValidity() || charge.baseCents > MAX_MONTHLY_CENTS) {
         grossInput.setAttribute('aria-invalid', 'true');
         rowsEl.replaceChildren();
-        if (differenceEl) differenceEl.textContent = 'Enter a positive amount in dollars and cents.';
+        if (differenceEl) differenceEl.textContent = 'Enter a positive amount in dollars and cents, up to $1,000,000.';
         return;
       }
       grossInput.removeAttribute('aria-invalid');

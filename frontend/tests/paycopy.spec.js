@@ -119,11 +119,46 @@ test('project fee calculator share links keep cents for amounts of $100 or more'
   await expect(page.locator('#amountInput')).toHaveValue('1,234.56');
   await expect(page.locator('.calc-row-featured td').nth(3)).toHaveText('$1,234.56');
   await expect(page).toHaveURL(/[?&]amount=1234\.56(&|$)/);
-  // The slider still moves in whole steps and the typed path still keeps cents.
+  // Typed amounts keep cents through blur.
   await page.locator('#amountInput').fill('250.75');
   await page.locator('#amountInput').blur();
   await expect(page.locator('#amountInput')).toHaveValue('250.75');
   await expect(page).toHaveURL(/[?&]amount=250\.75(&|$)/);
+});
+
+test('monthly fee tools cap amounts at $1,000,000 so every figure stays exact to the cent', async ({ page }) => {
+  await localOnly(page);
+  // Expected values come from Python Decimal ROUND_HALF_UP.
+  await page.goto('/tools/freelance-fee-calculator.html');
+  const row = name => page.locator('#rows tr').filter({ has: page.getByText(name, { exact: true }) });
+  await page.locator('#role').selectOption('seller');
+  await page.locator('#gross').fill('999999.95');
+  await expect(row('Upwork').locator('.net-cell')).toHaveText('$899,999.95');
+  await expect(row('Fiverr').locator('td').nth(1)).toHaveText('$199,999.99 (20%)');
+  await expect(row('Fiverr').locator('.net-cell')).toHaveText('$799,999.96');
+  for (const amount of ['1000000.01', '1000000000000.05']) {
+    await page.locator('#gross').fill(amount);
+    await expect(page.locator('#gross')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#rows tr')).toHaveCount(0);
+    await expect(page.locator('#difference-text')).toContainText('$1,000,000');
+  }
+  await page.locator('#gross').fill('1000000');
+  await expect(page.locator('#rows tr')).toHaveCount(5);
+  await page.goto('/tools/are-you-overpaying.html?p=upwork&r=seller&a=999999.95&c=other');
+  await expect(page.locator('#b-gross')).toHaveText('$11,999,999.40');
+  await expect(page.locator('#b-current')).toHaveText('$1,200,000.00');
+  for (const amount of ['1000000.01', '1000000000000.05']) {
+    await page.goto(`/tools/are-you-overpaying.html?p=upwork&r=seller&a=${amount}&c=other`);
+    await expect(page.locator('#result')).not.toHaveClass(/is-active/);
+  }
+  await page.goto('/tools/are-you-overpaying.html');
+  await page.evaluate(() => {
+    const input = document.getElementById('amount');
+    input.value = '1000000.01';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.locator('#q3-next')).toBeDisabled();
+  await expect(page.locator('#amount')).toHaveAttribute('aria-invalid', 'true');
 });
 
 test('sibling fee tools round each modeled fee to the cent so fee, net and difference reconcile', async ({ page }) => {

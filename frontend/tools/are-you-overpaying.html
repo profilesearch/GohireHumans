@@ -181,8 +181,8 @@
             <p>An estimate is fine. The annual figure depends on this.</p>
             <div class="form-group">
               <label class="label" for="amount">Monthly amount in USD</label>
-              <input id="amount" class="input" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" aria-describedby="q3-help">
-              <p class="form-help" id="q3-help">Use a typical month, or pick a quick amount.</p>
+              <input id="amount" class="input" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" autocomplete="off" aria-describedby="q3-help">
+              <p class="form-help" id="q3-help">Use a typical month, up to $1,000,000, or pick a quick amount.</p>
               <div class="cluster mt-2" role="group" aria-label="Quick amounts">
                 <button type="button" class="btn btn-secondary btn-sm" data-amt="500">$500</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-amt="2000">$2,000</button>
@@ -256,7 +256,7 @@
     <div class="pub-inner pub-inner--narrow">
       <div class="section-head">
         <h2 id="method-heading">How the estimate works</h2>
-        <p>The quiz multiplies your monthly amount by twelve and applies the modeled seller-side or buyer-side rate for the platform you picked. Upwork uses a 10% freelancer example and the Basic client maximum.</p>
+        <p>The quiz applies the modeled seller-side or buyer-side rate for the platform you picked to your monthly amount, rounds that monthly fee to the cent, and multiplies it by twelve. Upwork uses a 10% freelancer example and the Basic client maximum.</p>
       </div>
       <div class="prose">
         <ul>
@@ -353,6 +353,12 @@
     // Each monthly payment's fee is rounded half-up once to the cent from whole cents, on both sides: GoHireHumans checkout
     // rounds its two components independently, and annual comparisons sum twelve such monthly fees rather than rounding a yearly gross.
     function feeCents(cents, bps) { return Math.floor((cents * bps + 5000) / 10000); }
+    // Monthly amounts above $1,000,000 are rejected so every fee and annual total stays an exact whole number of cents.
+    var MAX_MONTHLY_CENTS = 100000000;
+    function cappedCharge(value) {
+      var charge = window.ghhBuyerCharge(value);
+      return charge && charge.baseCents <= MAX_MONTHLY_CENTS ? charge : null;
+    }
 
     var TOTAL = 5;
     var current = 1;
@@ -396,12 +402,12 @@
       var fees = PLATFORM_FEES[platform];
       var role = answers.role === 'buyer' ? 'buyer' : 'seller';
       var monthly = answers.amount || 2000;
-      var annual = monthly * 12;
       var currentRate = role === 'buyer' ? fees.buyer : fees.seller;
-      var monthlyCharge = window.ghhBuyerCharge(monthly);
-      var monthlyCents = monthlyCharge ? monthlyCharge.baseCents : Math.round(monthly * 100);
+      var monthlyCharge = cappedCharge(monthly) || cappedCharge(2000);
+      var monthlyCents = monthlyCharge.baseCents;
+      var annual = monthlyCents * 12 / 100;
       var currentFeeCents = feeCents(monthlyCents, currentRate) * 12;
-      var ghhFeeCents = role === 'buyer' && monthlyCharge ? monthlyCharge.feeCents * 12 : 0;
+      var ghhFeeCents = role === 'buyer' ? monthlyCharge.feeCents * 12 : 0;
       var currentFee = currentFeeCents / 100;
       var ghhFee = ghhFeeCents / 100;
       var difference = (currentFeeCents - ghhFeeCents) / 100;
@@ -454,7 +460,7 @@
     });
 
     function updateAmount() {
-      var charge = window.ghhBuyerCharge(amountInput.value);
+      var charge = cappedCharge(amountInput.value);
       answers.amount = charge && amountInput.checkValidity() ? charge.baseCents / 100 : 0;
       amountInput.setAttribute('aria-invalid', String(!answers.amount));
       nextButton.disabled = !answers.amount;
@@ -481,7 +487,7 @@
     if (url.has('p') && url.has('r') && url.has('a')) {
       answers.platform = url.get('p');
       answers.role = url.get('r');
-      var urlCharge = window.ghhBuyerCharge(url.get('a'));
+      var urlCharge = cappedCharge(url.get('a'));
       if (urlCharge) {
         answers.amount = urlCharge.baseCents / 100;
         amountInput.value = String(answers.amount);
