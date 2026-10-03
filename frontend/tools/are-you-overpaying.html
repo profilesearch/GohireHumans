@@ -341,17 +341,18 @@
   <script src="/tools/checkout-fees.js"></script>
      <script>
      (function () {
-    // Published rates and examples; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a markup on rates,
-    // modeled at 20% on the seller side, the same as the fee calculators.
+    // Published rates and examples in basis points; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a
+    // markup on rates, modeled at 20% on the seller side, the same as the fee calculators.
     var PLATFORM_FEES = {
-      fiverr:     { seller: 0.20, buyer: 0.055, name: 'Fiverr' },
-      upwork:     { seller: 0.10, buyer: 0.0799, name: 'Upwork' },
-      toptal:     { seller: 0.20, buyer: 0,     name: 'Toptal' },
-      freelancer: { seller: 0.10, buyer: 0.03,  name: 'Freelancer.com' },
-      other:      { seller: 0.10, buyer: 0.03,  name: 'a typical marketplace' }
+      fiverr:     { seller: 2000, buyer: 550, name: 'Fiverr' },
+      upwork:     { seller: 1000, buyer: 799, name: 'Upwork' },
+      toptal:     { seller: 2000, buyer: 0,   name: 'Toptal' },
+      freelancer: { seller: 1000, buyer: 300, name: 'Freelancer.com' },
+      other:      { seller: 1000, buyer: 300, name: 'a typical marketplace' }
     };
-    // Each monthly checkout rounds its two components independently; annual
-    // comparisons sum twelve such charges rather than rounding a yearly gross.
+    // Each monthly payment's fee is rounded half-up once to the cent from whole cents, on both sides: GoHireHumans checkout
+    // rounds its two components independently, and annual comparisons sum twelve such monthly fees rather than rounding a yearly gross.
+    function feeCents(cents, bps) { return Math.floor((cents * bps + 5000) / 10000); }
 
     var TOTAL = 5;
     var current = 1;
@@ -360,7 +361,7 @@
     var $$ = function (selector, root) { return Array.prototype.slice.call((root || document).querySelectorAll(selector)); };
     var $ = function (selector, root) { return (root || document).querySelector(selector); };
     var fmt = function (n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-    var pct = function (rate) { return (rate * 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%'; };
+    var pct = function (bps) { return (bps / 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%'; };
 
     var result = $('#result');
     var progress = $('#prog');
@@ -397,10 +398,13 @@
       var monthly = answers.amount || 2000;
       var annual = monthly * 12;
       var currentRate = role === 'buyer' ? fees.buyer : fees.seller;
-      var currentFee = annual * currentRate;
       var monthlyCharge = window.ghhBuyerCharge(monthly);
-      var ghhFee = role === 'buyer' && monthlyCharge ? monthlyCharge.feeCents * 12 / 100 : 0;
-      var difference = currentFee - ghhFee;
+      var monthlyCents = monthlyCharge ? monthlyCharge.baseCents : Math.round(monthly * 100);
+      var currentFeeCents = feeCents(monthlyCents, currentRate) * 12;
+      var ghhFeeCents = role === 'buyer' && monthlyCharge ? monthlyCharge.feeCents * 12 : 0;
+      var currentFee = currentFeeCents / 100;
+      var ghhFee = ghhFeeCents / 100;
+      var difference = (currentFeeCents - ghhFeeCents) / 100;
 
       $('#r-amount').textContent = fmt(Math.max(difference, 0));
       $('#r-headline').textContent = difference > 0 ? 'Estimated annual difference' : 'No modeled fee difference';

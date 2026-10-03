@@ -337,8 +337,8 @@
 
     // Published rates and examples; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a markup on rates,
     // modeled here at 20% on the freelancer side, the same as the freelance fee calculator.
-    // Modeled competitor fees use whole cents and basis points, rounded half-up once (the same rule as GHH checkout),
-    // so every displayed fee is exact and the difference column reconciles with the cells shown.
+    // Modeled competitor fees use whole cents and basis points, rounded half-up once to the cent (GHH checkout's rounding,
+    // without its one-cent minimum), so every displayed fee is exact and the difference column reconciles with the cells shown.
     function rateFee(cents, bps) { return Math.floor((cents * bps + 5000) / 10000) / 100; }
     function getPlatforms(v) {
       var c = Math.round(Number(v) * 100) || 0;
@@ -392,7 +392,8 @@
     }
 
     function setAmount(value) {
-      value = Math.max(100, Math.min(50000, Math.round(value)));
+      // Keep whole cents so shared links such as ?amount=100.01 reopen the exact amount.
+      value = Math.max(100, Math.min(50000, Math.round(value * 100) / 100));
       amount = value;
       slider.value = String(value);
       amountInput.value = fmtNum(value);

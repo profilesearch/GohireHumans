@@ -396,15 +396,17 @@
 
     var fmt = function (n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
-    // Published rates and examples, applied per side; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no seller fee but a
-    // markup on rates; the markup is modeled at 20% on the seller side.
+    // Published rates and examples, applied per side in basis points; Upwork uses a 10% freelancer example and the Basic client maximum. Toptal charges no
+    // seller fee but a markup on rates; the markup is modeled at 20% on the seller side. Each modeled fee is rounded half-up once to the cent from whole
+    // cents, so the fee, the net/total and the annual difference all reconcile with the amounts shown.
     var PLATFORMS = [
-      { name: 'GoHireHumans', seller: 0, buyer: 0.01 },
-      { name: 'Upwork', seller: 0.10, buyer: 0.0799 },
-      { name: 'Toptal', seller: 0.20, buyer: 0 },
-      { name: 'Fiverr', seller: 0.20, buyer: 0.055 },
-      { name: 'Freelancer.com', seller: 0.10, buyer: 0.03 }
+      { name: 'GoHireHumans', seller: 0, buyer: 100 },
+      { name: 'Upwork', seller: 1000, buyer: 799 },
+      { name: 'Toptal', seller: 2000, buyer: 0 },
+      { name: 'Fiverr', seller: 2000, buyer: 550 },
+      { name: 'Freelancer.com', seller: 1000, buyer: 300 }
     ];
+    function feeCents(cents, bps) { return Math.floor((cents * bps + 5000) / 10000); }
 
     function el(tag, className, text) {
       var node = document.createElement(tag);
@@ -432,9 +434,10 @@
       var reference = null;
       PLATFORMS.forEach(function (platform) {
         var isGhh = platform.name === 'GoHireHumans';
-        var rate = platform[role];
-        var take = isGhh && role === 'buyer' ? charge.feeCents / 100 : gross * rate;
-        var result = role === 'buyer' ? gross + take : gross - take;
+        var bps = platform[role];
+        var takeCents = isGhh && role === 'buyer' ? charge.feeCents : feeCents(charge.baseCents, bps);
+        var take = takeCents / 100;
+        var result = (role === 'buyer' ? charge.baseCents + takeCents : charge.baseCents - takeCents) / 100;
         var row = document.createElement('tr');
         if (isGhh) row.className = 'calc-row-featured';
         var nameCell = el('td');
@@ -442,17 +445,17 @@
         row.appendChild(nameCell);
         var feeLabel = platform.name === 'Upwork'
           ? (role === 'seller' ? '10% example; actual fee is 0–15% per contract' : 'up to 7.99% client fee, Basic')
-          : (rate * 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%';
+          : (bps / 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%';
         row.appendChild(el('td', 'num', fmt(take) + (isGhh && role === 'buyer' ? ' (1% platform + fixed 3% processing)' : ' (' + feeLabel + ')')));
         row.appendChild(el('td', 'num net-cell', fmt(isGhh && role === 'buyer' ? charge.totalCents / 100 : result)));
         fragment.appendChild(row);
-        if (isGhh) reference = { name: platform.name, take: take };
-        else if (!worst || take >= worst.take) worst = { name: platform.name, take: take };
+        if (isGhh) reference = { name: platform.name, takeCents: takeCents };
+        else if (!worst || takeCents >= worst.takeCents) worst = { name: platform.name, takeCents: takeCents };
       });
       rowsEl.replaceChildren(fragment);
 
       if (differenceEl && worst && reference) {
-        var annual = (worst.take - reference.take) * 12;
+        var annual = (worst.takeCents - reference.takeCents) * 12 / 100;
         differenceEl.textContent = gross > 0
           ? 'Over 12 months, the modeled fees on ' + worst.name + ' are ' + fmt(annual) + ' higher than on GoHireHumans. GoHireHumans includes its fixed checkout charge; other platforms’ payment processing is excluded. Upwork contract initiation fees and taxes are also excluded.'
           : 'Enter a monthly amount to see the modeled annual difference.';
