@@ -12043,7 +12043,7 @@ def _handle_routes(db):
         if not worker_payout_ready(db, user['id']):
             return error_response(
                 "Finish payout setup before applying. Buyers can only hire workers who can be paid. "
-                "It's free and takes a few minutes through Stripe. Nothing is charged.",
+                "Setup is free through Stripe. Nothing is charged.",
                 403, code="payout_setup_required",
             )
 

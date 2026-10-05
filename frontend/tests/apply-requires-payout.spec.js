@@ -26,7 +26,7 @@ async function boot(page, options = {}) {
     if (url.pathname === '/jobs/33' && req.method() === 'GET') body = state.job;
     if (url.pathname === '/payments/status') body = { employer_ready: false, worker_ready: state.ready };
     if (url.pathname === '/payments/history') body = { escrow_history: [] };
-    if (url.pathname === '/payments/connect-countries') body = { countries: [{ code: 'US', name: 'United States' }] };
+    if (url.pathname === '/payments/connect-countries') body = { countries: options.countries || [{ code: 'US', name: 'United States' }] };
     if (url.pathname === '/auth/login') body = { token: 'worker-token', user: { id: 9, name: 'Worker' } };
     if (url.pathname === '/jobs/33/apply' && req.method() === 'POST') {
       state.posts++;
@@ -48,7 +48,8 @@ test('not-ready worker gets payout CTA, honest copy and no apply form or withdra
   const card = page.locator('.svc-order-card');
   await expect(card).toContainText('Buyers can only hire workers who can be paid');
   await expect(card).toContainText('free');
-  await expect(card).toContainText('a few minutes through Stripe');
+  await expect(card).toContainText('through Stripe');
+  await expect(card).not.toContainText('few minutes');
   await expect(card).toContainText('Nothing is charged');
   await expect(card).not.toContainText("You've withdrawn");
   await expect(page.getByRole('button', { name: 'Apply to This Job', exact: true })).toHaveCount(0);
@@ -94,6 +95,26 @@ test('intent survives not-ready payments render until readiness is confirmed', a
   state.ready = true;
   await page.evaluate(() => renderPayments());
   await expect(returnCTA(page)).toBeVisible();
+});
+
+test('not-ready worker sees which payout countries are supported', async ({ page }) => {
+  await boot(page, { route: '/#/payments', countries: [{ code: 'US', name: 'United States' }] });
+  const note = page.locator('[data-payout-countries]');
+  await expect(note).toContainText('United States');
+  await expect(note).toContainText("can't apply to jobs yet");
+});
+
+test('with several payout countries the note points at the country list', async ({ page }) => {
+  await boot(page, { route: '/#/payments', countries: [{ code: 'CA', name: 'Canada' }, { code: 'US', name: 'United States' }] });
+  const note = page.locator('[data-payout-countries]');
+  await expect(note).toContainText('the countries listed below');
+  await expect(note).toContainText("can't apply to jobs yet");
+});
+
+test('ready worker is not shown the country eligibility note', async ({ page }) => {
+  await boot(page, { route: '/#/payments', ready: true });
+  await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+  await expect(page.locator('[data-payout-countries]')).toHaveCount(0);
 });
 
 for (const intent of ['0', '-1', '33.5', '033', '33junk', '33\n', '9007199254740992', '#/jobs/33', '<img src=x>']) {

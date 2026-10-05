@@ -105,12 +105,27 @@ class ApplyRequiresPayoutTests(unittest.TestCase):
             "frontend/llms.txt": "payout setup",
             "frontend/faq.html": "Finish payout setup before applying",
             "frontend/how-it-works.html": "Finish payout setup before applying",
+            "frontend/services.html": "Set up free payouts, then apply",
         }
         for path, snippet in required.items():
             with self.subTest(path=path):
-                text = (root / path).read_text()
-                self.assertIn(snippet, text)
-                self.assertNotIn("apply before connecting payouts", text)
+                self.assertIn(snippet, (root / path).read_text())
+        # API-key clients can't refresh the stored readiness themselves; say how it updates.
+        self.assertIn("Payments page in the web app", (root / "frontend/api-docs.html").read_text())
+        # No public page may still invite applying first, in any letter case, and
+        # setup time isn't ours to promise (Stripe verification can take longer).
+        stale = ("apply before connecting payouts", "you can apply to jobs before connecting payouts",
+                 "no payment needed until you're hired", "takes a few minutes through stripe")
+        public = [root / "README.md", *(root / "frontend").rglob("*.html"), *(root / "frontend").rglob("*.txt")]
+        for path in public:
+            if "node_modules" in path.parts or "tests" in path.parts:
+                continue
+            text = path.read_text(errors="ignore").lower()
+            for phrase in stale:
+                with self.subTest(path=str(path.relative_to(root)), phrase=phrase):
+                    self.assertNotIn(phrase, text)
+        api = (root / "backend/api_core.py").read_text().lower()
+        self.assertNotIn("takes a few minutes through stripe", api)
 
     def test_ready_detail_has_no_requirement(self):
         self.payout("stripe_connect_active")

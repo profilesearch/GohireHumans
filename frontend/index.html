@@ -2484,7 +2484,7 @@ async function renderJobDetail(id) {
                 ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
                 : payoutRequired
                 ? `<button class="btn btn-primary btn-lg" onclick="beginApplyPayoutSetup(${Number(id)})">Set up payouts to apply</button>
-                   <p class="svc-order-note">Buyers can only hire workers who can be paid. Setup is free and takes a few minutes through Stripe. Nothing is charged.</p>`
+                   <p class="svc-order-note">Buyers can only hire workers who can be paid. Setup is free through Stripe. Nothing is charged.</p>`
                 : applyBlocked && acceptsApplications
                 ? `<p class="svc-order-note" role="status">${job.viewer_withdrawal_limit_reached === true ? "You've withdrawn from this job twice, so you can't apply to it again." : 'You cannot apply to this job right now.'}</p>`
                 : acceptsApplications && !isOwner
@@ -4208,6 +4208,7 @@ async function renderPayments() {
           <div class="empty-state-icon" aria-hidden="true">${I.bank}</div>
           <div class="card-title">Receive Payments</div>
           <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. Finish payout setup before applying to jobs. Setup is free through Stripe; nothing is charged.</p>
+          ${!workerReady && !statusData.worker_payout_status?.account_id && countries.length ? `<p class="text-xs mb-3" data-payout-countries>Payouts are available in ${countries.length === 1 ? esc(countries[0].name) : 'the countries listed below'}. If you're elsewhere, you can't apply to jobs yet.</p>` : ''}
           ${workerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
             : ''}
