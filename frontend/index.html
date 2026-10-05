@@ -365,7 +365,7 @@ function consumeAuthIntent() {
   const intent = redirect || storedIntent;
   // URLSearchParams already decoded the outer redirect. Never decode the route
   // again: encoded separators could turn an invalid/double-encoded path valid.
-  // Keep valid query encoding intact so draft text (including % and URLs) survives.
+  // Keep query encoding so draft text (% and URLs) survives.
   const path = intent.split('?')[0];
   const safePath = /^(?:dashboard|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|post-job|post-service|my-jobs|my-services|edit-service\/\d+|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|terms|privacy|guidelines|ai-employers|forgot-password|reset-password|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
   if (!safePath.test(path) || /[\\#\u0000-\u001f\u007f\ufffd]/.test(intent)) return '#/';
@@ -522,7 +522,7 @@ function closeAllModalOverlays() {
   document.querySelectorAll('.modal-overlay').forEach(overlay => overlay.remove());
 }
 
-// Escape/backdrop dismiss. onConfirm(overlay) may return false to keep it open.
+// Escape/backdrop dismiss; onConfirm returning false keeps it open.
 function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', isDanger = false, allowHtml = false) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
@@ -1139,7 +1139,7 @@ function renderPublicNav(activePage = '') {
     { label: 'Use Cases', href: '/use-cases/' },
     { label: 'FAQ', href: '/faq.html' },
   ];
-  // Signed-in visitors get their dashboard where signed-out visitors see Sign in.
+  // Signed in: dashboard; signed out: Sign in.
   const accountAction = isSignedIn()
     ? `<a class="btn btn-ghost btn-sm" href="#/">Dashboard</a>`
     : `<button class="btn btn-ghost btn-sm" onclick="navigate('#/login')">Sign in</button>`;
@@ -1254,7 +1254,7 @@ function appShell(content, activeNav = '') {
     : rawName.slice(0,2).toUpperCase());
 
   const isAdmin = u.is_admin;
-  // Sidebar entries are real links so they work with the keyboard, middle-click and screen readers.
+  // Real links: keyboard, middle-click and screen readers work.
   const item = (key, href, icon, label) => `<a class="sidebar-item${activeNav===key?' active':''}" href="${href}"${activeNav===key?' aria-current="page"':''}>${icon} ${label}</a>`;
 
   let navItems = '';
@@ -1400,7 +1400,7 @@ function landingPreviewCards(services) {
 
 async function renderLanding() {
   const isCurrent = currentRenderGuard();
-  // Paint the page immediately; the three-card preview fills in when the API answers.
+  // Paint now; the preview fills in when the API answers.
   document.getElementById('app').innerHTML = `
     <div class="landing">
       ${renderPublicNav()}
@@ -1625,7 +1625,7 @@ async function renderServices() {
     </div>
     ${publicFooter()}`;
 
-  // Load categories (filter changes update the query in place, so only the route matters here)
+  // Load categories (filters update the query in place).
   try {
     const cats = await loadCategories();
     if (!isCurrent()) return;
@@ -1848,7 +1848,7 @@ async function renderServiceDetail(id) {
     document.title = `${svc.title || 'Service'} · GoHireHumans`;
     const isOwnService = isSignedIn() && String(state.user.id) === String(svc.worker_id);
     const listingActive = !svc.status || svc.status === 'active';
-    // Custom pricing keeps the button: checkout explains that it is unavailable without any POST.
+    // Custom pricing keeps the button; checkout explains, no POST.
     const orderBtn = isOwnService
       ? `<p class="svc-order-note">This is your own listing. Manage it from <a href="#/my-services">My Services</a>.</p>`
       : svc.visibility === 'hidden_unverified_agent'
@@ -2048,7 +2048,7 @@ async function handleOrderService(id) {
   const assertAccount = () => { if (!accountMatches()) { close(); throw new Error('Account changed. Reopen checkout with the original buyer account.'); } };
   try {
     // The per-tab token and shared cached user can belong to different buyers.
-    // Authenticate their binding before even reading a buyer's private retry record.
+    // Check the binding before reading a private retry record.
     if (!snapshotMatches()) throw new Error('Account changed. Reopen checkout with the original buyer account.');
     const profile = await api('/profile');
     if (!snapshotMatches() || !Number.isSafeInteger(profile?.id) || profile.id <= 0 || String(profile.id) !== ctx.buyer) {
@@ -2129,7 +2129,7 @@ async function handleOrderService(id) {
       showQuote();
       overlay.querySelector('[data-close]').textContent = 'Close (keep pending order)';
       error.textContent = 'An earlier order may have completed. Only retry this exact saved order; do not place a replacement.';
-      // Checkout never closes on Escape/backdrop: a pending order must be dismissed deliberately.
+      // No Escape/backdrop close: dismiss a pending order deliberately.
       openModalOverlay(overlay, { initialFocus: overlay.querySelector('[data-close]') });
       return;
     }
@@ -2258,7 +2258,7 @@ async function loadJobsList(page, filters) {
     const data = await api(url);
     if (!isCurrent()) return;
     const jobs = Array.isArray(data) ? data : (data.jobs || []);
-    // Stable newest-first ordering within the server page; unparseable dates sort last.
+    // Stable newest-first; unparseable dates last.
     const createdMs = j => utcDate(j.created_at)?.getTime() ?? 0;
     const sortedJobs = [...jobs].sort((a, b) => createdMs(b) - createdMs(a));
     const total = Number(data.total ?? sortedJobs.length);
@@ -2344,9 +2344,9 @@ function jobCard(j) {
   const isNew = Boolean(createdAt) && (Date.now() - createdAt.getTime()) < 7 * 24 * 60 * 60 * 1000;
   const id = esc(String(j.id));
   const isOwnJob = isSignedIn() && String(state.user.id) === String(j.employer_id);
-  // The public list only returns application-accepting jobs; a missing status is treated as accepting.
+  // Public list = accepting jobs; missing status counts as accepting.
   const accepts = j.status ? jobAcceptsApplications(j) : true;
-  // The title is the keyboard/screen-reader link; the card body stays clickable for pointer users.
+  // Title is the accessible link; the card body stays clickable.
   return `
     <div class="job-card" onclick="navigate('#/jobs/${id}')">
       <div class="job-card-header">
@@ -2376,6 +2376,14 @@ function jobCard(j) {
 
 function jobAcceptsApplications(job) {
   return ['open', 'reviewing'].includes(job?.status);
+}
+// Date-only due_by = buyer's local calendar day, current until that day ends.
+function jobDueLine(job, isOwner) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(job.due_by || ''), d = m ? new Date(m[1], m[2] - 1, m[3]) : utcDate(job.due_by);
+  if (!d) return '';
+  const day = d.toLocaleDateString();
+  return !jobAcceptsApplications(job) || d.getTime() + (m ? 864e5 : 0) > Date.now() ? `Due: ${day}`
+    : isOwner ? `Due date passed (${day})` : 'Due date passed. Say when you can deliver in your application.';
 }
 
 let jobFilterDebounce = null;
@@ -2415,10 +2423,10 @@ async function renderJobDetail(id) {
     document.title = `${job.title || 'Job'} · GoHireHumans`;
     const skills = safeParseJSON(job.required_skills, []);
     const isOwner = isSignedIn() && String(state.user.id) === String(job.employer_id);
-    const acceptsApplications = jobAcceptsApplications(job);
+    const acceptsApplications = jobAcceptsApplications(job), due = jobDueLine(job, isOwner);
     const myApplication = !isOwner && job.viewer_application ? job.viewer_application : null;
     const myApplicationOpen = Boolean(myApplication) && ['pending', 'shortlisted'].includes(myApplication.status);
-    // The server is authoritative (open, unhired, own application); older API builds omit the flag.
+    // Server is authoritative; older API builds omit the flag.
     const canWithdraw = myApplicationOpen && (typeof job.viewer_can_withdraw === 'boolean' ? job.viewer_can_withdraw : acceptsApplications);
     const payoutRequired = isSignedIn() && !isOwner && !myApplication && acceptsApplications && job.viewer_apply_requirement === 'payout_setup';
     const applyBlocked = payoutRequired || (isSignedIn() && !isOwner && !myApplication && job.viewer_can_apply === false);
@@ -2473,7 +2481,7 @@ async function renderJobDetail(id) {
               <div class="svc-price-big">${formatBudget(job)}</div>
               ${job.estimated_hours ? `<div class="detail-pricing-sub">Est. ${esc(job.estimated_hours)} hrs</div>` : ''}
               <div class="svc-order-meta">
-                ${formatUtcDate(job.due_by) ? `<div class="svc-order-meta-item">${I.clock} <span>Due: ${formatUtcDate(job.due_by)}</span></div>` : ''}
+                ${due ? `<div class="svc-order-meta-item">${I.clock} <span>${esc(due)}</span></div>` : ''}
                 <div class="svc-order-meta-item">${I.location} <span>${esc(job.location_type==='remote'?'Remote':(job.location_detail||job.location_type||''))}</span></div>
               </div>
               ${myApplication
@@ -2664,7 +2672,7 @@ function renderAuth(mode) {
   const isLogin = mode === 'login';
   const redirect = getQuery().get('redirect') || '';
   const isPostJobRedirect = redirect === 'post-job' || redirect.startsWith('post-job?');
-  // "Draft saved" only when there is an actual draft: query prefill or a stored guided draft.
+  // "Draft saved" only for a real draft (prefill or stored).
   const redirectQuery = new URLSearchParams(redirect.split('?')[1] || '');
   const storedDraft = getStoredGuidedTaskDraft();
   const hasSavedJobDraft = isPostJobRedirect && (
@@ -3771,7 +3779,7 @@ async function renderOrderDetail(id) {
                   <button class="btn btn-secondary btn-sm" onclick="requestRevision(${id})">Request Revision</button>
                   <button class="btn btn-danger btn-sm" onclick="disputeOrder(${id})">Dispute</button>`;
     }
-    // Only the two parties can open an issue; hourly contract actions are paused (see card below).
+    // Only the two parties can open an issue; hourly actions are paused.
     if ((isWorker || isEmployer) && !isHourly && ['in_progress','pending'].includes(order.status)) {
       actions += `<button class="btn btn-ghost btn-sm" onclick="disputeOrder(${id})">Dispute</button>`;
     }
@@ -4139,7 +4147,7 @@ async function renderPayments() {
   const isCurrent = currentRenderGuard();
 
   try {
-    // A failed status request is not the same as "not set up": it gets its own error state.
+    // A failed status request is not "not set up": own error state.
     const [statusData, historyData, countriesData] = await Promise.all([
       api('/payments/status'),
       api('/payments/history').catch(() => null),
@@ -4160,7 +4168,7 @@ async function renderPayments() {
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
     const applyReturnId = workerReady ? applyPayoutReturnId() : null;
     const historyUnavailable = historyData === null;
-    // escrow_history is the funded-order ledger; fees_paid are parts of those charges, not extra payments.
+    // escrow_history = funded orders; fees_paid are part of those charges.
     const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
     appShell(`
@@ -4697,7 +4705,7 @@ async function updateProfile(e) {
     company_name: fd.get('employer_company'),
     description: fd.get('employer_description'),
   };
-  // Never-created, untouched role profiles are not sent (blank ones fail validation).
+  // Untouched new role profiles aren't sent (blank ones fail validation).
   const sendWorker = form.dataset.hasWorker === '1' || Boolean(workerBody.bio || workerBody.skills.length || workerBody.hourly_rate);
   const sendEmployer = form.dataset.hasEmployer === '1' || Boolean(employerBody.company_name || employerBody.description);
 
@@ -5273,7 +5281,7 @@ function render() {
   captureResetCapability();
   const rawHash = location.hash;
   if (!isRouteHash(rawHash)) {
-    // The skip link (#main-content) and other in-page anchors only move focus.
+    // Skip link and in-page anchors only move focus.
     const target = document.getElementById(rawHash.slice(1));
     if (target && typeof target.focus === 'function') target.focus();
     if (renderGeneration > 0) return;
@@ -5282,7 +5290,7 @@ function render() {
   activeRouteHash = routeHash();
   clearTimeout(filterDebounce);
   clearTimeout(jobFilterDebounce);
-  // Dialogs belong to the view that opened them; the checkout also closes itself.
+  // Dialogs belong to their view; checkout also closes itself.
   closeAllModalOverlays();
   const hash = activeRouteHash.slice(1) || '/';
   const path = hash.split('?')[0];
@@ -5322,7 +5330,7 @@ function routeView(path, hash, segments) {
   if (path.match(/^\/jobs\/(\d+)$/) && !path.includes('/applicants')) return renderJobDetail(segments[1]);
 
   // ── Auth required ───
-  // Unknown paths are a 404 for everyone; only real account routes ask for sign-in.
+  // Unknown paths 404; only real account routes ask for sign-in.
   const accountRoute = /^\/(?:dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|jobs\/\d+\/applicants|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings)$/.test(path);
   const adminRoute = /^\/admin(?:\/(?:users|orders|revenue|disputes|audit))?$/.test(path);
   if (!accountRoute && !adminRoute) return renderAppNotFound(path);
