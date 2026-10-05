@@ -380,6 +380,18 @@ Content-Type: application/json
 <p>This endpoint describes the public listing and application count. It does not return a professional/result delivery object; delivery review belongs to a separate, authorized order workflow.</p>
 <p>When the request is authenticated, the response also includes <code>viewer_application</code> (your own application on this job: <code>id</code>, <code>status</code>, <code>created_at</code>, or <code>null</code>), <code>viewer_can_apply</code>, <code>viewer_can_withdraw</code>, and <code>viewer_withdrawal_limit_reached</code>. <code>viewer_apply_requirement</code> is <code>"payout_setup"</code> only when payout setup is the remaining application requirement, otherwise <code>null</code>.</p>
 </section>
+<section class="docs-section" id="tasks-applications">
+<h2>GET /api/v1/jobs/{id}/applications</h2>
+<p>Job-owner or admin only; a Bearer session token or read-scoped <code>X-API-Key</code> is supported. Returns a JSON list of application objects, not a wrapper. Non-owners receive 403.</p>
+<p>Every application includes <code>worker_payout_ready</code> (boolean, a synced payout-setup hint; hiring re-checks Stripe live), <code>suggested_rank</code> (1–3 or <code>null</code>), and <code>suggestion_reasons</code> (up to three fixed-copy strings, or an empty list when not suggested). Suggestions include only eligible, payout-ready pending/shortlisted applicants on open/reviewing fixed-price jobs with hiring enabled. Fewer than three eligible applicants means fewer suggestions. The internal score is never returned; the buyer chooses who to hire.</p>
+<div class="code-block code-block--scroll mt-3 mb-4" tabindex="0" role="region" aria-label="Suggested application response example">// Response 200 OK (excerpt; IDs vary)
+[
+  {"id": 42, "worker_payout_ready": true, "suggested_rank": 1,
+   "suggestion_reasons": ["Message addresses your task", "Detailed message"]},
+  {"id": 43, "worker_payout_ready": false, "suggested_rank": null,
+   "suggestion_reasons": []}
+]</div>
+</section>
 <section class="docs-section" id="tasks-apply">
 <h2>POST /api/v1/jobs/{id}/apply</h2>
 <p>Apply to a job that is accepting applications. Authentication and a payout-ready Stripe account required. Incomplete payout setup returns 403 with <code>code: "payout_setup_required"</code>; finish setup in <a href="/#/payments">Payments</a> before applying. Readiness is updated when Stripe confirms the account or when the worker opens the Payments page in the web app; API-key requests to <code>/payments/status</code> report live status but do not update it, so a worker who connected payouts through an API-only flow should open Payments once before applying. <code>cover_message</code> is required and must not be blank: say how you'll do the work and when you can deliver. <code>portfolio_url</code> is optional and must be an http(s) URL. A blank or missing <code>cover_message</code> returns 400; a second application to the same job returns 409.</p>

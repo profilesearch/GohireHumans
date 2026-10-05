@@ -58,6 +58,19 @@ except ModuleNotFoundError as exc:
     applicant_digest = importlib.util.module_from_spec(_digest_spec)
     _digest_spec.loader.exec_module(applicant_digest)
 try:
+    import suggested_applicants
+except ModuleNotFoundError as exc:
+    if exc.name != "suggested_applicants":
+        raise
+    import importlib.util
+    _suggestions_spec = importlib.util.spec_from_file_location(
+        "suggested_applicants", os.path.join(os.path.dirname(__file__), "suggested_applicants.py"),
+    )
+    if _suggestions_spec is None or _suggestions_spec.loader is None:
+        raise ImportError("Suggested applicants module is unavailable")
+    suggested_applicants = importlib.util.module_from_spec(_suggestions_spec)
+    _suggestions_spec.loader.exec_module(suggested_applicants)
+try:
     import password_reset_crypto
 except ModuleNotFoundError as exc:
     if exc.name != "password_reset_crypto":
@@ -12019,9 +12032,15 @@ def _handle_routes(db):
             db.commit()
         else:
             apps = db.execute(applications_sql, [job_id]).fetchall()
+        suggestions = suggested_applicants.suggest(
+            db, job, bool(JOB_HIRING_ENABLED and
+                          (job['budget_type'] == 'fixed' or HOURLY_JOB_HIRING_ENABLED)),
+        )
         # worker_payout_ready is a synced hint for the UI; /hire re-checks live.
         return json_response([
-            {**row_to_dict(a), "worker_payout_ready": bool(a["worker_payout_ready"])}
+            {**row_to_dict(a), "worker_payout_ready": bool(a["worker_payout_ready"]),
+             "suggested_rank": suggestions.get(a['id'], {}).get('rank'),
+             "suggestion_reasons": suggestions.get(a['id'], {}).get('reasons', [])}
             for a in apps
         ])
 
