@@ -3458,8 +3458,11 @@ def json_response(data, status=200):
     print(json.dumps(data, default=str))
 
 
-def error_response(message, status=400):
-    json_response({"error": message}, status)
+def error_response(message, status=400, *, code=None):
+    data = {"error": message}
+    if code is not None:
+        data["code"] = code
+    json_response(data, status)
 
 
 class JsonDecimalToken(float):
@@ -5728,6 +5731,14 @@ def user_has_worker_profile(db, user_id):
 
 def user_has_employer_profile(db, user_id):
     return db.execute("SELECT user_id FROM employer_profiles WHERE user_id = ?", [user_id]).fetchone() is not None
+
+
+def worker_payout_ready(db, user_id):
+    """Stored readiness hint only; missing/NULL profiles fail closed."""
+    return db.execute(
+        "SELECT 1 FROM worker_profiles WHERE user_id=? AND COALESCE(payout_method,'')='stripe_connect_active'",
+        [user_id],
+    ).fetchone() is not None
 
 
 def ensure_worker_profile(db, user_id):
@@ -11704,19 +11715,23 @@ def _handle_routes(db):
                    WHERE user_id=? AND action='withdraw_application' AND entity_type='job' AND entity_id=?""",
                 [viewer_for_application['id'], job_id],
             ).fetchone()[0]
-            # Mirrors POST /apply exactly (job status, employer eligibility, not the
-            # owner, no existing application, withdrawal cap) so the page never
+            # Mirrors POST /apply (job status, employer eligibility, not the owner,
+            # no existing application, withdrawal cap, payout readiness) so the page never
             # offers an Apply button that the server would refuse.
             employer_ok = eligible_account(db.execute(
                 'SELECT is_active,is_banned,is_suspended FROM users WHERE id=?', [row['employer_id']]
             ).fetchone())
-            result['viewer_can_apply'] = bool(
+            otherwise_can_apply = bool(
                 row['status'] in ('open', 'reviewing')
                 and employer_ok
                 and not mine
                 and viewer_for_application['id'] != row['employer_id']
                 and viewer_withdrawals < MAX_APPLICATION_WITHDRAWALS_PER_JOB
             )
+            result['viewer_withdrawal_limit_reached'] = viewer_withdrawals >= MAX_APPLICATION_WITHDRAWALS_PER_JOB
+            payout_ready = worker_payout_ready(db, viewer_for_application['id'])
+            result['viewer_can_apply'] = otherwise_can_apply and payout_ready
+            result['viewer_apply_requirement'] = 'payout_setup' if otherwise_can_apply and not payout_ready else None
             result['viewer_can_withdraw'] = bool(
                 mine and mine['status'] in ('pending', 'shortlisted')
                 and not db.execute("SELECT 1 FROM orders WHERE type='job_hire' AND job_id=?", [job_id]).fetchone()
@@ -12025,8 +12040,12 @@ def _handle_routes(db):
         if job['employer_id'] == user['id']:
             return error_response("You cannot apply to your own job", 403)
 
-        # Ensure worker profile exists
-        ensure_worker_profile(db, user['id'])
+        if not worker_payout_ready(db, user['id']):
+            return error_response(
+                "Finish payout setup before applying. Buyers can only hire workers who can be paid. "
+                "Setup is free through Stripe. Nothing is charged.",
+                403, code="payout_setup_required",
+            )
 
         body = get_body()
         cover_message = body.get("cover_message")

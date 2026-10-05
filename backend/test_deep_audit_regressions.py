@@ -729,7 +729,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'employer@example.com','x','Employer')")
             db.execute("INSERT INTO employer_profiles (user_id) VALUES (1)")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker@example.com','x','Worker')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_method) VALUES (2,'stripe_connect_active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,?,datetime('now','+1 day'))", [token])
             db.execute("INSERT INTO jobs (id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES (7,1,'QA Job','Clean scope','testing','fixed',25,'open')")
             db.commit()
@@ -985,10 +985,10 @@ class BackendRegressionTests(unittest.TestCase):
         db = self.module.get_db()
         try:
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (1,'worker1@example.com','x','Worker One')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (1)")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_method) VALUES (1,'stripe_connect_active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (1,'tok-worker-1',datetime('now','+1 day'))")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (2,'worker2@example.com','x','Worker Two')")
-            db.execute("INSERT INTO worker_profiles (user_id) VALUES (2)")
+            db.execute("INSERT INTO worker_profiles (user_id,payout_method) VALUES (2,'stripe_connect_active')")
             db.execute("INSERT INTO sessions (user_id,token,expires_at) VALUES (2,'tok-worker-2',datetime('now','+1 day'))")
             db.execute("INSERT INTO users (id,email,password_hash,name) VALUES (3,'employer@example.com','x','Employer')")
             db.execute("INSERT INTO employer_profiles (user_id) VALUES (3)")
@@ -1484,7 +1484,7 @@ class BackendRegressionTests(unittest.TestCase):
             'data-filter-toggle',
             "function toggleServiceFilters(forceOpen)",
             "Keep payments on-platform",
-            "You can apply to jobs before connecting payouts.",
+            "Finish payout setup before applying to jobs.",
             "grid-template-columns:repeat(auto-fit,minmax(240px,1fr))",
             "function safeExternalHref(value)",
             "safeExternalHref(a.portfolio_url)",
@@ -1940,6 +1940,7 @@ class BackendRegressionTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO sessions (user_id,token,expires_at) VALUES (3,'tok-reviewing-discovery',datetime('now','+1 day'))"
             )
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(3,'stripe_connect_active')")
             for job_id, employer_id, title, status in [
                 (1, 1, "Fresh public job", "open"),
                 (2, 1, "Public job under review", "open"),

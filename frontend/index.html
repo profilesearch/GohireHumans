@@ -273,11 +273,10 @@
 // Services + Jobs public browsing with full authenticated app
 // ============================================================
 const API = window.GOHIREHUMANS_API_URL || 'https://gohirehumans-production.up.railway.app';
-// Mirror backend HOURLY_JOB_HIRING_ENABLED; change both together when settlement ships.
+// Mirror the backend hourly hiring gate.
 const HOURLY_JOB_HIRING_ENABLED = false;
 
-// Reset links carry a single-use capability in the fragment. Capture it and strip it from
-// the address bar before analytics, attribution, or routing can read location.
+// Strip reset capabilities before analytics or routing reads the URL.
 let pendingResetToken = '';
 function captureResetCapability() {
   const h = location.hash || '';
@@ -358,7 +357,7 @@ function getRefCode() {
   try { return sessionStorage.getItem('ghh_ref') || ''; } catch(e) { return ''; }
 }
 
-// Both auth methods consume the same route intent, never a transactional action.
+// Auth resumes routes, never transactions.
 function consumeAuthIntent() {
   const redirect = getQuery().get('redirect') || '';
   let storedIntent = '';
@@ -457,17 +456,17 @@ function toast(msg, type = 'info') {
   document.getElementById('toasts').appendChild(el);
   setTimeout(() => el.remove(), 4000);
 }
-// Errors that api() already reported (expired session) must not toast twice.
+// Do not toast handled API errors twice.
 function toastError(err, fallback = 'Something went wrong. Please try again.') {
   if (err && err.handled) return;
   toast((err && err.message) || fallback, 'error');
 }
-// App-shell error state; an api()-handled error (expired session) never paints.
+// Do not paint handled API errors.
 function shellError(err, activeNav, label = 'Error') {
   if (err && err.handled) return;
   appShell(`<div class="empty-state"><p>${esc(label)}: ${esc(err?.message || 'Something went wrong.')}</p></div>`, activeNav);
 }
-// Disable a control while an async action runs so it cannot be submitted twice.
+// Prevent duplicate submissions.
 async function withBusy(button, fn, busyText = '') {
   if (button && button.disabled) return undefined;
   const originalText = button ? button.textContent : '';
@@ -477,7 +476,7 @@ async function withBusy(button, fn, busyText = '') {
     if (button && document.body.contains(button)) { button.disabled = false; button.textContent = originalText; }
   }
 }
-// Keyboard activation for card-like elements that expose role="link"/"button".
+// Keyboard activation for role=link/button cards.
 function cardKeydown(event) {
   if (event.key !== 'Enter' && event.key !== ' ') return;
   event.preventDefault();
@@ -485,7 +484,7 @@ function cardKeydown(event) {
 }
 
 // Modal System
-// Shared dialog semantics for every `.modal-overlay`: role/aria wiring, initial
+// Shared dialog role/ARIA and initial
 // focus, focus restore on close, optional Escape/backdrop dismissal.
 let modalSequence = 0;
 const FOCUSABLE = 'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -523,8 +522,7 @@ function closeAllModalOverlays() {
   document.querySelectorAll('.modal-overlay').forEach(overlay => overlay.remove());
 }
 
-// Confirm family: dismissible with Escape and backdrop click. onConfirm receives
-// the overlay and may return false to keep the dialog open (e.g. missing input).
+// Escape/backdrop dismiss. onConfirm(overlay) may return false to keep it open.
 function showModal(title, message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', isDanger = false, allowHtml = false) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
@@ -566,9 +564,9 @@ function safeExternalHref(value) {
   }
 }
 function formatCategory(cat) { return (cat || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
-// Serialize a raw API value as a JS literal inside an onclick attribute.
+// Serialize API values for onclick.
 function jsArg(value) { return esc(JSON.stringify(value === undefined ? null : value)); }
-// Numeric counters: 0 is a real value, only missing/invalid data shows a dash.
+// Zero is real; missing/invalid counters show a dash.
 function countOrDash(value) {
   if (value === null || value === undefined || value === '') return '—';
   const n = Number(value);
@@ -705,7 +703,7 @@ function statusBadge(status) {
   return `<span class="badge badge-${cls}">${esc(status ? status.replace(/_/g,' ') : 'unknown')}</span>`;
 }
 function navigate(hash) { window.location.hash = hash; }
-// In-page anchors (skip link → #main-content) are not routes; the last routed view stays current.
+// In-page anchors are not routes.
 let activeRouteHash = '#/';
 function isRouteHash(h) { return !h || h === '#' || h.startsWith('#/'); }
 function routeHash() { const h = location.hash; return isRouteHash(h) ? (h.startsWith('#/') ? h : '#/') : activeRouteHash; }
@@ -773,7 +771,7 @@ function trackConfiguredKeyEvent(eventName, params = {}) {
 }
 let lastTrackedSpaPath = '';
 const ANALYTICS_ROUTE_RE = /^\/(?:|login|auth|register|forgot-password|reset-password|terms|privacy|guidelines|ai-employers|services(?:\/\d+)?|jobs(?:\/\d+(?:\/applicants)?)?|dashboard|my-services|post-service|edit-service\/\d+|post-job|my-jobs|orders(?:\/\d+)?|payments|referrals|notifications|profile|settings|admin(?:\/(?:users|orders|revenue|disputes|audit))?)$/;
-// Analytics sees only known route shapes and allowlisted campaign params, never draft text or emails.
+// Analytics uses known routes/campaigns, never drafts or emails.
 function analyticsRoute(path) { return ANALYTICS_ROUTE_RE.test(path) ? path : '/not-found'; }
 function analyticsLocation(route = analyticsRoute(currentHashWithoutQuery())) {
   const src = new URLSearchParams(location.search), q = new URLSearchParams();
@@ -1068,7 +1066,7 @@ function getDraftCategoryOptions(cats, draftCategory) {
   if (options && !draftCategory) options = '<option value="" selected disabled>Choose a category</option>' + options;
   return options || '<option value="other">Other</option>';
 }
-// Drafting instructions from the guided intake are for the buyer, not the public listing.
+// Drafting instructions are private to the buyer.
 function stripDraftReviewNote(text) {
   const stripped = String(text || '').replace(/\s*Please review this draft(?: and edit the scope)? before publishing\.(?: Nothing is submitted until you post the listing\.)?\s*$/, '').trim();
   return stripped || String(text || '');
@@ -1375,9 +1373,7 @@ function pagerHtml(page, totalPages, hrefFor) {
   return out + btn(page + 1, 'Next', { disabled: page >= totalPages, aria: 'Next page' });
 }
 
-// ═══
 // LANDING PAGE
-// ═══
 function landingPreviewCards(services) {
   return services.slice(0, 3).map(s => {
     const href = s.id ? `#/services/${esc(String(s.id))}` : '#/services';
@@ -1559,7 +1555,6 @@ async function renderLanding() {
 
 // ═══════════════════════════════════════════════════════════════
 // SERVICES BROWSE — PUBLIC
-// ═══
 async function renderServices() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -1832,9 +1827,7 @@ function applyServiceFilters() {
   loadServicesGrid(1, { search, category, minPrice, maxPrice, provider });
 }
 
-// ═══
 // SERVICE DETAIL — PUBLIC
-// ═══
 async function renderServiceDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2164,9 +2157,7 @@ async function handleOrderService(id) {
   } catch (err) { close(); toastError(err); }
 }
 
-// ═══
 // JOBS BROWSE — PUBLIC
-// ═══
 async function renderJobs() {
   const isCurrent = currentRenderGuard();
   const q = getQuery();
@@ -2409,9 +2400,7 @@ function applyJobFilters() {
   loadJobsList(1, { search, category, budgetType, locationType });
 }
 
-// ═══
 // JOB DETAIL — PUBLIC
-// ═══
 async function renderJobDetail(id) {
   const isCurrent = currentRenderGuard();
   document.getElementById('app').innerHTML = `
@@ -2431,7 +2420,8 @@ async function renderJobDetail(id) {
     const myApplicationOpen = Boolean(myApplication) && ['pending', 'shortlisted'].includes(myApplication.status);
     // The server is authoritative (open, unhired, own application); older API builds omit the flag.
     const canWithdraw = myApplicationOpen && (typeof job.viewer_can_withdraw === 'boolean' ? job.viewer_can_withdraw : acceptsApplications);
-    const applyBlocked = isSignedIn() && !isOwner && !myApplication && job.viewer_can_apply === false;
+    const payoutRequired = isSignedIn() && !isOwner && !myApplication && acceptsApplications && job.viewer_apply_requirement === 'payout_setup';
+    const applyBlocked = payoutRequired || (isSignedIn() && !isOwner && !myApplication && job.viewer_can_apply === false);
     const myApplicationNote = !myApplication ? ''
       : myApplication.status === 'accepted' ? 'You were hired for this job.'
       : myApplication.status === 'rejected' ? 'The buyer chose another applicant.'
@@ -2492,11 +2482,14 @@ async function renderJobDetail(id) {
                    ${canWithdraw ? `<button class="btn btn-secondary" onclick="withdrawJobApplication(${Number(id)})">Withdraw application</button>` : ''}`
                 : hourlyPaused
                 ? `<p class="svc-order-note" role="status">Hourly hiring is not available yet. This existing job cannot be hired through GoHireHumans.</p>`
+                : payoutRequired
+                ? `<button class="btn btn-primary btn-lg" onclick="beginApplyPayoutSetup(${Number(id)})">Set up payouts to apply</button>
+                   <p class="svc-order-note">Buyers can only hire workers who can be paid. Setup is free through Stripe. Nothing is charged.</p>`
                 : applyBlocked && acceptsApplications
-                ? `<p class="svc-order-note" role="status">You've withdrawn from this job twice, so you can't apply to it again.</p>`
+                ? `<p class="svc-order-note" role="status">${job.viewer_withdrawal_limit_reached === true ? "You've withdrawn from this job twice, so you can't apply to it again." : 'You cannot apply to this job right now.'}</p>`
                 : acceptsApplications && !isOwner
                 ? `<button class="btn btn-primary btn-lg" onclick="handleJobApply(${Number(id)})">${isSignedIn() ? 'Apply to This Job' : 'Sign in to Apply'}</button>
-                   <p class="svc-order-note">Free to apply. No payment needed until you're hired. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
+                   <p class="svc-order-note">Free to apply. Finish payout setup first; nothing is charged. ${isSignedIn() ? 'Application opens in this page.' : 'We will bring you back to this job after sign-in.'}</p>`
                 : !acceptsApplications
                   ? `<p class="svc-order-note">This job is no longer accepting applications.</p>`
                   : ''}
@@ -2516,6 +2509,7 @@ async function renderJobDetail(id) {
         </div>
       </div>
       ${publicFooter()}`;
+    if (payoutRequired) trackEvent('apply_payout_required_shown', { job_id: String(id) });
     if (shouldAutoApply) {
       clearHashQueryParam('apply');
       const canResume = currentRenderGuard();
@@ -2589,10 +2583,17 @@ async function handleJobApply(id) {
       trackConfiguredKeyEvent('qualify_lead', { lead_type: 'job_application_completed', job_id: String(id) });
       overlay.remove();
       toast('Application submitted!', 'success');
-      promptPayoutSetupAfterApply(id);
     } catch(err) {
       const message = err?.message || 'Application could not be submitted. Please try again.';
       errorBox.textContent = message;
+      if (err.code === 'payout_setup_required') {
+        trackEvent('apply_payout_required_shown', { job_id: String(id) });
+        const link = document.createElement('a');
+        link.href = '#/payments';
+        link.textContent = 'Set up payouts to apply';
+        link.onclick = e => { e.preventDefault(); overlay.remove(); beginApplyPayoutSetup(id); };
+        errorBox.append(' ', link);
+      }
       errorBox.hidden = false;
       submitBtn.disabled = false;
       submitBtn.textContent = 'Submit Application';
@@ -2606,7 +2607,7 @@ async function handleJobApply(id) {
   };
 }
 
-// A worker can take back an application while the buyer is still choosing.
+// Withdraw while the buyer chooses.
 function withdrawJobApplication(jobId) {
   trackEvent('job_application_withdraw_intent', { job_id: String(jobId), source: 'job_detail' });
   showModal(
@@ -2630,25 +2631,27 @@ function withdrawJobApplication(jobId) {
   );
 }
 
-// Buyers cannot hire an applicant until the applicant's payout account is ready,
-// so tell the worker right after they apply instead of letting the application stall.
-async function promptPayoutSetupAfterApply(jobId) {
-  let status;
-  try { status = await api('/payments/status'); } catch (_) { return; }
-  if (!status || status.worker_ready === true) return;
-  trackEvent('apply_payout_prompt_shown', { job_id: String(jobId), source: 'job_apply_modal' });
-  showModal(
-    'One more step before you can be hired',
-    'Your application is in. The buyer can only hire workers who have finished payout setup, so connect a bank account now. It takes a few minutes through Stripe and nothing is charged.',
-    () => { trackEvent('apply_payout_prompt_accepted', { job_id: String(jobId) }); navigate('#/payments'); },
-    'Finish payout setup',
-    'Later'
-  );
+function validApplyReturnId(value) {
+  const raw = String(value);
+  return /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)) && String(Number(raw)) === raw ? raw : null;
+}
+function applyPayoutReturnId() {
+  try { return validApplyReturnId(sessionStorage.getItem('ghh_apply_payout_return')); }
+  catch (_) { return null; }
+}
+function beginApplyPayoutSetup(jobId) {
+  const id = validApplyReturnId(jobId);
+  if (!id) return;
+  try { sessionStorage.setItem('ghh_apply_payout_return', id); } catch (_) {}
+  trackEvent('apply_payout_setup_clicked', { job_id: id });
+  navigate('#/payments');
+}
+function consumeApplyPayoutReturn(jobId) {
+  try { sessionStorage.removeItem('ghh_apply_payout_return'); } catch (_) {}
+  trackEvent('apply_payout_return_clicked', { job_id: String(jobId) });
 }
 
-// ═══
 // AUTH — LOGIN + REGISTER
-// ═══
 // Google Sign-In config — set GOOGLE_CLIENT_ID to enable
 const GOOGLE_CLIENT_ID = '1024981534766-nm6rlut193h592l9kecia6619u2i6dqq.apps.googleusercontent.com';
 
@@ -2870,9 +2873,7 @@ function logout() {
   navigate('#/');
 }
 
-// ═══
 // DASHBOARD
-// ═══
 async function renderDashboard() {
   if (state.user?.is_admin) return renderAdminDashboard();
   const isCurrent = currentRenderGuard();
@@ -2956,9 +2957,7 @@ async function renderDashboard() {
   }
 }
 
-// ═══
 // MY SERVICES
-// ═══
 async function renderMyServices() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-services');
@@ -3215,9 +3214,7 @@ async function handlePostService(e, editId) {
   }, editId ? 'Saving…' : 'Posting…');
 }
 
-// ═══
 // POST A JOB
-// ═══
 async function renderPostJob() {
   const isCurrent = currentRenderGuard();
   let cats = [];
@@ -3371,9 +3368,7 @@ async function handlePostJob(e) {
   }
 }
 
-// ═══
 // MY JOBS
-// ═══
 async function renderMyJobs() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3436,9 +3431,7 @@ async function renderMyJobs() {
   }
 }
 
-// ═══
 // JOB APPLICANTS
-// ═══
 async function renderJobApplicants(id) {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'my-jobs');
@@ -3509,9 +3502,7 @@ function applicantCard(job, a) {
         </div>`;
 }
 
-// Hire control for one applicant. The server reports whether fixed-price hiring is
-// live (job.hiring_enabled) and re-checks worker payout readiness before any charge;
-// this only mirrors that state so buyers never see a Hire button that can't work.
+// Mirror job.hiring_enabled and payout readiness; /hire re-checks before charging.
 function applicantHireAction(job, a) {
   if (!['pending', 'shortlisted'].includes(a.status)) return '';
   if (!['open', 'reviewing'].includes(job.status)) return '';
@@ -3704,9 +3695,7 @@ async function confirmHire(jobId, applicationId) {
   }
 }
 
-// ═══
 // ORDERS
-// ═══
 async function renderOrders() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'orders');
@@ -4137,9 +4126,7 @@ async function leaveReview(id) {
   };
 }
 
-// ═══
 // PAYMENTS
-// ═══
 async function renderPayments() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'payments');
   // Return parameters trigger a status check, never a completion claim.
@@ -4171,12 +4158,14 @@ async function renderPayments() {
     const workerReady = statusData.worker_ready === true && !['simulated', 'test', 'disabled'].includes(workerMode);
     if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
+    const applyReturnId = workerReady ? applyPayoutReturnId() : null;
     const historyUnavailable = historyData === null;
     // escrow_history is the funded-order ledger; fees_paid are parts of those charges, not extra payments.
     const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
     appShell(`
       <h1 class="page-title">Payments</h1>
+      ${applyReturnId ? `<div class="callout mb-4" role="status"><strong>You can apply now</strong><p>Your payouts are ready.</p><a class="btn btn-primary" href="#/jobs/${applyReturnId}?apply=1" onclick="consumeApplyPayoutReturn(${Number(applyReturnId)})">Back to job to apply</a></div>` : ''}
       <p class="page-desc">Manage payment methods and worker payout setup. Workers receive the listed payout after accepted work is completed, reviewed, and released through GoHireHumans.</p>
       <div class="safety-notice">
         <div class="safety-notice-icon">${I.shield}</div>
@@ -4218,7 +4207,8 @@ async function renderPayments() {
         <div class="card">
           <div class="empty-state-icon" aria-hidden="true">${I.bank}</div>
           <div class="card-title">Receive Payments</div>
-          <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. You can apply to jobs before connecting payouts.</p>
+          <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. Finish payout setup before applying to jobs. Setup is free through Stripe; nothing is charged.</p>
+          ${!workerReady && !statusData.worker_payout_status?.account_id && countries.length ? `<p class="text-xs mb-3" data-payout-countries>Payouts are available in ${countries.length === 1 ? esc(countries[0].name) : 'the countries listed below'}. If you're elsewhere, you can't apply to jobs yet.</p>` : ''}
           ${workerReady
             ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
             : ''}
@@ -4472,9 +4462,7 @@ async function setupWorkerPayment(trigger = null) {
   }, 'Opening secure setup...');
 }
 
-// ═══
 // NOTIFICATIONS
-// ═══
 async function renderNotifications() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'notifications');
@@ -4573,9 +4561,7 @@ async function loadNotifCount(force = false) {
   notifCountCache.pending = null;
 }
 
-// ═══
 // REFERRAL PROGRAM
-// ═══
 async function renderReferrals() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'referrals');
@@ -4624,9 +4610,7 @@ async function renderReferrals() {
   }
 }
 
-// ═══
 // PROFILE
-// ═══
 async function renderProfile() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'profile');
@@ -4740,9 +4724,7 @@ async function updateProfile(e) {
   }, 'Saving…');
 }
 
-// ═══
 // ADMIN
-// ═══
 async function renderAdminDashboard() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'dashboard');
@@ -5024,9 +5006,7 @@ async function renderAdminAudit() {
   }
 }
 
-// ═══
 // AI EMPLOYERS PAGE
-// ═══
 function renderAIEmployers() {
   document.getElementById('app').innerHTML = `
     <div class="landing">
@@ -5156,9 +5136,7 @@ function renderAIEmployers() {
     </div>`;
 }
 
-// ═══
 // STATIC PAGES
-// ═══
 function renderTerms() {
   document.getElementById('app').innerHTML = `
     ${renderPublicNav()}
@@ -5255,9 +5233,7 @@ function renderGuidelines() {
     ${publicFooter()}`;
 }
 
-// ═══
 // ROUTER
-// ═══
 let renderGeneration = 0;
 function currentRenderGuard() {
   const generation = renderGeneration;

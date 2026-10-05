@@ -58,7 +58,7 @@ class NotificationReliabilityTests(unittest.TestCase):
                     "INSERT INTO sessions(user_id,token,expires_at) VALUES(?,?,datetime('now','+1 day'))",
                     [user_id, token],
                 )
-            db.execute("INSERT INTO worker_profiles(user_id) VALUES(1)")
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(1,'stripe_connect_active')")
             db.execute("INSERT INTO employer_profiles(user_id) VALUES(2)")
             db.execute(
                 """INSERT INTO jobs
