@@ -74,3 +74,27 @@ test('an unparseable due date shows no due line', async ({ page }) => {
   await expect(meta).not.toContainText('Due');
   await expect(page.locator('.svc-order-meta img')).toHaveCount(0);
 });
+
+// A local day is 23 or 25 hours on DST changeover days: "end of day" is the next local midnight.
+test('spring-forward day: the due date passes at the next local midnight', async ({ page }) => {
+  const meta = await open(page, { job: { due_by: '2027-03-14' }, now: '2027-03-15T00:30:00-06:00' });
+  await expect(meta).toContainText('Due date passed.');
+  await expect(meta).not.toContainText('3/14/2027');
+});
+
+test('fall-back day: the due date is still current late that evening', async ({ page }) => {
+  const meta = await open(page, { job: { due_by: '2026-11-01' }, now: '2026-11-01T23:30:00-07:00' });
+  await expect(meta).toContainText('Due: 11/1/2026');
+});
+
+test('surrounding spaces do not turn a calendar date into a midnight time', async ({ page }) => {
+  const meta = await open(page, { job: { due_by: ' 2026-10-02 ' }, now: '2026-10-02T12:00:00-06:00' });
+  await expect(meta).toContainText('Due: 10/2/2026');
+});
+
+for (const due_by of ['2026-02-31', '2026-13-02', '0099-01-01']) {
+  test(`impossible calendar date ${due_by} shows no due line`, async ({ page }) => {
+    const meta = await open(page, { job: { due_by }, now: '2026-10-05T12:00:00Z' });
+    await expect(meta).not.toContainText('Due');
+  });
+}

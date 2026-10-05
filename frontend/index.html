@@ -748,7 +748,7 @@ function trackEvent(eventName, params = {}) {
       window.dataLayer.push({ event: eventName, ...eventParams });
     }
   } catch (_) {
-    // Analytics must never block marketplace navigation or checkout intent.
+    // Analytics never blocks navigation or checkout.
   }
 }
 function trackRecommendedEvent(eventName, params = {}) {
@@ -1625,7 +1625,7 @@ async function renderServices() {
     </div>
     ${publicFooter()}`;
 
-  // Load categories (filters update the query in place).
+  // Load categories (filters update the query).
   try {
     const cats = await loadCategories();
     if (!isCurrent()) return;
@@ -2377,12 +2377,13 @@ function jobCard(j) {
 function jobAcceptsApplications(job) {
   return ['open', 'reviewing'].includes(job?.status);
 }
-// Date-only due_by = buyer's local calendar day, current until that day ends.
+// Date-only due_by: local calendar day, current until next local midnight.
 function jobDueLine(job, isOwner) {
-  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(job.due_by || ''), d = m ? new Date(m[1], m[2] - 1, m[3]) : utcDate(job.due_by);
-  if (!d) return '';
-  const day = d.toLocaleDateString();
-  return !jobAcceptsApplications(job) || d.getTime() + (m ? 864e5 : 0) > Date.now() ? `Due: ${day}`
+  const raw = String(job.due_by || '').trim(), m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(raw);
+  const d = m ? new Date(+m[1], m[2] - 1, +m[3]) : utcDate(raw);
+  if (!d || m && (m[1] < 1000 || d.getMonth() != m[2] - 1 || d.getDate() != m[3])) return '';
+  const day = d.toLocaleDateString(), end = m ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1) : d;
+  return !jobAcceptsApplications(job) || end > Date.now() ? `Due: ${day}`
     : isOwner ? `Due date passed (${day})` : 'Due date passed. Say when you can deliver in your application.';
 }
 
@@ -4938,7 +4939,7 @@ async function renderAdminDisputes() {
   const isCurrent = currentRenderGuard();
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'admin-disputes');
   try {
-    // A failed request renders the error state below, never "No active disputes."
+    // A failed request shows the error state, not "No active disputes."
     const data = await api('/admin/orders?status=disputed');
     if (!isCurrent()) return;
     const orders = Array.isArray(data) ? data : (data.orders||[]);
