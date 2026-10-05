@@ -240,6 +240,7 @@ class AdminAccountErasureReviewRegressions(AdminAccountErasureTests):
     def test_peer_notification_and_email_naming_target_are_scrubbed(self):
         with self.core.get_db() as db:
             db.execute('UPDATE users SET is_active=1 WHERE id=2')
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(2,'stripe_connect_active') ON CONFLICT(user_id) DO UPDATE SET payout_method='stripe_connect_active'")
             job_id = db.execute("INSERT INTO jobs(employer_id,title,description,category,budget_amount) VALUES (3,'Peer job','Job','research',25)").lastrowid
             db.execute("INSERT INTO notifications(user_id,type,title,message) VALUES (3,'other','Annual plan','Unique Erasurement Personality stays')")
             db.commit()
@@ -335,6 +336,7 @@ class AdminAccountErasureFourthReviewRegressions(AdminAccountErasureTests):
     def apply_to_peer_job(self):
         with self.core.get_db() as db:
             db.execute('UPDATE users SET is_active=1 WHERE id=2')
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(2,'stripe_connect_active') ON CONFLICT(user_id) DO UPDATE SET payout_method='stripe_connect_active'")
             job_id = db.execute("INSERT INTO jobs(employer_id,title,description,category,budget_amount) VALUES (3,'Peer job','Job','research',25)").lastrowid
             db.commit()
         status, _ = self.request('POST', f'/jobs/{job_id}/apply', {'cover_message': 'work'}, 'old-session')

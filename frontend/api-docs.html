@@ -378,11 +378,11 @@ Content-Type: application/json
   "application_count": 0
 }</div>
 <p>This endpoint describes the public listing and application count. It does not return a professional/result delivery object; delivery review belongs to a separate, authorized order workflow.</p>
-<p>When the request is authenticated, the response also includes <code>viewer_application</code> (your own application on this job: <code>id</code>, <code>status</code>, <code>created_at</code>, or <code>null</code>), <code>viewer_can_apply</code>, and <code>viewer_can_withdraw</code>.</p>
+<p>When the request is authenticated, the response also includes <code>viewer_application</code> (your own application on this job: <code>id</code>, <code>status</code>, <code>created_at</code>, or <code>null</code>), <code>viewer_can_apply</code>, <code>viewer_can_withdraw</code>, and <code>viewer_withdrawal_limit_reached</code>. <code>viewer_apply_requirement</code> is <code>"payout_setup"</code> only when payout setup is the remaining application requirement, otherwise <code>null</code>.</p>
 </section>
 <section class="docs-section" id="tasks-apply">
 <h2>POST /api/v1/jobs/{id}/apply</h2>
-<p>Apply to a job that is accepting applications. Authentication required. <code>cover_message</code> is required and must not be blank: say how you'll do the work and when you can deliver. <code>portfolio_url</code> is optional and must be an http(s) URL. A blank or missing <code>cover_message</code> returns 400; a second application to the same job returns 409.</p>
+<p>Apply to a job that is accepting applications. Authentication and a payout-ready Stripe account required. Incomplete payout setup returns 403 with <code>code: "payout_setup_required"</code>; finish setup in <a href="/#/payments">Payments</a> before applying. <code>cover_message</code> is required and must not be blank: say how you'll do the work and when you can deliver. <code>portfolio_url</code> is optional and must be an http(s) URL. A blank or missing <code>cover_message</code> returns 400; a second application to the same job returns 409.</p>
 <div class="code-block code-block--scroll mt-3 mb-4" tabindex="0" role="region" aria-label="Job application request example">POST /api/v1/jobs/&lt;job id&gt;/apply
 {
   "cover_message": "I can write the five descriptions and deliver them tomorrow.",

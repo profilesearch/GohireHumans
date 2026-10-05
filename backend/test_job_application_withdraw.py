@@ -32,8 +32,8 @@ class JobApplicationWithdrawTests(unittest.TestCase):
                 db.execute("INSERT INTO users(id,email,name,password_hash) VALUES(?,?,?,'x')", [uid, email, name])
                 db.execute("INSERT INTO sessions(user_id,token,expires_at) VALUES(?,?,datetime('now','+1 day'))",
                            [uid, f"tok-{uid}"])
-            db.execute("INSERT INTO worker_profiles(user_id) VALUES(1)")
-            db.execute("INSERT INTO worker_profiles(user_id) VALUES(3)")
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(1,'stripe_connect_active')")
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(3,'stripe_connect_active')")
             db.execute("INSERT INTO employer_profiles(user_id) VALUES(2)")
             db.execute(
                 """INSERT INTO jobs(id,employer_id,title,description,category,budget_type,budget_amount,status,created_at)

@@ -61,11 +61,11 @@ test('when hiring is paused the list stays ungrouped with no readiness claims', 
   await expect(page.getByRole('button', { name: 'Hiring temporarily paused' })).toHaveCount(1);
 });
 
-async function applyAs(page, workerReady) {
+async function applyAs(page) {
   await page.route('https://accounts.google.com/**', route => route.fulfill({ status: 204, body: '' }));
   await page.route(API, route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async ready => {
+  await page.evaluate(async () => {
     state.user = { id: 63, name: 'Test Worker' };
     state.token = 'test-token';
     window.__testAnalyticsEvents = [];
@@ -74,31 +74,23 @@ async function applyAs(page, workerReady) {
     window.api = async (path, options = {}) => {
       window.__applyCalls.push([path, options.method || 'GET']);
       if (path === '/jobs/24/apply') return { id: 900 };
-      if (path === '/payments/status') return { worker_ready: ready };
+      if (path === '/jobs/24') return { id: 24, employer_id: 2, status: 'reviewing', viewer_can_apply: false, viewer_application: { id: 900, status: 'pending' } };
       return {};
     };
     await handleJobApply(24);
-  }, workerReady);
+  });
   await page.locator('#apply-cover-message').fill('I can write these five descriptions and return them tomorrow.');
   await page.locator('#jobApplicationSubmitBtn').click();
   await expect(page.locator('#applyForm')).toHaveCount(0);
 }
 
-test('worker without payouts is prompted to finish setup right after applying', async ({ page }) => {
-  await applyAs(page, false);
-  const dialog = page.locator('.modal-dialog');
-  await expect(dialog.locator('.modal-title')).toHaveText('One more step before you can be hired');
-  await expect(dialog).toContainText('nothing is charged');
-  await dialog.getByRole('button', { name: 'Finish payout setup' }).click();
-  await expect(page).toHaveURL(/#\/payments$/);
-  const names = await page.evaluate(() => window.__testAnalyticsEvents.map(a => a[1]));
-  expect(names).toEqual(expect.arrayContaining(['job_application_completed', 'apply_payout_prompt_shown', 'apply_payout_prompt_accepted']));
-});
-
 test('payout-ready worker sees no setup prompt after applying', async ({ page }) => {
-  await applyAs(page, true);
-  await page.waitForFunction(() => window.__applyCalls.some(c => c[0] === '/payments/status'));
+  await applyAs(page);
+  await expect(page.getByText('Application submitted!', { exact: true })).toBeVisible();
   await expect(page.locator('.modal-dialog')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__applyCalls.some(c => c[0] === '/payments/status'))).toBe(false);
+  expect(await page.evaluate(() => window.__testAnalyticsEvents.map(a => a[1])))
+    .toEqual(expect.arrayContaining(['job_application_completed', 'generate_lead', 'qualify_lead']));
 });
 
 test('guided draft makes the buyer choose a category and drops the drafting note on post', async ({ page }) => {

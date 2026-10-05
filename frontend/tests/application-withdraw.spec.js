@@ -81,7 +81,7 @@ test('worker without an application still gets the Apply button', async ({ page 
 
 test('after the final withdrawal the page shows why there is no Apply button', async ({ page }) => {
   await workerSession(page);
-  const state = { deletes: 0, canReapply: false, job: { viewer_application: null, viewer_can_apply: false, viewer_can_withdraw: false } };
+  const state = { deletes: 0, canReapply: false, job: { viewer_application: null, viewer_can_apply: false, viewer_can_withdraw: false, viewer_withdrawal_limit_reached: true } };
   await jobRoute(page, state);
   await page.goto('/#/jobs/33?apply=1', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.svc-order-card')).toContainText("You've withdrawn from this job twice");
