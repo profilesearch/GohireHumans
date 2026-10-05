@@ -17,7 +17,8 @@ Safety contract (mirrors agentmail_transport):
   before sending and skipped, and AgentMail's documented 403
   code=message_rejected ("the message was not sent") is not ambiguous.
 - Owners whose last digest was unclear go last, so one bad address cannot
-  starve every owner behind it.
+  starve every owner behind it. (Under a saturated daily cap they can wait;
+  at current volume the cap is far above the number of owners.)
 - Owners can stop these emails with a signed one-click link.
 """
 import hashlib
@@ -346,8 +347,9 @@ def _halted(db, now):
 
 
 def _sends_used(db, today):
-    """Today's sends that could have reached the provider; known-not-sent rows don't count."""
-    return db.execute("SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=? AND state!='withheld'",
+    """Every intent today uses a cap slot, withheld ones included: a provider that
+    rejects every send (e.g. a suspended account) must not walk the whole owner list."""
+    return db.execute("SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=?",
                       [today]).fetchone()[0]
 
 

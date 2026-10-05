@@ -435,15 +435,29 @@ class ApplicantDigestTests(unittest.TestCase):
         self.assertEqual([r["body"]["to"] for r in opener.requests], [["owner2@example.com"], ["owner@example.com"]])
         self.assertEqual((result["accepted"], result["unknown"], result["status"]), (1, 1, "halted_unresolved_attempt"))
 
-    def test_skipped_blocked_owner_does_not_use_up_the_daily_cap(self):
-        self.enable(APPLICANT_DIGEST_DAILY_CAP="1")
-        self.add_app(10, 2)
-        self.add_app(15, 2)
-        sent = []
-        for minute in (0, 1):
-            _, opener = self.run_digest(now=NOW.replace(minute=minute), opener=FakeOpener(blocked={"owner@example.com"}))
-            sent += [r["body"]["to"] for r in opener.requests]
-        self.assertEqual(sent, [["owner2@example.com"]])
+    def test_provider_rejecting_everything_cannot_exceed_the_daily_cap(self):
+        # A suspended account rejects every send (403 message_rejected). Those rows
+        # are withheld, but they must still use up the daily cap so the sender
+        # cannot work through every owner, tick after tick.
+        with self.api.get_db() as db:
+            for uid in range(30, 36):
+                db.execute("INSERT INTO users(id,email,name,password_hash) VALUES(?,?,?,'x')",
+                           [uid, f"owner{uid}@example.com", f"Owner {uid}"])
+                db.execute("""INSERT INTO jobs(id,employer_id,title,description,category,budget_type,budget_amount,status,created_at)
+                              VALUES(?,?,'Job','d','writing','fixed',60,'open',datetime('now','-2 days'))""", [uid + 100, uid])
+            db.commit()
+        for job in (10, 15, *range(130, 136)):
+            self.add_app(job, 2)
+        self.enable(APPLICANT_DIGEST_DAILY_CAP="3")
+        posts, statuses = 0, []
+        for minute in range(6):
+            opener = FakeOpener([http_error(SEND_URL, 403, REJECTED) for _ in range(10)])
+            result, _ = self.run_digest(now=NOW.replace(minute=minute), opener=opener)
+            posts += len(opener.requests)
+            statuses.append(result["status"])
+        self.assertEqual(posts, 3)
+        self.assertEqual(statuses[-1], "daily_cap_reached")
+        self.assertEqual({r["state"] for r in self.rows("SELECT state FROM applicant_digest_sends")}, {"withheld"})
 
     def test_documented_provider_rejection_is_known_not_sent_and_does_not_halt(self):
         # AgentMail documents 403 code=message_rejected as "The message was not sent"
