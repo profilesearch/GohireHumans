@@ -239,7 +239,10 @@ class ApplicantDigestTests(unittest.TestCase):
         text = body["text"]
         self.assertIn('"Write five product descriptions": 2 new applicants, 1 ready to hire now', text)
         self.assertIn("https://www.gohirehumans.com/#/jobs/10/applicants", text)
-        for private in ("Ready Worker", "Pending Worker", "worker-ready@example.com", "I can do this well"):
+        # Only the suggested, payout-ready applicant is named; never emails,
+        # cover messages, or applicants who are not suggested.
+        self.assertIn("  Suggested applicants (ready to hire):\n  1. Ready Worker: Ready to hire\n", text)
+        for private in ("Pending Worker", "worker-ready@example.com", "worker-pending@example.com", "I can do this well"):
             self.assertNotIn(private, json.dumps(body))
         self.assertIn("Stop these emails: https://www.gohirehumans.com/email-preferences/?t=1.", text)
         self.assertRegex(body["headers"]["List-Unsubscribe"],
@@ -251,6 +254,48 @@ class ApplicantDigestTests(unittest.TestCase):
         self.assertEqual(sends[0]["message_id"], "<m1@x>")
         self.assertEqual(self.rows("SELECT action FROM audit_log WHERE action='applicant_digest_prepared'"),
                          [{"action": "applicant_digest_prepared"}])
+
+    def test_candidate_jobs_attach_ranked_names_and_fixed_reasons_read_only(self):
+        ids = [self.add_app(10, uid) for uid in (2, 3, 8, 9)]
+        with self.api.get_db() as db:
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(8,'stripe_connect_active')")
+            db.execute("INSERT INTO worker_profiles(user_id,payout_method) VALUES(9,'stripe_connect_active')")
+            db.execute("UPDATE applications SET cover_message=? WHERE id=?", ['product descriptions ' + 'x' * 300, ids[2]])
+            db.execute("UPDATE applications SET portfolio_url='https://example.test/work' WHERE id=?", [ids[3]])
+            db.commit()
+            before = db.total_changes
+            jobs = self.api.applicant_digest.candidate_jobs(db, 1, NOW, 14, True)
+            self.assertEqual(db.total_changes, before)
+            self.assertFalse(db.in_transaction)
+        self.assertEqual(jobs[0].get('suggestions'), [
+            {'rank': 1, 'display_name': 'Old Worker', 'reasons': ['Message addresses your task', 'Detailed message']},
+            {'rank': 2, 'display_name': 'Banned Worker', 'reasons': ['Shared a portfolio link']},
+            {'rank': 3, 'display_name': 'Ready Worker', 'reasons': ['Ready to hire']}])
+        # API and digest use the same full applicant pool, not just today's new cohort.
+        status, apps = self.request('GET', '/jobs/10/applications', token='tok-1')
+        self.assertEqual(status, 200)
+        ranked = sorted((a for a in apps if a['suggested_rank']), key=lambda a: a['suggested_rank'])
+        self.assertEqual([(a['worker_name'], a['suggestion_reasons']) for a in ranked],
+                         [(a['display_name'], a['reasons']) for a in jobs[0]['suggestions']])
+
+    def test_candidate_suggestions_include_older_still_eligible_applicants(self):
+        self.add_app(10, 2, age='-20 days')
+        self.add_app(10, 3)
+        with self.api.get_db() as db:
+            jobs = self.api.applicant_digest.candidate_jobs(db, 1, NOW, 14, True)
+        self.assertEqual((jobs[0]['count'], jobs[0]['ready']), (1, 0))
+        self.assertEqual(jobs[0].get('suggestions'), [
+            {'rank': 1, 'display_name': 'Ready Worker', 'reasons': ['Ready to hire']}])
+
+    def test_candidate_jobs_no_suggestions_when_hiring_disabled_or_hourly(self):
+        self.add_app(10, 2)
+        self.add_app(11, 2)
+        with self.api.get_db() as db:
+            jobs = self.api.applicant_digest.candidate_jobs(db, 1, NOW, 14, False)
+            self.assertTrue(all(not j.get('suggestions') for j in jobs))
+            jobs = self.api.applicant_digest.candidate_jobs(db, 1, NOW, 14, True)
+        hourly = next(j for j in jobs if j['job_id'] == 11)
+        self.assertFalse(hourly.get('suggestions'))
 
     def test_hourly_job_and_paused_hiring_never_claim_ready_to_hire(self):
         self.enable()
@@ -802,6 +847,107 @@ class ApplicantDigestTests(unittest.TestCase):
         flat = json.dumps(deleted, default=str)
         for table in ("applicant_digest_items", "applicant_digest_sends", "email_preferences"):
             self.assertIn(table, flat)
+
+
+class SuggestedApplicantsRenderTests(unittest.TestCase):
+    explanation = ('Suggestions are based on payout setup, how closely the message matches your task, '
+                   'portfolio links and past work on GoHireHumans. You choose who to hire.')
+
+    def job(self, **overrides):
+        return dict({'job_id': 10, 'title': 'Write five product descriptions', 'count': 5, 'ready': 3,
+                     'hireable': True, 'suggestions': [
+                        {'rank': 1, 'display_name': 'Maya Patel', 'reasons': [
+                            'Message addresses your task', 'Detailed message', 'Shared a portfolio link']},
+                        {'rank': 2, 'display_name': 'Luis Moreno', 'reasons': ['Shared a portfolio link']},
+                        {'rank': 3, 'display_name': 'Aisha Khan', 'reasons': ['Ready to hire']}]}, **overrides)
+
+    def render(self, jobs):
+        import applicant_digest
+        return applicant_digest.render(jobs, 'sample-token')[0]
+
+    def test_suggestions_block_exact_text_and_position(self):
+        payload = self.render([self.job()])
+        expected = ('- "Write five product descriptions": 5 new applicants, 3 ready to hire now\n'
+                    '  Suggested applicants (ready to hire):\n'
+                    '  1. Maya Patel: Message addresses your task; Detailed message; Shared a portfolio link\n'
+                    '  2. Luis Moreno: Shared a portfolio link\n'
+                    '  3. Aisha Khan: Ready to hire\n'
+                    '  Review them: https://www.gohirehumans.com/#/jobs/10/applicants')
+        self.assertIn(expected, payload['text'])
+        self.assertEqual(payload['subject'], '3 applicants ready to hire on GoHireHumans')
+        self.assertIn(self.explanation + '\n\n"Ready to hire" means', payload['text'])
+
+    def test_name_sanitization_letters_punctuation_whitespace_urls_and_emoji(self):
+        job = self.job()
+        job['suggestions'] = [
+            {'rank': 1, 'display_name': "Zoë\n日 本\tJ.P. O'Neil-Smith. 😀", 'reasons': ['Ready to hire']},
+            {'rank': 2, 'display_name': 'Visit http://x.y person@example.test evil.example www.bad 😀',
+             'reasons': ['Ready to hire']},
+            {'rank': 3, 'display_name': '😀💥123@/:', 'reasons': ['Ready to hire']}]
+        text = self.render([job])['text']
+        self.assertIn("  1. Zoë 日 本 J.P. O'Neil-Smith.: Ready to hire\n", text)
+        self.assertIn('  2. Visit: Ready to hire\n', text)
+        self.assertIn('  3. Applicant: Ready to hire\n', text)
+        for unsafe in ('http://x.y', 'person@example.test', 'evil.example', 'www.bad', '😀', '💥'):
+            self.assertNotIn(unsafe, text)
+
+    def test_name_filter_cannot_create_contact_links(self):
+        job = self.job()
+        job['suggestions'] = [{'rank': 1, 'display_name': 'Visit evil.(com) evil./com evil.😀com',
+                               'reasons': ['Ready to hire']}]
+        text = self.render([job])['text']
+        self.assertIn('  1. Visit: Ready to hire\n', text)
+        self.assertNotIn('evil.com', text)
+
+    def test_name_filter_blocks_unicode_hostname_forms(self):
+        # Ligatures, fullwidth forms and combining marks must not smuggle a
+        # hostname past the dotted-initials exemption or the dot check.
+        job = self.job()
+        job['suggestions'] = [{'rank': 1, 'display_name': (
+            'Visit x.\ufb01. \uff45\uff56\uff49\uff4c\uff0e\uff43\uff4f\uff4d evil.\u0301com'),
+            'reasons': ['Ready to hire']}]
+        text = self.render([job])['text']
+        self.assertIn('  1. Visit: Ready to hire\n', text)
+        for unsafe in ('\ufb01', 'x.fi', 'evil.com', '\uff0e', '\uff45'):
+            self.assertNotIn(unsafe, text)
+
+    def test_name_keeps_combining_marks_in_real_names(self):
+        job = self.job()
+        job['suggestions'] = [{'rank': 1, 'display_name': 'Zoe\u0301 \u0928\u092e\u0938\u094d\u0924\u0947',
+                               'reasons': ['Ready to hire']}]
+        text = self.render([job])['text']
+        self.assertIn('  1. Zo\u00e9 \u0928\u092e\u0938\u094d\u0924\u0947: Ready to hire\n', text)
+
+    def test_name_is_truncated_to_forty_characters(self):
+        job = self.job()
+        job['suggestions'] = [{'rank': 1, 'display_name': 'A' * 60, 'reasons': ['Ready to hire']}]
+        text = self.render([job])['text']
+        self.assertIn('  1. ' + 'A' * 40 + ': Ready to hire\n', text)
+        self.assertNotIn('A' * 41, text)
+
+    def test_explanation_only_once_for_multiple_suggested_jobs(self):
+        text = self.render([self.job(), self.job(job_id=11)])['text']
+        self.assertEqual(text.count(self.explanation), 1)
+        self.assertEqual(text.count('Suggested applicants (ready to hire):'), 2)
+
+    def test_no_suggestions_no_block_or_explanation(self):
+        job = self.job()
+        for suggestions in ([], None):
+            with self.subTest(suggestions=suggestions):
+                job['suggestions'] = suggestions
+                text = self.render([job])['text']
+                self.assertNotIn('Suggested applicants', text)
+                self.assertNotIn(self.explanation, text)
+        job.pop('suggestions')
+        self.assertNotIn('Suggested applicants', self.render([job])['text'])
+
+    def test_nonhireable_job_never_renders_supplied_suggestions(self):
+        job = self.job(hireable=False, ready=0)
+        job['budget_type'] = 'hourly'
+        text = self.render([job])['text']
+        self.assertNotIn('Suggested applicants', text)
+        self.assertNotIn(self.explanation, text)
+        self.assertNotIn('Maya Patel', text)
 
 
 if __name__ == "__main__":

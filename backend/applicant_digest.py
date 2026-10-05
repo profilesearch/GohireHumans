@@ -2,8 +2,11 @@
 
 At most one email per job owner per UTC day. It lists, per open job, how many
 new applications arrived since the owner last looked (or since the last digest)
-and how many of those applicants can be hired right now (payout set up). It
-never includes applicant names, emails or cover messages.
+and how many of those applicants can be hired right now (payout set up). For
+hireable fixed-price jobs it also names up to three suggested, payout-ready
+applicants (sanitized display name plus fixed-copy reasons, ranked over the
+same pool as GET /jobs/{id}/applications). It never includes applicant emails,
+cover messages, links, or anyone who is not suggested.
 
 Safety contract (mirrors agentmail_transport):
 - Off unless APPLICANT_DIGEST_ENABLED=true AND every other gate validates.
@@ -33,6 +36,20 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+try:
+    import suggested_applicants
+except ModuleNotFoundError as exc:
+    if exc.name != 'suggested_applicants':
+        raise
+    # api_core may load this file by path; resolve the sibling the same way.
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        'suggested_applicants', os.path.join(os.path.dirname(__file__), 'suggested_applicants.py'))
+    if _spec is None or _spec.loader is None:
+        raise ImportError('Suggested applicants module is unavailable')
+    suggested_applicants = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(suggested_applicants)
+
 SENDER = 'gohirehumans.operations@agentmail.to'
 APP_BASE = 'https://www.gohirehumans.com'
 API_BASE = 'https://gohirehumans-production.up.railway.app'
@@ -41,6 +58,9 @@ BLOCK_LIST_URL = 'https://api.agentmail.to/v0/lists/send/block/'
 MAX_JOBS_PER_EMAIL = 5
 MAX_PER_TICK = 5
 MAX_TITLE_CHARS = 80
+MAX_NAME_CHARS = 40
+SUGGESTION_EXPLANATION = ('Suggestions are based on payout setup, how closely the message matches your task, '
+                          'portfolio links and past work on GoHireHumans. You choose who to hire.')
 HALT_WINDOW = timedelta(hours=24)
 EMAIL_RE = r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
 
@@ -195,6 +215,46 @@ def _clean_title(title):
     return (text[:MAX_TITLE_CHARS - 1].rstrip() + '…') if len(text) > MAX_TITLE_CHARS else (text or 'Your job')
 
 
+def _clean_name(name):
+    """Keep letters, combining marks, spaces, period, apostrophe and hyphen; never contact tokens."""
+    # NFKC first: ligatures/fullwidth forms (ﬁ, ｅ, ．) become the ASCII a mail
+    # client or hostname normalizer would see, so the checks below see it too.
+    text = unicodedata.normalize('NFKC', str(name or ''))
+    text = ''.join(' ' if unicodedata.category(ch) in ('Cc', 'Cf', 'Zl', 'Zp', 'Cs', 'Co', 'Cn') else ch
+                   for ch in text)
+    words = []
+    for token in text.split():
+        # Strip complete contact/link tokens before filtering punctuation, rather
+        # than turning http://x.y into httpx.y.
+        if '@' in token or '://' in token or token.lower().startswith('www.'):
+            continue
+        kept = ''.join(ch for ch in token
+                       if ch.isalpha() or unicodedata.category(ch).startswith('M') or ch in "'-.")
+        # Filtering can itself create a domain (evil.(com) -> evil.com), and a
+        # combining mark after the dot must not hide one. Check the final token
+        # without marks; only single ASCII-letter initials (J.P.) are exempt.
+        skeleton = ''.join(ch for ch in kept if not unicodedata.category(ch).startswith('M'))
+        initials = bool(re.fullmatch(r'(?:[A-Za-z]\.)+', skeleton))
+        if re.search(r'\.\w', skeleton) and not initials:
+            continue
+        if any(ch.isalpha() for ch in kept):
+            words.append(kept)
+    return ' '.join(words)[:MAX_NAME_CHARS].rstrip() or 'Applicant'
+
+
+def _suggestions(db, job_row, hiring_enabled):
+    """Ranked [{rank, display_name, reasons}] over the job's full applicant pool (read-only)."""
+    ranked = suggested_applicants.suggest(db, job_row, hiring_enabled)
+    if not ranked:
+        return []
+    marks = ','.join('?' * len(ranked))
+    names = {r['id']: r['name'] for r in db.execute(
+        f"""SELECT a.id, u.name FROM applications a JOIN users u ON u.id=a.worker_id
+            WHERE a.id IN ({marks})""", list(ranked)).fetchall()}
+    return [dict(rank=v['rank'], display_name=names.get(aid, ''), reasons=list(v['reasons']))
+            for aid, v in sorted(ranked.items(), key=lambda item: item[1]['rank'])]
+
+
 def _excluded_owner_sql(agent_sql, sample_emails):
     marks = ','.join('?' * len(sample_emails))
     sample = f"LOWER(TRIM(u.email)) IN ({marks})" if sample_emails else '0'
@@ -205,7 +265,7 @@ def candidate_jobs(db, employer_id, now, lookback_days, hiring_enabled):
     """New, unseen, not-yet-digested applications per open job for one owner."""
     since = (now - timedelta(days=lookback_days)).strftime('%Y-%m-%d %H:%M:%S')
     rows = db.execute(
-        """SELECT j.id, j.title, j.budget_type,
+        """SELECT j.id, j.title, j.description, j.status, j.budget_type,
                   COUNT(a.id) AS n, MAX(a.id) AS max_id,
                   SUM(CASE WHEN COALESCE(wp.payout_method,'')='stripe_connect_active' THEN 1 ELSE 0 END) AS ready
            FROM jobs j
@@ -229,7 +289,8 @@ def candidate_jobs(db, employer_id, now, lookback_days, hiring_enabled):
         hireable = hiring_enabled and r['budget_type'] == 'fixed'
         jobs.append(dict(job_id=r['id'], title=_clean_title(r['title']), count=int(r['n']),
                          max_application_id=int(r['max_id']),
-                         ready=int(r['ready'] or 0) if hireable else 0, hireable=hireable))
+                         ready=int(r['ready'] or 0) if hireable else 0, hireable=hireable,
+                         suggestions=_suggestions(db, r, hiring_enabled) if hireable else []))
     return jobs
 
 
@@ -280,14 +341,24 @@ def render(jobs, token):
     else:
         subject = f'{total} new applicant{s(total)} on your GoHireHumans job{s(len(jobs))}'
     lines = ['Hello,', '', 'Here is your daily summary of new applicants on GoHireHumans.', '']
-    any_hireable = False
+    any_hireable = any_suggested = False
     for j in jobs:
         line = f'- "{j["title"]}": {j["count"]} new applicant{s(j["count"])}'
         if j['hireable']:
             any_hireable = True
             line += (f', {j["ready"]} ready to hire now' if j['ready']
                      else ', none ready to hire yet')
-        lines += [line, f'  Review them: {APP_BASE}/#/jobs/{j["job_id"]}/applicants', '']
+        lines.append(line)
+        suggested = (j.get('suggestions') or [])[:3] if j['hireable'] else []
+        if suggested:
+            any_suggested = True
+            lines.append('  Suggested applicants (ready to hire):')
+            lines += [f'  {n}. {_clean_name(item.get("display_name"))}: '
+                      + '; '.join(str(reason) for reason in (item.get('reasons') or ['Ready to hire'])[:3])
+                      for n, item in enumerate(suggested, 1)]
+        lines += [f'  Review them: {APP_BASE}/#/jobs/{j["job_id"]}/applicants', '']
+    if any_suggested:
+        lines += [SUGGESTION_EXPLANATION, '']
     if any_hireable:
         lines += ['"Ready to hire" means the applicant has finished payout setup, so you can hire them '
                   'right away. Other applicants can be hired once they finish setup.', '']
