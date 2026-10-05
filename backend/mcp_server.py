@@ -1084,6 +1084,7 @@ def handle_resource(uri):
 - `GET /me/services` — List your own service listings in every status (active and paused; add `include_removed=1` to include soft-deleted rows). Params: status, page, per_page. Same row shape and pagination envelope as `GET /services`.
 - `GET /me/jobs` — List your own job postings in every status (open, reviewing, hired, in_progress, completed, canceled). Params: status, page, per_page. Same row shape as `GET /jobs` plus `application_count`.
 - `POST /services/{id}/order` — Order a service; requires explicit owner approval, a stable idempotency key, and payment readiness. Not a discovery/onboarding step.
+- `GET /jobs/{id}/applications` — Job-owner/admin-only JSON list; session or read-scoped API key. Each application includes `worker_payout_ready` (boolean synced payout hint; hiring re-checks Stripe live), `suggested_rank` (1–3 or null), and `suggestion_reasons` (up to three fixed-copy strings, empty when not suggested). Only eligible, payout-ready pending/shortlisted applicants on open/reviewing fixed-price jobs with hiring enabled are suggested; fewer eligible applicants means fewer suggestions. Internal scores are never returned; the buyer chooses who to hire.
 - `GET /orders` — List your orders
 - `GET /orders/{id}` — Get order details
 - Order actions are separate routes with participant, lifecycle and authentication guards; there is no generic PUT order-status endpoint. Do not automate funding, approval or release from this quickstart.

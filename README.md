@@ -238,6 +238,7 @@ GohireHumans/
 | `GET` | `/me/jobs` | The caller's own jobs in every status, with `application_count` (auth required) |
 | `POST` | `/jobs` | Create a job |
 | `POST` | `/jobs/{id}/apply` | Apply to a job; payout-ready account and non-empty `cover_message` required, optional http(s) `portfolio_url`; incomplete payout setup returns 403 `payout_setup_required` |
+| `GET` | `/jobs/{id}/applications` | Job-owner/admin-only JSON list; session or read-scoped API key. Each application includes `worker_payout_ready` (boolean synced hint), `suggested_rank` (1–3 or null), and `suggestion_reasons` (up to three fixed-copy strings, empty when not suggested). Only eligible, payout-ready pending/shortlisted applicants on open/reviewing fixed-price jobs with hiring enabled are suggested; no padding, no numeric score. Hiring still re-checks Stripe live; the buyer chooses. |
 | `DELETE` | `/jobs/{id}/apply` | Withdraw your own pending application before a hire; one reapply allowed per job |
 | `POST` | `/jobs/{id}/hire` | Hire an applicant |
 | `GET` | `/services/{id}/quote` | Preview an authenticated, itemized service charge without creating an order |
