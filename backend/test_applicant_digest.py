@@ -9,8 +9,10 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlsplit
+from email.message import Message
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from test_deep_audit_regressions import load_api_core, parse_cgi_output
 
@@ -39,13 +41,46 @@ class FakeResponse:
         pass
 
 
-class FakeOpener:
-    """Records every request; returns scripted outcomes (dict, Exception, or (status, bytes))."""
+SEND_URL = "https://api.agentmail.to/v0/inboxes/gohirehumans.operations%40agentmail.to/messages/send"
+BLOCK_URL = "https://api.agentmail.to/v0/lists/send/block/"
+# AgentMail's documented "message was not sent" error (send block list etc.).
+REJECTED = {"name": "ForbiddenError", "code": "message_rejected",
+            "message": "Recipient is on a send block list", "docs": "https://docs.agentmail.to/errors#message_rejected"}
 
-    def __init__(self, outcomes=None):
+
+def http_error(url, code, payload):
+    body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+    return urllib.error.HTTPError(url, code, "error", Message(), io.BytesIO(body))
+
+
+class FakeOpener:
+    """Records every send (POST) and returns scripted outcomes (dict, Exception, or (status, bytes)).
+
+    GETs are send-block-list lookups, recorded separately in `lookups`: an entry in
+    `blocked` answers 200, anything else 404, unless `lookup_error` scripts a failure.
+    """
+
+    def __init__(self, outcomes=None, blocked=(), lookup_error=None):
         self.requests, self.outcomes = [], list(outcomes or [])
+        self.lookups, self.blocked, self.lookup_error = [], set(blocked), lookup_error
+
+    def _lookup(self, request):
+        self.lookups.append(dict(url=request.full_url, data=request.data,
+                                 headers={k.lower(): v for k, v in request.header_items()}))
+        if isinstance(self.lookup_error, Exception):
+            raise self.lookup_error
+        if isinstance(self.lookup_error, tuple):
+            return FakeResponse(*self.lookup_error)
+        entry = unquote(request.full_url.rsplit("/", 1)[1])
+        if entry not in self.blocked:
+            raise http_error(request.full_url, 404, {"name": "NotFoundError", "code": "not_found", "message": "Not found"})
+        return FakeResponse(200, json.dumps({
+            "entry": entry, "direction": "send", "list_type": "block", "entry_type": "domain" if "@" not in entry else "email",
+            "reason": "bounced", "read_only": True, "organization_id": "org", "created_at": "2026-10-02T14:00:45Z"}).encode())
 
     def open(self, request, timeout=None):
+        if request.get_method() == "GET":
+            return self._lookup(request)
         self.requests.append(dict(url=request.full_url, method=request.get_method(),
                                   headers={k.lower(): v for k, v in request.header_items()},
                                   body=json.loads(request.data)))
@@ -355,6 +390,117 @@ class ApplicantDigestTests(unittest.TestCase):
                 result, opener = self.run_digest(now=NOW.replace(hour=22))
                 self.assertEqual(result["status"], "halted_unresolved_attempt")
                 self.assertEqual(opener.requests, [])
+
+    # ── bounced / blocked recipients ───────────────────────────────────────
+    def clear_sends(self):
+        with self.api.get_db() as db:
+            db.execute("DELETE FROM applicant_digest_items")
+            db.execute("DELETE FROM applicant_digest_sends")
+            db.commit()
+
+    def test_send_blocked_owner_is_skipped_once_a_day_and_never_halts_others(self):
+        # A hard bounce puts the address on AgentMail's send block list, and every
+        # later send to it is refused. That owner must be skipped, not halt everyone.
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        result, opener = self.run_digest(opener=FakeOpener(blocked={"owner@example.com"}))
+        self.assertEqual([r["body"]["to"] for r in opener.requests], [["owner2@example.com"]])
+        self.assertEqual((result["status"], result["accepted"], result["withheld"], result["unknown"]), ("ran", 1, 1, 0))
+        self.assertEqual(self.rows("SELECT employer_id, state FROM applicant_digest_sends ORDER BY employer_id"),
+                         [{"employer_id": 1, "state": "withheld"}, {"employer_id": 7, "state": "accepted"}])
+        lookup = opener.lookups[0]
+        self.assertEqual(lookup["url"], BLOCK_URL + "owner%40example.com")
+        self.assertEqual(lookup["headers"]["authorization"], "Bearer am_test_key_value")
+        self.assertIsNone(lookup["data"])
+        # Later the same day: no second lookup, no send, not halted.
+        result, opener = self.run_digest(now=NOW.replace(hour=22), opener=FakeOpener(blocked={"owner@example.com"}))
+        self.assertEqual((result["status"], opener.requests, opener.lookups), ("ran", [], []))
+        # Next day: checked again, still skipped, still not halted.
+        result, opener = self.run_digest(now=NOW.replace(day=3), opener=FakeOpener(blocked={"owner@example.com"}))
+        self.assertEqual((result["status"], result["withheld"], opener.requests), ("ran", 1, []))
+
+    def test_owner_with_an_earlier_unclear_attempt_goes_last(self):
+        # Even if a bad address is not recognised, it must not starve everyone
+        # behind it every day: owners whose last digest was unclear go last.
+        with self.api.get_db() as db:
+            db.execute("""INSERT INTO applicant_digest_sends
+                (employer_id,digest_date,state,fingerprint,jobs_count,applications_count,ready_count,prepared_at,resolved_at)
+                VALUES(1,'2026-10-01','unknown',?,1,1,0,'2026-10-01 14:00:00','2026-10-01 14:00:01')""", ["a" * 64])
+            db.commit()
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        result, opener = self.run_digest(opener=FakeOpener([{"message_id": "<a@x>", "thread_id": "t"}, TimeoutError("slow")]))
+        self.assertEqual([r["body"]["to"] for r in opener.requests], [["owner2@example.com"], ["owner@example.com"]])
+        self.assertEqual((result["accepted"], result["unknown"], result["status"]), (1, 1, "halted_unresolved_attempt"))
+
+    def test_skipped_blocked_owner_does_not_use_up_the_daily_cap(self):
+        self.enable(APPLICANT_DIGEST_DAILY_CAP="1")
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        sent = []
+        for minute in (0, 1):
+            _, opener = self.run_digest(now=NOW.replace(minute=minute), opener=FakeOpener(blocked={"owner@example.com"}))
+            sent += [r["body"]["to"] for r in opener.requests]
+        self.assertEqual(sent, [["owner2@example.com"]])
+
+    def test_documented_provider_rejection_is_known_not_sent_and_does_not_halt(self):
+        # AgentMail documents 403 code=message_rejected as "The message was not sent"
+        # (block list, allow list, suspended account). That is not an unclear outcome.
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        result, opener = self.run_digest(opener=FakeOpener([http_error(SEND_URL, 403, REJECTED)]))
+        self.assertEqual([r["body"]["to"] for r in opener.requests], [["owner@example.com"], ["owner2@example.com"]])
+        self.assertEqual((result["status"], result["accepted"], result["withheld"], result["unknown"]), ("ran", 1, 1, 0))
+        self.assertEqual(self.rows("SELECT employer_id, state FROM applicant_digest_sends ORDER BY employer_id"),
+                         [{"employer_id": 1, "state": "withheld"}, {"employer_id": 7, "state": "accepted"}])
+        result, _ = self.run_digest(now=NOW.replace(hour=22))
+        self.assertNotEqual(result["status"], "halted_unresolved_attempt")
+
+    def test_other_provider_errors_stay_unclear_and_halt(self):
+        # Guard: only the exact documented rejection counts as known-not-sent.
+        self.enable()
+        self.add_app(10, 2)
+        self.add_app(15, 2)
+        outcomes = (
+            http_error(SEND_URL, 403, {"code": "missing_permission", "message": "Forbidden"}),
+            http_error(SEND_URL, 403, b'{"message":"Forbidden"}'),
+            http_error(SEND_URL, 403, b"message_rejected"),
+            http_error(SEND_URL, 403, {"code": "inbox_paused"}),
+            http_error(SEND_URL, 403, {"error": {"code": "message_rejected"}}),
+            http_error(SEND_URL, 409, {"code": "message_rejected"}),
+            http_error(SEND_URL, 429, {"code": "rate_limit_exceeded"}),
+            http_error(SEND_URL, 500, {"code": "message_rejected"}),
+            http_error(SEND_URL, 403, json.dumps({"code": "message_rejected", "pad": "x" * 17000}).encode()),
+            (403, json.dumps(REJECTED).encode()),
+        )
+        for index, outcome in enumerate(outcomes):
+            with self.subTest(case=index):
+                self.clear_sends()
+                result, opener = self.run_digest(opener=FakeOpener([outcome]))
+                self.assertEqual(len(opener.requests), 1, "a second owner was attempted after an unclear result")
+                self.assertEqual((result["unknown"], result["status"]), (1, "halted_unresolved_attempt"))
+
+    def test_unreadable_block_list_falls_back_to_a_normal_send(self):
+        self.enable()
+        self.add_app(10, 2)
+        failures = (
+            TimeoutError("slow"),
+            http_error(BLOCK_URL, 403, {"code": "missing_permission"}),
+            http_error(BLOCK_URL, 500, {"code": "internal_error"}),
+            (200, b"not json"),
+            (200, json.dumps({"entry": "someone-else@example.com", "list_type": "block", "direction": "send"}).encode()),
+            (200, json.dumps({"entry": "owner@example.com", "list_type": "allow", "direction": "send"}).encode()),
+            (204, b""),
+        )
+        for index, failure in enumerate(failures):
+            with self.subTest(case=index):
+                self.clear_sends()
+                result, opener = self.run_digest(opener=FakeOpener(lookup_error=failure))
+                self.assertTrue(opener.lookups, "block list was not checked")
+                self.assertEqual((len(opener.requests), result["accepted"]), (1, 1))
 
     def test_gate_turned_off_between_intent_and_send_withholds(self):
         self.enable()

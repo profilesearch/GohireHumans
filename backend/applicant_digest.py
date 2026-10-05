@@ -12,6 +12,12 @@ Safety contract (mirrors agentmail_transport):
 - No SQLite writer is held during provider I/O.
 - Any ambiguous provider outcome is recorded as 'unknown' and halts all
   digest sending for 24 hours instead of retrying.
+- Known-not-sent outcomes are 'withheld' and never halt: a recipient on the
+  AgentMail send block list (hard bounce, complaint, unsubscribe) is checked
+  before sending and skipped, and AgentMail's documented 403
+  code=message_rejected ("the message was not sent") is not ambiguous.
+- Owners whose last digest was unclear go last, so one bad address cannot
+  starve every owner behind it.
 - Owners can stop these emails with a signed one-click link.
 """
 import hashlib
@@ -21,6 +27,7 @@ import os
 import re
 import sqlite3
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -29,6 +36,7 @@ SENDER = 'gohirehumans.operations@agentmail.to'
 APP_BASE = 'https://www.gohirehumans.com'
 API_BASE = 'https://gohirehumans-production.up.railway.app'
 SEND_URL = 'https://api.agentmail.to/v0/inboxes/' + urllib.parse.quote(SENDER, safe='') + '/messages/send'
+BLOCK_LIST_URL = 'https://api.agentmail.to/v0/lists/send/block/'
 MAX_JOBS_PER_EMAIL = 5
 MAX_PER_TICK = 5
 MAX_TITLE_CHARS = 80
@@ -235,7 +243,9 @@ def eligible_owners(db, now, cfg, agent_sql, sample_emails, limit, hiring_enable
     since = (now - timedelta(days=cfg['lookback'])).strftime('%Y-%m-%d %H:%M:%S')
     excluded, args = _excluded_owner_sql(agent_sql, sample_emails)
     rows = db.execute(
-        f"""SELECT DISTINCT u.id, LOWER(TRIM(u.email)) AS email
+        f"""SELECT DISTINCT u.id, LOWER(TRIM(u.email)) AS email,
+                   COALESCE((SELECT s.state FROM applicant_digest_sends s WHERE s.employer_id=u.id
+                             ORDER BY s.digest_date DESC, s.id DESC LIMIT 1)='unknown', 0) AS last_unclear
             FROM users u
             JOIN jobs j ON j.employer_id=u.id AND j.status IN ('open','reviewing')
             JOIN applications a ON a.job_id=j.id AND a.status IN ('pending','shortlisted') AND a.created_at >= ?
@@ -245,7 +255,7 @@ def eligible_owners(db, now, cfg, agent_sql, sample_emails, limit, hiring_enable
               AND COALESCE(p.applicant_digest_opt_out,0)=0
               AND NOT {excluded}
               AND NOT EXISTS (SELECT 1 FROM applicant_digest_sends s WHERE s.employer_id=u.id AND s.digest_date=?)
-            ORDER BY u.id""",
+            ORDER BY last_unclear, u.id""",
         [since, *args, today]).fetchall()
     out = []
     for r in rows:
@@ -335,6 +345,49 @@ def _halted(db, now):
                       [since]).fetchone() is not None
 
 
+def _sends_used(db, today):
+    """Today's sends that could have reached the provider; known-not-sent rows don't count."""
+    return db.execute("SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=? AND state!='withheld'",
+                      [today]).fetchone()[0]
+
+
+def _send_blocked(opener, key, email):
+    """True only when AgentMail confirms this exact address is on the org send block list.
+
+    Read-only GET; any failure or unexpected answer means "not known to be
+    blocked", so the normal send (and its unclear-outcome halt) still applies.
+    """
+    request = urllib.request.Request(
+        BLOCK_LIST_URL + urllib.parse.quote(email, safe=''), method='GET',
+        headers={'Authorization': 'Bearer ' + key})
+    try:
+        response = opener.open(request, timeout=5)
+        try:
+            body, status = response.read(16385), response.status
+        finally:
+            response.close()
+        entry = json.loads(body) if status == 200 and len(body) <= 16384 else None
+    except Exception:
+        return False
+    return (isinstance(entry, dict) and entry.get('list_type') == 'block' and entry.get('direction') == 'send'
+            and isinstance(entry.get('entry'), str) and entry['entry'].strip().lower() == email)
+
+
+def _rejected(exc):
+    """True only for AgentMail's documented 403 code=message_rejected: the message was not sent."""
+    if not isinstance(exc, urllib.error.HTTPError) or exc.code != 403:
+        return False
+    try:
+        try:
+            body = exc.read(16385)
+        finally:
+            exc.close()
+        parsed = json.loads(body) if len(body) <= 16384 else None
+    except Exception:
+        return False
+    return isinstance(parsed, dict) and parsed.get('code') == 'message_rejected'
+
+
 def _resolve(db, send_id, state, message_id=None, thread_id=None):
     if db.in_transaction:
         db.commit()
@@ -369,7 +422,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
         summary['status'] = 'halted_unresolved_attempt'
         return summary
     today = now.strftime('%Y-%m-%d')
-    used = db.execute('SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=?', [today]).fetchone()[0]
+    used = _sends_used(db, today)
     if used >= cfg['cap']:
         summary['status'] = 'daily_cap_reached'
         return summary
@@ -386,7 +439,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
         db.execute('BEGIN IMMEDIATE')
         try:
             jobs = candidate_jobs(db, employer_id, now, cfg['lookback'], hiring_enabled)
-            used = db.execute('SELECT COUNT(*) FROM applicant_digest_sends WHERE digest_date=?', [today]).fetchone()[0]
+            used = _sends_used(db, today)
             if not jobs or used >= cfg['cap'] or _recipient_email(db, employer_id, agent_sql, sample_emails) != email:
                 db.rollback()
                 summary['skipped'] += 1
@@ -418,6 +471,12 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
             db.rollback()
             raise
         summary['attempted'] += 1
+        # A bounced/complained/unsubscribed address is on the send block list and
+        # every send to it is refused: known not sent, so skip it without halting.
+        if _send_blocked(opener, cfg['key'], email):
+            _resolve(db, send_id, 'withheld')
+            summary['withheld'] += 1
+            continue
         # Fence right before I/O. Anything that changed since the intent commit
         # withholds this email (known not sent): gate, lease, or the recipient's
         # own eligibility (opt-out, ban, address change). An opt-out that lands
@@ -448,6 +507,7 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
             headers={'Authorization': 'Bearer ' + cfg['key'], 'Content-Type': 'application/json',
                      'Idempotency-Key': 'ghh-applicant-digest-' + _digest(f'{employer_id}:{today}')})
         message_id = thread_id = None
+        rejected = False
         try:
             response = opener.open(request, timeout=10)
             try:
@@ -459,11 +519,15 @@ def run_once(db, *, now=None, renew_lease=None, agent_sql='0', sample_emails=(),
                 message_id, thread_id = parsed.get('message_id'), parsed.get('thread_id')
             if any(not isinstance(v, str) or not re.fullmatch(r'[!-~]{1,998}', v) for v in (message_id, thread_id)):
                 message_id = thread_id = None
-        except Exception:
-            # Never keep response text, headers or recipients. Ambiguous = unknown.
+        except Exception as exc:
+            # Never keep response text, headers or recipients. Ambiguous = unknown,
+            # except the documented "message was not sent" rejection.
             message_id = thread_id = None
+            rejected = _rejected(exc)
         if message_id and _resolve(db, send_id, 'accepted', message_id, thread_id):
             summary['accepted'] += 1
+        elif rejected and _resolve(db, send_id, 'withheld'):
+            summary['withheld'] += 1
         else:
             _resolve(db, send_id, 'unknown')
             summary['unknown'] += 1
