@@ -2,7 +2,7 @@
 """Regenerate frontend/feed.xml and frontend/atom.xml from the blog pages' own metadata.
 
 Each indexable post under frontend/blog/ contributes one item built from its <title>,
-meta description, and JSON-LD datePublished. Posts marked noindex are skipped.
+meta description, and JSON-LD datePublished (Atom <updated> uses dateModified when present). Posts marked noindex are skipped.
 Run after adding or editing a blog post:
 
     python3 scripts/generate_feeds.py
@@ -38,7 +38,7 @@ class RobotsMeta(HTMLParser):
                 self.noindex = True
 
 
-def collect_posts() -> tuple[list[tuple[str, str, str, str]], list[str]]:
+def collect_posts() -> tuple[list[tuple[str, str, str, str, str]], list[str]]:
     posts, skipped = [], []
     for path in sorted((FRONTEND / "blog").glob("*.html")):
         if path.name == "index.html":
@@ -54,10 +54,13 @@ def collect_posts() -> tuple[list[tuple[str, str, str, str]], list[str]]:
             r'<meta\s+content="([^"]*)"\s+name="description"', text
         )
         date_match = re.search(r'"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})', text)
+        modified_match = re.search(r'"dateModified"\s*:\s*"(\d{4}-\d{2}-\d{2})', text)
         if not (title_match and desc_match and date_match):
             raise SystemExit(f"{path.relative_to(ROOT)}: missing title, description, or datePublished")
         title = re.sub(r"\s*\|\s*GoHireHumans\s*$", "", html.unescape(title_match.group(1)).strip())
-        posts.append((date_match.group(1), path.name, title, html.unescape(desc_match.group(1)).strip()))
+        published = date_match.group(1)
+        modified = max(published, modified_match.group(1)) if modified_match else published
+        posts.append((published, path.name, title, html.unescape(desc_match.group(1)).strip(), modified))
     posts.sort(key=lambda item: (-int(item[0].replace("-", "")), item[1]))
     return posts, skipped
 
@@ -86,7 +89,7 @@ def main() -> int:
         f"    <lastBuildDate>{rfc822(build_day)}</lastBuildDate>",
         "    <ttl>1440</ttl>",
     ]
-    for day, name, title, desc in posts:
+    for day, name, title, desc, _modified in posts:
         url = f"{SITE}/blog/{name}"
         rss += [
             "    <item>",
@@ -110,14 +113,14 @@ def main() -> int:
         f"  <subtitle>{escape(DESC)}</subtitle>",
         "  <author><name>GoHireHumans Team</name></author>",
     ]
-    for day, name, title, desc in posts:
+    for day, name, title, desc, modified in posts:
         url = f"{SITE}/blog/{name}"
         atom += [
             "  <entry>",
             f"    <title>{escape(title)}</title>",
             f'    <link href="{url}" />',
             f"    <id>{url}</id>",
-            f"    <updated>{iso(day)}</updated>",
+            f"    <updated>{iso(modified)}</updated>",
             f"    <published>{iso(day)}</published>",
             f"    <summary>{escape(desc)}</summary>",
             "    <author><name>GoHireHumans Team</name></author>",

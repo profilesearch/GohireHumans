@@ -1,4 +1,5 @@
 import contextlib
+import html
 import importlib.util
 import io
 import json
@@ -1485,19 +1486,26 @@ class BackendRegressionTests(unittest.TestCase):
 
     def test_retitled_blog_posts_are_consistent_on_every_surface(self):
         # 2026-10-06 CTR rewrite: each retitled post must carry the same title and description in its head,
-        # JSON-LD, blog index card, sibling related-reading links, and feeds, with dateModified matching the
-        # sitemap lastmod, and the retired titles/descriptions must be gone from every public file.
+        # JSON-LD, its own blog index card, the sibling related-reading links that name it, and its own RSS item
+        # and Atom entry (Atom <updated> = dateModified), with dateModified matching the sitemap lastmod. The
+        # retired titles/descriptions must be gone from every public file.
+        site = "https://www.gohirehumans.com"
         retitled = {
             "alternatives-to-toptal": ("8 Toptal Alternatives by Price (2026)", "Best Toptal Alternatives in 2026",
-                                       "Compare eight Toptal alternatives by rates, fees, and fit"),
+                                       "Compare eight Toptal alternatives by rates, fees, and fit",
+                                       ["fiverr-vs-upwork-vs-gohirehumans"]),
             "verified-freelancer-marketplace": ("How to Spot Fake Freelancer Profiles", "How to Verify a Freelancer: 4 Trust Signals",
-                                                "Check four practical trust signals before hiring a freelancer"),
+                                                "Check four practical trust signals before hiring a freelancer",
+                                                ["hire-data-entry-specialist", "alternatives-to-fiverr", "hire-human-for-ai-tasks",
+                                                 "best-freelance-platforms-escrow", "alternatives-to-upwork"]),
             "freelance-vs-full-time-2026": ("True Cost of Freelancers vs Employees (2026)", "Freelance vs Full-Time in 2026: Cost and ROI",
-                                            "Compare the real cost of freelancers and full-time employees in 2026"),
+                                            "Compare the real cost of freelancers and full-time employees in 2026",
+                                            ["hire-data-entry-specialist", "alternatives-to-toptal", "gig-economy-statistics-2026"]),
             "hire-data-entry-specialist": ("How Much Does a Data Entry Expert Cost?", "How to Hire a Data Entry Specialist Online",
-                                           "How to hire a data entry specialist online: rates"),
+                                           "How to hire a data entry specialist online: rates", []),
             "how-to-hire-ai-agents-safely": ("How to Hire an AI Agent: Safety Checklist", "How to Hire AI Agents Safely in 2026",
-                                             "Red flags and green flags when hiring AI agents, how to scope a test task"),
+                                             "Red flags and green flags when hiring AI agents, how to scope a test task",
+                                             ["ai-agents-changing-gig-economy"]),
         }
         frontend = REPO_ROOT / "frontend"
         public = [p for p in frontend.rglob("*") if p.is_file() and p.suffix in {".html", ".xml", ".txt", ".json"}
@@ -1505,30 +1513,43 @@ class BackendRegressionTests(unittest.TestCase):
         corpus = {p: p.read_text(encoding="utf-8", errors="ignore") for p in public}
         index = (frontend / "blog" / "index.html").read_text(encoding="utf-8")
         sitemap = (frontend / "sitemap.xml").read_text(encoding="utf-8")
-        feeds = (frontend / "feed.xml").read_text(encoding="utf-8") + (frontend / "atom.xml").read_text(encoding="utf-8")
-        for slug, (title, old_title, old_desc_prefix) in retitled.items():
+        rss = {item.findtext("link"): item for item in ET.parse(frontend / "feed.xml").getroot().iter("item")}
+        atom_ns = {"a": "http://www.w3.org/2005/Atom"}
+        atom = {entry.findtext("a:id", namespaces=atom_ns): entry
+                for entry in ET.parse(frontend / "atom.xml").getroot().findall("a:entry", atom_ns)}
+        for slug, (title, old_title, old_desc_prefix, siblings) in retitled.items():
+            url = f"{site}/blog/{slug}.html"
             page = frontend / "blog" / f"{slug}.html"
             text = page.read_text(encoding="utf-8")
             match = re.search(r'<meta name="description" content="([^"]*)">', text)
             self.assertIsNotNone(match, slug)
-            description = cast(re.Match, match).group(1)
+            description = html.unescape(cast(re.Match, match).group(1))
             article = next(json.loads(block) for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', text, re.S)
                            if json.loads(block).get("@type") == "Article")
             self.assertEqual(article["description"], description, slug)
             modified = article["dateModified"]
-            block = sitemap[sitemap.index(f"<loc>https://www.gohirehumans.com/blog/{slug}.html</loc>"):]
+            block = sitemap[sitemap.index(f"<loc>{url}</loc>"):]
             lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", block)
             self.assertIsNotNone(lastmod, slug)
             self.assertEqual(cast(re.Match, lastmod).group(1), modified, slug)
-            self.assertIn(f'<span class="card-list-title">{title}</span>', index, slug)
-            self.assertIn(description, index, slug)
-            self.assertIn(f"<title>{title}</title>", feeds, slug)
-            self.assertIn(f"<description>{description}</description>", feeds.replace("&amp;", "&"), slug)
+            card = re.search(rf'<a class="card card--interactive" href="/blog/{re.escape(slug)}\.html">(.*?)</a>', index, re.S)
+            self.assertIsNotNone(card, slug)
+            card_html = cast(re.Match, card).group(1)
+            self.assertIn(f'<span class="card-list-title">{title}</span>', card_html, slug)
+            self.assertIn(f'<span class="card-list-desc">{description}</span>', html.unescape(card_html), slug)
+            self.assertIn(url, rss, slug)
+            self.assertEqual(rss[url].findtext("title"), title, slug)
+            self.assertEqual(rss[url].findtext("description"), description, slug)
+            self.assertIn(url, atom, slug)
+            self.assertEqual(atom[url].findtext("a:title", namespaces=atom_ns), title, slug)
+            self.assertEqual(atom[url].findtext("a:summary", namespaces=atom_ns), description, slug)
+            self.assertEqual(atom[url].findtext("a:updated", namespaces=atom_ns), f"{modified}T00:00:00Z", slug)
+            for sibling in siblings:
+                sibling_text = (frontend / "blog" / f"{sibling}.html").read_text(encoding="utf-8")
+                self.assertIn(f'href="/blog/{slug}.html">{title}</a>', sibling_text, f"{slug}: link label in {sibling}")
             for other, body in corpus.items():
                 self.assertNotIn(old_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
                 self.assertNotIn(old_desc_prefix, body, f"{slug}: retired description still in {other.relative_to(REPO_ROOT)}")
-                for anchor in re.findall(rf'href="/blog/{re.escape(slug)}\.html">([^<]+)</a>', body):
-                    self.assertNotEqual(anchor.strip(), old_title, f"{slug}: stale link text in {other.relative_to(REPO_ROOT)}")
 
     def test_phase2_ui_flow_polish_invariants(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
