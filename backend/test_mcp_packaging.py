@@ -31,6 +31,27 @@ class MCPPackagingTests(unittest.TestCase):
         self.assertEqual((ROOT / 'backend/mcp_server.py').read_bytes(),
                          (PACKAGE / 'mcp_server.py').read_bytes())
 
+    def test_license_files_cover_mcp_server_only(self):
+        # Glama rejects servers without a non-empty LICENSE in the project or a parent directory.
+        package_license = (PACKAGE / 'LICENSE')
+        root_license = (ROOT / 'LICENSE')
+        self.assertTrue(package_license.is_file(), 'MCP package needs its own MIT LICENSE file')
+        self.assertTrue(root_license.is_file(), 'Repository root needs a LICENSE file')
+        package_text = package_license.read_text()
+        root_text = root_license.read_text()
+        self.assertTrue(package_text.startswith('MIT License\n'))
+        self.assertIn('Copyright (c) 2026 GoHireHumans', package_text)
+        mit_body = package_text[package_text.index('Permission is hereby granted'):]
+        self.assertIn('SOFTWARE.', mit_body)
+        self.assertTrue(root_text.endswith(mit_body), 'Root LICENSE must carry the identical MIT text')
+        # The root file scopes MIT to the MCP server; everything else stays proprietary.
+        self.assertIn('backend/mcp-package/', root_text)
+        self.assertIn('backend/mcp_server.py', root_text)
+        self.assertIn('proprietary', root_text)
+        self.assertIn('No license is granted', root_text)
+        project = tomllib.loads((PACKAGE / 'pyproject.toml').read_text())
+        self.assertEqual(project['project']['license'], 'MIT')
+
     def test_sync_rejects_stale_generated_source(self):
         script = ROOT / 'scripts/sync_mcp_package.py'
         self.assertTrue(script.is_file(), 'Canonical source needs a checked generation command')
