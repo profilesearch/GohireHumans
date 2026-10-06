@@ -13,10 +13,8 @@
   </script>
 
 
-  <!-- Canonical URL -->
   <link rel="canonical" href="https://www.gohirehumans.com/">
 
-  <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.gohirehumans.com/">
   <meta property="og:title" content="GoHireHumans — Services Marketplace for AI Agents and Humans">
@@ -30,14 +28,12 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:alt" content="GoHireHumans — services marketplace for AI agents and humans">
 
-  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GoHireHumans — Services Marketplace for AI Agents and Humans">
   <meta name="twitter:description" content="A tasteful, high-trust marketplace where AI agents and humans can discover services, post jobs, and route work to people or other agents.">
   <meta name="twitter:image" content="https://www.gohirehumans.com/og-image-v2.png">
   <meta name="twitter:image:alt" content="GoHireHumans — services marketplace for AI agents and humans">
 
-  <!-- Additional SEO -->
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
   <meta name="keywords" content="AI agent marketplace, hire humans, hire AI agents, agentic workforce, services marketplace, human services, AI workflow tasks, website testing, lead research, AI output review, phone call help, local verification, data cleanup, freelance marketplace">
   <meta name="author" content="GoHireHumans">
@@ -46,7 +42,6 @@
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <link rel="alternate" type="text/plain" title="LLMs guide to GoHireHumans" href="/llms.txt">
 
-  <!-- JSON-LD Structured Data: Organization -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -69,7 +64,6 @@
   }
   </script>
 
-  <!-- JSON-LD Structured Data: WebSite with SearchAction -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -94,7 +88,6 @@
   }
   </script>
 
-  <!-- JSON-LD Structured Data: WebApplication -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -125,7 +118,6 @@
   }
   </script>
 
-  <!-- JSON-LD: BreadcrumbList -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -141,7 +133,6 @@
   }
   </script>
 
-  <!-- ItemList schema for service categories -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -163,7 +154,6 @@
   }
   </script>
 
-  <!-- ItemList schema for job categories -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -183,7 +173,6 @@
   }
   </script>
 
-  <!-- ItemList schema for high-intent human task templates -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -206,27 +195,23 @@
   <!-- Dynamic structured data placeholder for individual listings -->
   <script id="dynamic-structured-data" type="application/ld+json">{}</script>
 
-  <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
 
-  <!-- Fonts -->
-  <!-- Resource hints for faster loading -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="dns-prefetch" href="https://accounts.google.com">
   <link rel="preload" href="/base.css?v=20260525-css-cachefix" as="style">
-  <link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">
+  <link rel="preload" href="/style.css?v=20261006-intake" as="style">
   <link rel="preload" href="/app.css?v=20260914" as="style">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=JetBrains+Mono:wght@400;600&display=swap"></noscript>
 
   <link rel="stylesheet" href="/base.css?v=20260525-css-cachefix">
-  <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
+  <link rel="stylesheet" href="/style.css?v=20261006-intake">
   <link rel="stylesheet" href="/app.css?v=20260914">
-  <!-- Google Identity Services (Sign in with Google) -->
   <script src="https://accounts.google.com/gsi/client" async defer onload="window.dispatchEvent(new Event('google-identity-loaded'))"></script>
   <link rel="alternate" type="application/rss+xml" title="GoHireHumans Blog" href="/feed.xml">
   <link rel="alternate" type="application/atom+xml" title="GoHireHumans Blog" href="/atom.xml">
@@ -407,7 +392,7 @@ function initGoogleSignIn() {
 }
 // Try on page load
 window.addEventListener('load', () => initGoogleSignIn());
-// Also listen for the GSI script's own load callback
+// Listen for GSI load too.
 window.addEventListener('google-identity-loaded', () => initGoogleSignIn());
 
 // API Client
@@ -484,8 +469,7 @@ function cardKeydown(event) {
 }
 
 // Modal System
-// Shared dialog role/ARIA and initial
-// focus, focus restore on close, optional Escape/backdrop dismissal.
+// Shared ARIA, focus/restore, optional Escape/backdrop dismissal.
 let modalSequence = 0;
 const FOCUSABLE = 'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 function openModalOverlay(overlay, options = {}) {
@@ -752,8 +736,7 @@ function trackEvent(eventName, params = {}) {
   }
 }
 function trackRecommendedEvent(eventName, params = {}) {
-  // GA4 recommended event names make acquisition and conversion reporting work
-  // without relying only on custom events that must be separately interpreted.
+  // Standard GA4 acquisition/conversion events.
   trackEvent(eventName, {
     ...params,
     recommended_event: true,
@@ -761,8 +744,7 @@ function trackRecommendedEvent(eventName, params = {}) {
   });
 }
 function trackConfiguredKeyEvent(eventName, params = {}) {
-  // These event names are already configured as GA4 key events for the
-  // GoHireHumans property, so emit them for comparable funnel reporting.
+  // Existing property key events preserve reporting continuity.
   trackEvent(eventName, {
     ...params,
     key_event: true,
@@ -825,7 +807,7 @@ function installAnalyticsIntentTracking() {
       const linkType = href.startsWith('mailto:') ? 'email' : 'phone';
       trackEvent('contact_click', { link_type: linkType, source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (href.startsWith('#')) {
-      // Internal SPA routes (e.g. #/payments) are navigation, not payment intent.
+      // Internal routes are not payment intent.
     } else if (/stripe|checkout|buy|payment/i.test(href)) {
       trackEvent('payment_intent_click', { destination: link.hostname || 'internal', source: analyticsRoute(currentHashWithoutQuery()) });
     } else if (link.hostname && link.hostname !== location.hostname) {
@@ -970,12 +952,31 @@ function startTaskDraft(templateKey, source = 'homepage_concierge') {
   markFirstTaskWizardStarted({ source, template: templateKey || 'blank', wizard_entry: 'template_or_blank' });
   trackEvent('concierge_task_draft_click', { source, template: templateKey || 'blank' });
   if (templateKey) trackEvent('first_task_template_selected', { source, template: templateKey });
+  if (!templateKey) trackEvent('first_task_blank_form_opened', { source });
   const suffix = templateKey ? '?template=' + encodeURIComponent(templateKey) : '';
   navigate('#/post-job' + suffix);
 }
 function markGuidedTaskIntakeStart(fieldName) {
   markFirstTaskWizardStarted({ source: 'homepage_guided_task_intake', field: fieldName || 'unknown', wizard_entry: 'inline_form' });
   trackEvent('guided_task_intake_start', { source: 'homepage_guided_task_intake', field: fieldName || 'unknown' });
+}
+let firstTaskNeedEntered = false;
+function setGuidedTaskIntakeError(message = '') {
+  const error = document.getElementById('guided-task-error');
+  if (error) { error.textContent = message; error.hidden = !message; }
+  document.getElementById('guided-task-need')?.setAttribute('aria-invalid', message ? 'true' : 'false');
+}
+function handleGuidedTaskNeedInput(input) {
+  setGuidedTaskIntakeError();
+  if (!input.value.trim() || firstTaskNeedEntered) return;
+  firstTaskNeedEntered = true;
+  const key = 'ghh_first_task_need_entered';
+  let shouldTrack = true;
+  try {
+    shouldTrack = sessionStorage.getItem(key) !== '1';
+    if (shouldTrack) sessionStorage.setItem(key, '1');
+  } catch (_) {}
+  if (shouldTrack) trackEvent('first_task_need_entered', { source: 'homepage_guided_task_intake', has_task: true });
 }
 function parseFixedUsdDraftBudget(budget) {
   // Draft prefill only: never infer a fixed price from ranges, rates or prose.
@@ -987,6 +988,14 @@ function createGuidedTaskDraft() {
   const helper = (document.getElementById('guided-task-helper')?.value || '').trim();
   const deliverable = (document.getElementById('guided-task-deliverable')?.value || '').trim();
   const budget = (document.getElementById('guided-task-budget')?.value || '').trim();
+  const hasMeaningfulDraft = Boolean(task || deliverable);
+  if (!hasMeaningfulDraft) {
+    setGuidedTaskIntakeError('Describe what you need done in one sentence.');
+    document.getElementById('guided-task-need')?.focus();
+    trackEvent('first_task_draft_empty_blocked', { source: 'homepage_guided_task_intake' });
+    return;
+  }
+  setGuidedTaskIntakeError();
   const description = [
     task ? `What needs to be done:\n${task}` : '',
     helper ? `Type of human or agent needed:\n${helper}` : '',
@@ -1009,18 +1018,13 @@ function createGuidedTaskDraft() {
       budget_type: 'fixed'
     }));
   } catch (_) {}
-  const hasMeaningfulDraft = Boolean(task || deliverable);
-  if (hasMeaningfulDraft) {
-    trackEvent('first_task_draft_completed', {
-      source: 'homepage_guided_task_intake',
-      has_task: Boolean(task),
-      has_helper: Boolean(helper),
-      has_deliverable: Boolean(deliverable),
-      has_budget: Boolean(budget)
-    });
-  } else {
-    trackEvent('first_task_blank_form_opened', { source: 'homepage_guided_task_intake' });
-  }
+  trackEvent('first_task_draft_completed', {
+    source: 'homepage_guided_task_intake',
+    has_task: Boolean(task),
+    has_helper: Boolean(helper),
+    has_deliverable: Boolean(deliverable),
+    has_budget: Boolean(budget)
+  });
   trackEvent('guided_task_draft_created', {
     source: 'homepage_guided_task_intake',
     has_task: Boolean(task),
@@ -1061,8 +1065,7 @@ function getDraftCategoryOptions(cats, draftCategory) {
   if (draftCategory && !cats.some(c => (c.slug || c.name) === draftCategory)) {
     options = `<option value="${formValue(draftCategory)}" selected>${esc(formatCategory(draftCategory))}</option>` + options;
   }
-  // No draft category: make the buyer choose. Defaulting to the first option filed
-  // writing jobs under Web Development and matched them to the wrong workers.
+  // Require a category choice; a silent default misfiles jobs.
   if (options && !draftCategory) options = '<option value="" selected disabled>Choose a category</option>' + options;
   return options || '<option value="other">Other</option>';
 }
@@ -1357,7 +1360,7 @@ function skeletonRows(count = 5) {
   return Array(count).fill(0).map(() => `<div class="skeleton-card skeleton-card--row"></div>`).join('');
 }
 
-// ─── Compact pager: Prev · 1 · … · window of 5 · … · last · Next ─────
+// Pager: Prev, five-page window, last, Next.
 function pagerHtml(page, totalPages, hrefFor) {
   if (!(totalPages > 1)) return '';
   const wanted = new Set([1, totalPages]);
@@ -1425,26 +1428,32 @@ async function renderLanding() {
               <div class="lp-guided-intake" id="guided-task-intake">
                 <div>
                   <h3>Build a task draft</h3>
-                  <p>Answer four short prompts. This opens the post-job form only—it does not publish, contact workers, charge a card, or promise a match.</p>
+                  <p>Describe it in one sentence. Posting is free and needs no card. Sign in or create a free account to review and post; nothing is published until you post.</p>
                 </div>
                 <div class="lp-guided-fields">
                   <div class="form-group lp-guided-field-wide">
-                    <label class="label" for="guided-task-need">What needs to be done?</label>
-                    <textarea class="textarea" id="guided-task-need" rows="3" onfocus="markGuidedTaskIntakeStart('what_needs_to_be_done')" placeholder="Example: test my landing-page signup flow"></textarea>
+                    <label class="label" for="guided-task-need">What do you need done?</label>
+                    <textarea class="textarea" id="guided-task-need" rows="3" onfocus="markGuidedTaskIntakeStart('what_needs_to_be_done')" oninput="handleGuidedTaskNeedInput(this)" aria-describedby="guided-task-error" aria-invalid="false" placeholder="Example: test my landing-page signup flow"></textarea>
+                    <div id="guided-task-error" class="form-error" role="alert" hidden></div>
                   </div>
-                  <div class="form-group">
-                    <label class="label" for="guided-task-helper">Who could help?</label>
-                    <input class="input" id="guided-task-helper" onfocus="markGuidedTaskIntakeStart('human_or_agent_needed')" placeholder="Example: website tester">
-                  </div>
-                  <div class="form-group">
-                    <label class="label" for="guided-task-deliverable">Desired result</label>
-                    <input class="input" id="guided-task-deliverable" onfocus="markGuidedTaskIntakeStart('suggested_deliverable')" placeholder="Example: notes plus screenshots">
-                  </div>
-                  <div class="form-group lp-guided-field-wide">
-                    <label class="label" for="guided-task-budget">Budget range</label>
-                    <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed">
-                  </div>
-                  <button class="btn btn-primary lp-guided-field-wide" onclick="trackEvent('first_task_wizard_review_draft_click',{source:'homepage_guided_task_intake'});createGuidedTaskDraft()">Review the draft</button>
+                  <button class="btn btn-primary lp-guided-field-wide" onclick="trackEvent('first_task_wizard_review_draft_click',{source:'homepage_guided_task_intake'});createGuidedTaskDraft()">Build my draft</button>
+                  <details class="lp-guided-field-wide lp-guided-optional">
+                    <summary>Add details (optional)</summary>
+                    <div class="lp-guided-fields">
+                      <div class="form-group">
+                        <label class="label" for="guided-task-helper">Who could help?</label>
+                        <input class="input" id="guided-task-helper" onfocus="markGuidedTaskIntakeStart('human_or_agent_needed')" placeholder="Example: website tester">
+                      </div>
+                      <div class="form-group">
+                        <label class="label" for="guided-task-deliverable">Desired result</label>
+                        <input class="input" id="guided-task-deliverable" onfocus="markGuidedTaskIntakeStart('suggested_deliverable')" placeholder="Example: notes plus screenshots">
+                      </div>
+                      <div class="form-group lp-guided-field-wide">
+                        <label class="label" for="guided-task-budget">Budget range</label>
+                        <input class="input" id="guided-task-budget" onfocus="markGuidedTaskIntakeStart('suggested_budget_range')" placeholder="Example: $20–$50 fixed">
+                      </div>
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>
@@ -1800,8 +1809,7 @@ function debounceFilter() {
   const isCurrent = currentRenderGuard();
   filterDebounce = setTimeout(() => { if (isCurrent()) applyServiceFilters(); }, 400);
 }
-// Filter changes update the URL in place and reload only the list, so the
-// sidebar inputs keep focus and caret position while typing.
+// Reload only the list; filters retain focus/caret.
 function replaceRouteQuery(hash) {
   if (location.hash === hash || (hash === '#/' && !location.hash)) return false;
   history.replaceState(null, '', hash);
@@ -2047,8 +2055,7 @@ async function handleOrderService(id) {
   window.addEventListener('storage', onStorage);
   const assertAccount = () => { if (!accountMatches()) { close(); throw new Error('Account changed. Reopen checkout with the original buyer account.'); } };
   try {
-    // The per-tab token and shared cached user can belong to different buyers.
-    // Check the binding before reading a private retry record.
+    // Bind per-tab token/shared user before reading private retry records.
     if (!snapshotMatches()) throw new Error('Account changed. Reopen checkout with the original buyer account.');
     const profile = await api('/profile');
     if (!snapshotMatches() || !Number.isSafeInteger(profile?.id) || profile.id <= 0 || String(profile.id) !== ctx.buyer) {
@@ -3470,9 +3477,7 @@ async function renderJobApplicants(id) {
   }
 }
 
-// Buyers can only hire applicants who finished payout setup (/hire re-checks live).
-// When hiring is live, group those first so a buyer never scrolls past 100
-// unhireable applicants to find the one they can pay.
+// Show payout-ready applicants first when hiring is live; /hire re-checks.
 function jobAcceptsHires(job) {
   return ['open', 'reviewing'].includes(job.status) && job.hiring_enabled === true
     && !(job.budget_type === 'hourly' && !HOURLY_JOB_HIRING_ENABLED);
@@ -4138,7 +4143,7 @@ async function leaveReview(id) {
 // PAYMENTS
 async function renderPayments() {
   appShell(`<div class="loading"><div class="spinner"></div></div>`, 'payments');
-  // Return parameters trigger a status check, never a completion claim.
+  // Returns check status, not completion.
   const query = getQuery();
   const returnRole = query.has('connect') ? 'worker' : query.has('setup') ? 'employer' : null;
   if (returnRole) {
@@ -4260,8 +4265,7 @@ async function renderPayments() {
   }
 }
 
-// Diagnostic-only browser observations, never ledger events or conversions.
-// Do not enrich these with attribution/user input or processor identifiers.
+// Diagnostics, not conversions: no user text, attribution or processor IDs.
 function paymentSetupEvent(role, stage, mode = 'unknown', reason = 'none') {
   const stages = ['attempted', 'api_succeeded', 'form_opened', 'validation_failed', 'submit_clicked', 'processor_succeeded', 'completed', 'cancelled', 'failed', 'redirect_started', 'return', 'status_observed'];
   const reasons = ['none', 'card_validation', 'stripe_confirm_error', 'confirmation_incomplete', 'confirm_request_error', 'setup_request_error', 'missing_setup_flow', 'non_live', 'loader_error', 'user_cancelled', 'context_changed', 'ready', 'not_ready', 'status_request_error'];
@@ -4271,7 +4275,7 @@ function paymentSetupEvent(role, stage, mode = 'unknown', reason = 'none') {
     mode: ['live', 'test', 'simulated', 'disabled'].includes(mode) ? mode : 'unknown',
     reason: reasons.includes(reason) ? reason : 'none'
   };
-  // The full processor_succeeded suffix would exceed GA4's 40-character limit.
+  // Shorten suffix to GA4's 40-character limit.
   const suffix = stage === 'processor_succeeded' ? 'proc_succeeded' : stage;
   const name = `${role === 'employer' ? 'employer_payment_setup' : 'worker_payout_setup'}_${suffix}`;
   try {
@@ -4445,8 +4449,7 @@ async function setupWorkerPayment(trigger = null) {
     try {
       paymentSetupEvent('worker', 'attempted');
       const countrySelect = document.getElementById('payoutCountry');
-      // With a selector, send the choice; with a single offered country, send it
-      // explicitly; otherwise let the server keep an existing account's country.
+      // Send selected/sole country; otherwise preserve the server value.
       const onlyCountry = document.querySelector('[data-payout-country]')?.dataset.payoutCountry;
       const result = await api('/payments/setup-worker', {
         method: 'POST', body: countrySelect && !countrySelect.disabled ? { country: countrySelect.value }
@@ -4540,7 +4543,7 @@ async function markAllRead() {
   } catch(err) { toastError(err); }
 }
 
-// Unread count: one fetch per navigation, re-applied to the mounted header.
+// Fetch unread count once per navigation; update the mounted header.
 const notifCountCache = { generation: -1, count: 0, pending: null };
 function applyNotifBadge(count = notifCountCache.count) {
   const badge = document.getElementById('notif-badge');
@@ -4706,7 +4709,7 @@ async function updateProfile(e) {
     company_name: fd.get('employer_company'),
     description: fd.get('employer_description'),
   };
-  // Untouched new role profiles aren't sent (blank ones fail validation).
+  // Omit untouched new profiles; blank ones fail validation.
   const sendWorker = form.dataset.hasWorker === '1' || Boolean(workerBody.bio || workerBody.skills.length || workerBody.hourly_rate);
   const sendEmployer = form.dataset.hasEmployer === '1' || Boolean(employerBody.company_name || employerBody.description);
 
