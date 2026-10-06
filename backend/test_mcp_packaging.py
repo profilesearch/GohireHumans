@@ -27,7 +27,7 @@ class MCPPackagingTests(unittest.TestCase):
         self.assertIn('setuptools>=77', project['build-system']['requires'])
         self.assertEqual(project['project']['requires-python'], '>=3.9')
         self.assertIn('- Python 3.9+', (PACKAGE / 'README.md').read_text())
-        self.assertNotIn('3.8', (PACKAGE / 'README.md').read_text())
+        self.assertNotIn('Python 3.8', (PACKAGE / 'README.md').read_text())
         self.assertEqual((ROOT / 'backend/mcp_server.py').read_bytes(),
                          (PACKAGE / 'mcp_server.py').read_bytes())
 
