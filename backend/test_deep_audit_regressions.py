@@ -1438,7 +1438,7 @@ class BackendRegressionTests(unittest.TestCase):
         expected = {
             "frontend/blog/alternatives-to-freelancer.html": (
                 "7 Best Freelancer.com Alternatives (2026) | GoHireHumans",
-                "Compare seven Freelancer.com alternatives by fees, payment workflow, trust signals, and fit—including GoHireHumans, Upwork, Fiverr, Contra, and more.",
+                "Tired of bidding wars and stacked fees? Compare 7 Freelancer.com alternatives by fees and hiring model: GoHireHumans, Upwork, Fiverr, Contra, Toptal, and more.",
             ),
             "frontend/blog/verified-freelancer-marketplace.html": (
                 "How to Spot Fake Freelancer Profiles | GoHireHumans",
@@ -1468,21 +1468,65 @@ class BackendRegressionTests(unittest.TestCase):
                 "Hire an AI Agent or Human Reviewer | GoHireHumans",
                 "Browse AI-agent and human provider profiles for automation, research, content, QA, data, and scoped work. Review profiles and workflow details before hiring.",
             ),
+            "frontend/blog/on-demand-workforce-platform.html": (
+                "On-Demand Workforce Platform Checklist (2026) | GoHireHumans",
+                "Six things to check before you pick an on-demand workforce platform: profile trust signals, content safety, matching speed, API access, payment review, and QA.",
+            ),
+            "frontend/blog/how-to-find-human-workers-ai-tasks.html": (
+                "API to Hire Humans for Real-World AI Tasks | GoHireHumans",
+                "Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP, with account-owner approval.",
+            ),
+            "frontend/tools/fee-calculator.html": (
+                "Freelancer Fee Calculator: 5 Platforms | GoHireHumans",
+                "Compare one-project fees on GoHireHumans, Upwork, Fiverr, Freelancer.com, and Toptal, using a 10% Upwork freelancer example and up to 7.99% Basic client fee.",
+            ),
         }
         for relative_path, (title, description) in expected.items():
             text = (REPO_ROOT / relative_path).read_text(encoding="utf-8", errors="ignore")
             self.assertIn(f'<title>{title}</title>', text, relative_path)
-            self.assertIn(f'<meta name="description" content="{description}">', text, relative_path)
+            meta = re.search(r'<meta name="description" content="([^"]*)">', text)
+            self.assertIsNotNone(meta, relative_path)
+            self.assertEqual(html.unescape(cast(re.Match, meta).group(1)), description, relative_path)
             self.assertLessEqual(len(title), 60, relative_path)
             self.assertLessEqual(len(description), 160, relative_path)
+
+            def head_content(attr, name):
+                found = re.findall(rf'<meta {attr}="{re.escape(name)}" content="([^"]*)">', text)
+                self.assertEqual(len(found), 1, f"{relative_path}: {name}")
+                return html.unescape(found[0])
+
             self.assertEqual(text.count('<meta property="og:title"'), 1, relative_path)
             self.assertEqual(text.count('<meta property="og:description"'), 1, relative_path)
-            self.assertIn(f'<meta property="og:title" content="{title}">', text, relative_path)
-            self.assertIn(f'<meta property="og:description" content="{description}">', text, relative_path)
+            self.assertEqual(head_content("property", "og:title"), title, relative_path)
+            self.assertEqual(head_content("property", "og:description"), description, relative_path)
             self.assertEqual(text.count('<meta name="twitter:title"'), 1, relative_path)
             self.assertEqual(text.count('<meta name="twitter:description"'), 1, relative_path)
-            self.assertIn(f'<meta name="twitter:title" content="{title}">', text, relative_path)
-            self.assertIn(f'<meta name="twitter:description" content="{description}">', text, relative_path)
+            self.assertEqual(head_content("name", "twitter:title"), title, relative_path)
+            self.assertEqual(head_content("name", "twitter:description"), description, relative_path)
+            # The JSON-LD node that describes the page itself (Article for posts, WebApplication for tools,
+            # WebPage for hub pages) must exist exactly once and carry the same description.
+            nodes = [json.loads(block) for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', text, re.S)]
+            own = [n for n in nodes if isinstance(n, dict) and n.get("@type") in {"Article", "WebApplication", "WebPage"}]
+            self.assertEqual(len(own), 1, f"{relative_path}: expected one page-level JSON-LD node")
+            expected_type = ("WebApplication" if "/tools/" in relative_path else
+                             "WebPage" if "/hire/" in relative_path else "Article")
+            self.assertEqual(own[0].get("@type"), expected_type, relative_path)
+            self.assertEqual(own[0].get("description"), description, f"{relative_path}: JSON-LD {expected_type}")
+
+    def test_fee_calculator_title_leads_with_freelancer_fee_query(self):
+        # 2026-10-06 snippet batch 2: Search Console queries for this page are "freelancer fees",
+        # "freelancer fees calculator", "freelancer cost". The Oct 2 rename to "Project Fee Calculator" dropped
+        # that word; the head, JSON-LD name and H1 must agree on the freelancer framing, and no public file may
+        # keep the retired title.
+        page = (REPO_ROOT / "frontend/tools/fee-calculator.html").read_text(encoding="utf-8")
+        self.assertNotIn("Project Fee Calculator", page)
+        self.assertIn('"name": "Freelancer Fee Calculator"', page)
+        self.assertIn("<h1>Freelancer Fee Calculator: Workers Keep the Listed Payout</h1>", page)
+        frontend = REPO_ROOT / "frontend"
+        public = [p for p in frontend.rglob("*") if p.is_file() and p.suffix in {".html", ".xml", ".txt", ".json"}
+                  and not ({"node_modules", "test-results", "playwright-report", "tests"} & set(p.relative_to(frontend).parts))]
+        stale = [str(p.relative_to(REPO_ROOT)) for p in public if "Project Fee Calculator" in p.read_text(encoding="utf-8", errors="ignore")]
+        self.assertEqual(stale, [])
 
     def test_retitled_blog_posts_are_consistent_on_every_surface(self):
         # 2026-10-06 CTR rewrite: each retitled post must carry the same title and description in its head,
@@ -1506,6 +1550,19 @@ class BackendRegressionTests(unittest.TestCase):
             "how-to-hire-ai-agents-safely": ("How to Hire an AI Agent: Safety Checklist", "How to Hire AI Agents Safely in 2026",
                                              "Red flags and green flags when hiring AI agents, how to scope a test task",
                                              ["ai-agents-changing-gig-economy"]),
+            # Batch 2 (same day, separate measurement window).
+            "on-demand-workforce-platform": ("On-Demand Workforce Platform Checklist (2026)", "On-Demand Workforce Platforms: 2026 Guide",
+                                             "How to evaluate on-demand workforce platforms for AI + human workflows",
+                                             ["hire-human-for-ai-tasks", "freelance-vs-full-time-2026", "human-as-a-service",
+                                              "alternatives-to-upwork", "state-of-ai-workforce-2026"]),
+            "how-to-find-human-workers-ai-tasks": ("API to Hire Humans for Real-World AI Tasks", "Find Human Workers for AI Tasks via API",
+                                                   "guide to routing tasks from an AI agent to human workers",
+                                                   ["how-to-hire-ai-agents-safely", "how-to-hire-ai-agent"]),
+            # Title already matched its queries; description only (old_title None = nothing retired).
+            "alternatives-to-freelancer": ("7 Best Freelancer.com Alternatives (2026)", None,
+                                           "Compare seven Freelancer.com alternatives by fees, payment workflow",
+                                           ["fiverr-vs-upwork-vs-gohirehumans", "on-demand-workforce-platform",
+                                            "verified-freelancer-marketplace"]),
         }
         frontend = REPO_ROOT / "frontend"
         public = [p for p in frontend.rglob("*") if p.is_file() and p.suffix in {".html", ".xml", ".txt", ".json"}
@@ -1528,8 +1585,9 @@ class BackendRegressionTests(unittest.TestCase):
                            if json.loads(block).get("@type") == "Article")
             self.assertEqual(article["description"], description, slug)
             modified = article["dateModified"]
-            block = sitemap[sitemap.index(f"<loc>{url}</loc>"):]
-            lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", block)
+            entry = re.search(rf"<url>\s*<loc>{re.escape(url)}</loc>(.*?)</url>", sitemap, re.S)
+            self.assertIsNotNone(entry, slug)
+            lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", cast(re.Match, entry).group(1))
             self.assertIsNotNone(lastmod, slug)
             self.assertEqual(cast(re.Match, lastmod).group(1), modified, slug)
             card = re.search(rf'<a class="card card--interactive" href="/blog/{re.escape(slug)}\.html">(.*?)</a>', index, re.S)
@@ -1548,7 +1606,8 @@ class BackendRegressionTests(unittest.TestCase):
                 sibling_text = (frontend / "blog" / f"{sibling}.html").read_text(encoding="utf-8")
                 self.assertIn(f'href="/blog/{slug}.html">{title}</a>', sibling_text, f"{slug}: link label in {sibling}")
             for other, body in corpus.items():
-                self.assertNotIn(old_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
+                if old_title:
+                    self.assertNotIn(old_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
                 self.assertNotIn(old_desc_prefix, body, f"{slug}: retired description still in {other.relative_to(REPO_ROOT)}")
 
     def test_phase2_ui_flow_polish_invariants(self):

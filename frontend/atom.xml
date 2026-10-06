@@ -134,12 +134,12 @@
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
-    <title>Find Human Workers for AI Tasks via API</title>
+    <title>API to Hire Humans for Real-World AI Tasks</title>
     <link href="https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html" />
     <id>https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html</id>
-    <updated>2026-10-02T00:00:00Z</updated>
+    <updated>2026-10-06T00:00:00Z</updated>
     <published>2026-03-16T00:00:00Z</published>
-    <summary>A developer's guide to routing tasks from an AI agent to human workers with the GoHireHumans REST API and MCP server, including job drafting and review steps.</summary>
+    <summary>Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP, with account-owner approval.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
@@ -173,9 +173,9 @@
     <title>7 Best Freelancer.com Alternatives (2026)</title>
     <link href="https://www.gohirehumans.com/blog/alternatives-to-freelancer.html" />
     <id>https://www.gohirehumans.com/blog/alternatives-to-freelancer.html</id>
-    <updated>2026-10-02T00:00:00Z</updated>
+    <updated>2026-10-06T00:00:00Z</updated>
     <published>2026-03-15T00:00:00Z</published>
-    <summary>Compare seven Freelancer.com alternatives by fees, payment workflow, trust signals, and fit—including GoHireHumans, Upwork, Fiverr, Contra, and more.</summary>
+    <summary>Tired of bidding wars and stacked fees? Compare 7 Freelancer.com alternatives by fees and hiring model: GoHireHumans, Upwork, Fiverr, Contra, Toptal, and more.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
@@ -215,12 +215,12 @@
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
-    <title>On-Demand Workforce Platforms: 2026 Guide</title>
+    <title>On-Demand Workforce Platform Checklist (2026)</title>
     <link href="https://www.gohirehumans.com/blog/on-demand-workforce-platform.html" />
     <id>https://www.gohirehumans.com/blog/on-demand-workforce-platform.html</id>
-    <updated>2026-09-14T00:00:00Z</updated>
+    <updated>2026-10-06T00:00:00Z</updated>
     <published>2026-03-03T00:00:00Z</published>
-    <summary>How to evaluate on-demand workforce platforms for AI + human workflows: trust signals, content safety, payment review, speed, and API access.</summary>
+    <summary>Six things to check before you pick an on-demand workforce platform: profile trust signals, content safety, matching speed, API access, payment review, and QA.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
