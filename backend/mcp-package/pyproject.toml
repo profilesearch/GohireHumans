@@ -7,7 +7,7 @@ name = "gohirehumans-mcp"
 version = "2.0.0"
 description = "GoHireHumans MCP server for service discovery and owner-authorized marketplace operations"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
 authors = [{name = "GoHireHumans", email = "gohirehumans.operations@agentmail.to"}]
 keywords = ["mcp", "model-context-protocol", "marketplace", "human-in-the-loop", "ai-agent"]

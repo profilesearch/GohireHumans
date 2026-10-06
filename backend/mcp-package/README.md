@@ -92,7 +92,7 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - No additional dependencies (uses only stdlib)
 
 ## Environment Variables

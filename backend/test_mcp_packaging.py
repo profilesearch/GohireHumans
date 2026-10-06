@@ -22,6 +22,12 @@ class MCPPackagingTests(unittest.TestCase):
         self.assertEqual(project['project']['scripts']['gohirehumans-mcp'], 'mcp_server:main')
         self.assertEqual(project['project']['dependencies'], [])
         self.assertEqual(project['tool']['setuptools']['py-modules'], ['mcp_server'])
+        # setuptools>=77 (needed for the SPDX `license` string) itself requires Python 3.9+, so a Git/sdist
+        # install on 3.8 fails at build time. Declare the floor that actually installs.
+        self.assertIn('setuptools>=77', project['build-system']['requires'])
+        self.assertEqual(project['project']['requires-python'], '>=3.9')
+        self.assertIn('- Python 3.9+', (PACKAGE / 'README.md').read_text())
+        self.assertNotIn('3.8', (PACKAGE / 'README.md').read_text())
         self.assertEqual((ROOT / 'backend/mcp_server.py').read_bytes(),
                          (PACKAGE / 'mcp_server.py').read_bytes())
 
