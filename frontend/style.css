@@ -958,6 +958,10 @@ main > .pub-section--alt:last-child { border-bottom: 0; }
 .lp-guided-fields .form-group { margin: 0; }
 .lp-guided-field-wide { grid-column: 1 / -1; }
 .lp-guided-fields .btn { justify-self: start; margin-top: var(--space-1); }
+.lp-guided-optional summary { cursor: pointer; color: var(--color-accent); font-size: var(--text-sm); }
+.lp-guided-optional summary:hover { text-decoration: underline; }
+.lp-guided-optional summary:focus-visible { outline: 2px solid transparent; box-shadow: var(--ring); }
+.lp-guided-optional > .lp-guided-fields { margin-top: var(--space-3); }
 .lp-trust-inline {
   display: flex; justify-content: space-between; align-items: center; gap: var(--space-5);
   margin-top: var(--space-8); padding: var(--space-4) 0 0;

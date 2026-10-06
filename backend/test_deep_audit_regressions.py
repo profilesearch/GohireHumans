@@ -3082,8 +3082,8 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             "const activeAttrs = activePage === l.key ? ' lp-nav-link-active\" aria-current=\"page' : '';",
             "<a class=\"lp-nav-link${activeAttrs}\"",
             "<a class=\"lp-mobile-link${activeAttrs}\"",
-            '<link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">',
-            '<link rel="preload" href="/style.css?v=20260526-nav-consistency" as="style">',
+            '<link rel="stylesheet" href="/style.css?v=20261006-intake">',
+            '<link rel="preload" href="/style.css?v=20261006-intake" as="style">',
         ]
         missing = [snippet for snippet in snippets if snippet not in text]
         self.assertEqual(missing, [])
@@ -3588,12 +3588,12 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
             "Build a task draft",
-            "Answer four short prompts.",
-            "What needs to be done?",
+            "Describe it in one sentence.",
+            "What do you need done?",
             "Who could help?",
             "Desired result",
             "Budget range",
-            "Review the draft",
+            "Build my draft",
             "params.set('draft_title'",
             "query.get('draft_title')",
             "query.get('draft_description')",
@@ -3613,7 +3613,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         self.assertNotIn("fetch(", guided_block)
         self.assertNotIn("api(", guided_block)
         self.assertNotIn("mailto:", guided_block)
-        self.assertIn("does not publish, contact workers, charge a card, or promise a match", guided_block)
+        self.assertIn("nothing is published until you post", guided_block)
 
     def test_homepage_has_credible_agent_marketplace_liquidity_messaging(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
@@ -3631,11 +3631,11 @@ class FrontendStaticRegressionTests(unittest.TestCase):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
         for snippet in [
             "Build a task draft",
-            "Answer four short prompts.",
+            "Describe it in one sentence.",
             "startTaskDraft(templateKey, source = 'homepage_concierge')",
             "concierge_task_draft_click",
             "const templateDraft = getTaskDraftTemplate(query.get('template')) || {};",
-            "does not publish, contact workers, charge a card, or promise a match",
+            "nothing is published until you post",
             "Draft before publishing or paying",
             "Workers receive the listed payout",
             "Employer pays 1% platform fee + fixed 3% processing charge where configured",
