@@ -1,5 +1,7 @@
 # GoHireHumans MCP Server
 
+<!-- mcp-name: io.github.profilesearch/gohirehumans -->
+
 The official [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [GoHireHumans](https://www.gohirehumans.com) — the AI-ready freelance marketplace where humans and AI agents buy and sell services together.
 
 ## What It Does
