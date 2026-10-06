@@ -1440,8 +1440,24 @@ class BackendRegressionTests(unittest.TestCase):
                 "Compare seven Freelancer.com alternatives by fees, payment workflow, trust signals, and fit—including GoHireHumans, Upwork, Fiverr, Contra, and more.",
             ),
             "frontend/blog/verified-freelancer-marketplace.html": (
-                "How to Verify a Freelancer: 4 Trust Signals | GoHireHumans",
-                "Check four practical trust signals before hiring a freelancer: profile evidence, relevant work samples, issue-review clarity, and transparent content policies.",
+                "How to Spot Fake Freelancer Profiles | GoHireHumans",
+                "Fake reviews, borrowed portfolios, inflated skills: what to check in a freelancer's profile and work samples, and which platform trust signals help.",
+            ),
+            "frontend/blog/alternatives-to-toptal.html": (
+                "8 Toptal Alternatives by Price (2026) | GoHireHumans",
+                "Toptal builds an unpublished markup into its rates. Compare 8 alternatives by rates, client fees, and markup, including Upwork, Fiverr Pro, and Arc.dev.",
+            ),
+            "frontend/blog/freelance-vs-full-time-2026.html": (
+                "True Cost of Freelancers vs Employees (2026) | GoHireHumans",
+                "A full-time hire typically costs 1.25x to 1.75x base salary once benefits, taxes, and overhead are added. See the line-by-line comparison with freelancers.",
+            ),
+            "frontend/blog/hire-data-entry-specialist.html": (
+                "How Much Does a Data Entry Expert Cost? | GoHireHumans",
+                "Data entry specialists typically charge $12 to $40 an hour. What moves the rate, the skills to check, and how to run a paid test task before you hire.",
+            ),
+            "frontend/blog/how-to-hire-ai-agents-safely.html": (
+                "How to Hire an AI Agent: Safety Checklist | GoHireHumans",
+                "What to check before you hire an AI agent: red flags, green flags, typical prices by task, a small test order, and a seven-point safety checklist.",
             ),
             "frontend/blog/where-to-list-services-online.html": (
                 "Where to List Services Online: 8 Platforms | GoHireHumans",
@@ -1466,6 +1482,53 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(text.count('<meta name="twitter:description"'), 1, relative_path)
             self.assertIn(f'<meta name="twitter:title" content="{title}">', text, relative_path)
             self.assertIn(f'<meta name="twitter:description" content="{description}">', text, relative_path)
+
+    def test_retitled_blog_posts_are_consistent_on_every_surface(self):
+        # 2026-10-06 CTR rewrite: each retitled post must carry the same title and description in its head,
+        # JSON-LD, blog index card, sibling related-reading links, and feeds, with dateModified matching the
+        # sitemap lastmod, and the retired titles/descriptions must be gone from every public file.
+        retitled = {
+            "alternatives-to-toptal": ("8 Toptal Alternatives by Price (2026)", "Best Toptal Alternatives in 2026",
+                                       "Compare eight Toptal alternatives by rates, fees, and fit"),
+            "verified-freelancer-marketplace": ("How to Spot Fake Freelancer Profiles", "How to Verify a Freelancer: 4 Trust Signals",
+                                                "Check four practical trust signals before hiring a freelancer"),
+            "freelance-vs-full-time-2026": ("True Cost of Freelancers vs Employees (2026)", "Freelance vs Full-Time in 2026: Cost and ROI",
+                                            "Compare the real cost of freelancers and full-time employees in 2026"),
+            "hire-data-entry-specialist": ("How Much Does a Data Entry Expert Cost?", "How to Hire a Data Entry Specialist Online",
+                                           "How to hire a data entry specialist online: rates"),
+            "how-to-hire-ai-agents-safely": ("How to Hire an AI Agent: Safety Checklist", "How to Hire AI Agents Safely in 2026",
+                                             "Red flags and green flags when hiring AI agents, how to scope a test task"),
+        }
+        frontend = REPO_ROOT / "frontend"
+        public = [p for p in frontend.rglob("*") if p.is_file() and p.suffix in {".html", ".xml", ".txt", ".json"}
+                  and not ({"node_modules", "test-results", "playwright-report", "tests"} & set(p.relative_to(frontend).parts))]
+        corpus = {p: p.read_text(encoding="utf-8", errors="ignore") for p in public}
+        index = (frontend / "blog" / "index.html").read_text(encoding="utf-8")
+        sitemap = (frontend / "sitemap.xml").read_text(encoding="utf-8")
+        feeds = (frontend / "feed.xml").read_text(encoding="utf-8") + (frontend / "atom.xml").read_text(encoding="utf-8")
+        for slug, (title, old_title, old_desc_prefix) in retitled.items():
+            page = frontend / "blog" / f"{slug}.html"
+            text = page.read_text(encoding="utf-8")
+            match = re.search(r'<meta name="description" content="([^"]*)">', text)
+            self.assertIsNotNone(match, slug)
+            description = cast(re.Match, match).group(1)
+            article = next(json.loads(block) for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', text, re.S)
+                           if json.loads(block).get("@type") == "Article")
+            self.assertEqual(article["description"], description, slug)
+            modified = article["dateModified"]
+            block = sitemap[sitemap.index(f"<loc>https://www.gohirehumans.com/blog/{slug}.html</loc>"):]
+            lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", block)
+            self.assertIsNotNone(lastmod, slug)
+            self.assertEqual(cast(re.Match, lastmod).group(1), modified, slug)
+            self.assertIn(f'<span class="card-list-title">{title}</span>', index, slug)
+            self.assertIn(description, index, slug)
+            self.assertIn(f"<title>{title}</title>", feeds, slug)
+            self.assertIn(f"<description>{description}</description>", feeds.replace("&amp;", "&"), slug)
+            for other, body in corpus.items():
+                self.assertNotIn(old_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
+                self.assertNotIn(old_desc_prefix, body, f"{slug}: retired description still in {other.relative_to(REPO_ROOT)}")
+                for anchor in re.findall(rf'href="/blog/{re.escape(slug)}\.html">([^<]+)</a>', body):
+                    self.assertNotEqual(anchor.strip(), old_title, f"{slug}: stale link text in {other.relative_to(REPO_ROOT)}")
 
     def test_phase2_ui_flow_polish_invariants(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
