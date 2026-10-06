@@ -1474,7 +1474,7 @@ class BackendRegressionTests(unittest.TestCase):
             ),
             "frontend/blog/how-to-find-human-workers-ai-tasks.html": (
                 "API to Hire Humans for Real-World AI Tasks | GoHireHumans",
-                "Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP. Owners approve each hire.",
+                "Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP, with account-owner approval.",
             ),
             "frontend/tools/fee-calculator.html": (
                 "Freelancer Fee Calculator: 5 Platforms | GoHireHumans",
@@ -1503,11 +1503,15 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(text.count('<meta name="twitter:description"'), 1, relative_path)
             self.assertEqual(head_content("name", "twitter:title"), title, relative_path)
             self.assertEqual(head_content("name", "twitter:description"), description, relative_path)
-            # Any JSON-LD node that describes the page itself (Article or WebApplication) must match too.
-            for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', text, re.S):
-                node = json.loads(block)
-                if isinstance(node, dict) and node.get("@type") in {"Article", "WebApplication"}:
-                    self.assertEqual(node.get("description"), description, f"{relative_path}: JSON-LD {node['@type']}")
+            # The JSON-LD node that describes the page itself (Article for posts, WebApplication for tools,
+            # WebPage for hub pages) must exist exactly once and carry the same description.
+            nodes = [json.loads(block) for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', text, re.S)]
+            own = [n for n in nodes if isinstance(n, dict) and n.get("@type") in {"Article", "WebApplication", "WebPage"}]
+            self.assertEqual(len(own), 1, f"{relative_path}: expected one page-level JSON-LD node")
+            expected_type = ("WebApplication" if "/tools/" in relative_path else
+                             "WebPage" if "/hire/" in relative_path else "Article")
+            self.assertEqual(own[0].get("@type"), expected_type, relative_path)
+            self.assertEqual(own[0].get("description"), description, f"{relative_path}: JSON-LD {expected_type}")
 
     def test_fee_calculator_title_leads_with_freelancer_fee_query(self):
         # 2026-10-06 snippet batch 2: Search Console queries for this page are "freelancer fees",
@@ -1581,8 +1585,9 @@ class BackendRegressionTests(unittest.TestCase):
                            if json.loads(block).get("@type") == "Article")
             self.assertEqual(article["description"], description, slug)
             modified = article["dateModified"]
-            block = sitemap[sitemap.index(f"<loc>{url}</loc>"):]
-            lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", block)
+            entry = re.search(rf"<url>\s*<loc>{re.escape(url)}</loc>(.*?)</url>", sitemap, re.S)
+            self.assertIsNotNone(entry, slug)
+            lastmod = re.search(r"<lastmod>([^<]+)</lastmod>", cast(re.Match, entry).group(1))
             self.assertIsNotNone(lastmod, slug)
             self.assertEqual(cast(re.Match, lastmod).group(1), modified, slug)
             card = re.search(rf'<a class="card card--interactive" href="/blog/{re.escape(slug)}\.html">(.*?)</a>', index, re.S)

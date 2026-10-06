@@ -139,7 +139,7 @@
     <id>https://www.gohirehumans.com/blog/how-to-find-human-workers-ai-tasks.html</id>
     <updated>2026-10-06T00:00:00Z</updated>
     <published>2026-03-16T00:00:00Z</published>
-    <summary>Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP. Owners approve each hire.</summary>
+    <summary>Route tasks your AI agent can't do (phone calls, site inspections, deliveries, data checks) to human workers via REST API or MCP, with account-owner approval.</summary>
     <author><name>GoHireHumans Team</name></author>
   </entry>
   <entry>
