@@ -1,6 +1,52 @@
-# GoHireHumans — Deployment Guide
+# GoHireHumans
 
 The trusted marketplace where businesses, AI agents, and individuals hire verified human professionals on demand.
+
+## For AI agents (MCP server)
+
+GoHireHumans ships a Model Context Protocol (MCP) server so AI agents can find human help for small, scoped tasks that AI and software can't reliably finish alone. It is a Python stdio server with no third-party dependencies.
+
+**Install and run** (uv, Python 3.9+):
+
+```bash
+uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp
+```
+
+**MCP client config** (Claude Desktop, Cursor and other stdio clients):
+
+```json
+{
+  "mcpServers": {
+    "gohirehumans": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package", "gohirehumans-mcp"]
+    }
+  }
+}
+```
+
+**Browse and search, no key needed:**
+- `search_services`, `get_service_details`: find services by task, category and price
+- `search_workers`, `get_recommended`: find workers by skill, rating and price, or get matches for a task description
+- `browse_jobs`, `get_categories`: see open jobs and service categories
+- `get_pricing_info`, `get_platform_info`: fees and how the platform works
+
+**Account actions, need `GOHIREHUMANS_API_KEY` or `GOHIREHUMANS_AUTH_TOKEN`:**
+- `create_job`: post a job
+- `hire_worker`: hire a worker for a task
+- `get_job_status`: track an order
+- `release_payment`: approve completed work so the worker's listed payout is released
+- `submit_review`: rate a completed order
+
+Hiring and payment actions require the account owner's authorization. Workers receive the listed payout; employers pay Stripe processing plus a 1% GoHireHumans fee where checkout is configured. GoHireHumans is not an escrow provider.
+
+Package docs and authentication steps: [`backend/mcp-package/README.md`](backend/mcp-package/README.md). API docs: https://www.gohirehumans.com/api-docs.html. The MCP server is MIT-licensed ([`backend/mcp-package/LICENSE`](backend/mcp-package/LICENSE)); the rest of this repository is proprietary (see [`LICENSE`](LICENSE)).
+
+---
+
+## Deployment guide
+
+How the GoHireHumans site and API are built and deployed.
 
 ## Architecture
 

@@ -26,11 +26,34 @@ Public service/job discovery needs no account or key. For authenticated operatio
 2. Both return a user object containing `token`, an opaque session token. Set `GOHIREHUMANS_AUTH_TOKEN` to use it directly.
 3. Alternatively, authenticate `POST /api-keys` with the session token and body `{"name": "agent-reader", "scopes": ["read"]}`. Save the one-time secret from `api_key.key` securely and set `GOHIREHUMANS_API_KEY`. Add `write` only for approved job/listing mutations. Never default to payment scopes.
 
-Download `backend/mcp_server.py` from the repository and replace the absolute file path below. The npm package contains the Python source but has no executable `bin`; do not run it with `npx`.
+**Install and run with uv (recommended, Python 3.9+):**
+
+```bash
+uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp
+```
+
+Alternatively, download `backend/mcp_server.py` from the repository and run it with `python` (second example below). The npm package contains the Python source but has no executable `bin`; do not run it with `npx`.
 
 ### 2. Configure Your MCP Client
 
-**Claude Desktop / Anthropic:**
+**Claude Desktop / Anthropic (uv):**
+```json
+{
+  "mcpServers": {
+    "gohirehumans": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package", "gohirehumans-mcp"],
+      "env": {
+        "GOHIREHUMANS_API_KEY": "ghh_your_key_here"
+      }
+    }
+  }
+}
+```
+
+The `env` block is optional: leave it out for browse and search only.
+
+**Downloaded file (python):**
 ```json
 {
   "mcpServers": {
