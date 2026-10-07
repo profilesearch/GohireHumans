@@ -48,6 +48,16 @@ API_BASE = os.environ.get("GOHIREHUMANS_API_URL", "https://gohirehumans-producti
 API_KEY = os.environ.get("GOHIREHUMANS_API_KEY", "")
 AUTH_TOKEN = os.environ.get("GOHIREHUMANS_AUTH_TOKEN", "")
 
+# Name the MCP client reported in `initialize` (for example "claude-ai" or "cursor").
+# Sent with API calls so GoHireHumans can count MCP usage per client; nothing else
+# about the user, machine or conversation is sent.
+CLIENT_NAME = ""
+
+
+def _client_name_header(raw):
+    """Short, header-safe form of the MCP client's self-reported name."""
+    return "".join(ch for ch in str(raw or "") if ch.isalnum() or ch in " ._/-").strip()[:40]
+
 # ─── API Helper ───────────────────────────────────────────────────────────────
 
 class APIRequestError(Exception):
@@ -88,7 +98,9 @@ def api_request(method, path, body=None, params=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
 
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": f"gohirehumans-mcp/{SERVER_VERSION}"}
+    if CLIENT_NAME:
+        headers["X-GHH-MCP-Client"] = CLIENT_NAME
     if AUTH_TOKEN:
         headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
     if API_KEY:
@@ -116,7 +128,7 @@ def api_request(method, path, body=None, params=None):
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "gohirehumans"
-SERVER_VERSION = "2.1.0"
+SERVER_VERSION = "2.2.0"
 
 TOOLS = [
     {
@@ -1347,6 +1359,9 @@ def handle_message(msg):
 
     # Initialize
     if method == "initialize":
+        global CLIENT_NAME
+        client_info = params.get("clientInfo") if isinstance(params, dict) else None
+        CLIENT_NAME = _client_name_header(client_info.get("name") if isinstance(client_info, dict) else "")
         return {
             "jsonrpc": "2.0",
             "id": msg_id,

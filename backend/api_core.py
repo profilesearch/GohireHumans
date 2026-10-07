@@ -2294,6 +2294,21 @@ def _init_db_connection_steps(db):
         "CREATE INDEX IF NOT EXISTS idx_application_reminders_job "
         "ON job_application_reminders(job_id,employer_id,created_at)"
     )
+    # Daily counts of API calls made by the GoHireHumans MCP server, keyed by
+    # server version, MCP client name and normalized endpoint. Deliberately no
+    # IP address, user, API key, query string or payload.
+    db.execute("""CREATE TABLE IF NOT EXISTS mcp_usage_daily (
+        day TEXT NOT NULL,
+        server_version TEXT NOT NULL,
+        client TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        method TEXT NOT NULL,
+        request_count INTEGER NOT NULL DEFAULT 0,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY(day, server_version, client, endpoint, method)
+    )""")
 
 _init_db_failure_hook = None
 
@@ -3180,6 +3195,125 @@ def _prune_rate_limit_store(store, now, window, max_keys=_RATE_LIMIT_STORE_MAX_K
     for key in stale:
         store.pop(key, None)
     return len(stale)
+
+
+# ── MCP usage counting ───────────────────────────────────────────────────────
+# The GoHireHumans MCP server identifies itself with a "gohirehumans-mcp/<version>"
+# User-Agent and, optionally, the MCP client's self-reported name. Calls are
+# aggregated into daily counters only: no IP address, user, API key, query string,
+# request body or response body is stored.
+MCP_USER_AGENT_RE = re.compile(r"^gohirehumans-mcp/(\d{1,3}\.\d{1,3}\.\d{1,3})(?:\s|$)")
+MCP_USAGE_ENDPOINTS = (
+    ("GET", re.compile(r"^/services$"), "/services"),
+    ("GET", re.compile(r"^/services/\d+$"), "/services/:id"),
+    ("POST", re.compile(r"^/services/\d+/order$"), "/services/:id/order"),
+    ("GET", re.compile(r"^/categories$"), "/categories"),
+    ("GET", re.compile(r"^/pricing/info$"), "/pricing/info"),
+    ("GET", re.compile(r"^/jobs$"), "/jobs"),
+    ("POST", re.compile(r"^/jobs$"), "/jobs"),
+    ("GET", re.compile(r"^/jobs/\d+$"), "/jobs/:id"),
+    ("GET", re.compile(r"^/orders/\d+$"), "/orders/:id"),
+    ("POST", re.compile(r"^/orders/\d+/approve$"), "/orders/:id/approve"),
+    ("POST", re.compile(r"^/orders/\d+/review$"), "/orders/:id/review"),
+)
+MCP_USAGE_MAX_ROWS_PER_DAY = 500
+
+
+def _mcp_usage_client_label(raw):
+    label = re.sub(r"[^a-z0-9 ._/-]+", "", str(raw or "").strip().lower())
+    label = re.sub(r"\s+", " ", label).strip()[:40]
+    return label or "unknown"
+
+
+def _mcp_usage_endpoint(method, path):
+    path = (path or "").rstrip("/")
+    if path.startswith("/api/v1"):
+        path = path[len("/api/v1"):]
+    for endpoint_method, pattern, label in MCP_USAGE_ENDPOINTS:
+        if method == endpoint_method and pattern.match(path):
+            return label
+    return "other"
+
+
+def record_mcp_usage(now=None):
+    """Count one API call made by the GoHireHumans MCP server. Never raises."""
+    try:
+        match = MCP_USER_AGENT_RE.match(getattr(_request_ctx, "http_user_agent", "") or "")
+        if not match:
+            return False
+        method = (getattr(_request_ctx, "request_method", "GET") or "GET").upper()
+        endpoint = _mcp_usage_endpoint(method, getattr(_request_ctx, "path_info", ""))
+        client = _mcp_usage_client_label(getattr(_request_ctx, "http_x_ghh_mcp_client", ""))
+        status = int(getattr(_request_ctx, "response_status", 200) or 200)
+        stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
+        day = stamp[:10]
+        db = sqlite3.connect(_get_db_path(), timeout=2)
+        try:
+            exists = db.execute(
+                "SELECT 1 FROM mcp_usage_daily WHERE day=? AND server_version=? AND client=? "
+                "AND endpoint=? AND method=?",
+                [day, match.group(1), client, endpoint, method],
+            ).fetchone()
+            if not exists:
+                rows_today = db.execute(
+                    "SELECT COUNT(*) FROM mcp_usage_daily WHERE day=?", [day]
+                ).fetchone()[0]
+                if rows_today >= MCP_USAGE_MAX_ROWS_PER_DAY:
+                    client = "other"
+            db.execute(
+                """INSERT INTO mcp_usage_daily
+                       (day, server_version, client, endpoint, method, request_count, error_count,
+                        first_seen_at, last_seen_at)
+                   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                   ON CONFLICT(day, server_version, client, endpoint, method) DO UPDATE SET
+                       request_count = request_count + 1,
+                       error_count = error_count + excluded.error_count,
+                       last_seen_at = excluded.last_seen_at""",
+                [day, match.group(1), client, endpoint, method, 1 if status >= 400 else 0, stamp, stamp],
+            )
+            db.commit()
+        finally:
+            db.close()
+        return True
+    except Exception as exc:
+        print(f"[GoHireHumans] MCP usage counting skipped: {exc}", file=sys.stderr)
+        return False
+
+
+def mcp_usage_summary(db, days):
+    """Aggregate MCP usage for the admin report. Clients named ghh-* are internal checks."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    external = "client NOT LIKE 'ghh-%'"
+
+    def rows(sql):
+        return [dict(r) for r in db.execute(sql, [since]).fetchall()]
+
+    totals = db.execute(
+        f"""SELECT COALESCE(SUM(request_count),0) AS requests,
+                   COALESCE(SUM(error_count),0) AS errors,
+                   COUNT(DISTINCT day) AS active_days
+            FROM mcp_usage_daily WHERE day >= ? AND {external}""",
+        [since],
+    ).fetchone()
+    return {
+        "days": days,
+        "since": since,
+        "external_totals": dict(totals),
+        "by_day": rows(f"""SELECT day, SUM(request_count) AS requests, SUM(error_count) AS errors
+                           FROM mcp_usage_daily WHERE day >= ? AND {external}
+                           GROUP BY day ORDER BY day"""),
+        "by_client": rows("""SELECT client, SUM(request_count) AS requests, COUNT(DISTINCT day) AS active_days
+                             FROM mcp_usage_daily WHERE day >= ?
+                             GROUP BY client ORDER BY requests DESC LIMIT 50"""),
+        "by_version": rows(f"""SELECT server_version, SUM(request_count) AS requests
+                               FROM mcp_usage_daily WHERE day >= ? AND {external}
+                               GROUP BY server_version ORDER BY requests DESC"""),
+        "by_endpoint": rows(f"""SELECT method, endpoint, SUM(request_count) AS requests,
+                                       SUM(error_count) AS errors
+                                FROM mcp_usage_daily WHERE day >= ? AND {external}
+                                GROUP BY method, endpoint ORDER BY requests DESC"""),
+        "privacy": "Daily counters only; no IP address, user, API key, query or payload is stored.",
+    }
 
 
 def check_rate_limit() -> bool:
@@ -10416,6 +10550,8 @@ def handle_request():
         _request_ctx.http_svix_timestamp = os.environ.get("HTTP_SVIX_TIMESTAMP", "")
         _request_ctx.http_svix_signature = os.environ.get("HTTP_SVIX_SIGNATURE", "")
         _request_ctx.http_x_diagnostic_secret = os.environ.get("HTTP_X_DIAGNOSTIC_SECRET", "")
+        _request_ctx.http_user_agent = os.environ.get("HTTP_USER_AGENT", "")
+        _request_ctx.http_x_ghh_mcp_client = os.environ.get("HTTP_X_GHH_MCP_CLIENT", "")
         _request_ctx.stdin_data = sys.stdin.read() if sys.stdin else ""
 
     for request_attr in (
@@ -10453,6 +10589,7 @@ def handle_request():
         error_response("Internal server error", 500)
     finally:
         db.close()
+        record_mcp_usage()
         intent_id = getattr(_request_ctx, "api_key_accounting_intent_id", None)
         if intent_id is not None:
             try:
@@ -14999,6 +15136,16 @@ def _handle_routes(db):
     # ═══════════════════════════════════════════════════════════════════════════
     # ADMIN ROUTES
     # ═══════════════════════════════════════════════════════════════════════════
+
+    elif path == "/admin/mcp-usage" and method == "GET":
+        user = authenticate(db)
+        if not user or not user['is_admin']:
+            return error_response("Admin access required", 403)
+        try:
+            days = parse_int_param(params, "days", 28, min_value=1, max_value=90)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        return json_response(mcp_usage_summary(db, days))
 
     elif path == "/admin/marketplace-ops" and method == "GET":
         user = authenticate(db)

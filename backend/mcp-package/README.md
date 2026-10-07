@@ -126,6 +126,10 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 | `GOHIREHUMANS_API_KEY` | Recommended | Your API key for authenticated operations |
 | `GOHIREHUMANS_AUTH_TOKEN` | Alternative | session auth token (alternative to API key) |
 
+## Usage counting
+
+Requests from this server identify themselves to the GoHireHumans API with a `gohirehumans-mcp/<version>` User-Agent and the name your MCP client reports when it connects (for example `claude-ai` or `cursor`). GoHireHumans keeps only daily request counts per server version, client name and endpoint to see whether MCP use is growing. It does not store your IP address, user, API key, search terms or request content in these counts.
+
 ## License
 
 MIT
