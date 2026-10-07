@@ -89,7 +89,7 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 | `create_job` | Publish a job post workers can apply to (no charge) |
 | `browse_jobs` | Browse job posts accepting applications |
 | `hire_worker` | Order a service listing; charges the saved card where checkout is configured |
-| `get_job_status` | Check one order (participants only) or one job post |
+| `get_job_status` | Check one order (its employer, worker or a site admin) or one job post |
 | `release_payment` | Approve submitted work and release the worker's payout (session token only) |
 | `submit_review` | Review the other party on a completed order |
 | `search_workers` | Find providers by skills, category, price and rating (one result per provider) |

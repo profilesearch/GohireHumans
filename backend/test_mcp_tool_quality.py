@@ -92,13 +92,15 @@ class ToolDefinitionQualityTests(unittest.TestCase):
 
     def test_money_and_lifecycle_facts_match_backend(self):
         hire = self.desc['hire_worker']
-        for fact in ('saved payment method', 'charged immediately',
+        for fact in ('saved payment method', 'charged immediately', 'only when the employer approves',
                      '1% platform fee and a fixed 3% processing charge',
-                     'only when the employer approves', 'no self-serve cancel option',
+                     'both the read scope', 'the write scope', "isn't locked to an earlier quote",
+                     'no self-serve cancel option',
                      'same idempotency_key'):
             self.assertIn(fact, hire)
         release = self.desc['release_payment']
-        for fact in ('cannot be undone', "'submitted' status", 'no API key set',
+        for fact in ('cannot be undone', "'submitted' status", 'unset GOHIREHUMANS_API_KEY',
+                     'rejected even alongside the session token',
                      'another milestone', "saved card is charged"):
             self.assertIn(fact, release)
         props = self.tools['release_payment']['inputSchema']['properties']
@@ -112,6 +114,14 @@ class ToolDefinitionQualityTests(unittest.TestCase):
         self.assertIn('does not hire anyone or charge anything', job)
         self.assertIn('not accepted right now',
                       self.tools['create_job']['inputSchema']['properties']['budget_type']['description'])
+        self.assertIn('at most 999,999.99',
+                      self.tools['create_job']['inputSchema']['properties']['budget_amount']['description'])
+        self.assertIn('not a spending cap',
+                      self.tools['hire_worker']['inputSchema']['properties']['budget_amount']['description'])
+        status = self.desc['get_job_status']
+        self.assertIn('site admin', status)
+        self.assertIn('numbered separately', status)
+        self.assertIn("paused listing can still be shown here but can't be ordered", self.desc['get_service_details'])
 
     def test_fee_copy_matches_canonical_pricing(self):
         pricing = self.desc['get_pricing_info']
@@ -126,7 +136,8 @@ class ToolDefinitionQualityTests(unittest.TestCase):
         everything = json.dumps(self.module.TOOLS)
         for phrase in ('availability', 'AI-optimized', 'AI-powered', 'past performance',
                        'worker activity', 'experience,', 'releases payment for the entire order',
-                       'freelancers can apply'):
+                       'freelancers can apply', 'best-rated first', '1,000,000',
+                       'any request carrying an API key', 'different numbers'):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, everything)
 
@@ -139,6 +150,134 @@ class ToolDefinitionQualityTests(unittest.TestCase):
     def test_package_copy_is_identical(self):
         self.assertEqual((ROOT / 'backend/mcp_server.py').read_bytes(),
                          (ROOT / 'backend/mcp-package/mcp_server.py').read_bytes())
+
+
+class BackendBehaviourBehindDescriptions(unittest.TestCase):
+    """Run the real API against a throwaway database so each description claim is
+    pinned to behaviour, not only to wording."""
+
+    def setUp(self):
+        import sqlite3  # noqa: F401  (api_core needs it loaded)
+        import tempfile
+        from test_deep_audit_regressions import load_api_core
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {
+            'DATABASE_PATH': os.path.join(self.tmp.name, 'mcp-quality.db'),
+            'DISABLE_AUTO_SEED': '1'})
+        self.env.start()
+        self.api = load_api_core()
+        self.api._db_path_resolved = None
+        self.api.init_db()
+        self.mcp = load(ROOT / 'backend/mcp_server.py')
+        with self.api.get_db() as db:
+            for uid, name in ((1, 'Admin'), (2, 'Worker Low'), (3, 'Worker High'), (4, 'Buyer'), (5, 'Other')):
+                db.execute("INSERT INTO users(id,email,name,password_hash,is_admin) VALUES(?,?,?,?,?)",
+                           [uid, f'u{uid}@example.test', name, 'x', 1 if uid == 1 else 0])
+            for uid, tok in ((1, 'admin'), (4, 'buyer'), (5, 'other')):
+                db.execute("INSERT INTO sessions(user_id,token,expires_at) VALUES(?,?,datetime('now','+1 day'))", [uid, tok])
+            # Worker 2: higher LISTING rating, lower PROFILE rating.
+            db.execute("INSERT INTO worker_profiles(user_id,avg_rating) VALUES(2,2.0)")
+            db.execute("INSERT INTO worker_profiles(user_id,avg_rating) VALUES(3,5.0)")
+            db.execute("""INSERT INTO services(id,worker_id,title,description,category,pricing_type,price,hourly_rate,status,avg_rating)
+                          VALUES(11,2,'Hourly QA','QA by the hour','testing','hourly',NULL,40,'active',4.9)""")
+            db.execute("""INSERT INTO services(id,worker_id,title,description,category,pricing_type,price,hourly_rate,status,avg_rating)
+                          VALUES(12,3,'Fixed QA','QA fixed','testing','fixed',25,NULL,'active',3.0)""")
+            db.execute("""INSERT INTO services(id,worker_id,title,description,category,pricing_type,price,hourly_rate,status,avg_rating)
+                          VALUES(13,3,'Custom QA','QA custom','testing','custom',NULL,NULL,'active',2.0)""")
+            db.execute("""INSERT INTO services(id,worker_id,title,description,category,pricing_type,price,hourly_rate,status,avg_rating)
+                          VALUES(14,3,'Paused QA','QA paused','testing','fixed',30,NULL,'paused',1.0)""")
+            db.execute("INSERT INTO jobs(id,employer_id,title,description,category,budget_type,budget_amount,status) VALUES(7,4,'Job seven','d','testing','fixed',50,'in_progress')")
+            db.execute("INSERT INTO orders(id,type,worker_id,employer_id,status,total_amount) VALUES(7,'service_order',2,4,'pending',10)")
+            import hashlib
+            for kid, scopes in ((1, '["write"]'), (2, '["read","write"]')):
+                db.execute("INSERT INTO api_keys(id,user_id,key_hash,key_prefix,scopes) VALUES(?,?,?,?,?)",
+                           [kid, 4, hashlib.sha256(f'ghh_test_key_{kid}'.encode()).hexdigest(), f'ghh_{kid}', scopes])
+            db.commit()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def request(self, method, path, token='', payload=None, query='', api_key=''):
+        import contextlib
+        import io
+        from test_deep_audit_regressions import parse_cgi_output
+        for attr in ('body_cache', 'raw_body', 'authenticated_api_key_id', 'api_key_accounting_intent_id'):
+            if hasattr(self.api._request_ctx, attr):
+                delattr(self.api._request_ctx, attr)
+        raw = json.dumps(payload or {})
+        c = self.api._request_ctx
+        c.request_method = method; c.path_info = path; c.query_string = query
+        c.http_authorization = f'Bearer {token}' if token else ''
+        c.http_x_api_key = api_key; c.stdin_data = raw; c.content_type = 'application/json'
+        c.content_length = str(len(raw)); c.remote_addr = '127.0.0.1'; c.http_stripe_signature = ''
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.api.handle_request()
+        return parse_cgi_output(out.getvalue())
+
+    def as_api(self):
+        """Route the MCP server's api_request through the in-process backend."""
+        import urllib.parse
+
+        def fake(method, path, body=None, params=None):
+            query = urllib.parse.urlencode(params or {})
+            status, data = self.request(method, path, payload=body, query=query)
+            return data if status < 400 else {'error': data.get('error', status)}
+        return mock.patch.object(self.mcp, 'api_request', side_effect=fake)
+
+    def test_hire_worker_needs_read_and_write_scopes(self):
+        # hire_worker's preflight is GET /services/{id}; a write-only key is refused there.
+        status, _ = self.request('GET', '/services/12', api_key='ghh_test_key_1')
+        self.assertEqual(status, 403)
+        status, _ = self.request('GET', '/services/12', api_key='ghh_test_key_2')
+        self.assertEqual(status, 200)
+
+    def test_release_payment_rejects_valid_api_key_even_with_session(self):
+        status, body = self.request('POST', '/orders/7/approve', token='buyer', api_key='ghh_test_key_2',
+                                    payload={'action': 'approve'})
+        self.assertEqual(status, 403, body)
+
+    def test_hourly_custom_and_paused_listings_are_described_honestly(self):
+        with self.as_api():
+            hourly = self.mcp.handle_get_service_details({'service_id': '11'})[0]['text']
+            custom = self.mcp.handle_get_service_details({'service_id': '13'})[0]['text']
+            paused = self.mcp.handle_get_service_details({'service_id': '14'})[0]['text']
+            listing = self.mcp.handle_search_services({'category': 'testing'})[0]['text']
+            workers = self.mcp.handle_search_workers({'category': 'testing'})[0]['text']
+            ranked = self.mcp.handle_get_recommended({'task_description': 'QA testing', 'budget_range': 'under $50'})[0]['text']
+        self.assertIn('**Price:** $40/hour', hourly)
+        self.assertIn('Custom (amount agreed at order time)', custom)
+        self.assertIn('Paused QA', paused)  # paused listings are still returned...
+        for text in (hourly, custom, listing, workers, ranked):
+            self.assertNotIn('None', text)
+        self.assertIn('Price: $40/hour', listing)
+        self.assertIn('plus custom-priced listings', workers)
+        self.assertIn('Hourly QA', ranked)          # $40/hour counts as under $50
+        self.assertNotIn('Custom QA', ranked)       # custom pricing is excluded when a range is given
+        # ...but can't be ordered.
+        status, _ = self.request('GET', '/services/14/quote', token='buyer')
+        self.assertEqual(status, 404)
+
+    def test_search_workers_order_follows_listing_rating_not_profile_rating(self):
+        with self.as_api():
+            text = self.mcp.handle_search_workers({'category': 'testing'})[0]['text']
+        self.assertLess(text.index('Worker Low'), text.index('Worker High'))
+        self.assertIn('Rating: 2.0', text)  # profile rating shown, though listed first
+
+    def test_job_budget_ceiling_is_999999_99(self):
+        base = {'title': 'Ceiling', 'description': 'Budget ceiling check', 'category': 'testing', 'budget_type': 'fixed'}
+        status, _ = self.request('POST', '/jobs', token='buyer', payload={**base, 'budget_amount': 1000000})
+        self.assertEqual(status, 400)
+        status, body = self.request('POST', '/jobs', token='buyer', payload={**base, 'budget_amount': 999999.99})
+        self.assertNotEqual(status, 400, body)
+
+    def test_job_and_order_ids_share_numbers_and_admins_can_read(self):
+        status, order = self.request('GET', '/orders/7', token='admin')
+        self.assertEqual(status, 200, order)
+        status, job = self.request('GET', '/jobs/7', token='admin')
+        self.assertEqual(status, 200, job)
+        status, _ = self.request('GET', '/orders/7', token='other')
+        self.assertEqual(status, 403)
 
 
 if __name__ == '__main__':

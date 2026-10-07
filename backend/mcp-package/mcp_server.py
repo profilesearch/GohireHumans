@@ -121,7 +121,7 @@ SERVER_VERSION = "2.0.0"
 TOOLS = [
     {
         "name": "search_services",
-        "description": "Search individual service listings on GoHireHumans (one result per listing) by keyword, category and price. Read-only; no API key needed. Returns up to `limit` listings, best-rated first, each with its numeric ID, title, category, price, a short description and the provider's name. Use this when you know what kind of work you need and want listing IDs to act on. Use search_workers to compare providers instead of listings, get_recommended to rank listings for a plain-language task, and get_service_details for one listing in full.",
+        "description": "Search individual service listings on GoHireHumans (one result per listing) by keyword, category and price. Read-only; no API key needed. Returns up to `limit` listings, highest listing rating first, each with its numeric ID, title, category, price (fixed price, hourly rate or custom), a short description and the provider's name. Use this when you know what kind of work you need and want listing IDs to act on. Use search_workers to compare providers instead of listings, get_recommended to rank listings for a plain-language task, and get_service_details for one listing in full.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -156,7 +156,7 @@ TOOLS = [
     },
     {
         "name": "get_service_details",
-        "description": "Get the full public details of one service listing by its numeric ID: title, category, price, provider name, rating, full description, delivery time and a link to the listing on gohirehumans.com. Read-only; no API key needed. Get IDs from search_services or get_recommended. Call this before hire_worker so the account owner can check the scope and price. Returns an error message if the listing doesn't exist or isn't available.",
+        "description": "Get the full public details of one service listing by its numeric ID: title, category, price (fixed price, hourly rate or custom), provider name, rating, full description, delivery time and a link to the listing on gohirehumans.com. Read-only; no API key needed. Get IDs from search_services or get_recommended. Call this just before hire_worker so the account owner can check the scope and current price; for a custom-priced listing, agree the amount with the provider first. Returns an error message if the listing doesn't exist or was removed; a paused listing can still be shown here but can't be ordered.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -211,7 +211,7 @@ TOOLS = [
                 },
                 "budget_amount": {
                     "type": "number",
-                    "description": "Total budget in USD for a fixed-price job; must be greater than 0 and at most 1,000,000"
+                    "description": "Total budget in USD for a fixed-price job: greater than 0, in whole cents, at most 999,999.99"
                 },
                 "skills_required": {
                     "type": "array",
@@ -259,7 +259,7 @@ TOOLS = [
     },
     {
         "name": "hire_worker",
-        "description": "Order a specific service listing, which hires its provider and pays for the work. Only call this after the account owner has explicitly approved the listing, price and requirements. Needs GOHIREHUMANS_AUTH_TOKEN or an API key with the write scope, and the employer account must already have a saved payment method (otherwise the API returns a payment-setup error). Where checkout is configured, the saved card is charged immediately for the listed price plus a 1% platform fee and a fixed 3% processing charge; the worker's listed payout is released only when the employer approves the delivered work with release_payment. A funded order has no self-serve cancel option. Safe to retry: reusing the same idempotency_key resumes the original order instead of creating a second charge. Returns the order ID, amount and status; track it with get_job_status(order_id).",
+        "description": "Order one service listing: hires its provider and pays for the work. Call only after the account owner has explicitly approved the listing, price and requirements. Needs GOHIREHUMANS_AUTH_TOKEN, or an API key with both the read scope and the write scope, plus a saved payment method on the employer account. Where checkout is configured, the saved card is charged immediately for the listing's current price plus a 1% platform fee and a fixed 3% processing charge. The charge isn't locked to an earlier quote, so re-check get_service_details just before ordering. The worker is paid only when the employer approves the delivered work with release_payment. A funded order has no self-serve cancel option. Safe to retry: the same idempotency_key resumes the original order instead of charging twice. Returns the order ID, amount and status for get_job_status(order_id).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -275,7 +275,7 @@ TOOLS = [
                     "type": "string",
                     "maxLength": 128,
                     "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$",
-                    "description": "USD amount with at most two decimal places. Required for custom-priced listings; fixed-price listings always use the listed price, and hourly listings are ordered as one hour at the listed rate."
+                    "description": "USD amount with at most two decimal places, used only for custom-priced listings (required there). It is not a spending cap: fixed-price listings always charge the listed price, and hourly listings charge one hour at the listed rate."
                 },
                 "idempotency_key": {
                     "type": "string",
@@ -297,7 +297,7 @@ TOOLS = [
     },
     {
         "name": "get_job_status",
-        "description": "Check one order or one job post by ID. Read-only. With order_id: returns the order's status, amount, worker and employer names, and each milestone's amount and status; needs GOHIREHUMANS_AUTH_TOKEN or an API key with the read scope, and only the order's employer or worker can see it. With job_id: returns a job post's status, budget and application count; jobs still accepting applications are public, after that only the job's owner, its applicants and the hired worker can see it. Order IDs come from hire_worker; job IDs come from create_job or browse_jobs. They are different numbers. If both are given, order_id is used.",
+        "description": "Check one order or one job post by ID. Read-only. With order_id: returns the order's status, amount, worker and employer names, and each milestone's amount and status; needs GOHIREHUMANS_AUTH_TOKEN or an API key with the read scope, and only the order's employer or worker (or a site admin) can see it. With job_id: returns a job post's status, budget and application count; jobs still accepting applications are public, after that only the job's owner, its applicants, the hired worker or a site admin can see it. Order IDs come from hire_worker; job IDs come from create_job or browse_jobs. Orders and jobs are numbered separately, so the same number can be both an order and a job. If both are given, order_id is used.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -319,7 +319,7 @@ TOOLS = [
     },
     {
         "name": "release_payment",
-        "description": "Approve the worker's submitted work on an order and release their payout. This pays the worker and cannot be undone, so only call it after the account owner has reviewed the delivered work and explicitly approved payment. Must be called as the order's employer with GOHIREHUMANS_AUTH_TOKEN and no API key set: any request carrying an API key is refused for this action. The order must be in 'submitted' status (check with get_job_status). Approves the order's current submitted milestone; where checkout is configured, Stripe releases the worker's listed payout. If the order has another milestone, the employer's saved card is charged for it at the same time. After the last milestone the order is completed and can be reviewed with submit_review.",
+        "description": "Approve the worker's submitted work on an order and release their payout. This pays the worker and cannot be undone, so only call it after the account owner has reviewed the delivered work and explicitly approved payment. Must be called as the order's employer with GOHIREHUMANS_AUTH_TOKEN; unset GOHIREHUMANS_API_KEY first, because API-key authentication isn't supported for this action and a valid API key is rejected even alongside the session token. The order must be in 'submitted' status (check with get_job_status). Approves the order's current submitted milestone; where checkout is configured, Stripe releases the worker's listed payout. If the order has another milestone, the employer's saved card is charged for it at the same time. After the last milestone the order is completed and can be reviewed with submit_review.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -399,7 +399,7 @@ TOOLS = [
     },
     {
         "name": "search_workers",
-        "description": "Find workers (people or agents offering services) on GoHireHumans, with one result per provider instead of one per listing. Read-only; no API key needed. Searches public service listings by skills, category, price and minimum rating, then groups them by provider; each result shows the provider's name, rating, price range and up to three of their service titles, best-rated first. Use this to compare providers. Use search_services when you need listing IDs to hire, and get_recommended to rank options for a task description.",
+        "description": "Find workers (people or agents offering services) on GoHireHumans, with one result per provider instead of one per listing. Read-only; no API key needed. Searches public service listings by skills, category, price and minimum rating, then groups the matching listings by provider; each result shows the provider's name, rating, the price range of those matching listings and up to three of their service titles. Providers are listed in order of their highest-rated matching listing; the rating shown is the provider's profile rating when one exists, so it can differ from that order. Use this to compare providers. Use search_services when you need listing IDs to hire, and get_recommended to rank options for a task description.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -447,7 +447,7 @@ TOOLS = [
                 },
                 "budget_range": {
                     "type": "string",
-                    "description": "USD listed service price range: '$50-200' or 'under $100'. Filtered locally before ranking; unrated providers can still match."
+                    "description": "USD range compared with each listing's fixed price or hourly rate: '$50-200' or 'under $100'. Filtered locally before ranking; custom-priced listings are left out when a range is given, and unrated providers can still match."
                 },
                 "urgency": {
                     "type": "string",
@@ -541,6 +541,50 @@ def _service_delivery_days(service):
     return int(days)
 
 
+def _pricing_kind(service):
+    """Service rows carry `pricing_type`; older rows may omit it."""
+    kind = service.get("pricing_type")
+    if kind in ("fixed", "hourly", "custom"):
+        return kind
+    if service.get("price") is None and service.get("hourly_rate") is not None:
+        return "hourly"
+    return "fixed"
+
+
+def _service_amount(service):
+    """Comparable USD amount: the fixed price or the hourly rate; None when custom or missing."""
+    kind = _pricing_kind(service)
+    if kind == "custom":
+        return None
+    value = service.get("hourly_rate") if kind == "hourly" else service.get("price")
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return amount if amount.is_finite() else None
+
+
+def _money_text(amount):
+    """40.0 -> '40', 40.5 -> '40.50' (SQLite REAL columns come back as floats)."""
+    if amount == amount.to_integral_value():
+        return str(int(amount))
+    return str(amount.quantize(Decimal("0.01")))
+
+
+def _service_price_label(service):
+    """Hourly listings store `hourly_rate` (price is null); custom listings are priced at order time."""
+    kind = _pricing_kind(service)
+    if kind == "custom":
+        return "Custom (amount agreed at order time)"
+    amount = _service_amount(service)
+    if amount is None:
+        return "N/A"
+    text = _money_text(amount)
+    return f"${text}/hour" if kind == "hourly" else f"${text}"
+
+
 def handle_search_services(args):
     params = {}
     if args.get("query"):
@@ -566,7 +610,7 @@ def handle_search_services(args):
     output = f"Found {len(services)} service(s):\n\n"
     for s in services[:limit]:
         output += f"**{s.get('title', 'Untitled')}** (ID: {s.get('id', 'N/A')})\n"
-        output += f"  Category: {s.get('category', 'N/A')} | Price: ${s.get('price', 'N/A')}\n"
+        output += f"  Category: {s.get('category', 'N/A')} | Price: {_service_price_label(s)}\n"
         output += f"  {s.get('description', '')[:200]}\n"
         output += f"  Provider: {_service_worker_name(s)}\n\n"
 
@@ -584,7 +628,7 @@ def handle_get_service_details(args):
     output = f"# {s.get('title', 'Untitled')}\n\n"
     output += f"**ID:** {s.get('id', 'N/A')}\n"
     output += f"**Category:** {s.get('category', 'N/A')}\n"
-    output += f"**Price:** ${s.get('price', 'N/A')}\n"
+    output += f"**Price:** {_service_price_label(s)}\n"
     output += f"**Provider:** {_service_worker_name(s)}\n"
     output += f"**Rating:** {_service_rating(s)}\n\n"
     output += f"## Description\n{s.get('description', 'No description')}\n\n"
@@ -731,7 +775,10 @@ def handle_hire_worker(args):
     output += f"**Order ID:** {order.get('id', 'N/A')}\n"
     output += f"**Service:** {s.get('title', 'N/A')}\n"
     output += f"**Worker:** {_service_worker_name(s)}\n"
-    output += f"**Amount:** ${order.get('total_amount', checkout_body.get('amount', s.get('price', 'N/A')))}\n"
+    amount = order.get('total_amount')
+    if amount is None:
+        amount = checkout_body.get('amount')
+    output += f"**Amount:** {f'${amount}' if amount is not None else _service_price_label(s)}\n"
     output += f"**Status:** {order.get('status', 'pending')}\n\n"
     output += f"Where checkout is configured, the payment is processed through Stripe and released to the worker when you approve the completed work.\n"
     output += f"Use `get_job_status` with order_id={order.get('id', 'N/A')} to monitor progress.\n"
@@ -894,17 +941,17 @@ def handle_search_workers(args):
             seen_workers[worker_id] = {
                 "name": worker_name,
                 "services": [],
-                "min_price": s.get("price", 0),
-                "max_price": s.get("price", 0),
+                "amounts": [],
+                "has_custom": False,
                 "rating": _service_rating(s, default="N/A"),
                 "category": s.get("category", "N/A")
             }
         seen_workers[worker_id]["services"].append(s.get("title", "Service"))
-        price = s.get("price", 0) or 0
-        if price < seen_workers[worker_id]["min_price"]:
-            seen_workers[worker_id]["min_price"] = price
-        if price > seen_workers[worker_id]["max_price"]:
-            seen_workers[worker_id]["max_price"] = price
+        amount = _service_amount(s)
+        if amount is not None:
+            seen_workers[worker_id]["amounts"].append(amount)
+        elif _pricing_kind(s) == "custom":
+            seen_workers[worker_id]["has_custom"] = True
     
     if not seen_workers:
         return [{"type": "text", "text": "No workers found matching your criteria. Try broadening your search."}]
@@ -913,7 +960,13 @@ def handle_search_workers(args):
     output = f"Found {len(seen_workers)} worker(s):\n\n"
     for wid, w in list(seen_workers.items())[:limit]:
         output += f"**{w['name']}**\n"
-        output += f"  Rating: {w['rating']} | Price range: ${w['min_price']}-${w['max_price']}\n"
+        if w["amounts"]:
+            price_range = f"${_money_text(min(w['amounts']))}-${_money_text(max(w['amounts']))}"
+            if w["has_custom"]:
+                price_range += " (plus custom-priced listings)"
+        else:
+            price_range = "Custom pricing" if w["has_custom"] else "N/A"
+        output += f"  Rating: {w['rating']} | Price range: {price_range}\n"
         output += f"  Services: {', '.join(w['services'][:3])}\n\n"
     
     return [{"type": "text", "text": output}]
@@ -936,11 +989,10 @@ def _budget_bounds(value):
 
 
 def _within_budget(service, bounds):
-    try:
-        price = Decimal(str(service.get("price")))
-        return price.is_finite() and bounds[0] <= price and (price <= bounds[1] if bounds[2] else price < bounds[1])
-    except (InvalidOperation, TypeError):
+    price = _service_amount(service)
+    if price is None:
         return False
+    return bounds[0] <= price and (price <= bounds[1] if bounds[2] else price < bounds[1])
 
 
 def handle_get_recommended(args):
@@ -1022,7 +1074,8 @@ def handle_get_recommended(args):
         score += min(reviews, 20) * 2
         
         # Price bonus (lower is slightly preferred for same quality)
-        price = s.get("price", 100) or 100
+        amount = _service_amount(s)
+        price = amount if amount is not None else 100
         if price < 100:
             score += 5
         
@@ -1047,7 +1100,7 @@ def handle_get_recommended(args):
     for i, (score, s) in enumerate(top, 1):
         output += f"## {i}. {s.get('title', 'Service')} (ID: {s.get('id', 'N/A')})\n"
         output += f"**Provider:** {_service_worker_name(s)}\n"
-        output += f"**Price:** ${s.get('price', 'N/A')}\n"
+        output += f"**Price:** {_service_price_label(s)}\n"
         rating = _service_rating(s, default='New')
         output += f"**Rating:** {'⭐' * int(float(rating)) if isinstance(rating, (int, float)) else rating}\n"
         output += f"{s.get('description', '')[:150]}\n"
