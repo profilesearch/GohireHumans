@@ -290,6 +290,8 @@ def proxy(path):
     ctx.http_svix_signature = request.headers.get("svix-signature", "")
     ctx.http_x_diagnostic_secret = request.headers.get("X-Diagnostic-Secret", "")
     ctx.http_x_backup_secret = request.headers.get("X-Backup-Secret", "")
+    ctx.http_user_agent = request.headers.get("User-Agent", "")
+    ctx.http_x_ghh_mcp_client = request.headers.get("X-GHH-MCP-Client", "")
     ctx.stdin_data = body
     ctx.stdin_data_raw = body_bytes  # Raw bytes for Stripe webhook signature verification
 

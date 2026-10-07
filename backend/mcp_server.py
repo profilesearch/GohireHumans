@@ -48,6 +48,49 @@ API_BASE = os.environ.get("GOHIREHUMANS_API_URL", "https://gohirehumans-producti
 API_KEY = os.environ.get("GOHIREHUMANS_API_KEY", "")
 AUTH_TOKEN = os.environ.get("GOHIREHUMANS_AUTH_TOKEN", "")
 
+# Product label for the MCP client named in `initialize` (for example "claude" or
+# "cursor"). Only this fixed label is sent with API calls so GoHireHumans can count
+# MCP usage per client; the raw client name and nothing else about the user,
+# machine or conversation leaves this process.
+CLIENT_LABEL = ""
+
+# Each rule is a product label and the word sequences a client name may START with.
+# Matching whole leading words (not substrings) keeps names like "Discontinued ..."
+# or "Jean-Claude ..." from being counted as a product; anything else is "other".
+CLIENT_LABEL_RULES = (
+    ("claude-code", (("claude", "code"), ("claudecode",))),
+    ("claude", (("claude",),)),
+    ("cursor", (("cursor",),)),
+    ("vscode", (("vscode",), ("visual", "studio", "code"), ("github", "copilot"), ("copilot",))),
+    ("windsurf", (("windsurf",), ("codeium",))),
+    ("roo-code", (("roo",), ("roocode",), ("roocline",))),
+    ("cline", (("cline",),)),
+    ("continue", (("continue",),)),
+    ("zed", (("zed",),)),
+    ("goose", (("goose",),)),
+    ("mcp-inspector", (("mcp", "inspector"), ("inspector",))),
+    ("glama", (("glama",),)),
+    ("smithery", (("smithery",),)),
+    ("gemini", (("gemini",),)),
+    ("openai", (("openai",), ("chatgpt",), ("codex",))),
+    ("librechat", (("librechat",),)),
+)
+
+
+def client_label(raw):
+    """Map an MCP client's self-reported name to a fixed ASCII product label."""
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    name = raw.strip().lower()
+    if name.startswith("ghh-"):
+        return "ghh-internal"
+    words = tuple(re.findall(r"[a-z0-9]+", name))
+    for label, prefixes in CLIENT_LABEL_RULES:
+        if any(words[:len(prefix)] == prefix for prefix in prefixes):
+            return label
+    return "other"
+
+
 # ─── API Helper ───────────────────────────────────────────────────────────────
 
 class APIRequestError(Exception):
@@ -88,7 +131,9 @@ def api_request(method, path, body=None, params=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
 
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": f"gohirehumans-mcp/{SERVER_VERSION}"}
+    if CLIENT_LABEL:
+        headers["X-GHH-MCP-Client"] = CLIENT_LABEL
     if AUTH_TOKEN:
         headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
     if API_KEY:
@@ -116,7 +161,7 @@ def api_request(method, path, body=None, params=None):
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "gohirehumans"
-SERVER_VERSION = "2.1.0"
+SERVER_VERSION = "2.2.0"
 
 TOOLS = [
     {
@@ -1347,6 +1392,9 @@ def handle_message(msg):
 
     # Initialize
     if method == "initialize":
+        global CLIENT_LABEL
+        client_info = params.get("clientInfo") if isinstance(params, dict) else None
+        CLIENT_LABEL = client_label(client_info.get("name") if isinstance(client_info, dict) else None)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
