@@ -116,7 +116,7 @@ def api_request(method, path, body=None, params=None):
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "gohirehumans"
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "2.1.0"
 
 TOOLS = [
     {

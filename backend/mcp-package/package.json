@@ -1,6 +1,6 @@
 {
   "name": "@gohirehumans/mcp-server",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "MCP server for GoHireHumans — the AI-ready freelance marketplace. Enables AI agents to search services, hire humans, manage orders, and release payments programmatically.",
   "keywords": [
     "mcp",
