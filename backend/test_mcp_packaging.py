@@ -1,6 +1,7 @@
 """Offline regression checks for the standalone MCP distribution."""
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,33 @@ class MCPPackagingTests(unittest.TestCase):
         self.assertIn('No license is granted', root_text)
         project = tomllib.loads((PACKAGE / 'pyproject.toml').read_text())
         self.assertEqual(project['project']['license'], 'MIT')
+
+    def test_root_readme_leads_with_mcp_section(self):
+        # Glama renders the repo's root README as the listing overview, so it must open with the MCP server.
+        readme = (ROOT / 'README.md').read_text()
+        install = "uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp"
+        first_h2 = readme.index('\n## ')
+        self.assertTrue(readme.startswith('# GoHireHumans\n'))
+        self.assertEqual(readme[first_h2 + 1:].split('\n', 1)[0], '## For AI agents (MCP server)')
+        mcp = readme[first_h2:readme.index('\n## ', first_h2 + 1)]
+        self.assertIn(install, mcp)
+        self.assertIn('Python 3.9+', mcp)
+        self.assertNotIn('Python 3.8', readme)
+        source = (PACKAGE / 'mcp_server.py').read_text()
+        tools = set(re.findall(r'"name":\s*"([a-z_]+)",\s*"description"', source))
+        self.assertEqual(len(tools), 13)
+        for tool in tools:
+            self.assertIn(f'`{tool}`', mcp)
+        for fact in ("account owner's authorization", 'Workers receive the listed payout',
+                     'Stripe processing plus a 1% GoHireHumans fee where checkout is configured',
+                     'not an escrow provider', 'backend/mcp-package/LICENSE'):
+            self.assertIn(fact, mcp)
+        # The deployment guide stays in the file, after the MCP section.
+        self.assertGreater(readme.index('## Deployment guide'), first_h2)
+        self.assertIn('## Architecture', readme)
+        self.assertIn('Deploy to Railway', readme)
+        # Package README offers the same one-command install.
+        self.assertIn(install, (PACKAGE / 'README.md').read_text())
 
     def test_sync_rejects_stale_generated_source(self):
         script = ROOT / 'scripts/sync_mcp_package.py'
