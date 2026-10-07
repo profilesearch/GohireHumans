@@ -121,13 +121,13 @@ SERVER_VERSION = "2.0.0"
 TOOLS = [
     {
         "name": "search_services",
-        "description": "Search for available human services on GoHireHumans. Find freelancers offering services like web development, graphic design, writing, data entry, virtual assistant work, and more. Returns service listings with pricing, descriptions, and provider info.",
+        "description": "Search individual service listings on GoHireHumans (one result per listing) by keyword, category and price. Read-only; no API key needed. Returns up to `limit` listings, best-rated first, each with its numeric ID, title, category, price, a short description and the provider's name. Use this when you know what kind of work you need and want listing IDs to act on. Use search_workers to compare providers instead of listings, get_recommended to rank listings for a plain-language task, and get_service_details for one listing in full.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query (e.g., 'web developer', 'logo design', 'virtual assistant')"
+                    "description": "Keywords matched against listing titles, descriptions and tags (e.g., 'logo design', 'phone call', 'virtual assistant')"
                 },
                 "category": {
                     "type": "string",
@@ -135,45 +135,60 @@ TOOLS = [
                 },
                 "min_price": {
                     "type": "number",
-                    "description": "Minimum price filter (USD)"
+                    "description": "Minimum listed price or hourly rate in USD"
                 },
                 "max_price": {
                     "type": "number",
-                    "description": "Maximum price filter (USD)"
+                    "description": "Maximum listed price or hourly rate in USD"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of results to return (default 10, max 50)",
+                    "description": "Number of listings to return (default 10, max 50). Only the first page of matches is returned.",
                     "default": 10
                 }
             }
+        },
+        "annotations": {
+            "title": "Search service listings",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_service_details",
-        "description": "Get detailed information about a specific service listing on GoHireHumans, including the freelancer's profile, pricing, description, and reviews.",
+        "description": "Get the full public details of one service listing by its numeric ID: title, category, price, provider name, rating, full description, delivery time and a link to the listing on gohirehumans.com. Read-only; no API key needed. Get IDs from search_services or get_recommended. Call this before hire_worker so the account owner can check the scope and price. Returns an error message if the listing doesn't exist or isn't available.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "service_id": {
                     "type": "string",
-                    "description": "The unique ID of the service to retrieve"
+                    "description": "Numeric service listing ID (e.g., '42') from search_services or get_recommended"
                 }
             },
             "required": ["service_id"]
+        },
+        "annotations": {
+            "title": "Get service listing details",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_categories",
-        "description": "Get the list of all available service categories on GoHireHumans. Use this to understand what types of services are available and to filter searches.",
+        "description": "List every service category slug on GoHireHumans, grouped into human services and AI-agent services, each with a readable name. Read-only; no API key needed. Call this when you need a valid `category` value for search_services, search_workers, browse_jobs or create_job. For an overview of the platform itself, use get_platform_info.",
         "inputSchema": {
             "type": "object",
             "properties": {}
+        },
+        "annotations": {
+            "title": "List service categories",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "create_job",
-        "description": "Post a new job listing on GoHireHumans. This creates a job that freelancers can apply to. Requires authentication via API key or auth token.",
+        "description": "Publish a new job post on GoHireHumans that workers can apply to. Get the account owner's approval of the title, description and budget first. Needs GOHIREHUMANS_AUTH_TOKEN or an API key with the write scope. The job is published immediately with status 'open', and workers with services in the same category may be notified. It does not hire anyone or charge anything: applicants are reviewed and hired on gohirehumans.com. This server cannot edit or close a job. Returns the new job ID and status; track it with get_job_status(job_id). To order an existing service listing instead, use hire_worker.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -183,20 +198,20 @@ TOOLS = [
                 },
                 "description": {
                     "type": "string",
-                    "description": "Detailed job description with requirements and deliverables"
+                    "description": "Public job description: the task, deliverables, deadline and anything a worker needs to know"
                 },
                 "category": {
                     "type": "string",
-                    "description": "Category slug (use get_categories to see options)"
+                    "description": "Category slug from get_categories (e.g., 'research', 'phone_call', 'data_entry')"
                 },
                 "budget_type": {
                     "type": "string",
                     "enum": ["fixed", "hourly"],
-                    "description": "Fixed price or hourly rate"
+                    "description": "Use 'fixed'. Hourly jobs are not accepted right now and return an error."
                 },
                 "budget_amount": {
                     "type": "number",
-                    "description": "Budget in USD (total for fixed, per-hour for hourly)"
+                    "description": "Total budget in USD for a fixed-price job; must be greater than 0 and at most 1,000,000"
                 },
                 "skills_required": {
                     "type": "array",
@@ -205,187 +220,230 @@ TOOLS = [
                 }
             },
             "required": ["title", "description", "category", "budget_type", "budget_amount"]
+        },
+        "annotations": {
+            "title": "Post a job",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True
         }
     },
     {
         "name": "browse_jobs",
-        "description": "Browse open job listings on GoHireHumans. Returns jobs that freelancers or AI agents can apply to.",
+        "description": "Browse public job posts on GoHireHumans that are accepting applications, newest first. Read-only; no API key needed. Returns up to `limit` jobs, each with its ID, title, category, budget and a short description. Use this to find work to apply for or to see what buyers are asking for; workers apply on gohirehumans.com, not through this server. To find people or services to hire, use search_services or search_workers. For one job's status and application count, use get_job_status(job_id).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "description": "Filter by category slug"
+                    "description": "Filter by category slug from get_categories"
                 },
                 "budget_type": {
                     "type": "string",
                     "enum": ["fixed", "hourly"],
-                    "description": "Filter by budget type"
+                    "description": "Filter by budget type. Only fixed-price jobs can be posted right now, so 'hourly' usually returns none."
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of results (default 10, max 50)",
+                    "description": "Number of jobs to return (default 10, max 50). Only the first page is returned.",
                     "default": 10
                 }
             }
+        },
+        "annotations": {
+            "title": "Browse open jobs",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "hire_worker",
-        "description": "Hire a specific worker for a task on GoHireHumans. This creates an order between the AI agent (employer) and the selected worker. Requires authentication. Where checkout is configured, the employer's payment is processed through Stripe and the worker receives the listed payout after the employer approves the work. Requires account-owner authorization.",
+        "description": "Order a specific service listing, which hires its provider and pays for the work. Only call this after the account owner has explicitly approved the listing, price and requirements. Needs GOHIREHUMANS_AUTH_TOKEN or an API key with the write scope, and the employer account must already have a saved payment method (otherwise the API returns a payment-setup error). Where checkout is configured, the saved card is charged immediately for the listed price plus a 1% platform fee and a fixed 3% processing charge; the worker's listed payout is released only when the employer approves the delivered work with release_payment. A funded order has no self-serve cancel option. Safe to retry: reusing the same idempotency_key resumes the original order instead of creating a second charge. Returns the order ID, amount and status; track it with get_job_status(order_id).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "service_id": {
                     "type": "integer",
-                    "description": "The ID of the service listing to purchase"
+                    "description": "Numeric ID of the service listing to order, from search_services, get_recommended or get_service_details"
                 },
                 "requirements": {
                     "type": "string",
-                    "description": "Specific requirements or instructions for the worker"
+                    "description": "Instructions for the worker (what to deliver, details, deadline). Saved on the order."
                 },
                 "budget_amount": {
                     "type": "string",
                     "maxLength": 128,
                     "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$",
-                    "description": "Canonical USD amount with at most two decimal places. Defaults to the service listing price if omitted."
+                    "description": "USD amount with at most two decimal places. Required for custom-priced listings; fixed-price listings always use the listed price, and hourly listings are ordered as one hour at the listed rate."
                 },
                 "idempotency_key": {
                     "type": "string",
                     "minLength": 16,
                     "maxLength": 128,
                     "pattern": "^[A-Za-z0-9._:-]{16,128}$",
-                    "description": "Unique operation identity. Reuse this exact value when retrying an ambiguous or failed checkout."
+                    "description": "Unique key for this order (16-128 letters, digits, '.', '_', ':' or '-'). Reuse the exact same key when retrying an ambiguous or failed checkout; a different order with the same key is rejected."
                 }
             },
             "required": ["service_id", "idempotency_key"]
+        },
+        "annotations": {
+            "title": "Hire a worker (charges the saved card)",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_job_status",
-        "description": "Check the status of an active job or order on GoHireHumans. Returns current status, milestone progress, and worker activity.",
+        "description": "Check one order or one job post by ID. Read-only. With order_id: returns the order's status, amount, worker and employer names, and each milestone's amount and status; needs GOHIREHUMANS_AUTH_TOKEN or an API key with the read scope, and only the order's employer or worker can see it. With job_id: returns a job post's status, budget and application count; jobs still accepting applications are public, after that only the job's owner, its applicants and the hired worker can see it. Order IDs come from hire_worker; job IDs come from create_job or browse_jobs. They are different numbers. If both are given, order_id is used.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "order_id": {
                     "type": "integer",
-                    "description": "The order ID to check status for"
+                    "description": "Order ID from hire_worker. Takes precedence over job_id."
                 },
                 "job_id": {
                     "type": "integer",
-                    "description": "The job listing ID to check status for (alternative to order_id)"
+                    "description": "Job post ID from create_job or browse_jobs (not an order ID)"
                 }
             }
+        },
+        "annotations": {
+            "title": "Check order or job status",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "release_payment",
-        "description": "Approve completed work as the employer. Where checkout is configured, this releases the worker's listed payout through Stripe. Requires authentication as the employer.",
+        "description": "Approve the worker's submitted work on an order and release their payout. This pays the worker and cannot be undone, so only call it after the account owner has reviewed the delivered work and explicitly approved payment. Must be called as the order's employer with GOHIREHUMANS_AUTH_TOKEN and no API key set: any request carrying an API key is refused for this action. The order must be in 'submitted' status (check with get_job_status). Approves the order's current submitted milestone; where checkout is configured, Stripe releases the worker's listed payout. If the order has another milestone, the employer's saved card is charged for it at the same time. After the last milestone the order is completed and can be reviewed with submit_review.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "order_id": {
                     "type": "integer",
-                    "description": "The order ID for which to release payment"
+                    "description": "ID of the order whose submitted work you are approving"
                 },
                 "milestone_id": {
                     "type": "integer",
-                    "description": "Optional specific milestone ID to release payment for. If not specified, releases payment for the entire order."
+                    "description": "Ignored: the API always approves the order's current submitted milestone. Kept for backward compatibility."
                 },
                 "rating": {
                     "type": "integer",
-                    "description": "Optional rating (1-5) to submit along with payment release",
+                    "description": "Not recorded by this tool; rate the worker with submit_review after the order completes. Kept for backward compatibility.",
                     "minimum": 1,
                     "maximum": 5
                 }
             },
             "required": ["order_id"]
+        },
+        "annotations": {
+            "title": "Approve work and release payout",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+            "openWorldHint": True
         }
     },
     {
         "name": "submit_review",
-        "description": "Leave a review and rating for a completed order on GoHireHumans. This helps build trust data and improve recommendations for future hiring.",
+        "description": "Leave a 1-5 star rating and written review for the other party on a completed order: the employer reviews the worker and the worker reviews the employer. Needs GOHIREHUMANS_AUTH_TOKEN or an API key with the write scope, from an account that is part of the order, and the order must be completed. Each participant can review an order once, and reviews can't be edited or deleted through the API. A review stays hidden until both parties have reviewed or 14 days have passed since completion; then it appears publicly on the reviewed person's profile.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "order_id": {
                     "type": "integer",
-                    "description": "The order ID to review"
+                    "description": "ID of the completed order to review"
                 },
                 "rating": {
                     "type": "integer",
-                    "description": "Rating from 1 to 5 stars",
+                    "description": "Overall rating from 1 to 5 stars; shown publicly once the review is visible",
                     "minimum": 1,
                     "maximum": 5
                 },
                 "comment": {
                     "type": "string",
-                    "description": "Written review of the worker's performance"
+                    "description": "Written review of the other party's work or conduct; shown publicly once the review is visible"
                 },
                 "communication_rating": {
                     "type": "integer",
-                    "description": "Communication rating (1-5)",
+                    "description": "Optional communication sub-rating (1-5). Accepted but not currently stored or shown.",
                     "minimum": 1,
                     "maximum": 5
                 },
                 "quality_rating": {
                     "type": "integer",
-                    "description": "Quality of work rating (1-5)",
+                    "description": "Optional quality sub-rating (1-5). Accepted but not currently stored or shown.",
                     "minimum": 1,
                     "maximum": 5
                 },
                 "timeliness_rating": {
                     "type": "integer",
-                    "description": "Timeliness/delivery speed rating (1-5)",
+                    "description": "Optional timeliness sub-rating (1-5). Accepted but not currently stored or shown.",
                     "minimum": 1,
                     "maximum": 5
                 }
             },
             "required": ["order_id", "rating", "comment"]
+        },
+        "annotations": {
+            "title": "Review a completed order",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True
         }
     },
     {
         "name": "search_workers",
-        "description": "Search for workers (freelancers) on GoHireHumans by skill, category, rating, and availability. Returns worker profiles with their skills, experience, and ratings.",
+        "description": "Find workers (people or agents offering services) on GoHireHumans, with one result per provider instead of one per listing. Read-only; no API key needed. Searches public service listings by skills, category, price and minimum rating, then groups them by provider; each result shows the provider's name, rating, price range and up to three of their service titles, best-rated first. Use this to compare providers. Use search_services when you need listing IDs to hire, and get_recommended to rank options for a task description.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "skills": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Required skills to search for (e.g., ['Python', 'data analysis'])"
+                    "description": "Skills or keywords to match against listing titles, descriptions and tags (e.g., ['Python', 'data analysis']); combined into one text search"
                 },
                 "category": {
                     "type": "string",
-                    "description": "Filter by service category"
+                    "description": "Filter by category slug from get_categories"
                 },
                 "min_rating": {
                     "type": "number",
-                    "description": "Minimum profile/listing average rating (1-5); applied locally to returned services (unrated workers excluded)",
+                    "description": "Minimum profile/listing average rating (1-5); applied locally to returned services (unrated workers excluded), fetching more pages until enough providers match",
                     "minimum": 1,
                     "maximum": 5
                 },
                 "max_hourly_rate": {
                     "type": "number",
-                    "description": "Maximum hourly rate in USD"
+                    "description": "Maximum listed price or hourly rate in USD"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of results (default 10, max 50)",
+                    "description": "Number of providers to return (default 10, max 50)",
                     "default": 10
                 }
             }
+        },
+        "annotations": {
+            "title": "Search workers",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_recommended",
-        "description": "Get AI-optimized worker recommendations based on your task requirements. This tool analyzes your task description and returns the best-matched workers considering skills, ratings, price, and past performance. Best used when you're not sure which specific worker to hire.",
+        "description": "Rank service listings for a task described in plain language. Read-only; no API key needed. It guesses a category from keywords in the description, searches listings using the description's first few words, and scores matches by rating, number of reviews, price (listings under $100 score slightly higher) and, for 'high' or 'urgent' tasks, delivery within 2 days. If nothing matches, it falls back to the best-rated listings overall, so check that results are relevant. Returns up to `limit` listings with service IDs for get_service_details and hire_worker. Use this when you have a task but no precise search terms; use search_services for exact keyword and price filters.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task_description": {
                     "type": "string",
-                    "description": "Describe the task you need done. Be specific about requirements, skills needed, and expected deliverables."
+                    "description": "The task in plain language (e.g., 'call 20 restaurants to confirm opening hours'). The first few words drive the search, so lead with the core task."
                 },
                 "budget_range": {
                     "type": "string",
@@ -394,7 +452,7 @@ TOOLS = [
                 "urgency": {
                     "type": "string",
                     "enum": ["low", "medium", "high", "urgent"],
-                    "description": "How urgently you need the task completed",
+                    "description": "How soon the task is needed. 'high' or 'urgent' boosts listings that deliver within 2 days; 'low' and 'medium' don't change the ranking.",
                     "default": "medium"
                 },
                 "limit": {
@@ -404,22 +462,37 @@ TOOLS = [
                 }
             },
             "required": ["task_description"]
+        },
+        "annotations": {
+            "title": "Recommend listings for a task",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_pricing_info",
-        "description": "Get GoHireHumans platform pricing information including fee structure, payment processing details, and comparison with competitors.",
+        "description": "Get GoHireHumans' fees and payment terms: workers receive the listed payout, and employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured; joining and listing are free. Also compares fees with Fiverr, Upwork, Freelancer.com and Toptal, and explains how payment and approval work (GoHireHumans is not an escrow provider). Read-only; no API key needed. Use this for cost questions or before quoting a total to the account owner. For what the platform is and how it works, use get_platform_info.",
         "inputSchema": {
             "type": "object",
             "properties": {}
+        },
+        "annotations": {
+            "title": "Get fees and payment terms",
+            "readOnlyHint": True,
+            "openWorldHint": True
         }
     },
     {
         "name": "get_platform_info",
-        "description": "Get general information about the GoHireHumans platform — what it is, how it works, key features, and how AI agents can use it.",
+        "description": "Get an overview of GoHireHumans: what the marketplace is, key facts, the kinds of work available and the typical workflow from search to approval and review. Read-only; no API key needed. Call this first if you are new to GoHireHumans. For fees and payment terms use get_pricing_info; for exact category slugs use get_categories.",
         "inputSchema": {
             "type": "object",
             "properties": {}
+        },
+        "annotations": {
+            "title": "Get platform overview",
+            "readOnlyHint": True,
+            "openWorldHint": False
         }
     }
 ]
