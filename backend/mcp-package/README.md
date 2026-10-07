@@ -8,13 +8,13 @@ The official [Model Context Protocol](https://modelcontextprotocol.io) (MCP) ser
 
 This MCP server enables AI agents (Claude, ChatGPT, OpenClaw, and any MCP-compliant client) to programmatically:
 
-- **Search services** — Find freelancers by skill, category, price, and rating
+- **Search services and workers** — Find listings or providers by keyword, category, price, and rating
 - **Post jobs** — Create job listings that humans can apply to
 - **Hire humans** — Select and hire workers with Stripe-processed payments where configured
 - **Monitor progress** — Track active orders and milestone completion
 - **Release payments** — Approve work and release worker payout after approval
 - **Leave reviews** — Rate completed work to build trust data
-- **Get recommendations** — AI-optimized worker matching based on task requirements
+- **Get recommendations** — Rank service listings for a plain-language task description
 
 ## Quick Start
 
@@ -83,19 +83,19 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 
 | Tool | Description |
 |------|-------------|
-| `search_services` | Find freelancers by skill, category, price range |
-| `get_service_details` | View detailed service listing info |
+| `search_services` | Search service listings by keyword, category and price (one result per listing) |
+| `get_service_details` | Full details of one service listing |
 | `get_categories` | List all available service categories |
-| `create_job` | Post a new job listing |
-| `browse_jobs` | Browse open job listings |
-| `hire_worker` | Hire a worker (funds an order through configured checkout) |
-| `get_job_status` | Check order/job progress |
-| `release_payment` | Approve work and release payment |
-| `submit_review` | Rate and review completed work |
-| `search_workers` | Find workers by skills and rating |
-| `get_recommended` | AI-powered worker matching |
-| `get_pricing_info` | View platform fee structure |
-| `get_platform_info` | Learn about the platform |
+| `create_job` | Publish a job post workers can apply to (no charge) |
+| `browse_jobs` | Browse job posts accepting applications |
+| `hire_worker` | Order a service listing; charges the saved card where checkout is configured |
+| `get_job_status` | Check one order (its employer, worker or a site admin) or one job post |
+| `release_payment` | Approve submitted work and release the worker's payout (session token only) |
+| `submit_review` | Review the other party on a completed order |
+| `search_workers` | Find providers by skills, category, price and rating (one result per provider) |
+| `get_recommended` | Rank service listings for a plain-language task description |
+| `get_pricing_info` | Fees, payment terms and competitor comparison |
+| `get_platform_info` | Overview of the marketplace and workflow |
 
 ## Resources
 
@@ -107,8 +107,8 @@ Require owner approval before publishing a job, hiring, funding or releasing pay
 
 ## Why GoHireHumans?
 
-- **1% employer fee** — vs Fiverr's 27.7% or Upwork's up to 7.99% Basic client fee plus a 0–15% freelancer fee per contract
-- **0% freelancer fee** — workers keep 100% of earnings
+- **Low employer fees** — a 1% platform fee plus a fixed 3% processing charge where checkout is configured, vs Upwork's up to 7.99% Basic client fee plus a 0–15% freelancer fee per contract
+- **0% freelancer fee** — workers receive the listed payout
 - **AI-native** — built from day one for AI agent integration
 - **Payment connector** — Stripe processes configured checkout and payouts; GoHireHumans is not an escrow provider, guarantor, or arbitrator
 - **MCP + REST API** — full programmatic access

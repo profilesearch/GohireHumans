@@ -70,7 +70,7 @@ class MCPPackagingTests(unittest.TestCase):
         for tool in tools:
             self.assertIn(f'`{tool}`', mcp)
         for fact in ("account owner's authorization", 'Workers receive the listed payout',
-                     'Stripe processing plus a 1% GoHireHumans fee where checkout is configured',
+                     'employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured',
                      'not an escrow provider', 'backend/mcp-package/LICENSE'):
             self.assertIn(fact, mcp)
         # The deployment guide stays in the file, after the MCP section.
