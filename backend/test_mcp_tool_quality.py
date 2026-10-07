@@ -119,7 +119,8 @@ class ToolDefinitionQualityTests(unittest.TestCase):
         self.assertIn('not a spending cap',
                       self.tools['hire_worker']['inputSchema']['properties']['budget_amount']['description'])
         status = self.desc['get_job_status']
-        self.assertIn('site admin', status)
+        self.assertIn("only the order's employer or worker (or a site admin) can see it", status)
+        self.assertIn('the hired worker or a site admin can see it', status)
         self.assertIn('numbered separately', status)
         self.assertIn("paused listing can still be shown here but can't be ordered", self.desc['get_service_details'])
 
