@@ -3248,7 +3248,18 @@ def _mcp_usage_endpoint(method, path):
     return "other"
 
 
+# Counts dropped since this process started (no identifiers), so the report can
+# tell low usage apart from measurement that was not running.
+_mcp_usage_skips = {"count": 0, "since": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}
+_mcp_usage_skips_lock = threading.Lock()
+
+
 def _log_mcp_usage_skip(exc):
+    try:
+        with _mcp_usage_skips_lock:
+            _mcp_usage_skips["count"] += 1
+    except Exception:
+        pass
     try:
         print(f"[GoHireHumans] MCP usage counting skipped: {exc}", file=sys.stderr)
     except Exception:
@@ -3348,6 +3359,9 @@ def mcp_usage_summary(db, days):
                                 FROM mcp_usage_daily WHERE day >= ? AND {external}
                                 GROUP BY method, endpoint ORDER BY requests DESC"""),
         "privacy": "Daily counters only; no IP address, user, API key, query or payload is stored.",
+        "measurement": ("Best effort: a count is dropped rather than delay a response when the database "
+                        "is busy, so these totals are lower bounds."),
+        "skipped_since_restart": dict(_mcp_usage_skips),
     }
 
 

@@ -307,6 +307,24 @@ class McpUsageCountingTests(unittest.TestCase):
         self.assertLess(elapsed, 0.5)
         self.assertEqual(self.usage_rows(), [])
 
+    def test_report_discloses_lower_bounds_and_counts_skips(self):
+        before = self.summary(1)
+        self.assertIn("lower bounds", before["measurement"])
+        self.assertEqual(set(before["skipped_since_restart"]), {"count", "since"})
+        with mock.patch.object(self.module.sqlite3, "connect", side_effect=sqlite3.OperationalError("locked")):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertFalse(self.record())
+                self.assertFalse(self.record())
+        after = self.summary(1)["skipped_since_restart"]
+        self.assertEqual(after["count"], before["skipped_since_restart"]["count"] + 2)
+        self.assertEqual(after["since"], before["skipped_since_restart"]["since"])
+
+    def test_non_mcp_requests_never_count_as_skips(self):
+        before = self.summary(1)["skipped_since_restart"]["count"]
+        self.request("GET", "/api/v1/categories")
+        self.request("GET", "/api/v1/categories", user_agent="curl/8.0")
+        self.assertEqual(self.summary(1)["skipped_since_restart"]["count"], before)
+
     def test_recorder_runs_after_the_response_status_is_known(self):
         self.request("GET", "/api/v1/jobs/424242", user_agent=UA, client="claude")
         self.assertEqual(self.usage_rows()[0]["error_count"], 1)
@@ -392,12 +410,20 @@ class McpServerIdentifiesItselfTests(unittest.TestCase):
     def test_known_clients_map_to_product_labels(self):
         cases = {
             "claude-ai": "claude", "Claude Desktop": "claude", "claude-code": "claude-code",
-            "cursor-vscode": "cursor", "Visual Studio Code": "vscode", "GitHub Copilot": "vscode",
-            "Roo Code": "roo-code", "Cline": "cline", "zed": "zed", "mcp-inspector": "mcp-inspector",
-            "openai-mcp": "openai", "ghh-probe": "ghh-internal",
+            "Claude Code": "claude-code", "cursor-vscode": "cursor", "Visual Studio Code": "vscode",
+            "GitHub Copilot": "vscode", "Roo Code": "roo-code", "roo-cline": "roo-code", "Cline": "cline",
+            "Continue.dev": "continue", "continue-client": "continue", "zed": "zed",
+            "mcp-inspector": "mcp-inspector", "gemini-cli-mcp-client": "gemini", "openai-mcp": "openai",
+            "OpenAI Codex": "openai", "codex-mcp-client": "openai", "@librechat/api-client": "librechat",
+            "ghh-probe": "ghh-internal",
         }
         for raw, label in cases.items():
             self.assertEqual(self.mcp.client_label(raw), label, raw)
+
+    def test_product_words_inside_other_names_are_not_attributed(self):
+        for raw in ("Discontinued private laptop", "Jean-Claude private host", "pre cursor private host",
+                    "my zed box", "not openai", "Precline", "mcpinspector2000", "room", "zedd"):
+            self.assertEqual(self.mcp.client_label(raw), "other", raw)
 
     def test_unrecognized_or_sensitive_names_are_never_sent(self):
         for raw in ("Bob laptop", "198.51.100.77", "tok-worker", "ghh_live_abcdef0123456789",
@@ -414,7 +440,6 @@ class McpServerIdentifiesItselfTests(unittest.TestCase):
 
     def test_every_label_the_server_can_send_is_accepted_by_the_api(self):
         labels = {label for label, _ in self.mcp.CLIENT_LABEL_RULES}
-        labels |= {label for _, label in self.mcp.CLIENT_LABEL_WORDS}
         labels |= {"ghh-internal", "other"}
         self.assertTrue(labels <= self.api.MCP_USAGE_CLIENT_LABELS, labels - self.api.MCP_USAGE_CLIENT_LABELS)
         self.assertEqual(self.mcp.client_label("ghh-anything"), self.api.MCP_USAGE_INTERNAL_CLIENT)

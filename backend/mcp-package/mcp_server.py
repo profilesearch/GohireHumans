@@ -54,24 +54,27 @@ AUTH_TOKEN = os.environ.get("GOHIREHUMANS_AUTH_TOKEN", "")
 # machine or conversation leaves this process.
 CLIENT_LABEL = ""
 
+# Each rule is a product label and the word sequences a client name may START with.
+# Matching whole leading words (not substrings) keeps names like "Discontinued ..."
+# or "Jean-Claude ..." from being counted as a product; anything else is "other".
 CLIENT_LABEL_RULES = (
-    ("claude-code", ("claudecode",)),
-    ("claude", ("claude",)),
-    ("cursor", ("cursor",)),
-    ("vscode", ("vscode", "visualstudiocode", "copilot")),
-    ("windsurf", ("windsurf", "codeium")),
-    ("roo-code", ("roocode", "roocline")),
-    ("cline", ("cline",)),
-    ("continue", ("continue",)),
-    ("goose", ("goose",)),
-    ("mcp-inspector", ("inspector",)),
-    ("glama", ("glama",)),
-    ("smithery", ("smithery",)),
-    ("gemini", ("gemini",)),
-    ("openai", ("openai", "chatgpt", "codex")),
-    ("librechat", ("librechat",)),
+    ("claude-code", (("claude", "code"), ("claudecode",))),
+    ("claude", (("claude",),)),
+    ("cursor", (("cursor",),)),
+    ("vscode", (("vscode",), ("visual", "studio", "code"), ("github", "copilot"), ("copilot",))),
+    ("windsurf", (("windsurf",), ("codeium",))),
+    ("roo-code", (("roo",), ("roocode",), ("roocline",))),
+    ("cline", (("cline",),)),
+    ("continue", (("continue",),)),
+    ("zed", (("zed",),)),
+    ("goose", (("goose",),)),
+    ("mcp-inspector", (("mcp", "inspector"), ("inspector",))),
+    ("glama", (("glama",),)),
+    ("smithery", (("smithery",),)),
+    ("gemini", (("gemini",),)),
+    ("openai", (("openai",), ("chatgpt",), ("codex",))),
+    ("librechat", (("librechat",),)),
 )
-CLIENT_LABEL_WORDS = (("zed", "zed"), ("roo", "roo-code"))
 
 
 def client_label(raw):
@@ -81,13 +84,9 @@ def client_label(raw):
     name = raw.strip().lower()
     if name.startswith("ghh-"):
         return "ghh-internal"
-    words = re.findall(r"[a-z0-9]+", name)
-    joined = "".join(words)
-    for label, needles in CLIENT_LABEL_RULES:
-        if any(needle in joined for needle in needles):
-            return label
-    for word, label in CLIENT_LABEL_WORDS:
-        if word in words:
+    words = tuple(re.findall(r"[a-z0-9]+", name))
+    for label, prefixes in CLIENT_LABEL_RULES:
+        if any(words[:len(prefix)] == prefix for prefix in prefixes):
             return label
     return "other"
 
