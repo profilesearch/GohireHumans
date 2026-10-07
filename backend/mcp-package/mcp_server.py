@@ -48,15 +48,49 @@ API_BASE = os.environ.get("GOHIREHUMANS_API_URL", "https://gohirehumans-producti
 API_KEY = os.environ.get("GOHIREHUMANS_API_KEY", "")
 AUTH_TOKEN = os.environ.get("GOHIREHUMANS_AUTH_TOKEN", "")
 
-# Name the MCP client reported in `initialize` (for example "claude-ai" or "cursor").
-# Sent with API calls so GoHireHumans can count MCP usage per client; nothing else
-# about the user, machine or conversation is sent.
-CLIENT_NAME = ""
+# Product label for the MCP client named in `initialize` (for example "claude" or
+# "cursor"). Only this fixed label is sent with API calls so GoHireHumans can count
+# MCP usage per client; the raw client name and nothing else about the user,
+# machine or conversation leaves this process.
+CLIENT_LABEL = ""
+
+CLIENT_LABEL_RULES = (
+    ("claude-code", ("claudecode",)),
+    ("claude", ("claude",)),
+    ("cursor", ("cursor",)),
+    ("vscode", ("vscode", "visualstudiocode", "copilot")),
+    ("windsurf", ("windsurf", "codeium")),
+    ("roo-code", ("roocode", "roocline")),
+    ("cline", ("cline",)),
+    ("continue", ("continue",)),
+    ("goose", ("goose",)),
+    ("mcp-inspector", ("inspector",)),
+    ("glama", ("glama",)),
+    ("smithery", ("smithery",)),
+    ("gemini", ("gemini",)),
+    ("openai", ("openai", "chatgpt", "codex")),
+    ("librechat", ("librechat",)),
+)
+CLIENT_LABEL_WORDS = (("zed", "zed"), ("roo", "roo-code"))
 
 
-def _client_name_header(raw):
-    """Short, header-safe form of the MCP client's self-reported name."""
-    return "".join(ch for ch in str(raw or "") if ch.isalnum() or ch in " ._/-").strip()[:40]
+def client_label(raw):
+    """Map an MCP client's self-reported name to a fixed ASCII product label."""
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    name = raw.strip().lower()
+    if name.startswith("ghh-"):
+        return "ghh-internal"
+    words = re.findall(r"[a-z0-9]+", name)
+    joined = "".join(words)
+    for label, needles in CLIENT_LABEL_RULES:
+        if any(needle in joined for needle in needles):
+            return label
+    for word, label in CLIENT_LABEL_WORDS:
+        if word in words:
+            return label
+    return "other"
+
 
 # ─── API Helper ───────────────────────────────────────────────────────────────
 
@@ -99,8 +133,8 @@ def api_request(method, path, body=None, params=None):
         url += "?" + urllib.parse.urlencode(params)
 
     headers = {"Content-Type": "application/json", "User-Agent": f"gohirehumans-mcp/{SERVER_VERSION}"}
-    if CLIENT_NAME:
-        headers["X-GHH-MCP-Client"] = CLIENT_NAME
+    if CLIENT_LABEL:
+        headers["X-GHH-MCP-Client"] = CLIENT_LABEL
     if AUTH_TOKEN:
         headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
     if API_KEY:
@@ -1359,9 +1393,9 @@ def handle_message(msg):
 
     # Initialize
     if method == "initialize":
-        global CLIENT_NAME
+        global CLIENT_LABEL
         client_info = params.get("clientInfo") if isinstance(params, dict) else None
-        CLIENT_NAME = _client_name_header(client_info.get("name") if isinstance(client_info, dict) else "")
+        CLIENT_LABEL = client_label(client_info.get("name") if isinstance(client_info, dict) else None)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,

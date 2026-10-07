@@ -3199,9 +3199,10 @@ def _prune_rate_limit_store(store, now, window, max_keys=_RATE_LIMIT_STORE_MAX_K
 
 # ── MCP usage counting ───────────────────────────────────────────────────────
 # The GoHireHumans MCP server identifies itself with a "gohirehumans-mcp/<version>"
-# User-Agent and, optionally, the MCP client's self-reported name. Calls are
-# aggregated into daily counters only: no IP address, user, API key, query string,
-# request body or response body is stored.
+# User-Agent and a fixed product label for the MCP client (for example "claude" or
+# "cursor"); the raw client name never leaves the user's machine. Calls are kept
+# as daily counters only: no IP address, user, API key, query string, request body
+# or response body is stored, and every stored dimension is drawn from a bounded set.
 MCP_USER_AGENT_RE = re.compile(r"^gohirehumans-mcp/(\d{1,3}\.\d{1,3}\.\d{1,3})(?:\s|$)")
 MCP_USAGE_ENDPOINTS = (
     ("GET", re.compile(r"^/services$"), "/services"),
@@ -3216,13 +3217,25 @@ MCP_USAGE_ENDPOINTS = (
     ("POST", re.compile(r"^/orders/\d+/approve$"), "/orders/:id/approve"),
     ("POST", re.compile(r"^/orders/\d+/review$"), "/orders/:id/review"),
 )
+MCP_USAGE_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+# Must contain every label mcp_server.client_label() can produce.
+MCP_USAGE_CLIENT_LABELS = frozenset({
+    "claude", "claude-code", "cursor", "vscode", "windsurf", "cline", "roo-code",
+    "continue", "zed", "goose", "mcp-inspector", "glama", "smithery", "gemini",
+    "openai", "librechat", "ghh-internal", "other", "unknown",
+})
+MCP_USAGE_INTERNAL_CLIENT = "ghh-internal"
 MCP_USAGE_MAX_ROWS_PER_DAY = 500
+# Counting is best effort: if another writer holds the database, drop the count
+# rather than hold up the response.
+MCP_USAGE_BUSY_TIMEOUT_SECONDS = 0.05
 
 
 def _mcp_usage_client_label(raw):
-    label = re.sub(r"[^a-z0-9 ._/-]+", "", str(raw or "").strip().lower())
-    label = re.sub(r"\s+", " ", label).strip()[:40]
-    return label or "unknown"
+    label = str(raw or "").strip().lower()
+    if not label:
+        return "unknown"
+    return label if label in MCP_USAGE_CLIENT_LABELS else "other"
 
 
 def _mcp_usage_endpoint(method, path):
@@ -3235,55 +3248,77 @@ def _mcp_usage_endpoint(method, path):
     return "other"
 
 
+def _log_mcp_usage_skip(exc):
+    try:
+        print(f"[GoHireHumans] MCP usage counting skipped: {exc}", file=sys.stderr)
+    except Exception:
+        pass
+
+
 def record_mcp_usage(now=None):
     """Count one API call made by the GoHireHumans MCP server. Never raises."""
     try:
         match = MCP_USER_AGENT_RE.match(getattr(_request_ctx, "http_user_agent", "") or "")
         if not match:
             return False
+        version = match.group(1)
         method = (getattr(_request_ctx, "request_method", "GET") or "GET").upper()
+        if method not in MCP_USAGE_METHODS:
+            method = "OTHER"
         endpoint = _mcp_usage_endpoint(method, getattr(_request_ctx, "path_info", ""))
         client = _mcp_usage_client_label(getattr(_request_ctx, "http_x_ghh_mcp_client", ""))
         status = int(getattr(_request_ctx, "response_status", 200) or 200)
         stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
         day = stamp[:10]
-        db = sqlite3.connect(_get_db_path(), timeout=2)
+        db = sqlite3.connect(_get_db_path(), timeout=MCP_USAGE_BUSY_TIMEOUT_SECONDS,
+                             isolation_level=None)
         try:
-            exists = db.execute(
-                "SELECT 1 FROM mcp_usage_daily WHERE day=? AND server_version=? AND client=? "
-                "AND endpoint=? AND method=?",
-                [day, match.group(1), client, endpoint, method],
-            ).fetchone()
-            if not exists:
-                rows_today = db.execute(
-                    "SELECT COUNT(*) FROM mcp_usage_daily WHERE day=?", [day]
-                ).fetchone()[0]
-                if rows_today >= MCP_USAGE_MAX_ROWS_PER_DAY:
-                    client = "other"
-            db.execute(
-                """INSERT INTO mcp_usage_daily
-                       (day, server_version, client, endpoint, method, request_count, error_count,
-                        first_seen_at, last_seen_at)
-                   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-                   ON CONFLICT(day, server_version, client, endpoint, method) DO UPDATE SET
-                       request_count = request_count + 1,
-                       error_count = error_count + excluded.error_count,
-                       last_seen_at = excluded.last_seen_at""",
-                [day, match.group(1), client, endpoint, method, 1 if status >= 400 else 0, stamp, stamp],
-            )
-            db.commit()
+            # One write transaction for admission and insert, so concurrent
+            # requests cannot both slip under the daily row cap.
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                exists = db.execute(
+                    "SELECT 1 FROM mcp_usage_daily WHERE day=? AND server_version=? AND client=? "
+                    "AND endpoint=? AND method=?",
+                    [day, version, client, endpoint, method],
+                ).fetchone()
+                if not exists:
+                    rows_today = db.execute(
+                        "SELECT COUNT(*) FROM mcp_usage_daily WHERE day=?", [day]
+                    ).fetchone()[0]
+                    if rows_today >= MCP_USAGE_MAX_ROWS_PER_DAY:
+                        # Overflow bucket: fold every caller-controlled dimension
+                        # except the internal/external split, so the table stays
+                        # bounded and internal checks never count as external use.
+                        version = "other"
+                        client = MCP_USAGE_INTERNAL_CLIENT if client == MCP_USAGE_INTERNAL_CLIENT else "other"
+                db.execute(
+                    """INSERT INTO mcp_usage_daily
+                           (day, server_version, client, endpoint, method, request_count, error_count,
+                            first_seen_at, last_seen_at)
+                       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                       ON CONFLICT(day, server_version, client, endpoint, method) DO UPDATE SET
+                           request_count = request_count + 1,
+                           error_count = error_count + excluded.error_count,
+                           last_seen_at = excluded.last_seen_at""",
+                    [day, version, client, endpoint, method, 1 if status >= 400 else 0, stamp, stamp],
+                )
+                db.execute("COMMIT")
+            except Exception:
+                db.execute("ROLLBACK")
+                raise
         finally:
             db.close()
         return True
     except Exception as exc:
-        print(f"[GoHireHumans] MCP usage counting skipped: {exc}", file=sys.stderr)
+        _log_mcp_usage_skip(exc)
         return False
 
 
 def mcp_usage_summary(db, days):
-    """Aggregate MCP usage for the admin report. Clients named ghh-* are internal checks."""
+    """Aggregate MCP usage for the admin report; ghh-internal checks are excluded from external totals."""
     since = (datetime.now(timezone.utc) - timedelta(days=days - 1)).strftime("%Y-%m-%d")
-    external = "client NOT LIKE 'ghh-%'"
+    external = f"client != '{MCP_USAGE_INTERNAL_CLIENT}'"
 
     def rows(sql):
         return [dict(r) for r in db.execute(sql, [since]).fetchall()]
