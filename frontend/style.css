@@ -1183,6 +1183,14 @@ main > .pub-section--alt:last-child { border-bottom: 0; }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* Product clips (product-clips.js): muted 16:9 loops of real site flows */
+.ghh-clip { position: relative; margin: var(--space-10) 0 0; aspect-ratio: 16 / 9; overflow: hidden; background: var(--color-text); border: 1px solid var(--color-border-strong); }
+.ghh-clip img, .ghh-clip video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ghh-clip-toggle { position: absolute; right: var(--space-3); bottom: var(--space-3); display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: var(--radius-full); background: rgba(26, 24, 22, 0.72); color: var(--color-text-inverse); cursor: pointer; }
+.ghh-clip-toggle:hover { background: var(--color-text); }
+.ghh-clip-toggle:focus-visible { outline: 2px solid transparent; box-shadow: var(--ring); }
+.ghh-clip-toggle svg { width: 20px; height: 20px; }
+
 @media (max-width: 640px) {
   .modal-actions .btn { flex: 1 1 auto; }
   #toasts, .toast-container { bottom: var(--space-4); }

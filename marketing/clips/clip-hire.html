@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GoHireHumans clip: Hire</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&display=block">
+<link rel="stylesheet" href="/frontend/style.css">
+<link rel="stylesheet" href="/frontend/app.css">
+<link rel="stylesheet" href="stage.css">
+</head>
+<body>
+<div id="stage">
+  <div id="right">
+    <div class="grid"></div>
+    <div id="cam">
+      <!-- 1. Homepage intake (index.html #guided-task-intake) -->
+      <div class="ui" id="p1"><div class="ui-inner">
+        <div class="ui-card">
+          <h3>Build a task draft</h3>
+          <p>Describe it in one sentence. Posting is free and needs no card.</p>
+          <div class="form-group"><label class="label">What do you need done?</label><div class="textarea" id="h-need"></div></div>
+          <button class="btn btn-primary btn-block" id="h-build">Build my draft</button>
+        </div>
+      </div></div>
+
+      <!-- 2. Draft review (renderPostJob) -->
+      <div class="ui" id="p2"><div class="ui-inner">
+        <div class="ui-card">
+          <div class="page-title">Post a Job</div>
+          <div class="safety-notice" style="margin-top:var(--space-3)">
+            <div class="safety-notice-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <div class="safety-notice-body"><div class="safety-notice-title">No payment required to post</div><div class="safety-notice-text">Payment is only needed when you're ready to hire a worker. Review all applicants first.</div></div>
+          </div>
+          <div class="form-group"><label class="label">Job Title *</label><div class="input">Test my landing-page signup flow</div></div>
+          <div class="form-row">
+            <div class="form-group"><label class="label">Category *</label><div class="input">Testing</div></div>
+            <div class="form-group"><label class="label">Budget ($) *</label><div class="input">60.00</div></div>
+          </div>
+          <button class="btn btn-primary btn-block" id="h-post">Post Job</button>
+        </div>
+        <div class="toast-dock"><div class="toast toast-success" id="h-t1">Job posted!</div></div>
+      </div></div>
+
+      <!-- 3. Applicants (applicantList / applicantCard) -->
+      <div class="ui" id="p3"><div class="ui-inner">
+        <div class="eyebrow-sm">Testing · $60.00 fixed</div>
+        <div class="page-title">Test my landing-page signup flow</div>
+        <p class="page-desc">2 applicants · 2 ready to hire</p>
+        <div class="applicant-card" id="h-a1"><div class="applicant">
+          <div class="avatar-md" aria-hidden="true">MR</div>
+          <div class="applicant-body">
+            <div class="applicant-head"><strong class="applicant-name">Maya R.</strong><span class="badge badge-reserved">pending</span></div>
+            <p class="applicant-message">I can test it on iPhone and Android today and send a short issue list with screenshots.</p>
+          </div>
+          <div class="applicant-actions"><button class="btn btn-primary btn-sm" id="h-hire">Hire</button></div>
+        </div></div>
+        <div class="applicant-card" id="h-a2"><div class="applicant">
+          <div class="avatar-md" aria-hidden="true">DK</div>
+          <div class="applicant-body">
+            <div class="applicant-head"><strong class="applicant-name">Daniel K.</strong><span class="badge badge-reserved">pending</span></div>
+            <p class="applicant-message">I'll record each step on desktop and mobile and flag anything confusing.</p>
+          </div>
+          <div class="applicant-actions"><button class="btn btn-primary btn-sm">Hire</button></div>
+        </div></div>
+      </div></div>
+
+      <!-- 4. Confirm Hire modal (handleHire + hireFeeBreakdown) -->
+      <div class="ui" id="p4"><div class="ui-inner">
+        <div class="modal">
+          <div class="modal-title">Confirm Hire</div>
+          <p class="modal-intro">Hiring this worker will start the configured payment workflow for the first milestone.</p>
+          <div class="fee-breakdown fee-breakdown--boxed">
+            <div class="h-fee"><span>Service amount</span><span>$60.00</span></div>
+            <div class="h-fee"><span>GoHireHumans fee (1%)</span><span>$0.60</span></div>
+            <div class="h-fee"><span>Processing fee (~3%)</span><span>$1.80</span></div>
+            <div class="h-fee fee-breakdown-total"><span>Total charged</span><span>$62.40</span></div>
+          </div>
+          <div class="modal-actions"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary" id="h-fund">Confirm &amp; Fund Payment</button></div>
+        </div>
+        <div class="toast-dock"><div class="toast toast-success" id="h-t2">Worker hired! Payment funded.</div></div>
+      </div></div>
+
+      <!-- 5. Order review (renderOrderDetail, employer + submitted) -->
+      <div class="ui" id="p5"><div class="ui-inner">
+        <div class="ui-card">
+          <div class="detail-title">Test my landing-page signup flow</div>
+          <div class="detail-meta"><span class="badge badge-submitted" id="h-b-sub">submitted</span><span class="badge badge-completed" id="h-b-done" style="display:none">completed</span><span>Order #128</span></div>
+          <div class="card sub-card">
+            <div class="card-title" style="margin-bottom:var(--space-2)">Worker's Submission</div>
+            <div class="detail-text">Tested signup on iPhone and Android. 3 issues found, with steps to reproduce and screenshot links.</div>
+          </div>
+          <div class="cluster"><button class="btn btn-primary" id="h-approve">Approve Payment</button><button class="btn btn-secondary btn-sm">Request Revision</button></div>
+        </div>
+        <div class="toast-dock"><div class="toast toast-success" id="h-t3">Order approved! Payment released.</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div id="left"><div class="lc">
+    <div class="logo">GoHireHumans<span class="dot">.</span></div>
+    <div class="step-label" id="l1">Step 1 · Describe</div>
+    <div class="step-label" id="l2">Step 2 · Hire</div>
+    <div class="step-label" id="l3">Step 3 · Approve</div>
+    <div class="phrase "><h2 class="kt" id="k1">Describe the task.</h2></div>
+    <div class="phrase "><h2 class="kt" id="k2">Hire who fits.</h2></div>
+    <div class="phrase "><h2 class="kt" id="k3">Approve the result.</h2></div>
+    <p class="sub" id="s1">Posting is free. Nothing is published until you post.</p>
+    <p class="sub" id="s2">See every fee before you confirm the hire.</p>
+    <p class="sub" id="s3">Payout is released after you approve the work.</p>
+    <div class="stepper"><div>Describe<i></i></div><div>Hire<i></i></div><div>Approve<i></i></div></div>
+  </div></div>
+
+  <div class="layer" id="intro">
+    <div class="eyebrow" id="i-eye">How GoHireHumans works</div>
+    <h1 class="kt" id="i-k">Some work still<br>needs a person.</h1>
+  </div>
+
+  <div class="layer" id="outro">
+    <div class="logo kt" id="o-logo">GoHireHumans<span class="dot">.</span></div>
+    <p class="tag kt" id="o-tag">Post a task. It's free.</p>
+    <div class="url" id="o-url">gohirehumans.com</div>
+    <p class="fine" id="o-fine">Illustrative example. Employers pay a 1% platform fee + fixed 3% processing charge where checkout is configured.</p>
+  </div>
+
+  <div id="ripple"></div>
+  <div id="cursor"><svg viewBox="0 0 24 24"><path d="M5 3l14 8.2-6.1 1.3 3.6 6.9-2.6 1.4-3.6-6.9L5.6 18z" fill="#1a1816" stroke="#fbf8f2" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  const C = window.Clip, $ = C.$;
+  window.CLIP_DURATION = 12;
+  window.CLIP_POSTER_T = 7.75;
+  // Kinetic headings are split into words once; the <br> in the intro is kept.
+  ['#k1', '#k2', '#k3', '#o-tag'].forEach(s => C.splitWords($(s)));
+  (function splitIntro() {
+    const h = $('#i-k'); const lines = h.innerHTML.split('<br>');
+    h.innerHTML = lines.map(l => `<span class="ln">${l}</span>`).join('<br>');
+    h.querySelectorAll('.ln').forEach(C.splitWords);
+  })();
+  const SUB_TOP = { s1: 650, s2: 650, s3: 650 };
+  Object.entries(SUB_TOP).forEach(([id, top]) => { $('#' + id).style.top = top + 'px'; });
+
+  const T = {
+    introOut: 1.2, splitIn: 1.25, outroIn: 10.45,
+    steps: [[1.7, 5.05], [5.1, 8.05], [8.1, 10.4]],
+  };
+  const NEED = 'Test my landing-page signup flow';
+
+  function fadeIn(el, t, tIn, tOut, dur = 0.35) {
+    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.25, 'inCubic')));
+    el.style.opacity = String(k);
+    el.style.transform = `translateY(${C.lerp(16, 0, C.p(t, tIn, tIn + dur, 'outCubic'))}px)`;
+  }
+
+  const CURSOR = {
+    show: 2.85, hide: 9.75,
+    start: { x: 1700, y: 980 },
+    moves: [
+      { t0: 2.9, t1: 3.38, to: { sel: '#h-build' } },
+      { t0: 3.85, t1: 4.5, to: { sel: '#h-post' } },
+      { t0: 5.55, t1: 6.15, to: { sel: '#h-hire' } },
+      { t0: 6.65, t1: 7.4, to: { sel: '#h-fund' } },
+      { t0: 8.55, t1: 9.25, to: { sel: '#h-approve' } },
+    ],
+    clicks: [
+      { t: 3.45, sel: '#h-build' }, { t: 4.55, sel: '#h-post' }, { t: 6.2, sel: '#h-hire' },
+      { t: 7.45, sel: '#h-fund' }, { t: 9.3, sel: '#h-approve' },
+    ],
+  };
+
+  window.renderAt = function (t) {
+    C.frame(t, T);
+    // Intro
+    fadeIn($('#i-eye'), t, 0.05, null, 0.45);
+    C.phrase($('#i-k'), t, 0.12, null, { stagger: 0.07, dur: 0.6 });
+
+    // Left column copy per step
+    const [s1, s2, s3] = T.steps;
+    C.phrase($('#k1'), t, s1[0] + 0.15, s1[1] - 0.25);
+    C.phrase($('#k2'), t, s2[0] + 0.05, s2[1] - 0.25);
+    C.phrase($('#k3'), t, s3[0] + 0.05, null);
+    [['#l1', s1], ['#l2', s2], ['#l3', s3]].forEach(([id, s], i) => {
+      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
+      fadeIn(el, t, s[0] + 0.05, i === 2 ? null : s[1] - 0.25);
+    });
+    [['#s1', s1], ['#s2', s2], ['#s3', s3]].forEach(([id, s], i) => {
+      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
+      fadeIn(el, t, s[0] + 0.45, i === 2 ? null : s[1] - 0.25);
+    });
+    C.stepper(t, T.steps);
+
+    // Right column UI
+    C.panel($('#p1'), t, 1.75, 3.6);
+    C.typeText($('#h-need'), NEED, t, 2.0, 3.05, { caret: true, caretUntil: 3.4, placeholder: 'Example: test my landing-page signup flow' });
+    C.panel($('#p2'), t, 3.7, 4.95);
+    C.toast($('#h-t1'), t, 4.62, null);
+    C.panel($('#p3'), t, 5.1, 6.35);
+    C.appear($('#h-a1'), t, 5.3); C.appear($('#h-a2'), t, 5.45);
+    $('#h-a1').classList.toggle('is-picked', t >= 5.95);
+    C.panel($('#p4'), t, 6.45, 7.95);
+    document.querySelectorAll('.h-fee').forEach((r, i) => C.appear(r, t, 6.6 + i * 0.12, 0.3, 10));
+    C.toast($('#h-t2'), t, 7.52, null);
+    C.panel($('#p5'), t, 8.1, null, { life: 2.4 });
+    const done = t >= 9.32;
+    $('#h-b-sub').style.display = done ? 'none' : '';
+    $('#h-b-done').style.display = done ? '' : 'none';
+    C.toast($('#h-t3'), t, 9.42, null);
+
+    C.cursor(t, CURSOR);
+
+    // Outro
+    C.phrase($('#o-logo'), t, 10.8, null, { dur: 0.55 });
+    C.phrase($('#o-tag'), t, 11.0, null, { stagger: 0.05 });
+    fadeIn($('#o-url'), t, 11.25, null, 0.4);
+    fadeIn($('#o-fine'), t, 11.35, null, 0.4);
+  };
+  window.CLIP_INIT = function () {
+    C.calibrateCursor(CURSOR, window.renderAt);
+    window.renderAt(0);
+  };
+})();
+</script>
+</body>
+</html>

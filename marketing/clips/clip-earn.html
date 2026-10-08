@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GoHireHumans clip: Earn</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&display=block">
+<link rel="stylesheet" href="/frontend/style.css">
+<link rel="stylesheet" href="/frontend/app.css">
+<link rel="stylesheet" href="stage.css">
+</head>
+<body>
+<div id="stage">
+  <div id="right">
+    <div class="grid"></div>
+    <div id="cam">
+      <!-- 1. Payments page, worker card (renderPayments) -->
+      <div class="ui" id="q1"><div class="ui-inner">
+        <div class="ui-card">
+          <div class="bank-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18"/><path d="M12 3 2 8v2h20V8z"/><path d="M5 10v8"/><path d="M9 10v8"/><path d="M15 10v8"/><path d="M19 10v8"/><path d="M3 21h18"/></svg></div>
+          <div class="card-title">Receive Payments</div>
+          <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. Finish payout setup before applying to jobs. Setup is free through Stripe; nothing is charged.</p>
+          <div class="mb-3" id="e-ready" style="visibility:hidden"><span class="badge badge-completed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Bank account connected</span></div>
+          <button class="btn btn-primary btn-sm" id="e-connect">Connect Bank Account</button>
+        </div>
+      </div></div>
+
+      <!-- 2. Browse Jobs (jobCard) -->
+      <div class="ui" id="q2"><div class="ui-inner">
+        <div class="page-title">Browse Jobs</div>
+        <p class="page-desc">1 job accepting applications · newest first</p>
+        <div class="job-card" id="e-job">
+          <div class="job-card-header">
+            <div class="job-card-main">
+              <div class="job-card-cat">Testing · New paid job</div>
+              <h3 class="job-card-title">Test my landing-page signup flow</h3>
+              <div class="job-card-meta">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Remote</span>
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 2h ago</span>
+              </div>
+              <div class="task-card-skills"><span class="skill-tag">website testing</span><span class="skill-tag">mobile QA</span></div>
+            </div>
+            <div class="job-card-right">
+              <div class="job-budget">$60.00 fixed</div>
+              <div class="job-status"><span class="badge badge-open">open</span></div>
+              <button class="btn btn-primary btn-sm btn-block mt-2" id="e-apply-now">Apply now</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- 3. Apply modal (handleJobApply) -->
+      <div class="ui" id="q3"><div class="ui-inner">
+        <div class="modal">
+          <div class="modal-title">Apply to This Job</div>
+          <p class="modal-intro">Apply in about 2 minutes. Strong applications are specific, short, and tied to the buyer's requested deliverable.</p>
+          <div class="form-group"><label class="label">Cover Message *</label><div class="textarea" id="e-cover"></div></div>
+          <div class="modal-actions"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary" id="e-submit-app">Submit Application</button></div>
+        </div>
+        <div class="toast-dock"><div class="toast toast-success" id="e-t1">Application submitted!</div></div>
+      </div></div>
+
+      <!-- 4. Submit Deliverables modal (submitOrder) -->
+      <div class="ui" id="q4"><div class="ui-inner">
+        <div class="modal">
+          <div class="modal-title">Submit Deliverables</div>
+          <div class="form-group"><label class="label">Work description / delivery notes</label><div class="textarea" id="e-notes"></div></div>
+          <div class="modal-actions"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary" id="e-submit-work">Submit for Review</button></div>
+        </div>
+      </div></div>
+
+      <!-- 5. Notifications (renderNotifications + backend push_notification copy) -->
+      <div class="ui" id="q5"><div class="ui-inner">
+        <div class="notif-list">
+          <div class="notif-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Notifications</div>
+          <div class="notif-item unread is-success" id="e-n-paid">
+            <div class="notif-item-title">Order completed — payment released!</div>
+            <div class="notif-item-body">Order #128 is complete. $60.00 earned. Platform margin is paid by the employer.</div>
+            <div class="notif-item-time">Just now</div>
+          </div>
+          <div class="notif-item">
+            <div class="notif-item-title">You've been hired!</div>
+            <div class="notif-item-body">You've been hired for: Test my landing-page signup flow</div>
+            <div class="notif-item-time">Yesterday</div>
+          </div>
+          <div class="notif-item">
+            <div class="notif-item-title">New job matches your skills: Test my landing-page signup flow</div>
+            <div class="notif-item-body">A new testing job was just posted. Budget: $60</div>
+            <div class="notif-item-time">2 days ago</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <div id="left"><div class="lc">
+    <div class="logo">GoHireHumans<span class="dot">.</span></div>
+    <div class="step-label" id="l1">Step 1 · Set up</div>
+    <div class="step-label" id="l2">Step 2 · Apply</div>
+    <div class="step-label" id="l3">Step 3 · Deliver</div>
+    <div class="phrase"><h2 class="kt" id="k1">Set up payouts.</h2></div>
+    <div class="phrase"><h2 class="kt" id="k2">Apply to paid jobs.</h2></div>
+    <div class="phrase"><h2 class="kt" id="k3">Deliver. Get paid.</h2></div>
+    <p class="sub" id="s1">Free through Stripe. Nothing is charged.</p>
+    <p class="sub" id="s2">Say how you'll deliver the result the buyer asked for.</p>
+    <p class="sub" id="s3">Workers receive the listed payout.</p>
+    <div class="stepper"><div>Set up<i></i></div><div>Apply<i></i></div><div>Deliver<i></i></div></div>
+  </div></div>
+
+  <div class="layer" id="intro">
+    <div class="eyebrow" id="i-eye">How earning works</div>
+    <h1 class="kt" id="i-k">Get paid for<br>human tasks.</h1>
+  </div>
+
+  <div class="layer" id="outro">
+    <div class="logo kt" id="o-logo">GoHireHumans<span class="dot">.</span></div>
+    <p class="tag kt" id="o-tag">Find paid work. Free to join.</p>
+    <div class="url" id="o-url">gohirehumans.com</div>
+    <p class="fine" id="o-fine">Illustrative example. Payouts go to your connected Stripe account where configured, in supported countries.</p>
+  </div>
+
+  <div id="ripple"></div>
+  <div id="cursor"><svg viewBox="0 0 24 24"><path d="M5 3l14 8.2-6.1 1.3 3.6 6.9-2.6 1.4-3.6-6.9L5.6 18z" fill="#1a1816" stroke="#fbf8f2" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function () {
+  const C = window.Clip, $ = C.$;
+  window.CLIP_DURATION = 12;
+  window.CLIP_POSTER_T = 10.1;
+  ['#k1', '#k2', '#k3', '#o-tag'].forEach(s => C.splitWords($(s)));
+  (function splitIntro() {
+    const h = $('#i-k'); const lines = h.innerHTML.split('<br>');
+    h.innerHTML = lines.map(l => `<span class="ln">${l}</span>`).join('<br>');
+    h.querySelectorAll('.ln').forEach(C.splitWords);
+  })();
+  ['s1', 's2', 's3'].forEach(id => { $('#' + id).style.top = '650px'; });
+
+  const T = {
+    introOut: 1.2, splitIn: 1.25, outroIn: 10.45,
+    steps: [[1.7, 4.35], [4.4, 7.85], [7.9, 10.4]],
+  };
+  const COVER = "I can test it on iPhone and Android today and send a short issue list with screenshots.";
+  const NOTES = 'Tested signup on iPhone and Android. 3 issues found, with steps to reproduce and screenshot links.';
+
+  function fadeIn(el, t, tIn, tOut, dur = 0.35) {
+    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.25, 'inCubic')));
+    el.style.opacity = String(k);
+    el.style.transform = `translateY(${C.lerp(16, 0, C.p(t, tIn, tIn + dur, 'outCubic'))}px)`;
+  }
+
+  const CURSOR = {
+    show: 2.45, hide: 9.2,
+    start: { x: 1700, y: 980 },
+    moves: [
+      { t0: 2.5, t1: 3.05, to: { sel: '#e-connect' } },
+      { t0: 4.7, t1: 5.3, to: { sel: '#e-apply-now' } },
+      { t0: 6.75, t1: 7.25, to: { sel: '#e-submit-app' } },
+      { t0: 8.45, t1: 8.98, to: { sel: '#e-submit-work' } },
+    ],
+    clicks: [
+      { t: 3.12, sel: '#e-connect' }, { t: 5.37, sel: '#e-apply-now' },
+      { t: 7.32, sel: '#e-submit-app' }, { t: 9.05, sel: '#e-submit-work' },
+    ],
+  };
+
+  window.renderAt = function (t) {
+    C.frame(t, T);
+    fadeIn($('#i-eye'), t, 0.05, null, 0.45);
+    C.phrase($('#i-k'), t, 0.12, null, { stagger: 0.07, dur: 0.6 });
+
+    const [s1, s2, s3] = T.steps;
+    C.phrase($('#k1'), t, s1[0] + 0.15, s1[1] - 0.25);
+    C.phrase($('#k2'), t, s2[0] + 0.05, s2[1] - 0.25);
+    C.phrase($('#k3'), t, s3[0] + 0.05, null);
+    [['#l1', s1], ['#l2', s2], ['#l3', s3]].forEach(([id, s], i) => {
+      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
+      fadeIn(el, t, s[0] + 0.05, i === 2 ? null : s[1] - 0.25);
+    });
+    [['#s1', s1], ['#s2', s2], ['#s3', s3]].forEach(([id, s], i) => {
+      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
+      fadeIn(el, t, s[0] + 0.45, i === 2 ? null : s[1] - 0.25);
+    });
+    C.stepper(t, T.steps);
+
+    // Step 1: payout setup
+    C.panel($('#q1'), t, 1.75, 4.1);
+    const ready = t >= 3.3;
+    $('#e-ready').style.visibility = ready ? 'visible' : 'hidden';
+    C.appear($('#e-ready'), t, 3.3, 0.3, 10);
+    $('#e-connect').textContent = ready ? 'Update Bank Account' : 'Connect Bank Account';
+    // Step 2: find a job and apply
+    C.panel($('#q2'), t, 4.45, 5.55);
+    C.panel($('#q3'), t, 5.62, 7.65);
+    C.typeText($('#e-cover'), COVER, t, 5.9, 6.75, { caret: true, caretUntil: 7.0 });
+    C.toast($('#e-t1'), t, 7.4, null);
+    // Step 3: deliver, then the payout notification
+    C.panel($('#q4'), t, 7.95, 9.2);
+    C.typeText($('#e-notes'), NOTES, t, 8.12, 8.8, { caret: true, caretUntil: 9.0 });
+    C.panel($('#q5'), t, 9.3, null, { life: 2.2 });
+    const paid = $('#e-n-paid'), pk = C.p(t, 9.55, 10.0, 'outCubic');
+    paid.style.maxHeight = (pk * 150).toFixed(1) + 'px';
+    paid.style.overflow = 'hidden';
+    paid.style.opacity = String(C.p(t, 9.7, 10.05, 'outCubic'));
+    C.cursor(t, CURSOR);
+
+    C.phrase($('#o-logo'), t, 10.8, null, { dur: 0.55 });
+    C.phrase($('#o-tag'), t, 11.0, null, { stagger: 0.05 });
+    fadeIn($('#o-url'), t, 11.25, null, 0.4);
+    fadeIn($('#o-fine'), t, 11.35, null, 0.4);
+  };
+  window.CLIP_INIT = function () {
+    C.calibrateCursor(CURSOR, window.renderAt);
+    window.renderAt(0);
+  };
+})();
+</script>
+</body>
+</html>
