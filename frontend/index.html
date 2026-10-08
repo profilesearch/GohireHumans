@@ -192,7 +192,7 @@
   }
   </script>
 
-  <!-- Dynamic structured data placeholder for individual listings -->
+  <!-- Per-listing structured data -->
   <script id="dynamic-structured-data" type="application/ld+json">{}</script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -252,6 +252,7 @@
   </main>
   <div id="toasts" class="toast-container" role="status" aria-live="polite"></div>
   <script src="/config.js"></script>
+  <script src="/product-clips.js" defer></script>
   <script>
 // ============================================================
 // GoHireHumans SPA — Two-Sided Marketplace
@@ -1502,6 +1503,7 @@ async function renderLanding() {
                 <li><h3>Approve or revise</h3><p>Review the result against the agreed scope and use the configured payment flow.</p></li>
               </ol>
             </div>
+            <figure class="ghh-clip" data-clip="hire"></figure>
             <div class="lp-trust-inline">
               <p><strong>Payment:</strong> Workers receive the listed payout. Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
               <a href="/trust-safety.html" onclick="trackEvent('first_order_trust_safety_click',{source:'homepage_how_module'})">Read Trust &amp; Safety →</a>
@@ -1545,6 +1547,7 @@ async function renderLanding() {
       </div>
       ${publicFooter()}
     </div>`;
+  window.initProductClips?.();
 
   // Fetch only the live inventory needed for the three-card preview.
   let liveServices = [];
@@ -5393,7 +5396,7 @@ window.addEventListener('hashchange', render);
 render();
   </script>
 
-  <!-- SEO: Crawlable internal links for Google (hidden from visual UI, visible to crawlers) -->
+  <!-- Crawlable internal links -->
   <nav aria-hidden="true" inert tabindex="-1" class="visually-hidden">
     <h2>Platform</h2>
     <a href="/about.html">About GoHireHumans</a>

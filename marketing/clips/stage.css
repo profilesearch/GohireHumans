@@ -1,0 +1,86 @@
+/* Stage for the GoHireHumans product clips. Loaded after the site's real
+   style.css and app.css so every UI component below is the production one. */
+*, *::before, *::after { animation: none !important; transition: none !important; }
+html, body { margin: 0; padding: 0; background: #f4efe6; overflow: hidden; }
+body { width: 1920px; height: 1080px; }
+
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--color-bg); color: var(--color-text); }
+.layer { position: absolute; inset: 0; }
+
+/* Kinetic type */
+.kt { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.035em; line-height: 0.98; margin: 0; }
+.kt .w { display: inline-block; white-space: pre; }
+.kt .dot, .logo .dot { color: var(--color-accent); }
+
+/* Intro / outro full-frame cards */
+#intro, #outro { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+#intro .kt { font-size: 176px; }
+#intro .eyebrow { font-size: 26px; margin-bottom: 44px; }
+#intro .eyebrow::before { width: 56px; height: 2px; }
+#outro { color: var(--color-text-inverse); }
+#outro .logo { font-family: var(--font-display); font-size: 150px; letter-spacing: -0.03em; line-height: 1; margin: 0 0 30px; color: var(--color-text-inverse); }
+#outro .logo .dot { color: #e8867a; }
+#outro .tag { font-family: var(--font-display); font-size: 62px; line-height: 1.2; color: var(--color-text-inverse); margin: 0 0 46px; letter-spacing: -0.02em; }
+#outro .url { display: inline-flex; align-items: center; font-family: var(--font-body); font-size: 34px; font-weight: 600; padding: 20px 44px; background: var(--color-bg); color: var(--color-text); }
+#outro .fine { position: absolute; left: 0; right: 0; bottom: 54px; font-size: 22px; line-height: 1.4; color: rgba(244,239,230,0.62); }
+#left .sub { position: absolute; left: 76px; right: 70px; font-family: var(--font-body); font-size: 32px; line-height: 1.35; color: rgba(244,239,230,0.78); }
+.ui-inner { position: relative; width: 600px; zoom: 1.7; }
+.ui .textarea { white-space: pre-wrap; }
+.ui .ph { color: var(--color-text-faint); }
+.ui .modal-intro { font-size: var(--text-sm); color: var(--color-text-muted); line-height: 1.55; margin: 0 0 var(--space-4); }
+.ui .job-card { background: var(--color-surface-2); }
+.ui .job-card.dim { opacity: 0.55; margin-top: var(--space-3); }
+.ui .page-desc { margin-bottom: var(--space-4); }
+.ui .card.sub-card { background: var(--color-surface); margin: var(--space-4) 0; }
+
+/* Main split: ink panel with kinetic step copy, paper panel with live UI */
+#left { position: absolute; left: 0; top: 0; bottom: 0; width: 760px; background: var(--color-text); color: var(--color-text-inverse); padding: 72px 76px; box-sizing: border-box; overflow: hidden; }
+#left .logo { font-family: var(--font-display); font-size: 40px; letter-spacing: -0.01em; }
+#left .step-label { position: absolute; left: 76px; top: 330px; font-size: 24px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #e8867a; display: flex; align-items: center; gap: 18px; }
+#left .step-label::before { content: ''; width: 48px; height: 2px; background: currentColor; }
+#left .phrase { position: absolute; left: 76px; right: 60px; top: 390px; }
+#left .phrase .kt { font-size: 118px; color: var(--color-text-inverse); }
+#left .stepper { position: absolute; left: 76px; right: 76px; bottom: 72px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+#left .stepper div { font-size: 22px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(244,239,230,0.45); padding-top: 18px; position: relative; }
+#left .stepper div::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: rgba(244,239,230,0.18); }
+#left .stepper div i { position: absolute; left: 0; top: 0; height: 4px; width: 0; background: var(--color-accent); }
+#left .stepper div.on { color: var(--color-text-inverse); }
+
+#right { position: absolute; left: 760px; top: 0; right: 0; bottom: 0; overflow: hidden; background: var(--color-bg); }
+#right .grid { position: absolute; inset: 0; background-image: linear-gradient(var(--color-divider) 1px, transparent 1px), linear-gradient(90deg, var(--color-divider) 1px, transparent 1px); background-size: 48px 48px; opacity: 0.35; }
+#right .illus { position: absolute; right: 36px; top: 32px; z-index: 5; padding: 8px 16px; border: 1px solid var(--color-border-strong); background: var(--color-bg); font-size: 20px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
+#cam { position: absolute; left: 0; top: 0; width: 1160px; height: 1080px; }
+.ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transform-origin: 50% 50%; visibility: hidden; }
+.ui-card { background: var(--color-surface-2); border: 1px solid var(--color-border-strong); padding: var(--space-6); box-shadow: var(--shadow-md); }
+.ui-card h3 { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 500; letter-spacing: -0.01em; margin: 0 0 var(--space-2); }
+.ui-card > p { font-size: var(--text-sm); color: var(--color-text-muted); line-height: 1.55; margin: 0 0 var(--space-4); }
+.ui .textarea { min-height: 78px; font-size: var(--text-base); }
+.ui .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--color-text); vertical-align: -0.15em; margin-left: 1px; }
+.ui .btn.is-pressed { background: #000; transform: scale(0.97) !important; }
+.ui .btn-block { width: 100%; }
+.ui .form-group { margin-bottom: var(--space-4); }
+.ui .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.ui .safety-notice { margin-bottom: var(--space-4); }
+.ui .page-title { font-size: var(--text-xl); margin: 0 0 var(--space-1); }
+.ui .eyebrow-sm { font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent); margin-bottom: var(--space-1); }
+.ui .applicant-card { background: var(--color-surface-2); border: 1px solid var(--color-border); padding: var(--space-4); margin-bottom: var(--space-3); }
+.ui .applicant-card.is-picked { border-color: var(--color-border-strong); box-shadow: var(--shadow-sm); }
+.ui .applicant-message { margin-bottom: 0; }
+.ui .modal { animation: none; max-height: none; overflow: visible; }
+.ui .fee-breakdown-total span { font-weight: 700; }
+.ui .detail-text { font-size: var(--text-sm); line-height: 1.6; color: var(--color-text-body); }
+.ui .notif-list { background: var(--color-surface-2); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-md); }
+.ui .notif-list .notif-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.ui .notif-list .notif-head svg { width: 16px; height: 16px; }
+.ui .notif-item { border-bottom: 0; }
+.ui .notif-item.is-success { background: var(--color-success-subtle); }
+.ui .notif-item.is-success::before { background: var(--color-success) !important; }
+.ui .toast-dock { position: absolute; left: 0; right: 0; top: calc(100% + 18px); display: flex; justify-content: center; }
+.ui .toast { animation: none; font-size: var(--text-sm); }
+.ui .bank-ico { width: 40px; height: 40px; color: var(--color-text); margin-bottom: var(--space-3); }
+.ui .bank-ico svg { width: 40px; height: 40px; }
+
+/* Pointer */
+#cursor { position: absolute; left: 0; top: 0; width: 46px; height: 46px; pointer-events: none; z-index: 50; transform-origin: 6px 4px; }
+#cursor svg { width: 46px; height: 46px; filter: drop-shadow(0 3px 6px rgba(26,24,22,0.35)); }
+#ripple { position: absolute; width: 70px; height: 70px; margin: -35px 0 0 -35px; border-radius: 50%; border: 3px solid var(--color-accent); opacity: 0; z-index: 49; }
