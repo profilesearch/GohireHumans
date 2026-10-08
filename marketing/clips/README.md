@@ -21,8 +21,9 @@ UI components animating on the right.
 - `record.cjs` serves the repo locally, steps through the frames with Playwright and
   pipes them to ffmpeg. Only local files and Google Fonts may load.
 
-All names, amounts and order numbers in the clips are illustrative, and each end card
-says so. Fees match the live formula: 1% platform fee + 3% processing on the listed
+All names, amounts and order numbers in the clips are illustrative: an "Illustrative
+example" tag stays on screen for the whole clip (so the posters carry it too), and each
+end card repeats it. Fees match the live formula: 1% platform fee + 3% processing on the listed
 payout ($60.00 → $0.60 + $1.80 = $62.40).
 
 ## Re-render
@@ -31,8 +32,8 @@ Needs Node, the frontend Playwright install, and an ffmpeg with libx264 and libv
 (for example the `imageio-ffmpeg` wheel).
 
 ```bash
-FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs hire /tmp/clips --version v2
-FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs earn /tmp/clips --version v2
+FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs hire /tmp/clips --version v3
+FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs earn /tmp/clips --version v3
 # preview single frames without encoding:
 node marketing/clips/record.cjs hire /tmp/clips --preview 1.5,4.8,7.75
 ```
@@ -48,9 +49,10 @@ version: copy the three site files to `frontend/assets/clips/` and bump
 
 `frontend/product-clips.js` turns `<figure class="ghh-clip" data-clip="hire"></figure>`
 into a poster image plus a muted, looping video that loads only when the clip reaches
-the viewport, pauses off screen, never autoplays under `prefers-reduced-motion`, and
-has a pause/play button. It sends one `product_clip_view` GA4 event per clip per page
-load (diagnostic, not a conversion).
+the viewport, pauses off screen, never autoplays under `prefers-reduced-motion` (it also
+reacts when that setting changes), and has a pause/play button. Clips removed by an SPA
+route change are disposed. It sends one `product_clip_view` GA4 event per clip name per
+page load, once playback has actually started (diagnostic, not a conversion).
 
 Social posts using the 1080p masters need their own approval; nothing here posts
 anything.

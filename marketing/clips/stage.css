@@ -48,6 +48,7 @@ body { width: 1920px; height: 1080px; }
 
 #right { position: absolute; left: 760px; top: 0; right: 0; bottom: 0; overflow: hidden; background: var(--color-bg); }
 #right .grid { position: absolute; inset: 0; background-image: linear-gradient(var(--color-divider) 1px, transparent 1px), linear-gradient(90deg, var(--color-divider) 1px, transparent 1px); background-size: 48px 48px; opacity: 0.35; }
+#right .illus { position: absolute; right: 36px; top: 32px; z-index: 5; padding: 8px 16px; border: 1px solid var(--color-border-strong); background: var(--color-bg); font-size: 20px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
 #cam { position: absolute; left: 0; top: 0; width: 1160px; height: 1080px; }
 .ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transform-origin: 50% 50%; visibility: hidden; }
 .ui-card { background: var(--color-surface-2); border: 1px solid var(--color-border-strong); padding: var(--space-6); box-shadow: var(--shadow-md); }
