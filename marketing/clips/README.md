@@ -22,8 +22,8 @@ UI components animating on the right.
   pipes them to ffmpeg. Only local files and Google Fonts may load.
 
 All names, amounts and order numbers in the clips are illustrative: an "Illustrative
-example" tag stays on screen for the whole clip (so the posters carry it too), and each
-end card repeats it. Fees match the live formula: 1% platform fee + 3% processing on the listed
+example" tag stays on screen throughout the product UI scenes (so the posters carry it
+too), and each end card repeats the disclosure. Fees match the live formula: 1% platform fee + 3% processing on the listed
 payout ($60.00 → $0.60 + $1.80 = $62.40).
 
 ## Re-render

@@ -165,7 +165,8 @@
   // SPA routes replace the page body; release clips that left the document.
   window.addEventListener('hashchange', function () { setTimeout(sweep, 0); setTimeout(sweep, 1500); });
   window.initProductClips = init;
-  window.productClipsActive = function () { sweep(); return live.length; };
+  // Read-only count of clips still holding resources (used by tests; never sweeps).
+  window.productClipsActive = function () { return live.length; };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { init(); });
   else init();
 })();

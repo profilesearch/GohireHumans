@@ -137,9 +137,9 @@ test('homepage clip is disposed on SPA navigation and recreated once on return',
 
   await page.evaluate(() => { location.hash = '#/services'; });
   await expect(page.locator('figure.ghh-clip')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.productClipsActive())).toBe(0);
-  // The detached clip's media is released.
-  expect(await page.evaluate(() => [window.__firstClip.isConnected, window.__firstVideo.paused, window.__firstVideo.querySelectorAll('source').length])).toEqual([false, true, 0]);
+  // Automatic disposal releases the detached clip's media (productClipsActive is read-only).
+  await expect.poll(() => page.evaluate(() => [window.__firstClip.isConnected, window.__firstVideo.paused, window.__firstVideo.querySelectorAll('source').length])).toEqual([false, true, 0]);
+  expect(await page.evaluate(() => window.productClipsActive())).toBe(0);
 
   await page.evaluate(() => { location.hash = '#/'; });
   await expect(fig).toHaveCount(1);
@@ -151,6 +151,19 @@ test('homepage clip is disposed on SPA navigation and recreated once on return',
   await advancing(fig.locator('video'));
   // Still one view event for the page load.
   expect((await clipEvents(page)).filter(e => e[1].clip === 'hire')).toHaveLength(1);
+});
+
+test('no view event when playback fails', async ({ page }) => {
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = function () { return Promise.reject(new DOMException('blocked', 'NotAllowedError')); };
+  });
+  await page.goto('/how-it-works.html');
+  const fig = page.locator('figure.ghh-clip[data-clip="hire"]');
+  await fig.scrollIntoViewIfNeeded();
+  await expect(fig.locator('video')).toHaveCount(1);
+  await page.waitForTimeout(600);
+  expect(await clipEvents(page)).toEqual([]);
+  await expect(fig.locator('button.ghh-clip-toggle')).toHaveAttribute('aria-label', 'Play animation: how hiring works');
 });
 
 test('unknown clip names are ignored', async ({ page }) => {
