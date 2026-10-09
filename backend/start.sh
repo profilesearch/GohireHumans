@@ -9,4 +9,4 @@ fi
 # Production WSGI server. server.py initializes the database schema and starts
 # the notification maintenance worker at import time, so gunicorn's import of
 # server:app performs the same startup work `python server.py` used to.
-exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 120 --graceful-timeout 30 --keep-alive 5 --access-logfile - --error-logfile - server:app
+exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 120 --graceful-timeout 30 --keep-alive 5 --no-control-socket --access-logfile - --error-logfile - server:app

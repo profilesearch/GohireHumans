@@ -741,6 +741,9 @@ class DeploymentFilesTests(unittest.TestCase):
         self.assertNotRegex(start, r"(?m)^\s*(exec\s+)?python3?\s+server\.py")
         self.assertIn("--workers 1", start)
         self.assertIn("--threads 8", start)
+        # Gunicorn >= 25.1 opens an admin control socket by default; production never uses it.
+        self.assertIn("--no-control-socket", start)
+        self.assertIn("--no-control-socket", (BACKEND_DIR / "Procfile").read_text(encoding="utf-8"))
         dockerfile = (BACKEND_DIR / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn('CMD ["/app/start.sh"]', dockerfile)
         self.assertIn("gunicorn", (BACKEND_DIR / "requirements.txt").read_text(encoding="utf-8"))
