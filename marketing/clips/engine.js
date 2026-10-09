@@ -50,7 +50,7 @@
 
   // UI panel: rises in with a slight scale and blur, keeps a slow push-in while on screen.
   function panel(el, t, tIn, tOut, opt = {}) {
-    const inDur = opt.inDur ?? 0.38, outDur = opt.outDur ?? 0.3;
+    const inDur = opt.inDur ?? 0.5, outDur = opt.outDur ?? 0.35;
     const visible = t >= tIn - 0.01 && (tOut == null || t <= tOut + outDur + 0.01);
     el.style.visibility = visible ? 'visible' : 'hidden';
     if (!visible) { el.style.opacity = '0'; return; }
@@ -58,7 +58,7 @@
     const out = tOut == null ? 0 : p(t, tOut, tOut + outDur, 'inCubic');
     const life = tOut == null ? (opt.life ?? 3) : (tOut + outDur - tIn);
     const drift = p(t, tIn, tIn + life, 'linear');
-    const s = lerp(0.94, 1, k) * (1 + 0.025 * drift) * (1 - 0.03 * out);
+    const s = lerp(0.94, 1, k) * (1 + (opt.drift ?? 0.01) * drift) * (1 - 0.03 * out);
     const y = lerp(46, 0, k) - out * 36;
     const blur = lerp(10, 0, k) + out * 10;
     el.style.opacity = String(k * (1 - out));
@@ -167,7 +167,9 @@
     right.style.transform = `translateX(${lerp(120, 0, rk) + grow * 240}px)`;
     const lc = 1 - p(t, cfg.outroIn - 0.05, cfg.outroIn + 0.2, 'inCubic');
     const lcEl = left.querySelector('.lc'); if (lcEl) lcEl.style.opacity = String(lc);
-    outro.style.visibility = t >= cfg.outroIn + 0.3 ? 'visible' : 'hidden';
+    outro.style.visibility = t >= cfg.outroIn + (cfg.outroDelay ?? 0.3) ? 'visible' : 'hidden';
+    // Optional opacity gate keeps end-card type off the moving split boundary.
+    outro.style.opacity = String(p(t, cfg.outroIn + (cfg.outroFadeIn ?? 0), cfg.outroIn + (cfg.outroFadeIn ?? 0) + (cfg.outroFadeDur ?? 0)));
   }
 
   function stepper(t, steps) {

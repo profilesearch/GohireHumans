@@ -10,7 +10,7 @@
  */
 (function () {
   'use strict';
-  var ASSET_VERSION = 'v2';
+  var ASSET_VERSION = 'v3';
   var CLIPS = {
     hire: {
       label: 'how hiring works',

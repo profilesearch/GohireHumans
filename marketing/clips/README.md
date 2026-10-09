@@ -1,8 +1,14 @@
 # Product clips
 
-Two 12-second product animations of real GoHireHumans flows, in the style of a
+Two 36-second product animations of real GoHireHumans flows, in the style of a
 kinetic-type product video: an ink panel with the step copy, and the site's own
-UI components animating on the right.
+UI components animating on the right. Version v3 uses uneven step windows: hiring
+spends longer on drafting and fees; earning spends longer on applications and delivery.
+Panels enter in 0.5s and leave in 0.35s with no reading-hold zoom. Cursor moves take
+0.7s, and typing is 20 characters/s with a visible caret. Dense panels hold at least
+2.5s, and click results hold at least 1.5s. The complete hire fee table holds for
+2.5s before confirmation. Step copy exits with its panel, and the end-card fine print
+is fully visible for over 2s. Settled posters are at 23s (hire fees) and 31s (earned payout).
 
 | Clip | Story | Used on |
 | --- | --- | --- |
@@ -32,10 +38,10 @@ Needs Node, the frontend Playwright install, and an ffmpeg with libx264 and libv
 (for example the `imageio-ffmpeg` wheel).
 
 ```bash
-FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs hire /tmp/clips --version v3
-FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs earn /tmp/clips --version v3
+FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs hire /tmp/clips --version v4
+FFMPEG=/path/to/ffmpeg node marketing/clips/record.cjs earn /tmp/clips --version v4
 # preview single frames without encoding:
-node marketing/clips/record.cjs hire /tmp/clips --preview 1.5,4.8,7.75
+node marketing/clips/record.cjs hire /tmp/clips --preview 4,10,23
 ```
 
 Outputs per clip: `<name>-<v>-1080p.mp4` (1920×1080 master for social uploads, not

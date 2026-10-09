@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 // Product clips: muted loops on the homepage, How it works and the earn page.
 // All non-local requests are blocked, so no analytics or fonts leave the machine.
-const V = 'v2';
+const V = 'v3';
 let errors;
 let media;
 test.beforeEach(async ({ page }) => {
