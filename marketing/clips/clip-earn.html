@@ -127,8 +127,8 @@
 <script>
 (function () {
   const C = window.Clip, $ = C.$;
-  window.CLIP_DURATION = 12;
-  window.CLIP_POSTER_T = 10.1;
+  window.CLIP_DURATION = 37;
+  window.CLIP_POSTER_T = 32.5;
   ['#k1', '#k2', '#k3', '#o-tag'].forEach(s => C.splitWords($(s)));
   (function splitIntro() {
     const h = $('#i-k'); const lines = h.innerHTML.split('<br>');
@@ -138,30 +138,31 @@
   ['s1', 's2', 's3'].forEach(id => { $('#' + id).style.top = '650px'; });
 
   const T = {
-    introOut: 1.2, splitIn: 1.25, outroIn: 10.45,
-    steps: [[1.7, 4.35], [4.4, 7.85], [7.9, 10.4]],
+    introOut: 2.0, splitIn: 2.4, outroIn: 33.95, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
+    steps: [[2.95, 9.05], [9.05, 22.05], [22.05, 34.3]],
   };
   const COVER = "I can test it on iPhone and Android today and send a short issue list with screenshots.";
   const NOTES = 'Tested signup on iPhone and Android. 3 issues found, with steps to reproduce and screenshot links.';
+  const PANEL = { drift: 0 };
 
   function fadeIn(el, t, tIn, tOut, dur = 0.35) {
-    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.25, 'inCubic')));
+    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.35, 'inCubic')));
     el.style.opacity = String(k);
     el.style.transform = `translateY(${C.lerp(16, 0, C.p(t, tIn, tIn + dur, 'outCubic'))}px)`;
   }
 
   const CURSOR = {
-    show: 2.45, hide: 9.2,
+    show: 5.7, hide: 30.95,
     start: { x: 1700, y: 980 },
     moves: [
-      { t0: 2.5, t1: 3.05, to: { sel: '#e-connect' } },
-      { t0: 4.7, t1: 5.3, to: { sel: '#e-apply-now' } },
-      { t0: 6.75, t1: 7.25, to: { sel: '#e-submit-app' } },
-      { t0: 8.45, t1: 8.98, to: { sel: '#e-submit-work' } },
+      { t0: 5.95, t1: 6.65, to: { sel: '#e-connect' } },
+      { t0: 12.05, t1: 12.75, to: { sel: '#e-apply-now' } },
+      { t0: 18.9, t1: 19.6, to: { sel: '#e-submit-app' } },
+      { t0: 29.6, t1: 30.3, to: { sel: '#e-submit-work' } },
     ],
     clicks: [
-      { t: 3.12, sel: '#e-connect' }, { t: 5.37, sel: '#e-apply-now' },
-      { t: 7.32, sel: '#e-submit-app' }, { t: 9.05, sel: '#e-submit-work' },
+      { t: 6.75, sel: '#e-connect' }, { t: 12.85, sel: '#e-apply-now' },
+      { t: 19.7, sel: '#e-submit-app' }, { t: 30.4, sel: '#e-submit-work' },
     ],
   };
 
@@ -170,45 +171,39 @@
     fadeIn($('#i-eye'), t, 0.05, null, 0.45);
     C.phrase($('#i-k'), t, 0.12, null, { stagger: 0.07, dur: 0.6 });
 
-    const [s1, s2, s3] = T.steps;
-    C.phrase($('#k1'), t, s1[0] + 0.15, s1[1] - 0.25);
-    C.phrase($('#k2'), t, s2[0] + 0.05, s2[1] - 0.25);
-    C.phrase($('#k3'), t, s3[0] + 0.05, null);
-    [['#l1', s1], ['#l2', s2], ['#l3', s3]].forEach(([id, s], i) => {
-      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
-      fadeIn(el, t, s[0] + 0.05, i === 2 ? null : s[1] - 0.25);
-    });
-    [['#s1', s1], ['#s2', s2], ['#s3', s3]].forEach(([id, s], i) => {
-      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
-      fadeIn(el, t, s[0] + 0.45, i === 2 ? null : s[1] - 0.25);
+    // Copy exits with the outgoing panel, never over the next step's UI.
+    T.steps.forEach((s, i) => {
+      C.phrase($('#k' + (i + 1)), t, s[0] + 0.15, s[1] - 0.35, { outDur: 0.35 });
+      [['#l', 0.05], ['#s', 0.45]].forEach(([prefix, offset]) => {
+        const el = $(prefix + (i + 1));
+        el.style.visibility = t >= s[0] && t < s[1] ? 'visible' : 'hidden';
+        fadeIn(el, t, s[0] + offset, s[1] - 0.35);
+      });
     });
     C.stepper(t, T.steps);
 
-    // Step 1: payout setup
-    C.panel($('#q1'), t, 1.75, 4.1);
-    const ready = t >= 3.3;
+    // Step 1: read payout setup, then hold the connected result for 1.5s.
+    C.panel($('#q1'), t, 2.95, 8.7, PANEL);
+    const ready = t >= 6.9;
     $('#e-ready').style.visibility = ready ? 'visible' : 'hidden';
-    C.appear($('#e-ready'), t, 3.3, 0.3, 10);
+    C.appear($('#e-ready'), t, 6.9, 0.3, 10);
     $('#e-connect').textContent = ready ? 'Update Bank Account' : 'Connect Bank Account';
-    // Step 2: find a job and apply
-    C.panel($('#q2'), t, 4.45, 5.55);
-    C.panel($('#q3'), t, 5.62, 7.65);
-    C.typeText($('#e-cover'), COVER, t, 5.9, 6.75, { caret: true, caretUntil: 7.0 });
-    C.toast($('#e-t1'), t, 7.4, null);
-    // Step 3: deliver, then the payout notification
-    C.panel($('#q4'), t, 7.95, 9.2);
-    C.typeText($('#e-notes'), NOTES, t, 8.12, 8.8, { caret: true, caretUntil: 9.0 });
-    C.panel($('#q5'), t, 9.3, null, { life: 2.2 });
-    const paid = $('#e-n-paid'), pk = C.p(t, 9.55, 10.0, 'outCubic');
-    paid.style.maxHeight = (pk * 150).toFixed(1) + 'px';
-    paid.style.overflow = 'hidden';
-    paid.style.opacity = String(C.p(t, 9.7, 10.05, 'outCubic'));
+    // Step 2: the panel is stationary throughout 18-character/s typing.
+    C.panel($('#q2'), t, 9.05, 13.0, PANEL);
+    C.panel($('#q3'), t, 13.35, 21.7, PANEL);
+    C.typeText($('#e-cover'), COVER, t, 13.85, 18.7, { caret: true, caretUntil: 19.7 });
+    C.toast($('#e-t1'), t, 19.9, null);
+    // Step 3: read the buyer-approval gate before typing; the payout notice arrives with its panel.
+    C.panel($('#q4'), t, 22.05, 30.6, PANEL);
+    C.typeText($('#e-notes'), NOTES, t, 23.85, 29.3, { caret: true, caretUntil: 30.4 });
+    C.panel($('#q5'), t, 30.95, 33.95, PANEL);
     C.cursor(t, CURSOR);
 
-    C.phrase($('#o-logo'), t, 10.8, null, { dur: 0.55 });
-    C.phrase($('#o-tag'), t, 11.0, null, { stagger: 0.05 });
-    fadeIn($('#o-url'), t, 11.25, null, 0.4);
-    fadeIn($('#o-fine'), t, 11.35, null, 0.4);
+    // The end card is one reveal; fine print is settled for over two seconds.
+    C.phrase($('#o-logo'), t, T.outroIn + 0.5, null, { dur: 0.4 });
+    C.phrase($('#o-tag'), t, T.outroIn + 0.5, null, { stagger: 0.03, dur: 0.4 });
+    fadeIn($('#o-url'), t, T.outroIn + 0.5, null);
+    fadeIn($('#o-fine'), t, T.outroIn + 0.5, null);
   };
   window.CLIP_INIT = function () {
     C.calibrateCursor(CURSOR, window.renderAt);

@@ -131,8 +131,8 @@
 <script>
 (function () {
   const C = window.Clip, $ = C.$;
-  window.CLIP_DURATION = 12;
-  window.CLIP_POSTER_T = 7.75;
+  window.CLIP_DURATION = 36;
+  window.CLIP_POSTER_T = 23.0;
   // Kinetic headings are split into words once; the <br> in the intro is kept.
   ['#k1', '#k2', '#k3', '#o-tag'].forEach(s => C.splitWords($(s)));
   (function splitIntro() {
@@ -144,78 +144,75 @@
   Object.entries(SUB_TOP).forEach(([id, top]) => { $('#' + id).style.top = top + 'px'; });
 
   const T = {
-    introOut: 1.2, splitIn: 1.25, outroIn: 10.45,
-    steps: [[1.7, 5.05], [5.1, 8.05], [8.1, 10.4]],
+    introOut: 2.0, splitIn: 2.4, outroIn: 32.6, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
+    steps: [[2.95, 15.1], [15.1, 27.0], [27.0, 32.95]],
   };
   const NEED = 'Test my landing-page signup flow';
+  // No camera drift on the long reading holds.
+  const PANEL = { drift: 0 };
 
   function fadeIn(el, t, tIn, tOut, dur = 0.35) {
-    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.25, 'inCubic')));
+    const k = C.p(t, tIn, tIn + dur, 'outCubic') * (1 - (tOut == null ? 0 : C.p(t, tOut, tOut + 0.35, 'inCubic')));
     el.style.opacity = String(k);
     el.style.transform = `translateY(${C.lerp(16, 0, C.p(t, tIn, tIn + dur, 'outCubic'))}px)`;
   }
 
   const CURSOR = {
-    show: 2.85, hide: 9.75,
+    show: 7.35, hide: 31.45,
     start: { x: 1700, y: 980 },
     moves: [
-      { t0: 2.9, t1: 3.38, to: { sel: '#h-build' } },
-      { t0: 3.85, t1: 4.5, to: { sel: '#h-post' } },
-      { t0: 5.55, t1: 6.15, to: { sel: '#h-hire' } },
-      { t0: 6.65, t1: 7.4, to: { sel: '#h-fund' } },
-      { t0: 8.55, t1: 9.25, to: { sel: '#h-approve' } },
+      { t0: 7.6, t1: 8.3, to: { sel: '#h-build' } },
+      { t0: 11.95, t1: 12.65, to: { sel: '#h-post' } },
+      { t0: 18.15, t1: 18.85, to: { sel: '#h-hire' } },
+      { t0: 23.85, t1: 24.55, to: { sel: '#h-fund' } },
+      { t0: 30.0, t1: 30.7, to: { sel: '#h-approve' } },
     ],
     clicks: [
-      { t: 3.45, sel: '#h-build' }, { t: 4.55, sel: '#h-post' }, { t: 6.2, sel: '#h-hire' },
-      { t: 7.45, sel: '#h-fund' }, { t: 9.3, sel: '#h-approve' },
+      { t: 8.4, sel: '#h-build' }, { t: 12.75, sel: '#h-post' }, { t: 18.95, sel: '#h-hire' },
+      { t: 24.65, sel: '#h-fund' }, { t: 30.8, sel: '#h-approve' },
     ],
   };
 
   window.renderAt = function (t) {
     C.frame(t, T);
-    // Intro
     fadeIn($('#i-eye'), t, 0.05, null, 0.45);
     C.phrase($('#i-k'), t, 0.12, null, { stagger: 0.07, dur: 0.6 });
 
-    // Left column copy per step
-    const [s1, s2, s3] = T.steps;
-    C.phrase($('#k1'), t, s1[0] + 0.15, s1[1] - 0.25);
-    C.phrase($('#k2'), t, s2[0] + 0.05, s2[1] - 0.25);
-    C.phrase($('#k3'), t, s3[0] + 0.05, null);
-    [['#l1', s1], ['#l2', s2], ['#l3', s3]].forEach(([id, s], i) => {
-      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
-      fadeIn(el, t, s[0] + 0.05, i === 2 ? null : s[1] - 0.25);
-    });
-    [['#s1', s1], ['#s2', s2], ['#s3', s3]].forEach(([id, s], i) => {
-      const el = $(id); el.style.visibility = t >= s[0] && (i === 2 || t <= s[1]) ? 'visible' : 'hidden';
-      fadeIn(el, t, s[0] + 0.45, i === 2 ? null : s[1] - 0.25);
+    // Copy exits with the outgoing panel, never over the next step's UI.
+    T.steps.forEach((s, i) => {
+      C.phrase($('#k' + (i + 1)), t, s[0] + 0.15, s[1] - 0.35, { outDur: 0.35 });
+      [['#l', 0.05], ['#s', 0.45]].forEach(([prefix, offset]) => {
+        const el = $(prefix + (i + 1));
+        el.style.visibility = t >= s[0] && t < s[1] ? 'visible' : 'hidden';
+        fadeIn(el, t, s[0] + offset, s[1] - 0.35);
+      });
     });
     C.stepper(t, T.steps);
 
-    // Right column UI
-    C.panel($('#p1'), t, 1.75, 3.6);
-    C.typeText($('#h-need'), NEED, t, 2.0, 3.05, { caret: true, caretUntil: 3.4, placeholder: 'Example: test my landing-page signup flow' });
-    C.panel($('#p2'), t, 3.7, 4.95);
-    C.toast($('#h-t1'), t, 4.62, null);
-    C.panel($('#p3'), t, 5.1, 6.35);
-    C.appear($('#h-a1'), t, 5.3); C.appear($('#h-a2'), t, 5.45);
-    $('#h-a1').classList.toggle('is-picked', t >= 5.95);
-    C.panel($('#p4'), t, 6.45, 7.95);
-    document.querySelectorAll('.h-fee').forEach((r, i) => C.appear(r, t, 6.6 + i * 0.12, 0.3, 10));
-    C.toast($('#h-t2'), t, 7.52, null);
-    C.panel($('#p5'), t, 8.1, null, { life: 2.4 });
-    const done = t >= 9.32;
+    // Step 1: copy settles first; type at 17 characters/s, then read the complete draft.
+    C.panel($('#p1'), t, 2.95, 8.6, PANEL);
+    C.typeText($('#h-need'), NEED, t, 4.75, 6.63, { caret: true, caretUntil: 8.4, placeholder: 'Example: test my landing-page signup flow' });
+    C.panel($('#p2'), t, 8.95, 14.75, PANEL);
+    C.toast($('#h-t1'), t, 12.95, null);
+    // Step 2: applicants arrive with their panel; then each fee row, then the full-table hold.
+    C.panel($('#p3'), t, 15.1, 19.15, PANEL);
+    $('#h-a1').classList.toggle('is-picked', t >= 18.95);
+    C.panel($('#p4'), t, 19.5, 26.65, PANEL);
+    document.querySelectorAll('.h-fee').forEach((r, i) => C.appear(r, t, 20.0 + i * 0.35, 0.3, 10));
+    C.toast($('#h-t2'), t, 24.85, null);
+    // Step 3: buyer approval precedes the completed badge and released payment.
+    C.panel($('#p5'), t, 27.0, 32.6, PANEL);
+    const done = t >= 30.8;
     $('#h-b-sub').style.display = done ? 'none' : '';
     $('#h-b-done').style.display = done ? '' : 'none';
-    C.toast($('#h-t3'), t, 9.42, null);
-
+    C.toast($('#h-t3'), t, 30.8, null);
     C.cursor(t, CURSOR);
 
-    // Outro
-    C.phrase($('#o-logo'), t, 10.8, null, { dur: 0.55 });
-    C.phrase($('#o-tag'), t, 11.0, null, { stagger: 0.05 });
-    fadeIn($('#o-url'), t, 11.25, null, 0.4);
-    fadeIn($('#o-fine'), t, 11.35, null, 0.4);
+    // The end card is one reveal; fine print is settled for over two seconds.
+    C.phrase($('#o-logo'), t, T.outroIn + 0.5, null, { dur: 0.4 });
+    C.phrase($('#o-tag'), t, T.outroIn + 0.5, null, { stagger: 0.03, dur: 0.4 });
+    fadeIn($('#o-url'), t, T.outroIn + 0.5, null);
+    fadeIn($('#o-fine'), t, T.outroIn + 0.5, null);
   };
   window.CLIP_INIT = function () {
     C.calibrateCursor(CURSOR, window.renderAt);
