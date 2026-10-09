@@ -7,6 +7,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # Stripe SDK majors change the payment/payout boundaries that the funding
+      # and setup ledgers pin in tests. Upgrade deliberately with a payment
+      # review; pip-audit in CI still flags any advisory on the pinned version.
+      - dependency-name: "stripe"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
       - backend
