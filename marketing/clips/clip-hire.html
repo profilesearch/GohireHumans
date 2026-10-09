@@ -144,8 +144,8 @@
   Object.entries(SUB_TOP).forEach(([id, top]) => { $('#' + id).style.top = top + 'px'; });
 
   const T = {
-    introOut: 2.0, splitIn: 2.4, outroIn: 32.8, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
-    steps: [[2.95, 15.2], [15.2, 27.55], [27.55, 33.15]],
+    introOut: 2.0, splitIn: 2.4, outroIn: 32.6, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
+    steps: [[2.95, 15.1], [15.1, 27.0], [27.0, 32.95]],
   };
   const NEED = 'Test my landing-page signup flow';
   // No camera drift on the long reading holds.
@@ -158,18 +158,18 @@
   }
 
   const CURSOR = {
-    show: 7.35, hide: 31.5,
+    show: 7.35, hide: 31.45,
     start: { x: 1700, y: 980 },
     moves: [
       { t0: 7.6, t1: 8.3, to: { sel: '#h-build' } },
       { t0: 11.95, t1: 12.65, to: { sel: '#h-post' } },
-      { t0: 18.7, t1: 19.4, to: { sel: '#h-hire' } },
-      { t0: 24.3, t1: 25.0, to: { sel: '#h-fund' } },
-      { t0: 30.05, t1: 30.75, to: { sel: '#h-approve' } },
+      { t0: 18.15, t1: 18.85, to: { sel: '#h-hire' } },
+      { t0: 23.85, t1: 24.55, to: { sel: '#h-fund' } },
+      { t0: 30.0, t1: 30.7, to: { sel: '#h-approve' } },
     ],
     clicks: [
-      { t: 8.4, sel: '#h-build' }, { t: 12.75, sel: '#h-post' }, { t: 19.5, sel: '#h-hire' },
-      { t: 25.1, sel: '#h-fund' }, { t: 30.85, sel: '#h-approve' },
+      { t: 8.4, sel: '#h-build' }, { t: 12.75, sel: '#h-post' }, { t: 18.95, sel: '#h-hire' },
+      { t: 24.65, sel: '#h-fund' }, { t: 30.8, sel: '#h-approve' },
     ],
   };
 
@@ -189,24 +189,23 @@
     });
     C.stepper(t, T.steps);
 
-    // Step 1: type at 20 characters/s, then read the complete draft.
+    // Step 1: copy settles first; type at 17 characters/s, then read the complete draft.
     C.panel($('#p1'), t, 2.95, 8.6, PANEL);
-    C.typeText($('#h-need'), NEED, t, 4.0, 5.6, { caret: true, caretUntil: 8.4, placeholder: 'Example: test my landing-page signup flow' });
-    C.panel($('#p2'), t, 8.95, 14.85, PANEL);
+    C.typeText($('#h-need'), NEED, t, 4.75, 6.63, { caret: true, caretUntil: 8.4, placeholder: 'Example: test my landing-page signup flow' });
+    C.panel($('#p2'), t, 8.95, 14.75, PANEL);
     C.toast($('#h-t1'), t, 12.95, null);
-    // Step 2: applicants, then each fee row, then the full table reading hold.
-    C.panel($('#p3'), t, 15.2, 19.6, PANEL);
-    C.appear($('#h-a1'), t, 15.7, 0.25); C.appear($('#h-a2'), t, 15.95, 0.25);
-    $('#h-a1').classList.toggle('is-picked', t >= 19.5);
-    C.panel($('#p4'), t, 19.95, 27.2, PANEL);
-    document.querySelectorAll('.h-fee').forEach((r, i) => C.appear(r, t, 20.45 + i * 0.35, 0.3, 10));
-    C.toast($('#h-t2'), t, 25.3, null);
+    // Step 2: applicants arrive with their panel; then each fee row, then the full-table hold.
+    C.panel($('#p3'), t, 15.1, 19.15, PANEL);
+    $('#h-a1').classList.toggle('is-picked', t >= 18.95);
+    C.panel($('#p4'), t, 19.5, 26.65, PANEL);
+    document.querySelectorAll('.h-fee').forEach((r, i) => C.appear(r, t, 20.0 + i * 0.35, 0.3, 10));
+    C.toast($('#h-t2'), t, 24.85, null);
     // Step 3: buyer approval precedes the completed badge and released payment.
-    C.panel($('#p5'), t, 27.55, 32.8, PANEL);
-    const done = t >= 31.0;
+    C.panel($('#p5'), t, 27.0, 32.6, PANEL);
+    const done = t >= 30.8;
     $('#h-b-sub').style.display = done ? 'none' : '';
     $('#h-b-done').style.display = done ? '' : 'none';
-    C.toast($('#h-t3'), t, 31.0, null);
+    C.toast($('#h-t3'), t, 30.8, null);
     C.cursor(t, CURSOR);
 
     // The end card is one reveal; fine print is settled for over two seconds.

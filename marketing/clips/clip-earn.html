@@ -127,8 +127,8 @@
 <script>
 (function () {
   const C = window.Clip, $ = C.$;
-  window.CLIP_DURATION = 36;
-  window.CLIP_POSTER_T = 31.0;
+  window.CLIP_DURATION = 37;
+  window.CLIP_POSTER_T = 32.5;
   ['#k1', '#k2', '#k3', '#o-tag'].forEach(s => C.splitWords($(s)));
   (function splitIntro() {
     const h = $('#i-k'); const lines = h.innerHTML.split('<br>');
@@ -138,8 +138,8 @@
   ['s1', 's2', 's3'].forEach(id => { $('#' + id).style.top = '650px'; });
 
   const T = {
-    introOut: 2.0, splitIn: 2.4, outroIn: 32.4, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
-    steps: [[2.95, 9.05], [9.05, 21.15], [21.15, 32.75]],
+    introOut: 2.0, splitIn: 2.4, outroIn: 33.95, outroDelay: 0.5, outroFadeIn: 0.5, outroFadeDur: 0.3,
+    steps: [[2.95, 9.05], [9.05, 22.05], [22.05, 34.3]],
   };
   const COVER = "I can test it on iPhone and Android today and send a short issue list with screenshots.";
   const NOTES = 'Tested signup on iPhone and Android. 3 issues found, with steps to reproduce and screenshot links.';
@@ -152,17 +152,17 @@
   }
 
   const CURSOR = {
-    show: 5.7, hide: 28.55,
+    show: 5.7, hide: 30.95,
     start: { x: 1700, y: 980 },
     moves: [
       { t0: 5.95, t1: 6.65, to: { sel: '#e-connect' } },
-      { t0: 11.55, t1: 12.25, to: { sel: '#e-apply-now' } },
-      { t0: 18.1, t1: 18.8, to: { sel: '#e-submit-app' } },
-      { t0: 27.6, t1: 28.3, to: { sel: '#e-submit-work' } },
+      { t0: 12.05, t1: 12.75, to: { sel: '#e-apply-now' } },
+      { t0: 18.9, t1: 19.6, to: { sel: '#e-submit-app' } },
+      { t0: 29.6, t1: 30.3, to: { sel: '#e-submit-work' } },
     ],
     clicks: [
-      { t: 6.75, sel: '#e-connect' }, { t: 12.35, sel: '#e-apply-now' },
-      { t: 18.9, sel: '#e-submit-app' }, { t: 28.4, sel: '#e-submit-work' },
+      { t: 6.75, sel: '#e-connect' }, { t: 12.85, sel: '#e-apply-now' },
+      { t: 19.7, sel: '#e-submit-app' }, { t: 30.4, sel: '#e-submit-work' },
     ],
   };
 
@@ -188,19 +188,15 @@
     $('#e-ready').style.visibility = ready ? 'visible' : 'hidden';
     C.appear($('#e-ready'), t, 6.9, 0.3, 10);
     $('#e-connect').textContent = ready ? 'Update Bank Account' : 'Connect Bank Account';
-    // Step 2: the panel is stationary throughout 20-character/s typing.
-    C.panel($('#q2'), t, 9.05, 12.5, PANEL);
-    C.panel($('#q3'), t, 12.85, 20.8, PANEL);
-    C.typeText($('#e-cover'), COVER, t, 13.35, 17.7, { caret: true, caretUntil: 18.9 });
-    C.toast($('#e-t1'), t, 19.0, null);
-    // Step 3: read the buyer-approval gate before the payment notification.
-    C.panel($('#q4'), t, 21.15, 28.55, PANEL);
-    C.typeText($('#e-notes'), NOTES, t, 22.1, 27.0, { caret: true, caretUntil: 28.4 });
-    C.panel($('#q5'), t, 28.9, 32.4, PANEL);
-    const paid = $('#e-n-paid'), pk = C.p(t, 29.4, 29.9, 'outCubic');
-    paid.style.maxHeight = (pk * 150).toFixed(1) + 'px';
-    paid.style.overflow = 'hidden';
-    paid.style.opacity = String(pk);
+    // Step 2: the panel is stationary throughout 18-character/s typing.
+    C.panel($('#q2'), t, 9.05, 13.0, PANEL);
+    C.panel($('#q3'), t, 13.35, 21.7, PANEL);
+    C.typeText($('#e-cover'), COVER, t, 13.85, 18.7, { caret: true, caretUntil: 19.7 });
+    C.toast($('#e-t1'), t, 19.9, null);
+    // Step 3: read the buyer-approval gate before typing; the payout notice arrives with its panel.
+    C.panel($('#q4'), t, 22.05, 30.6, PANEL);
+    C.typeText($('#e-notes'), NOTES, t, 23.85, 29.3, { caret: true, caretUntil: 30.4 });
+    C.panel($('#q5'), t, 30.95, 33.95, PANEL);
     C.cursor(t, CURSOR);
 
     // The end card is one reveal; fine print is settled for over two seconds.

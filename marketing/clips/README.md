@@ -1,14 +1,16 @@
 # Product clips
 
-Two 36-second product animations of real GoHireHumans flows, in the style of a
+Two product animations (hire 36 s, earn 37 s) of real GoHireHumans flows, in the style of a
 kinetic-type product video: an ink panel with the step copy, and the site's own
 UI components animating on the right. Version v3 uses uneven step windows: hiring
 spends longer on drafting and fees; earning spends longer on applications and delivery.
-Panels enter in 0.5s and leave in 0.35s with no reading-hold zoom. Cursor moves take
-0.7s, and typing is 20 characters/s with a visible caret. Dense panels hold at least
-2.5s, and click results hold at least 1.5s. The complete hire fee table holds for
-2.5s before confirmation. Step copy exits with its panel, and the end-card fine print
-is fully visible for over 2s. Settled posters are at 23s (hire fees) and 31s (earned payout).
+Panels enter in 0.5s and leave in 0.35s with no reading-hold zoom. Each step's heading
+and subline are fully visible for at least 1s before typing or the cursor starts. Cursor
+moves take 0.7s, and typing runs at 17-18 characters/s with a visible caret. Settled
+panels hold at least 2.5s, and click results hold at least 1.5s. The four hire fee rows
+arrive 0.35s apart, then the complete table holds for 2.5s before confirmation. Step copy
+exits with its panel, and the end-card fine print is fully visible for over 2s. Settled
+posters are at 23s (hire fees) and 32.5s (earned payout).
 
 | Clip | Story | Used on |
 | --- | --- | --- |
