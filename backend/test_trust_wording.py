@@ -42,8 +42,13 @@ PATTERNS = (
     r"\benterprise[- ]scale\s+operations\b|\b(?:running|processes|processing|handles?|handling)\s+thousands\s+of\s+(?:human\s+)?tasks\s+per\s+month\b[^.!?\n]{0,160}\b(?:GoHireHumans|GHH)\b",
     r"\b(?:hire|get|deliver\w*|connect\w*\s+you\s+with)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b|\b(?:find|access)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b(?![^.!?\n]*\?)",
     r"\bonly\s+platform\s+with\b",
-    r"\b(?:workers?|freelancers?|providers?)\s+(?:receive|get|are\s+paid)\s+(?:the\s+)?(?:listed\s+)?(?:payout|payment|paid)?\s*(?:when|as\s+soon\s+as|once)\s+(?:you|the\s+employer|employers?)\s+hires?\b",
-    r"\b(?:1%|one\s+percent)\s*\+\s*Stripe\b|\$\d+\s*\+\s*Stripe\b",
+    # Payout timing: the employer is charged at hire/order; the worker is paid after approval.
+    r"\b(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?\s+paid|gets?|(?:is|are)\s+paid(?:\s+out)?)\b(?:\s+(?:the|their|its|a|an|listed|full|payout|payment|money|immediately|instantly|right\s+away|automatically))*\s*(?:when|as\s+soon\s+as|once|upon|at|on)\s+(?:(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?|accepts?)\b|(?:the\s+)?(?:hire|hiring|order|booking|checkout)\b)",
+    r"\b(?:payouts?|payments?)\s+(?:to\s+(?:the\s+)?workers?\s+)?(?:is|are)\s+(?:released|sent|made)\s+(?:immediately\s+)?(?:when|as\s+soon\s+as|once|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
+    # Fees: the processing charge is a fixed 3%, never an unspecified "Stripe" fee.
+    r"\b(?:1%|one\s+percent)(?:\s+(?:platform|service))?(?:\s+fee)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?Stripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\b",
+    r"\bStripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?(?:1%|one\s+percent\b)",
+    r"\$\d+(?:\.\d+)?\s*(?:\+|plus)\s*Stripe\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -103,50 +108,165 @@ def claim_problems(source):
 
 
 
-def faq_contract_problems(source):
-    blocks = re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', source, re.S)
-    faqs = [json.loads(block) for block in blocks if json.loads(block).get("@type") == "FAQPage"]
-    problems = []
-    for faq in faqs:
-        for entity in faq["mainEntity"]:
-            question = entity["name"]
-            heading = re.search(r"<h3[^>]*>" + re.escape(question) + r"</h3>\s*<p[^>]*>(.*?)</p>", source, re.S)
-            detail = re.search(r"<summary>" + re.escape(question) + r"</summary>\s*<div>(.*?)</div>", source, re.S)
-            if not (heading or detail):
-                problems.append(question + ": missing visible answer")
-                continue
-            visible = public_text((heading or detail)[1])
-            visible = " ".join(visible.split())
-            expected = " ".join(entity["acceptedAnswer"]["text"].split())
-            if visible != expected:
-                problems.append(question + ": visible and JSON-LD answer differ")
-    if not faqs:
-        problems.append("missing FAQPage")
-    # Reverse direction: every visible FAQ question must also be in JSON-LD, with equal counts.
-    structured = [" ".join(e["name"].split()) for faq in faqs for e in faq["mainEntity"]]
-    visible_questions = [" ".join(public_text(q).split()) for q in visible_faq_questions(source)]
-    for question in visible_questions:
-        if question not in structured:
-            problems.append(question + ": visible question missing from JSON-LD")
-    if visible_questions and len(visible_questions) != len(structured):
-        problems.append(f"FAQ count differs: {len(visible_questions)} visible vs {len(structured)} JSON-LD")
-    return problems
+class VisibleFaq(HTMLParser):
+    """Collect every visible FAQ card as (question, answer) in document order.
+
+    Layouts used on the site, matched by element and attribute rather than serialized markup:
+    - <details><summary>Q</summary>A</details>
+    - <article data-ai-answer> ... <h3>Q</h3> ... A ... </article>
+    - an <h2 id="faq"> section: each <h3> is a question and its first following <p> is the answer;
+      the section ends at the next <h2>, a call-to-action element whose class includes "callout",
+      </main>, <footer>, or </section>/</article> enclosing the heading.
+    """
+
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.cards = []
+        self.stack = []
+        self.mode = None          # "details" | "card" | "section" while inside an FAQ container
+        self.container_depth = None
+        self.capture = None       # "q" | "a" | None
+        self.capture_tag = None
+        self.capture_depth = None
+        self.question = []
+        self.answer = []
+        self.section_depth = None
+        self.section_answer_open = False
+        self.skip_depth = None
+
+    def _flush(self):
+        if self.question:
+            q = " ".join("".join(self.question).split())
+            a = " ".join("".join(self.answer).split())
+            self.cards.append((q, a))
+        self.question, self.answer = [], []
+
+    BLOCK = {"p", "div", "li", "ul", "ol", "br", "h2", "h3", "h4", "table", "tr", "td", "th", "pre"}
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = (attrs.get("class") or "").split()
+        if tag in self.BLOCK and self.answer:
+            self.answer.append(" ")
+        if tag in self.VOID:
+            return
+        self.stack.append(tag)
+        depth = len(self.stack)
+        if self.skip_depth is None and ("hidden" in attrs or tag in {"script", "style", "template"}):
+            self.skip_depth = depth
+        if self.mode == "section" and (tag == "h2" or tag == "footer" or "callout" in classes):
+            self._flush()
+            self.mode = None
+            self.section_depth = None
+        if self.mode is None:
+            if tag == "details":
+                self.mode, self.container_depth = "details", depth
+            elif tag == "article" and "data-ai-answer" in attrs:
+                self.mode, self.container_depth = "card", depth
+            elif tag == "h2" and (attrs.get("id") or "").lower() == "faq":
+                self.mode, self.container_depth = "section", None
+                self.section_depth = depth - 1
+                self.capture, self.capture_tag, self.capture_depth = "skip-h2", tag, depth
+                return
+        if self.mode == "details":
+            if tag == "summary" and not self.question:
+                self.capture, self.capture_tag, self.capture_depth = "q", tag, depth
+        elif self.mode == "card":
+            if tag in {"h2", "h3"} and not self.question:
+                self.capture, self.capture_tag, self.capture_depth = "q", tag, depth
+            elif tag == "p" and self.question and not self.answer and self.capture is None:
+                self.capture, self.capture_tag, self.capture_depth = "a", tag, depth
+        elif self.mode == "section":
+            if tag == "h3":
+                self._flush()
+                self.capture, self.capture_tag, self.capture_depth = "q", tag, depth
+            elif tag == "p" and self.question and not self.answer and self.capture is None:
+                self.capture, self.capture_tag, self.capture_depth = "a", tag, depth
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID or tag not in self.stack:
+            return
+        while self.stack:
+            depth = len(self.stack)
+            open_tag = self.stack.pop()
+            if self.skip_depth == depth:
+                self.skip_depth = None
+            if self.capture and self.capture_depth == depth:
+                self.capture = None
+            if self.mode in {"details", "card"} and self.container_depth == depth:
+                self._flush()
+                self.mode = self.container_depth = None
+            if self.mode == "section" and self.section_depth is not None and depth <= self.section_depth:
+                self._flush()
+                self.mode = self.section_depth = None
+            if open_tag == tag:
+                break
+        if self.mode == "section" and tag == "main":
+            self._flush()
+            self.mode = self.section_depth = None
+
+    def handle_data(self, data):
+        if self.skip_depth is not None:
+            return
+        if self.capture == "q":
+            self.question.append(data)
+        elif self.capture == "a" or (self.mode == "details" and self.question and self.capture is None):
+            self.answer.append(data)
+
+    def close(self):
+        super().close()
+        if self.mode:
+            self._flush()
+
+
+def visible_faq_cards(source):
+    parser = VisibleFaq()
+    parser.feed(source)
+    parser.close()
+    return parser.cards
 
 
 def visible_faq_questions(source):
-    """Visible FAQ questions in the three layouts the site uses:
-    <details><summary>Q</summary>, AI-answer cards (<article data-ai-answer><h3>Q</h3>),
-    and <h3> headings after an <h2 id="faq"> up to the next <h2>, call-to-action callout, or end of <main>."""
-    questions = re.findall(r"<details[^>]*>\s*<summary>(.*?)</summary>", source, re.S)
-    questions += re.findall(r"<article[^>]*\bdata-ai-answer\b[^>]*>\s*<h3[^>]*>(.*?)</h3>", source, re.S)
-    for section in re.findall(r'<h2[^>]*\bid="faq"[^>]*>.*?</h2>(.*?)(?=<h2\b|<div[^>]*\bclass="[^"]*\bcallout\b|</main>|<footer\b|$)', source, re.S | re.I):
-        questions += re.findall(r"<h3[^>]*>(.*?)</h3>", section, re.S)
-    seen, ordered = set(), []
-    for q in questions:
-        if q not in seen:
-            seen.add(q)
-            ordered.append(q)
-    return ordered
+    return [question for question, _ in visible_faq_cards(source)]
+
+
+def faq_contract_problems(source):
+    blocks = re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', source, re.S)
+    faqs = [json.loads(block) for block in blocks if json.loads(block).get("@type") == "FAQPage"]
+    if not faqs:
+        return ["missing FAQPage"]
+    def norm(text):
+        return re.sub(r"\s+([.,;:!?])", r"\1", " ".join(text.split()))
+
+    structured = [(norm(e["name"]), norm(e["acceptedAnswer"]["text"])) for faq in faqs for e in faq["mainEntity"]]
+    visible = [(norm(q), norm(a)) for q, a in visible_faq_cards(source)]
+    problems = []
+    for label, items in (("JSON-LD", structured), ("visible", visible)):
+        names = [q for q, _ in items]
+        for question in sorted({q for q in names if names.count(q) > 1}):
+            problems.append(f"{question}: duplicate {label} question")
+    expected = dict(structured)
+    shown = {}
+    for question, answer in visible:
+        shown.setdefault(question, []).append(answer)
+        if question not in expected:
+            problems.append(question + ": visible question missing from JSON-LD")
+        elif answer != expected[question]:
+            problems.append(question + ": visible and JSON-LD answer differ")
+    for question, _ in structured:
+        if question not in shown:
+            problems.append(question + ": missing visible answer")
+    if len(visible) != len(structured):
+        problems.append(f"FAQ count differs: {len(visible)} visible vs {len(structured)} JSON-LD")
+    return problems
+
+
+def faq_pages():
+    """Every public page that publishes FAQPage structured data."""
+    return sorted(str(path.relative_to(FRONTEND)) for path in public_files()
+                  if path.suffix == ".html" and '"FAQPage"' in path.read_text(encoding="utf-8"))
 
 
 def public_files():
@@ -164,6 +284,7 @@ EDITED_FAQ_PAGES = (
     "blog/gohirehumans-vs-fiverr.html", "blog/hire-data-entry-specialist.html", "blog/hire-human-for-ai-tasks.html",
     "blog/human-as-a-service.html", "blog/on-demand-workforce-platform.html",
     "blog/verified-freelancer-marketplace.html", "blog/where-to-list-services-online.html",
+    "blog/how-to-find-human-workers-ai-tasks.html",
 )
 
 
@@ -181,8 +302,12 @@ class TrustWordingTests(unittest.TestCase):
         self.assertIn("Profiles show bios, skills, work samples, ratings, reviews, and completed-order counts where available.", canonical)
         self.assertEqual(canonical, (ROOT / "backend/mcp-package/mcp_server.py").read_text())
 
-    def test_edited_faq_answers_match_json_ld(self):
-        for relative in EDITED_FAQ_PAGES:
+    def test_every_faq_page_matches_json_ld(self):
+        pages = faq_pages()
+        # Discovery must find every page this change edited (a floor, not the whole set).
+        self.assertLessEqual(set(EDITED_FAQ_PAGES), set(pages))
+        self.assertGreaterEqual(len(pages), 50)
+        for relative in pages:
             with self.subTest(page=relative):
                 self.assertEqual(faq_contract_problems((FRONTEND / relative).read_text()), [])
 
@@ -201,6 +326,37 @@ class TrustWordingTests(unittest.TestCase):
         self.assertEqual(source.count(anchor), 1)
         extra = "<h3>Can I list a service for free?</h3>\n          <p>Yes.</p>\n\n          " + anchor
         self.assertTrue(faq_contract_problems(source.replace(anchor, extra, 1)))
+        # Duplicate visible card with a conflicting answer.
+        first = faq["mainEntity"][0]["name"]
+        duplicate = "<h3>" + first + "</h3>\n          <p>The employer pays a 2% platform fee.</p>\n\n          " + anchor
+        self.assertTrue(faq_contract_problems(source.replace(anchor, duplicate, 1)))
+        # Renamed visible question.
+        self.assertTrue(faq_contract_problems(source.replace(anchor, "<h3>" + first + " (updated)</h3>", 1)))
+
+    def test_faq_markup_variants_are_parsed(self):
+        def page(body, questions):
+            ld = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+                {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in questions]}
+            return ('<html><head><script type="application/ld+json">' + json.dumps(ld) + "</script></head>"
+                    "<body><main>" + body + "</main></body></html>")
+
+        qa = [("Is it free to post?", "Posting is free."), ("How are fees charged?", "A 1% platform fee plus a fixed 3% processing charge.")]
+        layouts = {
+            "details with attributes": "".join(f'<details class="disclosure" open><summary class="q">{q}</summary><div><p>{a}</p></div></details>' for q, a in qa),
+            "data-ai-answer card with nested header": "".join(f"<article class='card' data-ai-answer><header><h3 class='card-title'>{q}</h3></header><p class='card-text'>{a}</p></article>" for q, a in qa),
+            "h2 id=faq single quotes": "<h2 id='faq'>Frequently asked questions</h2>" + "".join(f"<h3>{q}</h3><p>{a}</p>" for q, a in qa),
+            "h2 id=faq section then CTA callout": '<section><h2 id="faq">FAQ</h2>' + "".join(f"<h3>{q}</h3><p>{a}</p>" for q, a in qa)
+                + '</section><div class="callout"><h3>Ready to post a task?</h3><p>Start now.</p></div>',
+            "h2 id=faq then inline CTA callout": '<h2 id="faq">FAQ</h2>' + "".join(f"<h3>{q}</h3><p>{a}</p>" for q, a in qa)
+                + '<div class="callout cta"><h3>Ready to post a task?</h3><p>Start now.</p></div>',
+        }
+        for name, body in layouts.items():
+            with self.subTest(layout=name):
+                self.assertEqual(faq_contract_problems(page(body, qa)), [])
+                self.assertTrue(faq_contract_problems(page(body, qa[:1])), "missing JSON-LD question not caught")
+                self.assertTrue(faq_contract_problems(page(body, qa + [("Do you vet workers?", "No.")])), "missing visible question not caught")
+                wrong = [(qa[0][0], qa[0][1]), (qa[1][0], "A 2% platform fee.")]
+                self.assertTrue(faq_contract_problems(page(body, wrong)), "answer drift not caught")
 
     def test_faq_answer_drift_mutation_is_caught(self):
         source = (FRONTEND / "blog/verified-freelancer-marketplace.html").read_text()
@@ -252,6 +408,16 @@ class TrustWordingTests(unittest.TestCase):
             "No account required to explore; workers receive the listed payout when you hire.",
             "Workers get paid as soon as the employer hires them.",
             "Fees: 1% + Stripe (employer)",
+            "Workers receive their listed payout when you hire.",
+            "Workers are paid immediately when you hire.",
+            "The worker is paid when you hire.",
+            "Workers receive the listed payout upon hire.",
+            "Freelancers get paid at checkout.",
+            "Payouts are released as soon as you hire.",
+            "Employers pay 1% plus Stripe fees.",
+            "Employers pay a 1% platform fee + Stripe processing fees.",
+            "Listed payout to worker; employer pays Stripe + 1%",
+            "Stripe fees plus 1% for employers.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -274,6 +440,17 @@ class TrustWordingTests(unittest.TestCase):
             "Profiles do not show verification status.",
             "GoHireHumans is not a verified freelancer marketplace.",
             "We do not offer verified workers.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(claim_problems(statement), [])
+
+    def test_truthful_payment_timing_and_fees_are_allowed(self):
+        for statement in (
+            "Your card is charged when you hire; the worker receives the listed payout after you approve the delivered work.",
+            "The employer is charged at hire. Workers receive the listed payout after approval.",
+            "Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
+            "Payments run through Stripe where checkout is configured.",
+            "Workers receive the listed payout after the employer approves the work.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(claim_problems(statement), [])
