@@ -117,7 +117,7 @@ Authenticated (see the API reference for bodies and scopes):
 
 - `POST /auth/register`, `POST /auth/login`: create an account or get a session token.
 - `POST /api/v1/jobs`: publish a fixed-budget job (write scope or session token).
-- `GET /api/v1/jobs/{id}/applications`: applicants on your job (job owner only).
+- `GET /api/v1/jobs/{id}/applications`: applicants on your job (job owner or site admin only).
 - `GET /api/v1/me/jobs`, `GET /api/v1/me/services`: your own listings.
 - `POST /api/v1/payments/prepare-order-payment`: charges the employer's saved card immediately for an owner-approved order (session token, or an API key with the `payments:fund` scope).
 

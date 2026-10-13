@@ -44,8 +44,8 @@ TOOL_SUMMARIES = {
     "get_categories": "List valid category slugs for human and AI-agent services. Read-only; no key needed.",
     "create_job": "Publish a fixed-budget job post that workers can apply to. Needs the owner's approval and a session token or a write-scope API key. It does not hire anyone or charge anything.",
     "browse_jobs": "Browse open job posts, newest first. Read-only; no key needed.",
-    "hire_worker": "Order one service listing. Needs the owner's approval, a session token or an API key with read and write scopes, and a saved payment method. Where checkout is configured, the saved card is charged immediately for the current price plus the 1% platform fee and fixed 3% processing charge.",
-    "get_job_status": "Check one order (its employer or worker only) or one job post by ID. Read-only.",
+    "hire_worker": "Order one service listing. Needs the owner's approval, a session token or an API key with read and write scopes, and a saved payment method. Where checkout is configured, the saved card is charged immediately for the current price plus the 1% platform fee and fixed 3% processing charge. The worker is paid when the employer approves the work or a site admin completes the order.",
+    "get_job_status": "Check one order (its employer, its worker or a site admin only) or one job post by ID. Read-only.",
     "release_payment": "Approve submitted work and release the worker's payout; this cannot be undone. Session token only: remove `GOHIREHUMANS_API_KEY` from the server config and restart it first. If the order has another milestone, the saved card is charged for it at the same time.",
     "submit_review": "Rate and review the other party on a completed order. Needs a session token or a write-scope API key.",
     "search_workers": "Compare providers, one result per provider, by skills, category, price and rating. Read-only; no key needed.",
@@ -63,6 +63,7 @@ SAFETY_PROPERTIES = [
     (re.compile(r"\bRead-only\b"), "Read-only"),
     (re.compile(r"\bcharged\b"), "charged"),
     (re.compile(r"cannot be undone"), "cannot be undone"),
+    (re.compile(r"\bsite admin\b"), "site admin"),
 ]
 
 
@@ -111,22 +112,11 @@ def resource_lines(resources, summaries=None):
 
 
 REVIEWED_CLAIMS = ROOT / "scripts" / "templates" / "llms-full.reviewed-claims.txt"
-# A sentence (or code line) touching any of these topics is a claim about money, approval,
-# credentials, verification, or integrations. It must match a line in the reviewed-claims
-# register exactly, so a new or reworded claim fails the build until a person reviews it.
-# This replaces guessing polarity ("not", "never") with an explicit review step.
-SENSITIVE = re.compile(
-    r"(?i)\b(fees?|charge[ds]?|charging|pay|pays|paid|paying|payment|payments|payouts?|prices?|pricing|"
-    r"costs?|free|refund\w*|cancel\w*|disputes?|escrow|guarante\w*|approv\w*|without|automatic\w*|"
-    r"autonomous\w*|webhooks?|callbacks?|hourly|hours?|api[- ]?keys?|keys?|session|tokens?|scopes?|"
-    r"release_payment|hire_worker|create_job|vet\w*|screen\w*|verif\w*|background|identity|admin\w*|"
-    r"GOHIREHUMANS_\w+|stripe|card|checkout|milestones?|orders?|ordered|ordering|hire[sd]?|hiring|spend\w*|"
-    r"purchas\w*|buy\w*|funds?|funded|funding|deposit\w*|wallet|bank|crypto\w*|trust\w*|safe\w*|secur\w*|"
-    r"insur\w*|licen[cs]\w*|moderat\w*|notif\w*|instant\w*|real[- ]time|minutes?|own|self[- ]serve|"
-    r"polling|poll|largest|leading|best|top-rated|thousands|millions|worldwide|global\w*|anywhere|"
-    r"countries|cities|customers|clients|users|members)\b|\d+(\.\d+)?%|\$\s?\d|24/7|#1|"
-    r"\b\d[\d,.]*\+?\s*k?\s+(workers|people|humans|providers|freelancers|jobs|orders|reviews|tasks)\b"
-)
+# Every sentence (and every line inside a code block) in llms-full.txt must match a line in the
+# reviewed-claims register exactly. Nothing is exempt: earlier keyword-based gating let
+# reworded money, authority, screening and capability claims through. A new or edited
+# sentence, including FAQ text pulled from the live pages, fails the build until a person
+# checks it against the code and adds it to the register.
 # Absolute bans, even in a reviewed sentence.
 FORBIDDEN = re.compile(
     r"(?i)\bescrow\b|\bguarantee[ds]?\b|\bvetted\b|\bverified (workers|freelancers|humans|profiles?)\b|"
@@ -159,8 +149,8 @@ def claim_units(text):
     return units
 
 
-def sensitive_claims(text):
-    return [unit for unit in claim_units(text) if SENSITIVE.search(unit)]
+def published_claims(text):
+    return claim_units(text)
 
 
 def reviewed_claims(path=None):
@@ -172,7 +162,7 @@ def reviewed_claims(path=None):
 def factual_problems(text, reviewed=None):
     """Claims that are unreviewed, stale in the register, banned, or misstate the fee split."""
     reviewed = reviewed_claims() if reviewed is None else reviewed
-    found = sensitive_claims(text)
+    found = published_claims(text)
     problems = [f"unreviewed claim: {claim}" for claim in found if claim not in set(reviewed)]
     problems += [f"reviewed claim no longer published: {claim}" for claim in reviewed if claim not in set(found)]
     for unit in claim_units(text):

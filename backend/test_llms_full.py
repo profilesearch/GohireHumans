@@ -205,6 +205,41 @@ class LlmsFullGuardTests(unittest.TestCase):
             "GoHireHumans has 10,000 workers in 50 countries.",
             "The largest marketplace for hiring humans.",
             "Workers are available worldwide 24/7.",
+            # third review: claims with none of the old trigger words
+            "The employer owes nothing beyond the listed amount.",
+            "GoHireHumans adds nothing to the listed amount.",
+            "Your money returns to you immediately if the result is unsatisfactory.",
+            "GoHireHumans reimburses you if the result is unsatisfactory.",
+            "You can stop a task and reclaim your money immediately.",
+            "GoHireHumans reimburses unsuccessful tasks in full.",
+            "Workers receive their earnings as soon as they submit completed work.",
+            "Your money is protected until you accept the completed work.",
+            "An agent can commission a task independently.",
+            "Agents can act independently to commission tasks.",
+            "A credential from the developer portal can finalize delivered work.",
+            "Every worker passes a criminal-record check.",
+            "Every worker passes a competency assessment before appearing on GoHireHumans.",
+            "Every worker submits government-issued identification before appearing on GoHireHumans.",
+            "Connect GoHireHumans to Zapier to trigger workflows when a task finishes.",
+            "GoHireHumans supports Slack and Microsoft Teams.",
+            "GoHireHumans sends an HTTP request to your URL when a task finishes.",
+            "GoHireHumans pushes task updates to your endpoint.",
+            "Start a time-based job contract on GoHireHumans.",
+            "Every task is completed successfully.",
+            "GoHireHumans promises successful delivery on every task.",
+            "GoHireHumans handles all tax reporting for both parties.",
+            "Workers receive earnings through PayPal.",
+            "GoHireHumans serves every continent.",
+            "GoHireHumans has ten thousand active freelancers.",
+            "Get a completed task in seconds.",
+            "A developer credential can authorize completion of delivered work.",
+            "GoHireHumans supports time-based contracts.",
+            "GoHireHumans tracks billable time for ongoing work.",
+            "GoHireHumans supports OAuth credentials for all actions.",
+            "All workers are certified professionals.",
+            # plain capability claims and a code-block line must be reviewed too
+            "Workers usually reply the same day.",
+            "curl -X POST 'https://gohirehumans-production.up.railway.app/api/v1/orders/1/complete'",
         ):
             with self.subTest(claim=claim):
                 with self.assertRaises(ValueError):
@@ -224,7 +259,7 @@ class LlmsFullGuardTests(unittest.TestCase):
     def test_register_has_no_stale_or_duplicate_entries(self):
         reviewed = build_llms_full.reviewed_claims()
         self.assertEqual(len(reviewed), len(set(reviewed)))
-        self.assertEqual(sorted(set(build_llms_full.sensitive_claims(full_text()))), sorted(reviewed))
+        self.assertEqual(sorted(set(build_llms_full.published_claims(full_text()))), sorted(reviewed))
         self.assertEqual(build_llms_full.factual_problems(full_text()), [])
 
     def test_wrong_fee_split_is_rejected_even_if_registered(self):
@@ -237,6 +272,34 @@ class LlmsFullGuardTests(unittest.TestCase):
             with self.subTest(claim=claim):
                 problems = build_llms_full.factual_problems(claim, reviewed=[claim])
                 self.assertTrue(any(p.startswith("forbidden") for p in problems), problems)
+
+    def test_every_published_sentence_is_reviewed(self):
+        """Fail closed: no sentence is exempt because it lacks a money or authority keyword."""
+        reviewed = set(build_llms_full.reviewed_claims())
+        units = build_llms_full.published_claims(full_text())
+        self.assertGreater(len(units), 150)
+        self.assertEqual([u for u in units if u not in reviewed], [])
+        for harmless in ("Read the docs first.", "See the examples below."):
+            with self.subTest(sentence=harmless):
+                self.assertIn(f"unreviewed claim: {harmless}", build_llms_full.factual_problems(full_text() + "\n" + harmless + "\n"))
+
+    def test_order_access_names_every_permitted_actor(self):
+        """Employer, worker and site admin can all read an order (api_core and mcp_server agree)."""
+        text = full_text()
+        self.assertIn("`get_job_status`: Check one order (its employer, its worker or a site admin only)", text)
+        self.assertIn("applicants on your job (job owner or site admin only)", text)
+        self.assertIn("a site admin completes the order", text)
+        api = (BACKEND / "api_core.py").read_text(encoding="utf-8")
+        self.assertIn("order['employer_id'] != user['id'] and not user['is_admin']", api)
+        self.assertIn("job['employer_id'] != user['id'] and not user['is_admin']", api)
+        tools = literal(BACKEND / "mcp_server.py", "TOOLS")
+        for name, summary in (
+            ("get_job_status", "Check one order (its employer or worker only) or one job post by ID. Read-only."),
+            ("hire_worker", build_llms_full.TOOL_SUMMARIES["hire_worker"].replace(" or a site admin completes the order", "")),
+        ):
+            summaries = dict(build_llms_full.TOOL_SUMMARIES, **{name: summary})
+            with self.subTest(tool=name), self.assertRaises(ValueError):
+                build_llms_full.tool_lines(tools, summaries)
 
     def test_negated_safety_summary_is_rejected(self):
         tools = literal(BACKEND / "mcp_server.py", "TOOLS")
