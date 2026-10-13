@@ -42,6 +42,8 @@ PATTERNS = (
     r"\benterprise[- ]scale\s+operations\b|\b(?:running|processes|processing|handles?|handling)\s+thousands\s+of\s+(?:human\s+)?tasks\s+per\s+month\b[^.!?\n]{0,160}\b(?:GoHireHumans|GHH)\b",
     r"\b(?:hire|get|deliver\w*|connect\w*\s+you\s+with)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b|\b(?:find|access)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b(?![^.!?\n]*\?)",
     r"\bonly\s+platform\s+with\b",
+    r"\b(?:workers?|freelancers?|providers?)\s+(?:receive|get|are\s+paid)\s+(?:the\s+)?(?:listed\s+)?(?:payout|payment|paid)?\s*(?:when|as\s+soon\s+as|once)\s+(?:you|the\s+employer|employers?)\s+hires?\b",
+    r"\b(?:1%|one\s+percent)\s*\+\s*Stripe\b|\$\d+\s*\+\s*Stripe\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -120,13 +122,49 @@ def faq_contract_problems(source):
                 problems.append(question + ": visible and JSON-LD answer differ")
     if not faqs:
         problems.append("missing FAQPage")
+    # Reverse direction: every visible FAQ question must also be in JSON-LD, with equal counts.
+    structured = [" ".join(e["name"].split()) for faq in faqs for e in faq["mainEntity"]]
+    visible_questions = [" ".join(public_text(q).split()) for q in visible_faq_questions(source)]
+    for question in visible_questions:
+        if question not in structured:
+            problems.append(question + ": visible question missing from JSON-LD")
+    if visible_questions and len(visible_questions) != len(structured):
+        problems.append(f"FAQ count differs: {len(visible_questions)} visible vs {len(structured)} JSON-LD")
     return problems
+
+
+def visible_faq_questions(source):
+    """Visible FAQ questions in the three layouts the site uses:
+    <details><summary>Q</summary>, AI-answer cards (<article data-ai-answer><h3>Q</h3>),
+    and <h3> headings after an <h2 id="faq"> up to the next <h2>, call-to-action callout, or end of <main>."""
+    questions = re.findall(r"<details[^>]*>\s*<summary>(.*?)</summary>", source, re.S)
+    questions += re.findall(r"<article[^>]*\bdata-ai-answer\b[^>]*>\s*<h3[^>]*>(.*?)</h3>", source, re.S)
+    for section in re.findall(r'<h2[^>]*\bid="faq"[^>]*>.*?</h2>(.*?)(?=<h2\b|<div[^>]*\bclass="[^"]*\bcallout\b|</main>|<footer\b|$)', source, re.S | re.I):
+        questions += re.findall(r"<h3[^>]*>(.*?)</h3>", section, re.S)
+    seen, ordered = set(), []
+    for q in questions:
+        if q not in seen:
+            seen.add(q)
+            ordered.append(q)
+    return ordered
 
 
 def public_files():
     return sorted(path for path in FRONTEND.rglob("*")
                   if path.is_file() and path.suffix.lower() in {".html", ".json", ".txt"}
                   and not (EXCLUDED & set(path.relative_to(FRONTEND).parts)))
+
+
+EDITED_FAQ_PAGES = (
+    "faq.html", "post-a-small-task.html",
+    "use-cases/ai-agent-human-in-the-loop-tasks.html", "use-cases/hire-human-to-review-ai-output.html",
+    "blog/alternatives-to-fiverr.html", "blog/alternatives-to-freelancer.html", "blog/alternatives-to-toptal.html",
+    "blog/alternatives-to-upwork.html", "blog/best-freelance-platforms-escrow.html",
+    "blog/complete-guide-hiring-virtual-assistant.html", "blog/freelancers-switching-lower-fee-platforms.html",
+    "blog/gohirehumans-vs-fiverr.html", "blog/hire-data-entry-specialist.html", "blog/hire-human-for-ai-tasks.html",
+    "blog/human-as-a-service.html", "blog/on-demand-workforce-platform.html",
+    "blog/verified-freelancer-marketplace.html", "blog/where-to-list-services-online.html",
+)
 
 
 class TrustWordingTests(unittest.TestCase):
@@ -144,12 +182,25 @@ class TrustWordingTests(unittest.TestCase):
         self.assertEqual(canonical, (ROOT / "backend/mcp-package/mcp_server.py").read_text())
 
     def test_edited_faq_answers_match_json_ld(self):
-        for relative in ("faq.html", "blog/hire-human-for-ai-tasks.html",
-                         "blog/on-demand-workforce-platform.html", "blog/verified-freelancer-marketplace.html",
-                         "blog/where-to-list-services-online.html", "blog/alternatives-to-toptal.html",
-                         "blog/gohirehumans-vs-fiverr.html"):
+        for relative in EDITED_FAQ_PAGES:
             with self.subTest(page=relative):
                 self.assertEqual(faq_contract_problems((FRONTEND / relative).read_text()), [])
+
+    def test_faq_omission_mutations_are_caught(self):
+        source = (FRONTEND / "blog/where-to-list-services-online.html").read_text()
+        blocks = re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', source, re.S)
+        faq_block = next(b for b in blocks if json.loads(b).get("@type") == "FAQPage")
+        faq = json.loads(faq_block)
+        self.assertEqual(len(faq["mainEntity"]), 3)
+        self.assertEqual(faq_contract_problems(source), [])
+        # Missing schema question: visible card kept, third JSON-LD question removed.
+        dropped = dict(faq, mainEntity=faq["mainEntity"][:2])
+        self.assertTrue(faq_contract_problems(source.replace(faq_block, json.dumps(dropped), 1)))
+        # Visible-only question: an extra visible FAQ card with no JSON-LD entry.
+        anchor = "<h3>" + faq["mainEntity"][0]["name"] + "</h3>"
+        self.assertEqual(source.count(anchor), 1)
+        extra = "<h3>Can I list a service for free?</h3>\n          <p>Yes.</p>\n\n          " + anchor
+        self.assertTrue(faq_contract_problems(source.replace(anchor, extra, 1)))
 
     def test_faq_answer_drift_mutation_is_caught(self):
         source = (FRONTEND / "blog/verified-freelancer-marketplace.html").read_text()
@@ -198,6 +249,9 @@ class TrustWordingTests(unittest.TestCase):
             "Ready to hire elite talent at 1% platform fee?",
             "Find Toptal-quality developers on GoHireHumans.",
             "GoHireHumans (only platform with REST API + MCP)",
+            "No account required to explore; workers receive the listed payout when you hire.",
+            "Workers get paid as soon as the employer hires them.",
+            "Fees: 1% + Stripe (employer)",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
