@@ -25,6 +25,14 @@ PATTERNS = (
     r"\b(?:full REST API supporting task creation, monitoring, webhooks|outbound (?:webhooks|callbacks) for task progress)\b",
     r"\bStripe\s+verifies?\s+(?:identity|bank details)[^.!?;\n]*",
     r"\b(?:optional identity verification|identity verification is optional|no identity verification requirement|without required skill assessments or identity verification)\b",
+    # Second review: moderation and ID-check claims, coordinated claims after a disclaimer,
+    # and unsupported superiority or scale claims about GHH.
+    r"\b(?:moderators?|our team|we|GoHireHumans|GHH)\s+(?:\w+\s+){0,2}(?:review|check|approve|inspect)s?\s+(?:every|all|each)\s+(?:listing|task|job|post|service|worker|freelancer)s?\b",
+    r"\b(?:check|verif\w*|require)s?\s+(?:government[- ]issued\s+|photo\s+)?(?:IDs?|identification)\s+(?:for|of|from)\s+(?:every|all|each)\s+(?:workers?|freelancers?|providers?|sellers?)\b",
+    r"\b(?:but|and|also)\s+(?:also\s+)?(?:verif\w*|vet\w*|screen\w*|background[- ]check\w*)\s+(?:every|all|each|its|our)\s+(?:workers?|freelancers?|providers?|sellers?)\b",
+    r"\b(?:safer|safest)(?:,?\s+faster)?\s+(?:alternative|option)\b",
+    r"\b(?:GoHireHumans|GHH)\s+(?:is|offers|as)\s+(?:the\s+|a\s+)?(?:safer|safest|fastest|leading|#1|best)\b",
+    r"\b(?:manages|handles)\s+(?:the\s+)?worker[- ]pool\s+scaling\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -162,6 +170,13 @@ class TrustWordingTests(unittest.TestCase):
             "Task postings are screened by automated systems and human moderators.",
             "Upwork's identity verification is optional.",
             "Fiverr: No identity verification requirement",
+            "Our moderators review every listing",
+            "We check IDs for all workers",
+            "GoHireHumans does not guarantee results but verifies every worker.",
+            "Try the safer, faster alternative",
+            "For the safest option with payment processing review, GoHireHumans offers free listing.",
+            "GoHireHumans is the leading HaaS platform.",
+            "The platform manages worker pool scaling transparently.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
