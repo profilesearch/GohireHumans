@@ -69,10 +69,17 @@ class LlmsFullTests(unittest.TestCase):
             f"uvx --from '{PACKAGE_SOURCE}' gohirehumans-mcp",
             f"claude mcp add gohirehumans -- uvx --from '{PACKAGE_SOURCE}' gohirehumans-mcp",
             f"codex mcp add gohirehumans -- uvx --from '{PACKAGE_SOURCE}' gohirehumans-mcp",
+            f'claude mcp add gohirehumans -e "GOHIREHUMANS_API_KEY=$GOHIREHUMANS_API_KEY" -- uvx --from \'{PACKAGE_SOURCE}\' gohirehumans-mcp',
+            f'codex mcp add gohirehumans --env "GOHIREHUMANS_API_KEY=$GOHIREHUMANS_API_KEY" -- uvx --from \'{PACKAGE_SOURCE}\' gohirehumans-mcp',
             f'"args": ["--from", "{PACKAGE_SOURCE}", "gohirehumans-mcp"]',
         ):
             self.assertIn(command, text)
         self.assertNotIn("npx", text)
+        for block in re.findall(r"```bash\n(.*?)```", text, re.S):
+            for line in block.splitlines():
+                with self.subTest(command=line):
+                    # Angle brackets or an ellipsis would break a copy-pasted shell command.
+                    self.assertNotRegex(line, r"[<>]|\.\.\.")
         for variable in ("GOHIREHUMANS_API_KEY", "GOHIREHUMANS_AUTH_TOKEN", "GOHIREHUMANS_API_URL"):
             self.assertIn(f"`{variable}`", text)
             self.assertIn(variable, (BACKEND / "mcp-package" / "mcp_server.py").read_text(encoding="utf-8"))
@@ -86,13 +93,19 @@ class LlmsFullTests(unittest.TestCase):
             "Workers must finish Stripe payout setup before applying to jobs.",
             "GoHireHumans does not vet, screen, or background-check workers.",
             "There is no outbound webhook or callback for task progress.",
-            "accepts only a session token, never an API key",
+            "accepts only a session token",
+            "Unset `GOHIREHUMANS_API_KEY` before calling it",
+            "`Authorization: Bearer <session token>`",
+            "A site admin can also complete a service order, which releases its payout.",
+            "`release_payment` also charges the employer's saved card for the next milestone",
+            "charges the employer's saved card immediately",
             "Creating a job listing does not hire anyone or create or fund an order.",
         ):
             self.assertIn(phrase, text)
         allowed_negation = "GoHireHumans does not vet, screen, or background-check workers."
         self.assertEqual(claim_problems(text.replace(allowed_negation, "")), [])
         self.assertNotRegex(text, r"(?i)\bescrow\b|guarantee[ds]?\b|vetted|verified (workers|freelancers|humans)")
+        self.assertEqual(build_llms_full.factual_problems(text), [])
         self.assertNotRegex(text, r"ghh_[A-Za-z0-9]{8,}|Bearer [A-Za-z0-9]{16,}")
 
     def test_links_resolve_and_file_is_discoverable(self):
@@ -122,8 +135,9 @@ class LlmsFullGuardTests(unittest.TestCase):
         self.assertNotEqual(drifted, build_llms_full.render())
 
     def test_template_placeholder_left_unfilled_is_rejected(self):
-        with self.assertRaises(ValueError):
-            build_llms_full.render(template="# x\n{{FAQ}}\n{{UNKNOWN}}\n")
+        for placeholder in ("{{UNKNOWN}}", "{{UNKNOWN_2}}", "{{unknown}}", "{{ FAQ }}", "{{UNKNOWN-NAME}}", "{{", "}}"):
+            with self.subTest(placeholder=placeholder), self.assertRaises(ValueError):
+                build_llms_full.render(template=f"# x\n{{{{FAQ}}}}\n{placeholder}\n")
 
     def test_tool_list_drift_is_caught(self):
         dropped = full_text().replace("- `submit_review`: ", "- `submit_reviews`: ", 1)
@@ -134,6 +148,62 @@ class LlmsFullGuardTests(unittest.TestCase):
     def test_tool_without_description_is_rejected(self):
         with self.assertRaises(ValueError):
             build_llms_full.tool_lines([{"name": "search_services", "description": ""}])
+
+    def test_new_or_renamed_tool_needs_a_reviewed_summary(self):
+        tools = literal(BACKEND / "mcp_server.py", "TOOLS")
+        renamed = [dict(tool, name="search_listings") if tool["name"] == "search_services" else tool for tool in tools]
+        with self.assertRaises(ValueError):
+            build_llms_full.tool_lines(renamed)
+        with self.assertRaises(ValueError):
+            build_llms_full.tool_lines(tools + [{"name": "cancel_order", "description": "Cancel an order."}])
+
+    def test_summary_that_drops_a_safety_property_is_rejected(self):
+        tools = literal(BACKEND / "mcp_server.py", "TOOLS")
+        for name, dropped in (
+            ("search_services", "Read-only"),
+            ("hire_worker", "charged"),
+            ("release_payment", "cannot be undone"),
+            ("release_payment", "charged"),
+        ):
+            summaries = dict(build_llms_full.TOOL_SUMMARIES)
+            summaries[name] = summaries[name].replace(dropped, "")
+            with self.subTest(tool=name, dropped=dropped), self.assertRaises(ValueError):
+                build_llms_full.tool_lines(tools, summaries)
+
+    def test_contradicting_claims_are_rejected_even_when_template_and_output_agree(self):
+        """Generation parity alone would pass these; the factual guard must not."""
+        template = build_llms_full.TEMPLATE.read_text(encoding="utf-8")
+        anchor = "## How to write a task a human can deliver"
+        self.assertIn(anchor, template)
+        for claim in (
+            "GoHireHumans sends a webhook to your callback URL when the task is done.",
+            "Employers pay no platform fee.",
+            "Employers pay a 0% fee and workers keep 100%.",
+            "Hire a worker on an hourly contract.",
+            "Use an API key to call release_payment and approve delivered work.",
+            "An agent can order a service without asking the account owner.",
+            "The agent automatically pays the worker when work is submitted.",
+            "The worker is paid only after the employer approves delivered work.",
+            "Every worker is vetted.",
+            "Payments are held in escrow.",
+            "Delivery is guaranteed.",
+            "Our intelligent matching finds the right worker.",
+            "Employers pay a 5% platform fee.",
+        ):
+            with self.subTest(claim=claim):
+                with self.assertRaises(ValueError):
+                    build_llms_full.render(template=template.replace(anchor, claim + "\n\n" + anchor, 1))
+
+    def test_truthful_negations_still_pass(self):
+        for sentence in (
+            "There is no outbound webhook or callback for task progress.",
+            "Hourly job hiring is not available.",
+            "Approving delivered work (`release_payment`) accepts only a session token; unset `GOHIREHUMANS_API_KEY` first.",
+            "GoHireHumans does not vet, screen, or background-check workers.",
+            "Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertEqual(build_llms_full.factual_problems(sentence), [])
 
 
 if __name__ == "__main__":
