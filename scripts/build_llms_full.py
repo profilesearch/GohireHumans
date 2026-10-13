@@ -128,12 +128,35 @@ FEE_ROLES = (
 )
 
 
+# The only code-fence lines allowed: an opening fence with one of these languages, or a bare
+# closing fence. Any other line containing ``` (metadata, trailing text, indented or longer
+# fences) is published text the register has not reviewed, so it fails the build.
+FENCE_OPEN = {"```bash", "```json"}
+FENCE_CLOSE = "```"
+
+
+def fence_problems(text):
+    problems, fenced = [], False
+    for number, raw in enumerate(text.splitlines(), 1):
+        if "```" not in raw:
+            continue
+        if not fenced and raw in FENCE_OPEN:
+            fenced = True
+        elif fenced and raw == FENCE_CLOSE:
+            fenced = False
+        else:
+            problems.append(f"malformed code fence on line {number}: {raw!r}")
+    if fenced:
+        problems.append("unclosed code fence")
+    return problems
+
+
 def claim_units(text):
     """Sentences outside code fences, and individual lines inside them."""
     units, fenced = [], False
     for raw in text.splitlines():
         line = raw.strip()
-        if line.startswith("```"):
+        if (not fenced and raw in FENCE_OPEN) or (fenced and raw == FENCE_CLOSE):
             fenced = not fenced
             continue
         if not line:
@@ -165,13 +188,16 @@ def factual_problems(text, reviewed=None):
     found = published_claims(text)
     problems = [f"unreviewed claim: {claim}" for claim in found if claim not in set(reviewed)]
     problems += [f"reviewed claim no longer published: {claim}" for claim in reviewed if claim not in set(found)]
-    for unit in claim_units(text):
-        if FORBIDDEN.search(unit):
-            problems.append(f"forbidden claim: {unit}")
-        for pattern, expected in FEE_ROLES:
-            for value in pattern.findall(unit):
-                if value != expected:
-                    problems.append(f"wrong fee split: {unit}")
+    problems += fence_problems(text)
+    # Bans and fee roles are checked on the whole published text, not on extracted
+    # sentences, so no formatting can hide them from these checks.
+    flat = " ".join(text.split())
+    for match in FORBIDDEN.finditer(flat):
+        problems.append(f"forbidden claim: {flat[max(0, match.start() - 60):match.end() + 60]}")
+    for pattern, expected in FEE_ROLES:
+        for match in pattern.finditer(flat):
+            if match.group(1) != expected:
+                problems.append(f"wrong fee split: {flat[max(0, match.start() - 60):match.end() + 60]}")
     for percent in sorted(set(re.findall(r"\b\d+(?:\.\d+)?%", text))):
         if percent not in ("1%", "3%"):
             problems.append(f"unexpected percentage: {percent}")

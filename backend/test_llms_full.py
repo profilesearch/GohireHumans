@@ -245,6 +245,46 @@ class LlmsFullGuardTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     build_llms_full.render(template=template.replace(anchor, claim + "\n\n" + anchor, 1))
 
+    def test_code_fence_lines_cannot_carry_unreviewed_text(self):
+        """Fourth review: text on a fence line was skipped, so it bypassed the register."""
+        template = build_llms_full.TEMPLATE.read_text(encoding="utf-8")
+        anchor = "## How to write a task a human can deliver"
+        lines = template.splitlines()
+        closing = next(i for i, line in enumerate(lines) if line == "```")
+        opening = next(i for i, line in enumerate(lines) if line == "```bash")
+        mutants = {}
+        for label, index, suffix in (
+            ("closing-fence suffix", closing, " GoHireHumans supports Slack and Microsoft Teams."),
+            ("closing-fence ban", closing, " Every worker is vetted."),
+            ("opening-fence metadata", opening, " Employers pay a 3% platform fee plus a fixed 1% processing charge."),
+        ):
+            changed = list(lines)
+            changed[index] += suffix
+            mutants[label] = "\n".join(changed) + "\n"
+        for label, block in (
+            ("text fence", "```text Employers pay a 3% platform fee plus a fixed 1% processing charge.\n```"),
+            ("unknown language", "```python\nprint('ok')\n```"),
+            ("indented fence", "  ```\nGoHireHumans supports Slack.\n  ```"),
+            ("long fence", "````\nEvery worker is vetted.\n````"),
+            ("unclosed fence", "```bash"),
+        ):
+            mutants[label] = template.replace(anchor, block + "\n\n" + anchor, 1)
+        for label, mutant in mutants.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(mutant, template)
+                with self.assertRaises(ValueError):
+                    build_llms_full.render(template=mutant)
+
+    def test_bans_and_fee_roles_apply_to_the_whole_text(self):
+        for text in (
+            "```bash\necho ok\n``` Every worker is vetted.",
+            "| Fee | Employers pay a 3% platform fee plus a fixed 1% processing charge. |",
+            "<!-- Payments are held in escrow. -->",
+        ):
+            with self.subTest(text=text):
+                problems = build_llms_full.factual_problems(text, reviewed=build_llms_full.published_claims(text))
+                self.assertTrue(any(p.startswith(("forbidden", "wrong fee split", "malformed")) for p in problems), problems)
+
     def test_editing_a_reviewed_claim_needs_a_register_change(self):
         template = build_llms_full.TEMPLATE.read_text(encoding="utf-8")
         reworded = template.replace(
