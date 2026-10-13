@@ -94,7 +94,7 @@ class LlmsFullTests(unittest.TestCase):
             "GoHireHumans does not vet, screen, or background-check workers.",
             "There is no outbound webhook or callback for task progress.",
             "accepts only a session token",
-            "Unset `GOHIREHUMANS_API_KEY` before calling it",
+            "remove `GOHIREHUMANS_API_KEY` from the MCP server's env or client config and restart or reconnect",
             "`Authorization: Bearer <session token>`",
             "A site admin can also complete a service order, which releases its payout.",
             "`release_payment` also charges the employer's saved card for the next milestone",
@@ -171,11 +171,12 @@ class LlmsFullGuardTests(unittest.TestCase):
                 build_llms_full.tool_lines(tools, summaries)
 
     def test_contradicting_claims_are_rejected_even_when_template_and_output_agree(self):
-        """Generation parity alone would pass these; the factual guard must not."""
+        """Generation parity alone would pass these; the reviewed-claims register must not."""
         template = build_llms_full.TEMPLATE.read_text(encoding="utf-8")
         anchor = "## How to write a task a human can deliver"
         self.assertIn(anchor, template)
         for claim in (
+            # first review
             "GoHireHumans sends a webhook to your callback URL when the task is done.",
             "Employers pay no platform fee.",
             "Employers pay a 0% fee and workers keep 100%.",
@@ -189,22 +190,64 @@ class LlmsFullGuardTests(unittest.TestCase):
             "Delivery is guaranteed.",
             "Our intelligent matching finds the right worker.",
             "Employers pay a 5% platform fee.",
+            # second review: unrelated negations, direct denials, swapped fee roles
+            "Hire hourly, no setup needed.",
+            "GoHireHumans sends webhooks, no polling required.",
+            "Use an API key to call release_payment; no session is needed.",
+            "The worker is never paid before the employer approves delivered work.",
+            "Employers never pay a platform fee.",
+            "There is no approval needed before an agent orders.",
+            "Employers pay a 3% platform fee plus a fixed 1% processing charge.",
+            # rewordings that avoid the obvious words
+            "Agents can order services on their own.",
+            "Workers respond within minutes.",
+            "Every worker has passed an identity check.",
+            "GoHireHumans has 10,000 workers in 50 countries.",
+            "The largest marketplace for hiring humans.",
+            "Workers are available worldwide 24/7.",
         ):
             with self.subTest(claim=claim):
                 with self.assertRaises(ValueError):
                     build_llms_full.render(template=template.replace(anchor, claim + "\n\n" + anchor, 1))
 
-    def test_truthful_negations_still_pass(self):
-        for sentence in (
-            "There is no outbound webhook or callback for task progress.",
-            "Hourly job hiring is not available.",
-            "Approving delivered work (`release_payment`) accepts only a session token; unset `GOHIREHUMANS_API_KEY` first.",
-            "GoHireHumans does not vet, screen, or background-check workers.",
-            "Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
-        ):
-            with self.subTest(sentence=sentence):
-                self.assertEqual(build_llms_full.factual_problems(sentence), [])
+    def test_editing_a_reviewed_claim_needs_a_register_change(self):
+        template = build_llms_full.TEMPLATE.read_text(encoding="utf-8")
+        reworded = template.replace(
+            "A site admin can also complete a service order, which releases its payout.",
+            "Only the employer can release a payout.",
+            1,
+        )
+        self.assertNotEqual(reworded, template)
+        with self.assertRaises(ValueError):
+            build_llms_full.render(template=reworded)
 
+    def test_register_has_no_stale_or_duplicate_entries(self):
+        reviewed = build_llms_full.reviewed_claims()
+        self.assertEqual(len(reviewed), len(set(reviewed)))
+        self.assertEqual(sorted(set(build_llms_full.sensitive_claims(full_text()))), sorted(reviewed))
+        self.assertEqual(build_llms_full.factual_problems(full_text()), [])
+
+    def test_wrong_fee_split_is_rejected_even_if_registered(self):
+        swapped = "Employers pay a 3% platform fee plus a fixed 1% processing charge."
+        problems = build_llms_full.factual_problems(swapped, reviewed=[swapped])
+        self.assertTrue(any(p.startswith("wrong fee split") for p in problems), problems)
+
+    def test_banned_wording_is_rejected_even_if_registered(self):
+        for claim in ("Payments are held in escrow.", "Every worker is vetted.", "Delivery is guaranteed."):
+            with self.subTest(claim=claim):
+                problems = build_llms_full.factual_problems(claim, reviewed=[claim])
+                self.assertTrue(any(p.startswith("forbidden") for p in problems), problems)
+
+    def test_negated_safety_summary_is_rejected(self):
+        tools = literal(BACKEND / "mcp_server.py", "TOOLS")
+        for name, summary in (
+            ("hire_worker", "Order one service listing. The saved card is not charged."),
+            ("release_payment", "Approve submitted work. This never cannot be undone; the card is never charged."),
+            ("search_services", "Search listings. Not Read-only."),
+        ):
+            summaries = dict(build_llms_full.TOOL_SUMMARIES, **{name: summary})
+            with self.subTest(tool=name), self.assertRaises(ValueError):
+                build_llms_full.tool_lines(tools, summaries)
 
 if __name__ == "__main__":
     unittest.main()

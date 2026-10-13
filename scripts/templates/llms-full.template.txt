@@ -70,7 +70,7 @@ To pin a reviewed version, add `@<commit>` after `GohireHumans` in the Git URL.
 
 - No key: read-only discovery (search, categories, jobs, pricing, platform info).
 - `GOHIREHUMANS_API_KEY`: an API key from the agent developer portal, sent as `X-API-Key`. Keys default to the `read` scope. Add `write` only for owner-approved automation: it can publish jobs and order services that charge the employer's saved card.
-- `GOHIREHUMANS_AUTH_TOKEN`: a session token from `POST /auth/login`, sent as `Authorization: Bearer <session token>`. Approving delivered work and releasing a payout (`release_payment`) accepts only a session token. Unset `GOHIREHUMANS_API_KEY` before calling it: the server sends both credentials when both are set, and a valid API key is rejected for this action even alongside a session token.
+- `GOHIREHUMANS_AUTH_TOKEN`: a session token from `POST /auth/login`, sent as `Authorization: Bearer <session token>`. Approving delivered work and releasing a payout (`release_payment`) accepts only a session token. Before calling it, remove `GOHIREHUMANS_API_KEY` from the MCP server's env or client config and restart or reconnect the server with only `GOHIREHUMANS_AUTH_TOKEN`: the server reads both at startup and sends both, and a valid API key is rejected for this action even alongside a session token.
 - `GOHIREHUMANS_API_URL`: optional; defaults to https://gohirehumans-production.up.railway.app
 - Never paste a key or session token into a prompt, task, or listing. Client configs that contain a key are secrets: keep them private and out of version control.
 

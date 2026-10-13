@@ -46,7 +46,7 @@ TOOL_SUMMARIES = {
     "browse_jobs": "Browse open job posts, newest first. Read-only; no key needed.",
     "hire_worker": "Order one service listing. Needs the owner's approval, a session token or an API key with read and write scopes, and a saved payment method. Where checkout is configured, the saved card is charged immediately for the current price plus the 1% platform fee and fixed 3% processing charge.",
     "get_job_status": "Check one order (its employer or worker only) or one job post by ID. Read-only.",
-    "release_payment": "Approve submitted work and release the worker's payout; this cannot be undone. Session token only: unset `GOHIREHUMANS_API_KEY` first. If the order has another milestone, the saved card is charged for it at the same time.",
+    "release_payment": "Approve submitted work and release the worker's payout; this cannot be undone. Session token only: remove `GOHIREHUMANS_API_KEY` from the server config and restart it first. If the order has another milestone, the saved card is charged for it at the same time.",
     "submit_review": "Rate and review the other party on a completed order. Needs a session token or a write-scope API key.",
     "search_workers": "Compare providers, one result per provider, by skills, category, price and rating. Read-only; no key needed.",
     "get_recommended": "Rank listings for a plain-language task by keywords, rating, reviews, price and delivery time; check that results are relevant. Read-only; no key needed.",
@@ -78,8 +78,14 @@ def _checked_summaries(items, key, summaries, kind):
         if not description:
             raise ValueError(f"MCP {kind} {item[key]!r} has no description")
         for pattern, required in SAFETY_PROPERTIES:
-            if pattern.search(description) and required not in summaries[item[key]]:
-                raise ValueError(f"{kind} summary for {item[key]!r} must say {required!r}")
+            summary = summaries[item[key]]
+            if not pattern.search(description):
+                continue
+            negated = re.search(
+                rf"(?i)\b(not|never|no|isn't|won't|without)\b(\W+\w+){{0,3}}\W+{re.escape(required)}", summary
+            )
+            if required not in summary or negated:
+                raise ValueError(f"{kind} summary for {item[key]!r} must state {required!r} affirmatively")
     return [(name, summaries[name]) for name in names]
 
 
@@ -104,45 +110,81 @@ def resource_lines(resources, summaries=None):
     return "\n".join(f"- `{uri}`: {summary}" for uri, summary in pairs)
 
 
-NEGATION = re.compile(r"(?i)\b(no|not|never|nothing|cannot|isn't|doesn't|don't|aren't)\b")
-# Each rule: (name, sentence trigger, extra test that makes the sentence acceptable).
-# A triggering sentence passes only if it is negated or meets the extra test.
-FACT_RULES = [
-    ("outbound webhook or callback claim", re.compile(r"(?i)\b(webhooks?|callbacks?)\b"), None),
-    ("hourly hiring claim", re.compile(r"(?i)\bhourly\b.*\b(hire|hiring|job|contract|post)s?\b|\b(hire|hiring|job|contract|post)s?\b.*\bhourly\b"),
-     re.compile(r"(?i)\brather than assuming hourly\b")),
-    ("API-key payout approval claim", re.compile(r"(?i)\bAPI[- ]keys?\b.*\b(release_payment|releas\w*|approv\w* (the )?(delivered|submitted) work)\b|\b(release_payment|releas\w*)\b.*\bAPI[- ]keys?\b"),
-     re.compile(r"(?i)only a session token|session token only|\bunset\b|\brejected\b")),
-    ("spend or hiring without owner approval", re.compile(r"(?i)\bwithout\b[^.]*\b(approval|approving|owner|asking)\b|\bautomatic(ally)?\b[^.]*\b(hire|hires|pay|pays|charge|charges|approve|approves|release)\b"), None),
-    ("unconditional payout-protection claim", re.compile(r"(?i)\bpaid only (after|when)\b|\bonly (after|once|when) (the )?(employer|buyer|you) approv|\bnever (paid|released) (before|without)\b"), None),
-    ("zero or different employer fee claim", re.compile(r"(?i)\b(no|zero|0%) (platform |employer |buyer )?fees?\b|\bfree for (employers|buyers|clients)\b|\bemployers pay nothing\b"), re.compile(r"$^")),
-]
-FORBIDDEN = re.compile(r"(?i)\bescrow\b|\bguarantee[ds]?\b|\bvetted\b|\bverified (workers|freelancers|humans|profiles?)\b|\bintelligent matching\b")
+REVIEWED_CLAIMS = ROOT / "scripts" / "templates" / "llms-full.reviewed-claims.txt"
+# A sentence (or code line) touching any of these topics is a claim about money, approval,
+# credentials, verification, or integrations. It must match a line in the reviewed-claims
+# register exactly, so a new or reworded claim fails the build until a person reviews it.
+# This replaces guessing polarity ("not", "never") with an explicit review step.
+SENSITIVE = re.compile(
+    r"(?i)\b(fees?|charge[ds]?|charging|pay|pays|paid|paying|payment|payments|payouts?|prices?|pricing|"
+    r"costs?|free|refund\w*|cancel\w*|disputes?|escrow|guarante\w*|approv\w*|without|automatic\w*|"
+    r"autonomous\w*|webhooks?|callbacks?|hourly|hours?|api[- ]?keys?|keys?|session|tokens?|scopes?|"
+    r"release_payment|hire_worker|create_job|vet\w*|screen\w*|verif\w*|background|identity|admin\w*|"
+    r"GOHIREHUMANS_\w+|stripe|card|checkout|milestones?|orders?|ordered|ordering|hire[sd]?|hiring|spend\w*|"
+    r"purchas\w*|buy\w*|funds?|funded|funding|deposit\w*|wallet|bank|crypto\w*|trust\w*|safe\w*|secur\w*|"
+    r"insur\w*|licen[cs]\w*|moderat\w*|notif\w*|instant\w*|real[- ]time|minutes?|own|self[- ]serve|"
+    r"polling|poll|largest|leading|best|top-rated|thousands|millions|worldwide|global\w*|anywhere|"
+    r"countries|cities|customers|clients|users|members)\b|\d+(\.\d+)?%|\$\s?\d|24/7|#1|"
+    r"\b\d[\d,.]*\+?\s*k?\s+(workers|people|humans|providers|freelancers|jobs|orders|reviews|tasks)\b"
+)
+# Absolute bans, even in a reviewed sentence.
+FORBIDDEN = re.compile(
+    r"(?i)\bescrow\b|\bguarantee[ds]?\b|\bvetted\b|\bverified (workers|freelancers|humans|profiles?)\b|"
+    r"\bintelligent matching\b"
+)
+FEE_ROLES = (
+    (re.compile(r"(?i)(\d+(?:\.\d+)?)%\s+platform fee"), "1"),
+    (re.compile(r"(?i)(\d+(?:\.\d+)?)%\s+processing"), "3"),
+)
 
 
-def sentences(text):
-    for line in text.splitlines():
-        for sentence in re.split(r"(?<=[.!?])\s+", line):
-            if sentence.strip():
-                yield sentence.strip()
+def claim_units(text):
+    """Sentences outside code fences, and individual lines inside them."""
+    units, fenced = [], False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("```"):
+            fenced = not fenced
+            continue
+        if not line:
+            continue
+        if fenced:
+            units.append(" ".join(line.split()))
+            continue
+        line = re.sub(r"^(#+|-|\d+\.)\s+", "", line)
+        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z`(\"])", line):
+            sentence = " ".join(sentence.split())
+            if sentence:
+                units.append(sentence)
+    return units
 
 
-def factual_problems(text):
-    """Sentences that contradict the platform's verified behavior."""
-    problems = []
-    for sentence in sentences(text):
-        for name, trigger, accept in FACT_RULES:
-            if not trigger.search(sentence):
-                continue
-            negated = NEGATION.search(sentence) and name != "zero or different employer fee claim"
-            if negated or (accept is not None and accept.search(sentence)):
-                continue
-            problems.append(f"{name}: {sentence}")
-        if FORBIDDEN.search(sentence) and not NEGATION.search(sentence):
-            problems.append(f"forbidden claim: {sentence}")
+def sensitive_claims(text):
+    return [unit for unit in claim_units(text) if SENSITIVE.search(unit)]
+
+
+def reviewed_claims(path=None):
+    path = REVIEWED_CLAIMS if path is None else path
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [line for line in lines if line.strip() and not line.startswith("#")]
+
+
+def factual_problems(text, reviewed=None):
+    """Claims that are unreviewed, stale in the register, banned, or misstate the fee split."""
+    reviewed = reviewed_claims() if reviewed is None else reviewed
+    found = sensitive_claims(text)
+    problems = [f"unreviewed claim: {claim}" for claim in found if claim not in set(reviewed)]
+    problems += [f"reviewed claim no longer published: {claim}" for claim in reviewed if claim not in set(found)]
+    for unit in claim_units(text):
+        if FORBIDDEN.search(unit):
+            problems.append(f"forbidden claim: {unit}")
+        for pattern, expected in FEE_ROLES:
+            for value in pattern.findall(unit):
+                if value != expected:
+                    problems.append(f"wrong fee split: {unit}")
     for percent in sorted(set(re.findall(r"\b\d+(?:\.\d+)?%", text))):
         if percent not in ("1%", "3%"):
-            problems.append(f"unexpected fee percentage: {percent}")
+            problems.append(f"unexpected percentage: {percent}")
     return problems
 
 

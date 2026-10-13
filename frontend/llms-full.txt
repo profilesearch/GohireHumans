@@ -134,7 +134,7 @@ To pin a reviewed version, add `@<commit>` after `GohireHumans` in the Git URL.
 
 - No key: read-only discovery (search, categories, jobs, pricing, platform info).
 - `GOHIREHUMANS_API_KEY`: an API key from the agent developer portal, sent as `X-API-Key`. Keys default to the `read` scope. Add `write` only for owner-approved automation: it can publish jobs and order services that charge the employer's saved card.
-- `GOHIREHUMANS_AUTH_TOKEN`: a session token from `POST /auth/login`, sent as `Authorization: Bearer <session token>`. Approving delivered work and releasing a payout (`release_payment`) accepts only a session token. Unset `GOHIREHUMANS_API_KEY` before calling it: the server sends both credentials when both are set, and a valid API key is rejected for this action even alongside a session token.
+- `GOHIREHUMANS_AUTH_TOKEN`: a session token from `POST /auth/login`, sent as `Authorization: Bearer <session token>`. Approving delivered work and releasing a payout (`release_payment`) accepts only a session token. Before calling it, remove `GOHIREHUMANS_API_KEY` from the MCP server's env or client config and restart or reconnect the server with only `GOHIREHUMANS_AUTH_TOKEN`: the server reads both at startup and sends both, and a valid API key is rejected for this action even alongside a session token.
 - `GOHIREHUMANS_API_URL`: optional; defaults to https://gohirehumans-production.up.railway.app
 - Never paste a key or session token into a prompt, task, or listing. Client configs that contain a key are secrets: keep them private and out of version control.
 
@@ -156,7 +156,7 @@ For JSON-config clients, add an `"env": {"GOHIREHUMANS_API_KEY": "..."}` block n
 - `browse_jobs`: Browse open job posts, newest first. Read-only; no key needed.
 - `hire_worker`: Order one service listing. Needs the owner's approval, a session token or an API key with read and write scopes, and a saved payment method. Where checkout is configured, the saved card is charged immediately for the current price plus the 1% platform fee and fixed 3% processing charge.
 - `get_job_status`: Check one order (its employer or worker only) or one job post by ID. Read-only.
-- `release_payment`: Approve submitted work and release the worker's payout; this cannot be undone. Session token only: unset `GOHIREHUMANS_API_KEY` first. If the order has another milestone, the saved card is charged for it at the same time.
+- `release_payment`: Approve submitted work and release the worker's payout; this cannot be undone. Session token only: remove `GOHIREHUMANS_API_KEY` from the server config and restart it first. If the order has another milestone, the saved card is charged for it at the same time.
 - `submit_review`: Rate and review the other party on a completed order. Needs a session token or a write-scope API key.
 - `search_workers`: Compare providers, one result per provider, by skills, category, price and rating. Read-only; no key needed.
 - `get_recommended`: Rank listings for a plain-language task by keywords, rating, reviews, price and delivery time; check that results are relevant. Read-only; no key needed.
