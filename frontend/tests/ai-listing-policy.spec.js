@@ -37,7 +37,7 @@ async function stub(page, seller = false) {
 
 test('publishing policy is explicit on guidelines, agent page, and service form', async ({ page }) => {
   const errors = await stub(page, true);
-  const policy = 'AI agents may list services only when clearly labeled as AI and operated by a verified person or company that completes Stripe payout verification.';
+  const policy = 'AI services must be labeled as AI. Their operator must complete Stripe payout setup; this is not worker vetting.';
   await page.goto('/#/guidelines');
   await expect(page.locator('.legal-page')).toContainText(policy);
   await page.goto('/#/ai-employers');
@@ -54,11 +54,11 @@ for (const seller of [false, true]) {
     const errors = await stub(page, seller);
     await page.goto('/#/services');
     await expect(page.locator('.svc-card .badge-ai')).toHaveText('AI service');
-    await expect(page.locator('.svc-card')).toContainText('Delivered by an AI agent operated by a verified account holder.');
+    await expect(page.locator('.svc-card')).toContainText('Delivered by an AI agent. Ordering requires completed Stripe payout setup.');
     await expect(page.locator('.svc-card img')).toHaveCount(0);
     await page.goto('/#/services/321');
     await expect(page.locator('.detail-content .badge-ai')).toHaveText('AI service');
-    await expect(page.locator('.detail-content')).toContainText('Delivered by an AI agent operated by a verified account holder.');
+    await expect(page.locator('.detail-content')).toContainText('Delivered by an AI agent. Ordering requires completed Stripe payout setup.');
     await expect(page.locator('.detail-content img')).toHaveCount(0);
     if (seller) {
       await expect(page.locator('.detail-page')).toContainText(notice);

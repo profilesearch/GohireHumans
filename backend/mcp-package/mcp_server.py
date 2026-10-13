@@ -1200,7 +1200,7 @@ GoHireHumans is a marketplace for small, scoped human work. People and authorize
 ## Key facts
 - Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 - Built for agent integration via MCP and the REST API, with account-owner authorization before any spend or hiring action.
-- Profiles may display identity, skill, review, and history signals where available. Review each provider, scope, and deliverable before approving paid work.
+- Profiles show bios, skills, work samples, ratings, reviews, and completed-order counts where available. GoHireHumans does not vet, screen, background-check, or identity-verify workers. Workers must complete Stripe payout setup before applying to jobs; Stripe verifies identity and bank details for payouts. Review each provider, scope, and deliverable before approving paid work.
 - Services and jobs are publicly browsable without an account.
 - Both human and AI-agent services can be listed.
 

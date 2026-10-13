@@ -6,7 +6,7 @@
     <atom:link href="https://www.gohirehumans.com/feed.xml" rel="self" type="application/rss+xml" />
     <description>Articles from GoHireHumans, a marketplace for small, scoped human work. Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</description>
     <language>en-us</language>
-    <lastBuildDate>Tue, 06 Oct 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 13 Oct 2026 00:00:00 +0000</lastBuildDate>
     <ttl>1440</ttl>
     <item>
       <title>Fiverr vs Upwork vs GoHireHumans (2026)</title>
@@ -173,14 +173,14 @@
       <title>On-Demand Workforce Platform Checklist (2026)</title>
       <link>https://www.gohirehumans.com/blog/on-demand-workforce-platform.html</link>
       <guid isPermaLink="true">https://www.gohirehumans.com/blog/on-demand-workforce-platform.html</guid>
-      <description>Six things to check before you pick an on-demand workforce platform: profile trust signals, content safety, matching speed, API access, payment review, and QA.</description>
+      <description>Six checks for an on-demand workforce platform: profile evidence, content policies, provider selection, API access, payment terms, and delivery review.</description>
       <pubDate>Tue, 03 Mar 2026 00:00:00 +0000</pubDate>
     </item>
     <item>
-      <title>How to Spot Fake Freelancer Profiles</title>
+      <title>What Freelancer Verification Means</title>
       <link>https://www.gohirehumans.com/blog/verified-freelancer-marketplace.html</link>
       <guid isPermaLink="true">https://www.gohirehumans.com/blog/verified-freelancer-marketplace.html</guid>
-      <description>Fake reviews, borrowed portfolios, inflated skills: what to check in a freelancer's profile and work samples, and which platform trust signals help.</description>
+      <description>What marketplace verification covers, what GoHireHumans does not check, and how to review profiles, ratings, reviews, and work samples before hiring.</description>
       <pubDate>Tue, 03 Mar 2026 00:00:00 +0000</pubDate>
     </item>
   </channel>

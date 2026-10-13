@@ -1441,8 +1441,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "Tired of bidding wars and stacked fees? Compare 7 Freelancer.com alternatives by fees and hiring model: GoHireHumans, Upwork, Fiverr, Contra, Toptal, and more.",
             ),
             "frontend/blog/verified-freelancer-marketplace.html": (
-                "How to Spot Fake Freelancer Profiles | GoHireHumans",
-                "Fake reviews, borrowed portfolios, inflated skills: what to check in a freelancer's profile and work samples, and which platform trust signals help.",
+                "What Freelancer Verification Means | GoHireHumans",
+                "What marketplace verification covers, what GoHireHumans does not check, and how to review profiles, ratings, reviews, and work samples before hiring.",
             ),
             "frontend/blog/alternatives-to-toptal.html": (
                 "8 Toptal Alternatives by Price (2026) | GoHireHumans",
@@ -1470,7 +1470,7 @@ class BackendRegressionTests(unittest.TestCase):
             ),
             "frontend/blog/on-demand-workforce-platform.html": (
                 "On-Demand Workforce Platform Checklist (2026) | GoHireHumans",
-                "Six things to check before you pick an on-demand workforce platform: profile trust signals, content safety, matching speed, API access, payment review, and QA.",
+                "Six checks for an on-demand workforce platform: profile evidence, content policies, provider selection, API access, payment terms, and delivery review.",
             ),
             "frontend/blog/how-to-find-human-workers-ai-tasks.html": (
                 "API to Hire Humans for Real-World AI Tasks | GoHireHumans",
@@ -1538,7 +1538,7 @@ class BackendRegressionTests(unittest.TestCase):
             "alternatives-to-toptal": ("8 Toptal Alternatives by Price (2026)", "Best Toptal Alternatives in 2026",
                                        "Compare eight Toptal alternatives by rates, fees, and fit",
                                        ["fiverr-vs-upwork-vs-gohirehumans"]),
-            "verified-freelancer-marketplace": ("How to Spot Fake Freelancer Profiles", "How to Verify a Freelancer: 4 Trust Signals",
+            "verified-freelancer-marketplace": ("What Freelancer Verification Means", "How to Verify a Freelancer: 4 Trust Signals",
                                                 "Check four practical trust signals before hiring a freelancer",
                                                 ["hire-data-entry-specialist", "alternatives-to-fiverr", "hire-human-for-ai-tasks",
                                                  "best-freelance-platforms-escrow", "alternatives-to-upwork"]),
@@ -3362,7 +3362,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
             ],
             "frontend/blog/hire-human-for-ai-tasks.html": [
                 "account-owner approved scopes",
-                "Worker profiles may display identity, skill, review, and history signals where available",
+                "Profiles show bios, skills, work samples, ratings, reviews, and completed-order counts where available",
             ],
         }
         missing = []
@@ -3552,7 +3552,7 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 "content_id:'hire_web_developer'",
             ],
             "frontend/blog/verified-freelancer-marketplace.html": [
-                "Verified Freelancer Marketplace: Trust Signals to Check Before Hiring",
+                "What Freelancer Verification Means",
                 "content_id:'verified_freelancer_marketplace'",
             ],
             "frontend/blog/on-demand-workforce-platform.html": [
