@@ -17,13 +17,19 @@ RETIRED_PHRASES = ("escrow", "stripe processing plus 1%", "guaranteed", "vetted"
 # Worker-screening claims GoHireHumans does not make. Stripe payout verification wording stays allowed.
 _PEOPLE = r"(?:workers?|humans?|people|freelancers?|professionals?|providers?|sellers?|testers?|talent|experts?)"
 _SCREENED = r"(?:verified|vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated|approved)"
-# Wording that scopes verification to Stripe payouts is a true statement and stays allowed.
-_PAYOUT_SCOPE = r"(?!\s+(?:by|through|with|via)\s+stripe|\s+for\s+payouts?)"
+_SCREENED_ONLY = r"(?:vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated|approved)"
+_BRAND = r"(?:gohirehumans|we|our\s+team|the\s+platform)"
+_QUALIFIER = r"(?:all\s+|every\s+|each\s+|its\s+|our\s+|the\s+)?"
+_BE = r"(?:are|is|get|gets|have\s+been|has\s+been)\s+(?:all\s+|always\s+|individually\s+)?"
+# Only *verification* explicitly scoped to Stripe payouts is a true statement and stays allowed.
+# Screening, vetting and background checks are never exempt, whatever follows them.
+_STRIPE_PAYOUT_SCOPE = r"(?!\s+(?:by|through|with|via)\s+stripe\s+for\s+payouts?\b|\s+for\s+stripe\s+payouts?\b)"
 SCREENING_CLAIM = re.compile(
     rf"\b{_SCREENED}\s+{_PEOPLE}\b"
-    rf"|\b(?:gohirehumans|we|our\s+team|the\s+platform)\s+(?:verif(?:y|ies)|vets?|screens?|pre-screens?|background[- ]checks?|certif(?:y|ies))\s+"
-    rf"(?:all\s+|every\s+|each\s+|its\s+|our\s+|the\s+)?{_PEOPLE}\b{_PAYOUT_SCOPE}"
-    rf"|\b{_PEOPLE}\s+(?:are|is|get|gets|have\s+been|has\s+been)\s+(?:all\s+|always\s+|individually\s+)?{_SCREENED}\b{_PAYOUT_SCOPE}",
+    rf"|\b{_BRAND}\s+(?:vets?|screens?|pre-screens?|background[- ]checks?|certif(?:y|ies))\s+{_QUALIFIER}{_PEOPLE}\b"
+    rf"|\b{_BRAND}\s+verif(?:y|ies)\s+{_QUALIFIER}{_PEOPLE}\b{_STRIPE_PAYOUT_SCOPE}"
+    rf"|\b{_PEOPLE}\s+{_BE}{_SCREENED_ONLY}\b"
+    rf"|\b{_PEOPLE}\s+{_BE}verified\b{_STRIPE_PAYOUT_SCOPE}",
     re.IGNORECASE,
 )
 
@@ -172,6 +178,11 @@ class AnswerHTML(HTMLParser):
 def faq_contract_problems(relative, questions, text):
     parsed = AnswerHTML(text)
     problems = list(parsed.errors)
+    for schema in parsed.schemas:
+        roots = schema if isinstance(schema, list) else [schema]
+        for root in roots:
+            if isinstance(root, dict) and root.get("@context") != SCHEMA_CONTEXT:
+                problems.append(f"JSON-LD {schema_types(root) or ['block']} without {SCHEMA_CONTEXT} context")
     faqs = nodes_of_type(parsed.schemas, "FAQPage")
     if len(faqs) != 1:
         return problems + [f"expected exactly one FAQPage node, found {len(faqs)}"]
@@ -326,7 +337,17 @@ class AIAnswerContractGuardTests(unittest.TestCase):
 
     def test_brand_subject_and_passive_screening_claims_are_caught(self):
         old = "GoHireHumans is a marketplace where you can post a small, one-off task"
-        for claim in ("GoHireHumans verifies all workers.", "All workers are verified.", "We vet every freelancer.", "Providers have been background-checked."):
+        for claim in (
+            "GoHireHumans verifies all workers.",
+            "All workers are verified.",
+            "We vet every freelancer.",
+            "Providers have been background-checked.",
+            "We screen all workers via Stripe.",
+            "We background-check all workers through Stripe.",
+            "Workers are screened by Stripe for payouts.",
+            "Workers are verified via Stripe.",
+            "We verify workers for payouts.",
+        ):
             with self.subTest(claim=claim):
                 problems = self.problems_after(self.SMALL, old, claim + " " + old, 2)
                 self.assertNotIn("JSON-LD questions and answers differ from the visible cards", problems)
@@ -337,6 +358,7 @@ class AIAnswerContractGuardTests(unittest.TestCase):
             "Workers must finish Stripe payout setup and identity verification before applying.",
             "Paid by a person or company that completes the required payout verification.",
             "Workers are verified by Stripe for payouts before they can apply.",
+            "Sellers are verified for Stripe payouts.",
             "Humans who verify what your AI produces.",
         ):
             with self.subTest(text=text):
@@ -355,6 +377,10 @@ class AIAnswerContractGuardTests(unittest.TestCase):
     def test_faqpage_with_wrong_context_is_caught(self):
         problems = self.problems_after(self.SMALL, '{"@context": "https://schema.org", "@type": "FAQPage"', '{"@context": "https://example.org", "@type": "FAQPage"', 1)
         self.assert_caught(problems, "effective @context is 'https://example.org'")
+
+    def test_other_json_ld_block_without_context_is_caught(self):
+        problems = self.problems_after(self.SMALL, '{"@context": "https://schema.org", "@type": "BreadcrumbList"', '{"@type": "BreadcrumbList"', 1)
+        self.assert_caught(problems, "JSON-LD ['BreadcrumbList'] without https://schema.org context")
 
     def test_effective_context_follows_inheritance_and_local_override(self):
         cases = {
