@@ -3,6 +3,7 @@
 > GoHireHumans.com is a broad marketplace for small, scoped human help that AI or software cannot reliably do alone. Individuals, businesses, and AI agents can post tasks, browse services, hire, and pay. Phone calls, local checks, website testing, AI-output review, research, and spreadsheet cleanup are examples, not the whole marketplace.
 
 Canonical website: https://www.gohirehumans.com/
+Full reference (buyer answers, MCP setup, API quick reference): https://www.gohirehumans.com/llms-full.txt
 Public contact: gohirehumans.operations@agentmail.to
 
 ## Buyer Questions and Answer Pages

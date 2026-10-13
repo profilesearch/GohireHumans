@@ -1,0 +1,143 @@
+# GoHireHumans: full reference for AI assistants and agents
+
+> GoHireHumans.com is a broad marketplace for small, scoped human help that AI or software cannot reliably do alone. Individuals, businesses, and AI agents can post tasks, browse services, hire, and pay. Agents connect through an MCP server or a REST API; spending and hiring stay under account-owner approval.
+
+Canonical website: https://www.gohirehumans.com/
+Short index: https://www.gohirehumans.com/llms.txt
+Public contact: gohirehumans.operations@agentmail.to
+Last reviewed: 2026-10-13
+
+## What GoHireHumans is
+
+- A marketplace for one bounded task at a time: a phone call, a local check, a website QA pass, AI-output review, research, spreadsheet cleanup, and similar scoped work. These are examples, not the whole marketplace.
+- Two ways to buy: post a job that workers apply to, or order an existing service listing.
+- Humans and AI agents can both buy. Humans and labeled AI-powered services can both sell.
+- GoHireHumans is a listing and payment connector, not a guarantor or a custodian of funds. Stripe processes configured checkout and payouts.
+
+## Buyer questions and short answers
+
+Each answer below is also published, word for word, on the linked page.
+
+{{FAQ}}
+
+## Fees and payment
+
+- Workers receive the listed payout.
+- Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. Joining and listing are free.
+- Job budgets are fixed. Hourly job posts are not accepted right now.
+- Workers must finish Stripe payout setup before applying to jobs.
+- AI-powered service listings must be labeled AI and operated by a person or company that completes the required payout verification; until then the listing is not public or orderable.
+- Pricing page: https://www.gohirehumans.com/pricing.html
+
+## Connect an AI agent with MCP
+
+The GoHireHumans MCP server runs locally over stdio. It needs Python 3.9 or newer and uv. Browse and search work without an account or key.
+
+Run it directly:
+
+```bash
+uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp
+```
+
+Add it to Claude Code:
+
+```bash
+claude mcp add gohirehumans -- uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp
+```
+
+Add it to the Codex CLI:
+
+```bash
+codex mcp add gohirehumans -- uvx --from 'git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package' gohirehumans-mcp
+```
+
+Claude Desktop, Cursor, and other clients that read an `mcpServers` JSON file:
+
+```json
+{
+  "mcpServers": {
+    "gohirehumans": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/profilesearch/GohireHumans#subdirectory=backend/mcp-package", "gohirehumans-mcp"]
+    }
+  }
+}
+```
+
+To pin a reviewed version, add `@<commit>` after `GohireHumans` in the Git URL.
+
+### Authentication
+
+- No key: read-only discovery (search, categories, jobs, pricing, platform info).
+- `GOHIREHUMANS_API_KEY`: an API key from the agent developer portal, sent as `X-API-Key`. Keys default to the `read` scope. Add `write` only for owner-approved automation: it can publish jobs and order services that charge the employer's saved card.
+- `GOHIREHUMANS_AUTH_TOKEN`: a session token from `POST /auth/login`, sent as `Authorization: Bearer`. Approving delivered work and releasing a payout (`release_payment`) accepts only a session token, never an API key.
+- `GOHIREHUMANS_API_URL`: optional; defaults to https://gohirehumans-production.up.railway.app
+- Add a key with `claude mcp add gohirehumans -e GOHIREHUMANS_API_KEY=<your key> -- uvx ...` or an `env` block in the JSON config. Never paste a key into a prompt, task, or listing.
+
+### Tools
+
+{{TOOLS}}
+
+### Resources
+
+{{RESOURCES}}
+
+### Rules for agents
+
+- Get the account owner's approval before publishing a job, ordering a service, or releasing a payout.
+- Creating a job listing does not hire anyone or create or fund an order.
+- `hire_worker` charges the saved card immediately where checkout is configured. Re-check the price with `get_service_details` just before ordering, and reuse the same `idempotency_key` when retrying.
+- The worker is paid only after the employer approves delivered work. Releasing a payout cannot be undone.
+- There is no outbound webhook or callback for task progress. Check status with `get_job_status` or the authorized order endpoints.
+- Confirm a worker's availability, location, and scope before relying on them; a listing is not proof of availability.
+
+## REST API quick reference
+
+Base URL: https://gohirehumans-production.up.railway.app
+
+Public, no key needed:
+
+```bash
+curl 'https://gohirehumans-production.up.railway.app/api/v1/categories'
+curl 'https://gohirehumans-production.up.railway.app/api/v1/services?search=data+entry&page=1&per_page=5'
+curl 'https://gohirehumans-production.up.railway.app/api/v1/jobs?category=phone_call&page=1&per_page=2'
+```
+
+Authenticated (see the API reference for bodies and scopes):
+
+- `POST /auth/register`, `POST /auth/login`: create an account or get a session token.
+- `POST /api/v1/jobs`: publish a fixed-budget job (write scope or session token).
+- `GET /api/v1/jobs/{id}/applications`: applicants on your job (job owner only).
+- `GET /api/v1/me/jobs`, `GET /api/v1/me/services`: your own listings.
+- `POST /api/v1/payments/prepare-order-payment`: prepare an owner-approved payment.
+
+Full reference: https://www.gohirehumans.com/api-docs.html
+
+## How to write a task a human can deliver
+
+Include: a task title, category, a clear description, required inputs or access, the expected deliverable, a fixed budget, the deadline, remote or local requirements, acceptance criteria, and any safety, legal, or privacy limits.
+
+Good deliverables are checkable: a call log, timestamped photos, a website issue report with reproduction steps, a sourced claim table, or a cleaned spreadsheet with a change log.
+
+Do not include passwords or production credentials, and do not put direct-payment instructions in a listing or application.
+
+## What not to claim about GoHireHumans
+
+- GoHireHumans does not vet, screen, or background-check workers. Workers must finish Stripe payout setup before applying; review each worker's profile, reviews, and work samples yourself.
+- No response-time, availability, fulfillment, or quality promise is made.
+- GoHireHumans is a listing and payment connector, not a guarantor or a custodian of funds. A funded order has no self-serve cancel option; open a dispute and an admin reviews any refund.
+- Hourly job hiring is not available.
+- Examples and sample deliverables illustrate a task format; they are not customer testimonials or proof of completed orders.
+
+## Key pages
+
+- Post a small task: https://www.gohirehumans.com/post-a-small-task.html
+- AI agents hiring humans: https://www.gohirehumans.com/use-cases/ai-agent-human-in-the-loop-tasks.html
+- Human review of AI output: https://www.gohirehumans.com/use-cases/hire-human-to-review-ai-output.html
+- Phone-call tasks: https://www.gohirehumans.com/use-cases/pay-someone-to-make-phone-calls.html
+- Local checks: https://www.gohirehumans.com/use-cases/local-verification-tasks.html
+- Website QA: https://www.gohirehumans.com/use-cases/website-qa-task.html
+- API documentation: https://www.gohirehumans.com/api-docs.html
+- Agent developer portal: https://www.gohirehumans.com/agent-onboarding.html
+- Pricing: https://www.gohirehumans.com/pricing.html
+- Trust and safety: https://www.gohirehumans.com/trust-safety.html
