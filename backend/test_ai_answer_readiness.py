@@ -12,13 +12,18 @@ FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 SITE = "https://www.gohirehumans.com/"
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 HIDDEN_CLASSES = {"hidden", "sr-only", "visually-hidden", "d-none", "is-hidden", "invisible"}
-HIDDEN_STYLE = re.compile(r"display:none|visibility:hidden|visibility:collapse|opacity:0(?![.\d])|content-visibility:hidden")
+SCHEMA_CONTEXT = "https://schema.org"
 RETIRED_PHRASES = ("escrow", "stripe processing plus 1%", "guaranteed", "vetted", "owners approve each hire")
 # Worker-screening claims GoHireHumans does not make. Stripe payout verification wording stays allowed.
+_PEOPLE = r"(?:workers?|humans?|people|freelancers?|professionals?|providers?|sellers?|testers?|talent|experts?)"
+_SCREENED = r"(?:verified|vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated|approved)"
+# Wording that scopes verification to Stripe payouts is a true statement and stays allowed.
+_PAYOUT_SCOPE = r"(?!\s+(?:by|through|with|via)\s+stripe|\s+for\s+payouts?)"
 SCREENING_CLAIM = re.compile(
-    r"\b(?:verified|vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated)\s+"
-    r"(?:workers?|humans?|people|freelancers?|professionals?|providers?|sellers?|testers?|talent|experts?)\b"
-    r"|\bwe\s+(?:verify|vet|screen|background[- ]check)\s+(?:all\s+|every\s+)?(?:workers?|humans?|freelancers?|providers?|sellers?)\b",
+    rf"\b{_SCREENED}\s+{_PEOPLE}\b"
+    rf"|\b(?:gohirehumans|we|our\s+team|the\s+platform)\s+(?:verif(?:y|ies)|vets?|screens?|pre-screens?|background[- ]checks?|certif(?:y|ies))\s+"
+    rf"(?:all\s+|every\s+|each\s+|its\s+|our\s+|the\s+)?{_PEOPLE}\b{_PAYOUT_SCOPE}"
+    rf"|\b{_PEOPLE}\s+(?:are|is|get|gets|have\s+been|has\s+been)\s+(?:all\s+|always\s+|individually\s+)?{_SCREENED}\b{_PAYOUT_SCOPE}",
     re.IGNORECASE,
 )
 
@@ -32,15 +37,43 @@ def schema_types(node):
     return [value] if isinstance(value, str) else list(value)
 
 
-def schema_nodes(value):
-    """Every JSON-LD object, including nodes nested in @graph or properties."""
+def schema_nodes(value, context=None):
+    """Yield (node, effective @context) for every JSON-LD object, including @graph and nested nodes.
+
+    A node's own @context overrides the one it inherits from its enclosing object.
+    """
     if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from schema_nodes(child)
+        context = value.get("@context", context)
+        yield value, context
+        for key, child in value.items():
+            if key != "@context":
+                yield from schema_nodes(child, context)
     elif isinstance(value, list):
         for child in value:
-            yield from schema_nodes(child)
+            yield from schema_nodes(child, context)
+
+
+def nodes_of_type(schemas, schema_type):
+    return [(node, ctx) for node, ctx in schema_nodes(schemas) if schema_type in schema_types(node)]
+
+
+def hiding_declaration(style):
+    """Return the inline CSS declaration that hides an element, matched by exact property name."""
+    for declaration in (style or "").split(";"):
+        name, sep, value = declaration.partition(":")
+        name = name.strip().lower()
+        value = re.sub(r"\s*!important\s*$", "", value.strip().lower())
+        if not sep or name.startswith("--"):
+            continue
+        if (name, value) in {("display", "none"), ("visibility", "hidden"), ("visibility", "collapse"), ("content-visibility", "hidden")}:
+            return f"{name}:{value}"
+        if name == "opacity":
+            try:
+                if float(value.rstrip("%")) == 0:
+                    return f"{name}:{value}"
+            except ValueError:
+                pass
+    return None
 
 
 def claim_problems(text):
@@ -79,9 +112,8 @@ class AnswerHTML(HTMLParser):
         classes = set((attrs.get("class") or "").split())
         if classes & HIDDEN_CLASSES:
             return "hiding class " + ", ".join(sorted(classes & HIDDEN_CLASSES))
-        style = re.sub(r"\s+", "", (attrs.get("style") or "").lower())
-        match = HIDDEN_STYLE.search(style)
-        return "inline style " + match.group(0) if match else None
+        declaration = hiding_declaration(attrs.get("style"))
+        return "inline style " + declaration if declaration else None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -140,13 +172,12 @@ class AnswerHTML(HTMLParser):
 def faq_contract_problems(relative, questions, text):
     parsed = AnswerHTML(text)
     problems = list(parsed.errors)
-    for schema in parsed.schemas:
-        if isinstance(schema, dict) and schema.get("@context") != "https://schema.org":
-            problems.append("JSON-LD block without https://schema.org context")
-    faqs = [node for node in schema_nodes(parsed.schemas) if "FAQPage" in schema_types(node)]
+    faqs = nodes_of_type(parsed.schemas, "FAQPage")
     if len(faqs) != 1:
         return problems + [f"expected exactly one FAQPage node, found {len(faqs)}"]
-    faq = faqs[0]
+    faq, context = faqs[0]
+    if context != SCHEMA_CONTEXT:
+        problems.append(f"FAQPage effective @context is {context!r}, not {SCHEMA_CONTEXT}")
     if faq.get("url") != SITE + relative:
         problems.append(f"FAQPage url {faq.get('url')!r} is not the page URL")
     schema_pairs = []
@@ -249,9 +280,10 @@ class AIAnswerReadinessTests(unittest.TestCase):
                 self.assertEqual(matches[0].findtext("{*}lastmod"), "2026-10-13")
                 if relative.endswith(".html"):
                     parsed = AnswerHTML(page_text(relative))
-                    pages = [node for node in parsed.schemas if "WebPage" in schema_types(node)]
+                    pages = nodes_of_type(parsed.schemas, "WebPage")
                     self.assertEqual(len(pages), 1)
-                    self.assertEqual(pages[0]["dateModified"], "2026-10-13")
+                    self.assertEqual(pages[0][1], SCHEMA_CONTEXT)
+                    self.assertEqual(pages[0][0]["dateModified"], "2026-10-13")
 
 
 class AIAnswerContractGuardTests(unittest.TestCase):
@@ -292,8 +324,50 @@ class AIAnswerContractGuardTests(unittest.TestCase):
         self.assertNotIn("JSON-LD questions and answers differ from the visible cards", problems)
         self.assert_caught(problems, "unsupported screening claim 'verified workers'")
 
+    def test_brand_subject_and_passive_screening_claims_are_caught(self):
+        old = "GoHireHumans is a marketplace where you can post a small, one-off task"
+        for claim in ("GoHireHumans verifies all workers.", "All workers are verified.", "We vet every freelancer.", "Providers have been background-checked."):
+            with self.subTest(claim=claim):
+                problems = self.problems_after(self.SMALL, old, claim + " " + old, 2)
+                self.assertNotIn("JSON-LD questions and answers differ from the visible cards", problems)
+                self.assert_caught(problems, "unsupported screening claim")
+
     def test_payout_verification_wording_stays_allowed(self):
-        self.assertEqual(claim_problems("Workers must finish Stripe payout setup and identity verification before applying."), [])
+        for text in (
+            "Workers must finish Stripe payout setup and identity verification before applying.",
+            "Paid by a person or company that completes the required payout verification.",
+            "Workers are verified by Stripe for payouts before they can apply.",
+            "Humans who verify what your AI produces.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(claim_problems(text), [])
+
+    def test_visible_cards_with_non_hiding_css_are_not_flagged(self):
+        tag = '<article class="card" data-ai-answer>'
+        for style in ("backface-visibility: hidden", "--visibility: hidden; visibility: visible", "opacity: 0.5", "display: block"):
+            with self.subTest(style=style):
+                self.assertEqual(self.problems_after(self.AGENT, tag, f'<article class="card" data-ai-answer style="{style}">', 3), [])
+
+    def test_cards_hidden_by_zero_opacity_are_caught(self):
+        tag = '<article class="card" data-ai-answer>'
+        self.assert_caught(self.problems_after(self.AGENT, tag, '<article class="card" data-ai-answer style="opacity: 0 !important">', 3), "inline style opacity:0")
+
+    def test_faqpage_with_wrong_context_is_caught(self):
+        problems = self.problems_after(self.SMALL, '{"@context": "https://schema.org", "@type": "FAQPage"', '{"@context": "https://example.org", "@type": "FAQPage"', 1)
+        self.assert_caught(problems, "effective @context is 'https://example.org'")
+
+    def test_effective_context_follows_inheritance_and_local_override(self):
+        cases = {
+            "root array without context": ([[{"@type": "FAQPage"}]], None),
+            "inherited from graph root": ([{"@context": SCHEMA_CONTEXT, "@graph": [{"@type": "FAQPage"}]}], SCHEMA_CONTEXT),
+            "wrong local override in graph": ([{"@context": SCHEMA_CONTEXT, "@graph": [{"@context": "https://example.org", "@type": "FAQPage"}]}], "https://example.org"),
+            "array @type": ([{"@context": SCHEMA_CONTEXT, "@type": ["WebPage", "FAQPage"]}], SCHEMA_CONTEXT),
+        }
+        for label, (schemas, expected) in cases.items():
+            with self.subTest(case=label):
+                faqs = nodes_of_type(schemas, "FAQPage")
+                self.assertEqual(len(faqs), 1)
+                self.assertEqual(faqs[0][1], expected)
 
 
 if __name__ == "__main__":
