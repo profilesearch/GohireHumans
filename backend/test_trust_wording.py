@@ -33,6 +33,15 @@ PATTERNS = (
     r"\b(?:safer|safest)(?:,?\s+faster)?\s+(?:alternative|option)\b",
     r"\b(?:GoHireHumans|GHH)\s+(?:is|offers|as)\s+(?:the\s+|a\s+)?(?:safer|safest|fastest|leading|#1|best)\b",
     r"\b(?:manages|handles)\s+(?:the\s+)?worker[- ]pool\s+scaling\b",
+    # Third review: passive and coordinated forms, payment timing, capacity and talent-equivalence claims.
+    r"\b(?:every|each|all)\s+(?:listing|task|job|post|service)s?\s+(?:is|are)\s+(?:\w+\s+){0,2}reviewed\s+by\s+(?:our\s+|a\s+|human\s+)*(?:moderators?|team|staff)\b",
+    r"\b(?:every|each|all)\s+(?:workers?|freelancers?|providers?|sellers?)\s+(?:has|have|is|are)\s+(?:their\s+)?(?:IDs?|identit\w+|identification)\s+(?:checked|verified)\b",
+    r"\b(?:does|do)\s+(?:\w+\s+){0,3}verify\s+(?:every|all|each|its|our)\s+(?:workers?|freelancers?|providers?|sellers?)\b",
+    r"\byou\s+(?:only\s+)?pay\s+(?:only\s+)?for\s+completed(?:,\s*approved)?\s+work\b",
+    r"\b(?:reviews?|approves?)\s+the\s+work\s+before\s+paying\b",
+    r"\benterprise[- ]scale\s+operations\b|\b(?:running|processes|processing|handles?|handling)\s+thousands\s+of\s+(?:human\s+)?tasks\s+per\s+month\b[^.!?\n]{0,160}\b(?:GoHireHumans|GHH)\b",
+    r"\b(?:hire|get|deliver\w*|connect\w*\s+you\s+with)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b|\b(?:find|access)\s+(?:\w+\s+){0,2}(?:elite|top[- ]tier|Toptal[- ]quality)\s+(?:talent|developers?|freelancers?)\b(?![^.!?\n]*\?)",
+    r"\bonly\s+platform\s+with\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -136,7 +145,9 @@ class TrustWordingTests(unittest.TestCase):
 
     def test_edited_faq_answers_match_json_ld(self):
         for relative in ("faq.html", "blog/hire-human-for-ai-tasks.html",
-                         "blog/on-demand-workforce-platform.html", "blog/verified-freelancer-marketplace.html"):
+                         "blog/on-demand-workforce-platform.html", "blog/verified-freelancer-marketplace.html",
+                         "blog/where-to-list-services-online.html", "blog/alternatives-to-toptal.html",
+                         "blog/gohirehumans-vs-fiverr.html"):
             with self.subTest(page=relative):
                 self.assertEqual(faq_contract_problems((FRONTEND / relative).read_text()), [])
 
@@ -177,6 +188,16 @@ class TrustWordingTests(unittest.TestCase):
             "For the safest option with payment processing review, GoHireHumans offers free listing.",
             "GoHireHumans is the leading HaaS platform.",
             "The platform manages worker pool scaling transparently.",
+            "Every listing is reviewed by our moderators.",
+            "All workers have their IDs checked before joining.",
+            "GoHireHumans does not guarantee results but does verify every worker.",
+            "You pay for completed, approved work, not for hours spent.",
+            "The employer reviews the work before paying.",
+            "From one-off tasks to enterprise-scale operations.",
+            "Ready to hire elite talent?",
+            "Ready to hire elite talent at 1% platform fee?",
+            "Find Toptal-quality developers on GoHireHumans.",
+            "GoHireHumans (only platform with REST API + MCP)",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
