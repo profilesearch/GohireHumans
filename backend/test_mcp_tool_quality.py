@@ -92,7 +92,8 @@ class ToolDefinitionQualityTests(unittest.TestCase):
 
     def test_money_and_lifecycle_facts_match_backend(self):
         hire = self.desc['hire_worker']
-        for fact in ('saved payment method', 'charged immediately', 'only when the employer approves',
+        for fact in ('saved payment method', 'charged immediately', 'paid when the employer approves the work with release_payment',
+                     'or completes the order, or a site admin completes it',
                      '1% platform fee and a fixed 3% processing charge',
                      'both the read scope', 'the write scope', "isn't locked to an earlier quote",
                      'no self-serve cancel option',

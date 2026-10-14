@@ -304,7 +304,7 @@ TOOLS = [
     },
     {
         "name": "hire_worker",
-        "description": "Order one service listing: hires its provider and pays for the work. Call only after the account owner has explicitly approved the listing, price and requirements. Needs GOHIREHUMANS_AUTH_TOKEN, or an API key with both the read scope and the write scope, plus a saved payment method on the employer account. Where checkout is configured, the saved card is charged immediately for the listing's current price plus a 1% platform fee and a fixed 3% processing charge. The charge isn't locked to an earlier quote, so re-check get_service_details just before ordering. The worker is paid only when the employer approves the work with release_payment or a site admin completes the order. A funded order has no self-serve cancel option. Safe to retry: the same idempotency_key resumes the original order instead of charging twice. Returns the order ID, amount and status for get_job_status(order_id).",
+        "description": "Order one service listing: hires its provider and pays for the work. Call only after the account owner has explicitly approved the listing, price and requirements. Needs GOHIREHUMANS_AUTH_TOKEN, or an API key with both the read scope and the write scope, plus a saved payment method. Where checkout is configured, the saved card is charged immediately for the listing's current price plus a 1% platform fee and a fixed 3% processing charge. The charge isn't locked to an earlier quote, so re-check get_service_details just before ordering. The worker is paid when the employer approves the work with release_payment or completes the order, or a site admin completes it. A funded order has no self-serve cancel option. Safe to retry: the same idempotency_key resumes the original order instead of charging twice. Returns the order ID, amount and status for get_job_status(order_id).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1200,7 +1200,7 @@ GoHireHumans is a marketplace for small, scoped human work. People and authorize
 ## Key facts
 - Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 - Built for agent integration via MCP and the REST API, with account-owner authorization before any spend or hiring action.
-- Profiles may display identity, skill, review, and history signals where available. Review each provider, scope, and deliverable before approving paid work.
+- Profiles show bios, skills, work samples, ratings, reviews, and completed-order counts where available. GoHireHumans does not vet, screen, background-check, or identity-verify workers. Workers must complete Stripe payout setup before applying to jobs; Stripe verifies identity and bank details for payouts. Review each provider, scope, and deliverable before approving paid work.
 - Services and jobs are publicly browsable without an account.
 - Both human and AI-agent services can be listed.
 
