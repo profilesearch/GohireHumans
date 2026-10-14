@@ -4,6 +4,7 @@ This is a conservative wording guard, not a semantic fact checker. Exceptions
 are clause-local: a competitor name or Stripe mention cannot excuse a GHH claim.
 """
 import ast
+import bisect
 import html
 from html.parser import HTMLParser
 import json
@@ -55,6 +56,18 @@ PATTERNS = (
     r"\b(?:1%|one\s+percent)(?:\s+(?:platform|service))?(?:\s+fee)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?Stripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\b",
     r"\bStripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?(?:1%|one\s+percent\b)",
     r"\$\d+(?:\.\d+)?\s*(?:\+|plus)\s*Stripe\b",
+    # Fifth review: rewordings of hire-time payout, processing-cost synonyms, charge-after-completion
+    # and instant-payout claims. In GHH the card is charged at hire/order; payout follows approval
+    # or order completion and is never instant on hire.
+    r"\b(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?|(?:is|are)\s+paid)\s+(?:(?:the|their|its|listed|full|payout|payment|money)\s+)*(?:immediately|instantly|right\s+away|automatically)\s+(?:after|once|when|upon|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b",
+    r"\b(?:payouts?|payments?|funds?)\s+(?:is|are)\s+released\s+to\s+(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:immediately\s+)?(?:when|once|as\s+soon\s+as|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
+    r"\b(?:when|once|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b[^.!?;\n]{0,20},\s*(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:(?:receives?|gets?)\s+(?:(?:the|their|its|a|an|listed|full)\s+)*(?:payouts?|payments?|money|funds)|gets?\s+paid|(?:is|are)\s+paid)\b",
+    r"\b(?:employers?|buyers?|clients?|you)\s+(?:pays?|covers?)\s+(?:the\s+)?Stripe\s+(?:(?:processing|card|payment|transaction)\s+)?(?:costs?|fees?|charges?)\b",
+    r"\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+(?:only\s+)?charged\s+only\s+(?:after|once|when)\b|\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+charged\s+(?:only\s+)?(?:after|once|when)\s+(?:the\s+)?(?:task|work|job|order)\s+is\s+(?:completed|done|approved|finished)\b",
+    r"\binstant(?:ly)?\s+payouts?\b(?!\s+(?:(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided)|(?:are|is)\s+(?:currently\s+)?unavailable)(?:\s+(?:on|in|at)\s+(?:GoHireHumans|GHH|the\s+platform|this\s+site))?(?:\s+(?:yet|currently|today|at\s+this\s+time|right\s+now))?\s*(?:[.;:!?)\n]|$|,(?!\s*(?:except|unless|other\s+than|apart\s+from|save)\b)(?![^.;!?\n]{0,80}\b(?:gets?|receives?|has|have|can\s+(?:use|get|request))\s+(?:them|it|instant)\b)))|\bpay(?:s|ing)?\s+out\s+instantly\b",
+    # GHH has no listing-report feature: disputes are for order participants, and listing or
+    # user reports go to the operations inbox.
+    r"\b(?:suspicious\s+)?listing\s+reporting\b(?!\s+(?:(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided)|(?:are|is)\s+(?:currently\s+)?unavailable)(?:\s+(?:on|in|at)\s+(?:GoHireHumans|GHH|the\s+platform|this\s+site))?(?:\s+(?:yet|currently|today|at\s+this\s+time|right\s+now))?\s*(?:[.;:!?)\n]|$|,(?!\s*(?:except|unless|other\s+than|apart\s+from|save)\b)(?![^.;!?\n]{0,80}\b(?:gets?|receives?|has|have|can\s+(?:use|get|request))\s+(?:them|it|instant)\b)))|\breporting\s+(?:systems?|tools?|features?)\b(?!\s+(?:(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided)|(?:are|is)\s+(?:currently\s+)?unavailable)(?:\s+(?:on|in|at)\s+(?:GoHireHumans|GHH|the\s+platform|this\s+site))?(?:\s+(?:yet|currently|today|at\s+this\s+time|right\s+now))?\s*(?:[.;:!?)\n]|$|,(?!\s*(?:except|unless|other\s+than|apart\s+from|save)\b)(?![^.;!?\n]{0,80}\b(?:gets?|receives?|has|have|can\s+(?:use|get|request))\s+(?:them|it|instant)\b)))|\breport\s+(?:this|a)\s+(?:listing|profile|user)\s+(?:button|link|feature)\b(?!\s+(?:(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided)|(?:are|is)\s+(?:currently\s+)?unavailable)(?:\s+(?:on|in|at)\s+(?:GoHireHumans|GHH|the\s+platform|this\s+site))?(?:\s+(?:yet|currently|today|at\s+this\s+time|right\s+now))?\s*(?:[.;:!?)\n]|$|,(?!\s*(?:except|unless|other\s+than|apart\s+from|save)\b)(?![^.;!?\n]{0,80}\b(?:gets?|receives?|has|have|can\s+(?:use|get|request))\s+(?:them|it|instant)\b)))",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -86,16 +99,30 @@ def public_text(source):
     return html.unescape("".join(parser.parts))
 
 
+NEGATED_PREFIX = re.compile(r"\b(?:does not|do not|not|never|no)\s+(?:(?:claim|show|display|offer|provide|a|any)\s+){0,3}$", re.I)
+GHH_MENTION = re.compile(r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b", re.I)
+COMPETITOR_AT = re.compile(r"\s*" + COMPETITOR + r"\b", re.I)
+NEGATION_WINDOW = 160
+
+
 def claim_problems(source):
     text = public_text(source)
+    # Clause boundaries and GHH mentions are indexed once; each match then does bounded work, so
+    # long clauses or many repeated claims never rescan text (linear in the page size).
+    boundaries = [m.end() for m in re.finditer(r"[.!?;\n]", text)]
+    ghh_mentions = [m.start() for m in GHH_MENTION.finditer(text)]
     problems = []
     for pattern in COMPILED:
         for match in pattern.finditer(text):
             # Use only the preceding clause, not unrelated disclaimers elsewhere.
-            prefix = re.split(r"[.!?;\n]", text[:match.start()])[-1]
+            index = bisect.bisect_right(boundaries, match.start())
+            clause_start = boundaries[index - 1] if index else 0
+            # Negation cues sit right before the claim; a bounded window keeps this O(1) per match.
+            prefix = text[max(clause_start, match.start() - NEGATION_WINDOW):match.start()]
             claim = match.group(0)
-            clause = prefix + claim
-            if re.search(r"\b(?:does not|do not|not|never|no)\s+(?:(?:claim|show|display|offer|provide|a|any)\s+){0,3}$", prefix, re.I):
+            clause_names_ghh = (bisect.bisect_left(ghh_mentions, clause_start)
+                                < bisect.bisect_left(ghh_mentions, match.end()))
+            if NEGATED_PREFIX.search(prefix):
                 continue
             if re.search(r"\b(?:does not|do not|never)\b", claim, re.I):
                 continue
@@ -105,8 +132,8 @@ def claim_problems(source):
                 continue
             # Attribute only this match to a named competitor; never exempt a
             # clause that also asserts something about GHH or its profiles.
-            if (re.match(r"\s*" + COMPETITOR + r"\b", clause, re.I)
-                    and not re.search(r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b", clause, re.I)
+            if (COMPETITOR_AT.match(text, clause_start)
+                    and not clause_names_ghh
                     and not re.search(r"optional identity verification|identity verification is optional|no identity verification requirement|without required", claim, re.I)):
                 continue
             problems.append(claim)
@@ -120,9 +147,11 @@ class VisibleFaq(HTMLParser):
     Layouts used on the site, matched by element and attribute rather than serialized markup:
     - <details><summary>Q</summary>A</details>
     - <article data-ai-answer> ... <h3>Q</h3> ... A ... </article>
-    - an <h2 id="faq"> section: each <h3> is a question and its first following <p> is the answer;
+    - an <h2 id="faq"> section: each <h3> is a question and the content up to the next <h3> is the answer;
       the section ends at the next <h2>, a call-to-action element whose class includes "callout",
       </main>, <footer>, or </section>/</article> enclosing the heading.
+    In every layout the answer is the whole region after the question, up to the next question or the
+    end of the card/section, so a second paragraph or list cannot add an unchecked claim.
     """
 
     VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -218,7 +247,7 @@ class VisibleFaq(HTMLParser):
             return
         if self.capture == "q":
             self.question.append(data)
-        elif self.capture == "a" or (self.mode == "details" and self.question and self.capture is None):
+        elif self.capture == "a" or (self.mode in {"details", "card", "section"} and self.question and self.capture is None):
             self.answer.append(data)
 
     def close(self):
@@ -292,6 +321,112 @@ EDITED_FAQ_PAGES = (
     "blog/verified-freelancer-marketplace.html", "blog/where-to-list-services-online.html",
     "blog/how-to-find-human-workers-ai-tasks.html",
 )
+
+
+class SnippetFields(HTMLParser):
+    """Meta descriptions (any attribute order or quoting) and JSON-LD blocks, parsed structurally."""
+    NAMES = {"description", "og:description", "twitter:description"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.fields, self.blocks, self.in_json_ld, self.buffer = [], [], False, []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = {key.lower(): value or "" for key, value in attrs}
+        if tag == "meta" and (attributes.get("name") or attributes.get("property") or "").lower() in self.NAMES:
+            self.fields.append(attributes.get("content", ""))
+        elif tag == "script" and attributes.get("type", "").lower() == "application/ld+json":
+            self.in_json_ld, self.buffer = True, []
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.in_json_ld:
+            self.in_json_ld = False
+            self.blocks.append("".join(self.buffer))
+
+    def handle_data(self, data):
+        if self.in_json_ld:
+            self.buffer.append(data)
+
+
+def json_strings(node):
+    if isinstance(node, dict):
+        for value in node.values():
+            yield from json_strings(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from json_strings(value)
+    elif isinstance(node, str):
+        yield node
+
+
+PERCENT = r"(?:\s*%|\s+percent\b)"
+# A GHH fee claim: 1% ... 3%/processing (possibly across a sentence break) or a 4% total.
+FEE_CLAIM = re.compile(
+    r"(?:\b1" + PERCENT + r"|\bone\s+percent\b)[^;]{0,120}?(?:\b3" + PERCENT + r"|\bthree\s+percent\b|\bprocessing\b)"
+    r"|\b4" + PERCENT + r"\s+(?:in\s+)?(?:total|combined|all-in)\b"
+    r"|\b(?:total|combined|all-in)\s+(?:fee\s+)?(?:of\s+)?4" + PERCENT, re.I)
+CHECKOUT_QUALIFIER = re.compile(
+    r"where\s+(?:checkout|(?:card\s+)?payment\s+processing|payments?)\s+(?:is|are)\s+configured", re.I)
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+# A new clause, conjunction or dash between a fee and a qualifier means the qualifier belongs to
+# something else ("... processing and drafts are saved where checkout is configured").
+CLAUSE_BREAK = re.compile(r"[;\u2013\u2014]|\s-\s|[.!?](?=\s|$)|\b(?:and|but|while|so|or|whereas|although|though|yet)\b", re.I)
+TAIL_BREAK = re.compile(CLAUSE_BREAK.pattern + r"|\b(?:is|are|was|were|gets?|stays?|remains?|saved|shown|listed)\b", re.I)
+QUALIFIER_LEAD = re.compile(r"\s*(?:[\w ]{0,24}:\s*)?")
+
+
+def qualifier_binds(field, start, match, end):
+    """The checkout qualifier must modify this fee: inside it, directly after it (a short noun-phrase
+    gap such as " processing charge "), or leading its sentence ("Where checkout is configured, buyers pay")."""
+    if CHECKOUT_QUALIFIER.search(match.group(0)):
+        return True
+    after = CHECKOUT_QUALIFIER.search(field, match.end(), end)
+    if after:
+        gap = field[match.end():after.start()]
+        if len(gap) <= 60 and not TAIL_BREAK.search(gap):
+            return True
+    for before in CHECKOUT_QUALIFIER.finditer(field, start, match.start()):
+        gap = field[before.end():match.start()]
+        if QUALIFIER_LEAD.fullmatch(field[start:before.start()]) and len(gap) <= 40 and not CLAUSE_BREAK.search(gap):
+            return True
+    return False
+
+
+def fee_snippet_problems(source):
+    """Fee claims in standalone snippets whose own clause lacks the checkout qualifier.
+    A fee clause whose subject is a competitor is exempt; a clause that also names GHH is not."""
+    parser = SnippetFields()
+    parser.feed(source)
+    fields = list(parser.fields)
+    for block in parser.blocks:
+        fields.extend(json_strings(json.loads(block)))
+    problems = []
+    for field in fields:
+        for match in FEE_CLAIM.finditer(field):
+            start = max([0] + [m.end() for m in SENTENCE_END.finditer(field, 0, match.start())])
+            end_match = SENTENCE_END.search(field, match.end())
+            end = end_match.end() if end_match else len(field)
+            claim = field[start:end].strip()
+            if qualifier_binds(field, start, match, end):
+                continue
+            # A competitor is exempt only as the fee clause's own subject ("Upwork charges ...",
+            # "Fiverr's fee is ...") or locative frame ("On Fiverr, buyers pay ..."), and never when
+            # the same clause names GHH ("Unlike Fiverr, employers pay ..." is a GHH claim).
+            head = field[start:match.start()]
+            breaks = list(CLAUSE_BREAK.finditer(head))
+            tail = field[match.end():end]
+            tail_break = CLAUSE_BREAK.search(tail)
+            clause = ((head[breaks[-1].end():] if breaks else head) + match.group(0)
+                      + (tail[:tail_break.start()] if tail_break else tail))
+            if (re.match(r"\s*(?:(?:[Oo]n|[Aa]t)\s+" + COMPETITOR + r"\b|(?:\w+\s+){0,2}?" + COMPETITOR
+                         + r"(?:'s)?\s+(?:\w+\s+){0,3}?(?:charges?|takes?|fees?|commission|pricing|costs?|is|are|"
+                         r"keeps?|adds?)\b)", clause)
+                    and not re.search(r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b|\bus\b", clause, re.I)):
+                continue
+            problems.append(claim)
+    return problems
 
 
 class TrustWordingTests(unittest.TestCase):
@@ -433,6 +568,15 @@ class TrustWordingTests(unittest.TestCase):
             "The worker is paid only when the employer approves the work with release_payment or a site admin completes the order.",
             "Workers are paid only after approval.",
             "The worker is paid only when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
+            # Fifth-review rewordings and instant-payout claims.
+            "Workers receive payment immediately after you hire them.",
+            "Payment is released to the worker when you hire.",
+            "When you hire, the worker receives the listed payout.",
+            "Employers pay Stripe processing costs plus a 1% platform fee.",
+            "Your card is charged only after the task is completed.",
+            "The employer's card is charged once the work is approved.",
+            "Approve milestone → instant payout",
+            "Workers get instant payouts.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -469,9 +613,114 @@ class TrustWordingTests(unittest.TestCase):
             "The worker is paid when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
             "In the normal flow, the worker is paid when the employer approves the submitted work with `release_payment`. A site admin can also complete a service order, which releases its payout.",
             "Nothing is published or charged until you approve it.",
+            "Your card is charged for the first milestone when you hire (Stripe processing where configured).",
+            "Approving a submitted milestone releases its payout and charges the next milestone, if there is one.",
+            "When you hire, the card is charged for the first milestone.",
+            "The worker's payout is released when you approve the delivered work.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(claim_problems(statement), [])
+
+    def test_faq_answers_include_every_paragraph(self):
+        """A second answer paragraph or list item is part of the answer and must match JSON-LD."""
+        def page(body, questions):
+            ld = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+                {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in questions]}
+            return ('<html><head><script type="application/ld+json">' + json.dumps(ld) + "</script></head>"
+                    "<body><main>" + body + "</main></body></html>")
+
+        q, first, second = "How are workers paid?", "The card is charged at hire.", "The payout is released after approval."
+        extra = "The worker is paid immediately at hire."
+        layouts = {
+            "card": lambda tail: f"<article data-ai-answer><h3>{q}</h3><p>{first}</p>{tail}</article>",
+            "section": lambda tail: f'<h2 id="faq">FAQ</h2><h3>{q}</h3><p>{first}</p>{tail}<h2>Related</h2>',
+            "details": lambda tail: f"<details><summary>{q}</summary><p>{first}</p>{tail}</details>",
+        }
+        for name, layout in layouts.items():
+            with self.subTest(layout=name):
+                # Truthful two-paragraph answer represented in full in JSON-LD: no problem.
+                self.assertEqual(faq_contract_problems(page(layout(f"<p>{second}</p>"), [(q, f"{first} {second}")])), [])
+                # Contradictory extra paragraph or list item that JSON-LD omits: caught.
+                self.assertTrue(faq_contract_problems(page(layout(f"<p>{extra}</p>"), [(q, first)])))
+                self.assertTrue(faq_contract_problems(page(layout(f"<ul><li>{extra}</li></ul>"), [(q, first)])))
+        source = (FRONTEND / "blog/alternatives-to-freelancer.html").read_text(encoding="utf-8")
+        cards = visible_faq_cards(source)
+        self.assertTrue(cards)
+        answer = cards[0][1]
+        anchor = next(m for m in re.finditer(r"<p[^>]*>([^<]+)</p>", source) if " ".join(m.group(1).split()) == answer)
+        mutated = source[:anchor.end()] + "<p>The worker is paid immediately at hire.</p>" + source[anchor.end():]
+        self.assertTrue(faq_contract_problems(mutated))
+
+    def test_standalone_fee_snippets_keep_the_checkout_qualifier(self):
+        """Meta descriptions and JSON-LD strings are quoted on their own, so any GHH 1% + 3% fee
+        statement there must say where checkout (payment processing) is configured."""
+        checked = 0
+        for path in public_files():
+            if path.suffix != ".html":
+                continue
+            source = path.read_text(encoding="utf-8")
+            checked += 1
+            with self.subTest(page=str(path.relative_to(FRONTEND))):
+                self.assertEqual(fee_snippet_problems(source), [])
+        self.assertGreater(checked, 100)
+        page = (FRONTEND / "categories/graphic-design.html").read_text(encoding="utf-8")
+        self.assertTrue(fee_snippet_problems(page.replace("3% processing where checkout is configured.", "3% processing.")))
+        page = (FRONTEND / "index.html").read_text(encoding="utf-8")
+        self.assertTrue(fee_snippet_problems(page.replace(
+            "3% processing charge where checkout is configured.\"\n    },", "3% processing charge when they pay for work.\"\n    },", 1)))
+
+    def test_fee_snippet_check_binds_the_qualifier_to_the_claim(self):
+        meta = '<meta name="description" content="{}">'.format
+        for snippet in (
+            meta("Employers pay 1% plus 3% processing. Drafts are saved where checkout is configured."),
+            meta("Unlike Fiverr, GoHireHumans charges 1% plus 3% processing."),
+            meta("A 1 percent platform fee plus 3 percent processing."),
+            meta("GoHireHumans charges a 1% platform fee. Employers also pay 3% processing."),
+            meta("Employers pay 4% in total."),
+            meta("A combined 4% fee for employers."),
+            meta("Employers pay 1% plus 3% processing, and drafts are saved where checkout is configured."),
+            meta("Unlike Fiverr, employers pay 1% plus 3% processing."),
+            meta("Compared with Upwork, employers pay 1% plus 3% processing."),
+            meta("Drafts are saved where checkout is configured, and employers pay 1% plus 3% processing."),
+            meta("Employers pay 1% plus 3% processing and drafts are saved where checkout is configured."),
+            meta("Employers pay 1% plus 3% processing, AND drafts are saved where checkout is configured."),
+            meta("Employers pay 1% plus 3% processing \u2014 drafts are saved where checkout is configured."),
+            meta("Employers pay 1% plus 3% processing; drafts are saved where checkout is configured."),
+            meta("Drafts are saved where checkout is configured, employers pay 1% plus 3% processing."),
+            "<meta content='Employers pay 1% plus 3% processing.' property='og:description'>",
+            '<meta property="twitter:description" content="Employers pay 1% plus 3% processing.">',
+            '<script type="application/ld+json">{"offers": {"description": "Employers pay 1% plus 3% processing."}}</script>',
+        ):
+            with self.subTest(snippet=snippet):
+                self.assertTrue(fee_snippet_problems(snippet))
+        for snippet in (
+            meta("Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured."),
+            meta("Upwork charges clients up to 7.99% plus a 1% processing fee on some plans."),
+            meta("Workers get the listed payout. Employers pay 1% + 3% processing where checkout is configured."),
+            meta("Employers pay 1% plus 3% processing where checkout is configured, and nothing else."),
+            meta("Upwork charges clients 1% plus 3% processing on some plans; GoHireHumans charges 1% plus 3% processing where checkout is configured."),
+            meta("On Fiverr, buyers pay a 5.5% service fee plus 1% processing."),
+            meta("Where checkout is configured, buyers pay a 1% platform fee plus a fixed 3% processing charge."),
+            meta("Employers pay a 1% platform fee plus a fixed 3% processing charge, paid by employers where checkout is configured."),
+            meta("Pricing: where checkout is configured, the fee is 1% plus a fixed 3% processing charge."),
+        ):
+            with self.subTest(control=snippet):
+                self.assertEqual(fee_snippet_problems(snippet), [])
+
+    def test_snippet_metadata_is_short_and_consistent(self):
+        """Search results cut descriptions at about 160 characters; Open Graph and Twitter repeat the meta."""
+        for relative in ("index.html", "about.html", "categories/graphic-design.html", "categories/writing.html"):
+            source = (FRONTEND / relative).read_text(encoding="utf-8")
+            with self.subTest(page=relative):
+                found = {name: [html.unescape(v) for v in re.findall(
+                    rf'<meta (?:name|property)="{re.escape(name)}" content="([^"]*)"', source)]
+                    for name in ("description", "og:description", "twitter:description")}
+                self.assertEqual([len(v) for v in found.values()], [1, 1, 1])
+                description = found["description"][0]
+                self.assertLessEqual(len(description), 160)
+                self.assertEqual(found["og:description"][0], description)
+                self.assertEqual(found["twitter:description"][0], description)
+                self.assertIn("where checkout is configured", description)
 
     def test_mcp_hire_worker_names_every_payout_trigger(self):
         """POST /orders/<id>/complete lets the employer or a site admin complete a submitted or
@@ -527,6 +776,74 @@ class TrustWordingTests(unittest.TestCase):
         self.assertTrue(claim_problems("Unlike Fiverr, GoHireHumans verifies every worker."))
         self.assertTrue(claim_problems("Toptal screens applicants; Profiles show verification status."))
         self.assertTrue(claim_problems("Unlike Fiverr, profiles show identity signals."))
+
+    def test_review8_truthful_controls_are_allowed(self):
+        for statement in (
+            "When you hire, the worker receives instructions, not payment.",
+            "Instant payouts are not available on GoHireHumans.",
+            "Instant payouts aren't offered.",
+            "Instant payouts are not available yet.",
+            "Instant payouts are unavailable on GoHireHumans.",
+            "The report this listing button is not available on GoHireHumans.",
+            "Instant payouts are not available, so payouts follow approval.",
+            "Instant payouts are not available on GoHireHumans, but payouts follow approval.",
+            "Listing reporting is not available on GoHireHumans; email support instead.",
+            "Reporting tools aren't offered; email the operations inbox.",
+            "If an order goes wrong, open a dispute from the order page.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(claim_problems(statement), [])
+        for mutation in (
+            "Suspicious listing reporting",
+            "Use the dispute and reporting systems to surface concerns.",
+            "Click the report this listing button.",
+            "Instant payouts are not delayed on GoHireHumans.",
+            "Instant payouts are never delayed on GoHireHumans.",
+            "Instant payouts are not subject to a waiting period.",
+            "Listing reporting is not hard to find.",
+            "Instant payouts are not offered to unverified users, but everyone else gets them.",
+            "Listing reporting is not supported for guests; sign in to report any listing.",
+            "Instant payouts are not available, except for verified workers.",
+            "Instant payouts are not available, but verified workers get them.",
+            "Click the report this listing button, which is not hard to find.",
+            "When you hire, the worker receives the listed payout.",
+            "When you hire, the worker gets paid.",
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertTrue(claim_problems(mutation))
+
+    def test_claim_problems_runtime_is_linear_on_repeated_claims(self):
+        """claim_problems once re-split the whole prefix per match: 186s on 1e6 chars of repeated claims."""
+        import time
+        for unit in ("Workers get instant payouts. ", "When you hire, the worker receives the listed payout. ",
+                     "GoHireHumans verifies every worker. ", "Instant payouts are not available. ",
+                     "Workers get instant payouts ", "Upwork verified workers and "):
+            text = unit * (1_000_000 // len(unit))
+            started = time.perf_counter()
+            problems = claim_problems(text)
+            elapsed = time.perf_counter() - started
+            with self.subTest(unit=unit):
+                self.assertLess(elapsed, 10)
+                if "not available" in unit:
+                    self.assertEqual(problems, [])
+                elif unit.startswith("Upwork"):
+                    continue
+                else:
+                    self.assertGreater(len(problems), 1000)
+
+    def test_claim_guard_runtime_is_linear_on_adversarial_whitespace(self):
+        """Overlapping whitespace quantifiers made one pattern quadratic (over 3s at 1e5 spaces)."""
+        import time
+        prefixes = ("Employers pay Stripe", "Employers pay the Stripe processing", "When you hire, the worker",
+                    "Workers receive", "GoHireHumans verifies", "Profiles show", "instant", "listing")
+        for prefix in prefixes:
+            text = prefix + " " * 200000 + "oops"
+            for index, pattern in enumerate(COMPILED):
+                started = time.perf_counter()
+                list(pattern.finditer(text))
+                elapsed = time.perf_counter() - started
+                with self.subTest(prefix=prefix, pattern=index):
+                    self.assertLess(elapsed, 0.5)
 
 
 if __name__ == "__main__":
