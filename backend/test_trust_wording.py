@@ -46,10 +46,11 @@ PATTERNS = (
     # Payout timing: the employer is charged at hire/order; the worker is paid after approval.
     r"\b(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?\s+paid|gets?|(?:is|are)\s+paid(?:\s+out)?)\b(?:\s+(?:the|their|its|a|an|listed|full|payout|payment|money|immediately|instantly|right\s+away|automatically))*\s*(?:when|as\s+soon\s+as|once|upon|at|on)\s+(?:(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?|accepts?)\b|(?:the\s+)?(?:hire|hiring|order|booking|checkout)\b)",
     r"\b(?:payouts?|payments?)\s+(?:to\s+(?:the\s+)?workers?\s+)?(?:is|are)\s+(?:released|sent|made)\s+(?:immediately\s+)?(?:when|as\s+soon\s+as|once|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
-    # Payout authority: a site admin can also complete an order and release the payout,
-    # so a claim that only the employer's approval pays the worker must name that exception.
-    r"\b(?:(?:is|are|gets?)\s+paid(?:\s+out)?|receives?\s+(?:the\s+|their\s+)?(?:listed\s+)?(?:payout|payment|funds|money)|(?:is|are)\s+(?:released|sent))\b[^.!?;\n]{0,40}\bonly\s+(?:when|after|once|if)\s+(?:you|the\s+employer|employers?|the\s+buyer|buyers?|the\s+client|clients?)\s+(?:\w+\s+){0,2}(?:approves?|releases?|accepts?|signs?\s+off)\b(?![^.!?\n]*\bsite\s+admin)",
-    r"\bonly\s+(?:you|the\s+employer|employers|the\s+buyer|buyers|the\s+client|clients)\s+(?:can|may|will)\s+(?:\w+\s+){0,2}(?:release|trigger|approve)\s+(?:the\s+|a\s+|their\s+)?(?:worker'?s?\s+)?(?:payouts?|payments?|funds)\b(?![^.!?\n]*\bsite\s+admin)",
+    # Payout authority: the employer can approve with release_payment or mark a service order
+    # complete, and a site admin can also complete it. Every exclusive "only when ..." payout
+    # claim has missed one of these paths, so any exclusive payout-trigger claim is rejected.
+    r"\b(?:(?:is|are|gets?)\s+paid(?:\s+out)?|receives?\s+(?:the\s+|their\s+)?(?:listed\s+)?(?:payout|payment|funds|money)|(?:is|are)\s+(?:released|sent))\b[^.!?;\n]{0,40}\bonly\s+(?:(?:when|after|once|if)\s+(?:you|the\s+employer|employers?|the\s+buyer|buyers?|the\s+client|clients?)\s+(?:\w+\s+){0,2}(?:approves?|releases?|accepts?|signs?\s+off|completes?)\b|(?:after|upon|on)\s+(?:your\s+|the\s+employer'?s?\s+|employer\s+)?approval\b)",
+    r"\bonly\s+(?:you|the\s+employer|employers|the\s+buyer|buyers|the\s+client|clients)\s+(?:can|may|will)\s+(?:\w+\s+){0,2}(?:release|trigger|approve)\s+(?:the\s+|a\s+|their\s+)?(?:worker'?s?\s+)?(?:payouts?|payments?|funds)\b",
     # Fees: the processing charge is a fixed 3%, never an unspecified "Stripe" fee.
     r"\b(?:1%|one\s+percent)(?:\s+(?:platform|service))?(?:\s+fee)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?Stripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\b",
     r"\bStripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?(?:1%|one\s+percent\b)",
@@ -429,6 +430,9 @@ class TrustWordingTests(unittest.TestCase):
             "Payouts are released only when the employer approves.",
             "Only the employer can release the worker's payout.",
             "Only you can release payment.",
+            "The worker is paid only when the employer approves the work with release_payment or a site admin completes the order.",
+            "Workers are paid only after approval.",
+            "The worker is paid only when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -462,26 +466,32 @@ class TrustWordingTests(unittest.TestCase):
             "Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
             "Payments run through Stripe where checkout is configured.",
             "Workers receive the listed payout after the employer approves the work.",
-            "The worker is paid only when the employer approves the work with release_payment or a site admin completes the order.",
-            "Only the employer can release payment with release_payment; a site admin can also complete the order.",
+            "The worker is paid when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
+            "In the normal flow, the worker is paid when the employer approves the submitted work with `release_payment`. A site admin can also complete a service order, which releases its payout.",
             "Nothing is published or charged until you approve it.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(claim_problems(statement), [])
 
     def test_mcp_hire_worker_names_every_payout_trigger(self):
-        """Employer approval and site-admin completion both release the payout (api_core /orders/<id>/complete)."""
+        """POST /orders/<id>/complete lets the employer or a site admin complete a submitted or
+        in-progress service order, which releases its payout, besides release_payment approval."""
         api = (ROOT / "backend/api_core.py").read_text(encoding="utf-8")
-        self.assertIn("order['employer_id'] != user['id'] and not user['is_admin']", api)
+        start = api.index('elif re.match(r"^/orders/(\\d+)/complete$", path) and method == "POST":')
+        route = api[start:api.index("release_escrow_to_worker(", start)]
+        self.assertIn("order['employer_id'] != user['id'] and not user['is_admin']", route)
+        self.assertIn("if order['status'] not in ('submitted', 'in_progress'):", route)
         for relative in ("backend/mcp_server.py", "backend/mcp-package/mcp_server.py"):
             tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
             tools = next(ast.literal_eval(node.value) for node in tree.body
                          if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "TOOLS" for t in node.targets))
             description = next(tool["description"] for tool in tools if tool["name"] == "hire_worker")
             with self.subTest(file=relative):
-                self.assertIn("the employer approves the work with release_payment or a site admin completes the order", description)
+                for trigger in ("the employer approves the work with release_payment",
+                                "or completes the order", "or a site admin completes it"):
+                    self.assertIn(trigger, description)
                 self.assertEqual(claim_problems(description), [])
-                self.assertTrue(claim_problems(description.replace(" or a site admin completes the order", "")))
+                self.assertTrue(claim_problems(description.replace("The worker is paid when", "The worker is paid only when")))
 
     def test_payout_scoped_stripe_facts_are_allowed(self):
         for statement in (
