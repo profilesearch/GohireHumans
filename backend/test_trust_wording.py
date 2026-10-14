@@ -55,6 +55,15 @@ PATTERNS = (
     r"\b(?:1%|one\s+percent)(?:\s+(?:platform|service))?(?:\s+fee)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?Stripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\b",
     r"\bStripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?(?:1%|one\s+percent\b)",
     r"\$\d+(?:\.\d+)?\s*(?:\+|plus)\s*Stripe\b",
+    # Fifth review: rewordings of hire-time payout, processing-cost synonyms, charge-after-completion
+    # and instant-payout claims. In GHH the card is charged at hire/order; payout follows approval
+    # or order completion and is never instant on hire.
+    r"\b(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?|(?:is|are)\s+paid)\s+(?:(?:the|their|its|listed|full|payout|payment|money)\s+)*(?:immediately|instantly|right\s+away|automatically)\s+(?:after|once|when|upon|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b",
+    r"\b(?:payouts?|payments?|funds?)\s+(?:is|are)\s+released\s+to\s+(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:immediately\s+)?(?:when|once|as\s+soon\s+as|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
+    r"\b(?:when|once|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b[^.!?;\n]{0,20},\s*(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?\s+paid|gets?|(?:is|are)\s+paid)\b",
+    r"\b(?:employers?|buyers?|clients?|you)\s+(?:pays?|covers?)\s+(?:the\s+)?Stripe\s+(?:processing|card|payment|transaction)?\s*(?:costs?|fees?|charges?)\b",
+    r"\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+(?:only\s+)?charged\s+only\s+(?:after|once|when)\b|\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+charged\s+(?:only\s+)?(?:after|once|when)\s+(?:the\s+)?(?:task|work|job|order)\s+is\s+(?:completed|done|approved|finished)\b",
+    r"\binstant(?:ly)?\s+payouts?\b|\bpay(?:s|ing)?\s+out\s+instantly\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -120,9 +129,11 @@ class VisibleFaq(HTMLParser):
     Layouts used on the site, matched by element and attribute rather than serialized markup:
     - <details><summary>Q</summary>A</details>
     - <article data-ai-answer> ... <h3>Q</h3> ... A ... </article>
-    - an <h2 id="faq"> section: each <h3> is a question and its first following <p> is the answer;
+    - an <h2 id="faq"> section: each <h3> is a question and the content up to the next <h3> is the answer;
       the section ends at the next <h2>, a call-to-action element whose class includes "callout",
       </main>, <footer>, or </section>/</article> enclosing the heading.
+    In every layout the answer is the whole region after the question, up to the next question or the
+    end of the card/section, so a second paragraph or list cannot add an unchecked claim.
     """
 
     VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -218,7 +229,7 @@ class VisibleFaq(HTMLParser):
             return
         if self.capture == "q":
             self.question.append(data)
-        elif self.capture == "a" or (self.mode == "details" and self.question and self.capture is None):
+        elif self.capture == "a" or (self.mode in {"details", "card", "section"} and self.question and self.capture is None):
             self.answer.append(data)
 
     def close(self):
@@ -433,6 +444,15 @@ class TrustWordingTests(unittest.TestCase):
             "The worker is paid only when the employer approves the work with release_payment or a site admin completes the order.",
             "Workers are paid only after approval.",
             "The worker is paid only when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
+            # Fifth-review rewordings and instant-payout claims.
+            "Workers receive payment immediately after you hire them.",
+            "Payment is released to the worker when you hire.",
+            "When you hire, the worker receives the listed payout.",
+            "Employers pay Stripe processing costs plus a 1% platform fee.",
+            "Your card is charged only after the task is completed.",
+            "The employer's card is charged once the work is approved.",
+            "Approve milestone → instant payout",
+            "Workers get instant payouts.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -469,9 +489,101 @@ class TrustWordingTests(unittest.TestCase):
             "The worker is paid when the employer approves the work with release_payment or completes the order, or a site admin completes it.",
             "In the normal flow, the worker is paid when the employer approves the submitted work with `release_payment`. A site admin can also complete a service order, which releases its payout.",
             "Nothing is published or charged until you approve it.",
+            "Your card is charged for the first milestone when you hire (Stripe processing where configured).",
+            "Approving a submitted milestone releases its payout and charges the next milestone, if there is one.",
+            "When you hire, the card is charged for the first milestone.",
+            "The worker's payout is released when you approve the delivered work.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(claim_problems(statement), [])
+
+    def test_faq_answers_include_every_paragraph(self):
+        """A second answer paragraph or list item is part of the answer and must match JSON-LD."""
+        def page(body, questions):
+            ld = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+                {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in questions]}
+            return ('<html><head><script type="application/ld+json">' + json.dumps(ld) + "</script></head>"
+                    "<body><main>" + body + "</main></body></html>")
+
+        q, first, second = "How are workers paid?", "The card is charged at hire.", "The payout is released after approval."
+        extra = "The worker is paid immediately at hire."
+        layouts = {
+            "card": lambda tail: f"<article data-ai-answer><h3>{q}</h3><p>{first}</p>{tail}</article>",
+            "section": lambda tail: f'<h2 id="faq">FAQ</h2><h3>{q}</h3><p>{first}</p>{tail}<h2>Related</h2>',
+            "details": lambda tail: f"<details><summary>{q}</summary><p>{first}</p>{tail}</details>",
+        }
+        for name, layout in layouts.items():
+            with self.subTest(layout=name):
+                # Truthful two-paragraph answer represented in full in JSON-LD: no problem.
+                self.assertEqual(faq_contract_problems(page(layout(f"<p>{second}</p>"), [(q, f"{first} {second}")])), [])
+                # Contradictory extra paragraph or list item that JSON-LD omits: caught.
+                self.assertTrue(faq_contract_problems(page(layout(f"<p>{extra}</p>"), [(q, first)])))
+                self.assertTrue(faq_contract_problems(page(layout(f"<ul><li>{extra}</li></ul>"), [(q, first)])))
+        source = (FRONTEND / "blog/alternatives-to-freelancer.html").read_text(encoding="utf-8")
+        cards = visible_faq_cards(source)
+        self.assertTrue(cards)
+        answer = cards[0][1]
+        anchor = next(m for m in re.finditer(r"<p[^>]*>([^<]+)</p>", source) if " ".join(m.group(1).split()) == answer)
+        mutated = source[:anchor.end()] + "<p>The worker is paid immediately at hire.</p>" + source[anchor.end():]
+        self.assertTrue(faq_contract_problems(mutated))
+
+    def test_standalone_fee_snippets_keep_the_checkout_qualifier(self):
+        """Meta descriptions and JSON-LD strings are quoted on their own, so any GHH 1% + 3% fee
+        statement there must say where checkout (payment processing) is configured."""
+        fee = re.compile(r"(?:\b1\s*%|\bone\s+percent)[^.;]{0,80}?(?:\b3\s*%|processing)", re.I)
+        # The qualifier must name checkout or payment processing; a bare "where configured" can refer to
+        # something else in the same field. Competitors are proper nouns ("freelancer's rate" is not one).
+        qualifier = re.compile(r"where\s+(?:checkout|(?:card\s+)?payment\s+processing|payments?)\s+(?:is|are)\s+configured", re.I)
+        competitor = re.compile(r"\b" + COMPETITOR + r"\b")
+
+        def strings(node):
+            if isinstance(node, dict):
+                for value in node.values():
+                    yield from strings(value)
+            elif isinstance(node, list):
+                for value in node:
+                    yield from strings(value)
+            elif isinstance(node, str):
+                yield node
+
+        def problems(source):
+            fields = [html.unescape(m.group(1)) for m in re.finditer(
+                r'<meta (?:name|property)="(?:description|og:description|twitter:description)" content="([^"]*)"', source)]
+            for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', source, re.S):
+                fields.extend(strings(json.loads(block)))
+            return [sentence for field in fields if not qualifier.search(field)
+                    for sentence in re.split(r"(?<=[.!?])\s+", field)
+                    if fee.search(sentence) and not competitor.search(sentence)]
+
+        checked = 0
+        for path in public_files():
+            if path.suffix != ".html":
+                continue
+            source = path.read_text(encoding="utf-8")
+            checked += 1
+            with self.subTest(page=str(path.relative_to(FRONTEND))):
+                self.assertEqual(problems(source), [])
+        self.assertGreater(checked, 100)
+        page = (FRONTEND / "categories/graphic-design.html").read_text(encoding="utf-8")
+        self.assertTrue(problems(page.replace("3% processing where checkout is configured.", "3% processing.")))
+        page = (FRONTEND / "index.html").read_text(encoding="utf-8")
+        self.assertTrue(problems(page.replace(
+            "3% processing charge where checkout is configured.\"\n    },", "3% processing charge when they pay for work.\"\n    },", 1)))
+
+    def test_snippet_metadata_is_short_and_consistent(self):
+        """Search results cut descriptions at about 160 characters; Open Graph and Twitter repeat the meta."""
+        for relative in ("index.html", "about.html", "categories/graphic-design.html", "categories/writing.html"):
+            source = (FRONTEND / relative).read_text(encoding="utf-8")
+            with self.subTest(page=relative):
+                found = {name: [html.unescape(v) for v in re.findall(
+                    rf'<meta (?:name|property)="{re.escape(name)}" content="([^"]*)"', source)]
+                    for name in ("description", "og:description", "twitter:description")}
+                self.assertEqual([len(v) for v in found.values()], [1, 1, 1])
+                description = found["description"][0]
+                self.assertLessEqual(len(description), 160)
+                self.assertEqual(found["og:description"][0], description)
+                self.assertEqual(found["twitter:description"][0], description)
+                self.assertIn("where checkout is configured", description)
 
     def test_mcp_hire_worker_names_every_payout_trigger(self):
         """POST /orders/<id>/complete lets the employer or a site admin complete a submitted or

@@ -34,10 +34,10 @@
   <link rel="stylesheet" href="/style.css?v=20260526-nav-consistency">
   <link rel="stylesheet" href="/mobile-hardening.css?v=20260525-mobile-cachefix">
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "Article", "headline": "Human-as-a-Service: the on-demand model for professional hiring", "description": "What Human-as-a-Service (HaaS) means, how it differs from traditional freelancing, its API-first workflow, and where businesses use AI-to-human delegation.", "image": "https://www.gohirehumans.com/og-image-v2.png", "datePublished": "2026-03-03", "dateModified": "2026-10-13", "author": {"@type": "Organization", "name": "GoHireHumans", "url": "https://www.gohirehumans.com/"}, "publisher": {"@type": "Organization", "name": "GoHireHumans", "logo": {"@type": "ImageObject", "url": "https://www.gohirehumans.com/apple-touch-icon.png"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.gohirehumans.com/blog/human-as-a-service.html"}}
+  {"@context": "https://schema.org", "@type": "Article", "headline": "Human-as-a-Service: the on-demand model for professional hiring", "description": "What Human-as-a-Service (HaaS) means, how it differs from traditional freelancing, its API-first workflow, and where businesses use AI-to-human delegation.", "image": "https://www.gohirehumans.com/og-image-v2.png", "datePublished": "2026-03-03", "dateModified": "2026-10-14", "author": {"@type": "Organization", "name": "GoHireHumans", "url": "https://www.gohirehumans.com/"}, "publisher": {"@type": "Organization", "name": "GoHireHumans", "logo": {"@type": "ImageObject", "url": "https://www.gohirehumans.com/apple-touch-icon.png"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.gohirehumans.com/blog/human-as-a-service.html"}}
   </script>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is Human-as-a-Service (HaaS)?", "acceptedAnswer": {"@type": "Answer", "text": "Human-as-a-Service is a model where human professionals are available on demand through API-accessible platforms, allowing businesses and AI agents to delegate real-world tasks to workers with profile trust signals programmatically."}}, {"@type": "Question", "name": "How does GoHireHumans compare to traditional staffing agencies?", "acceptedAnswer": {"@type": "Answer", "text": "GoHireHumans offers instant access to service providers through a self-service platform and API, with no contracts, no subscriptions, and a 1% platform fee plus a fixed 3% processing charge, far lower than typical staffing-agency markups."}}, {"@type": "Question", "name": "Can enterprises integrate GoHireHumans into their existing workflows?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The REST API enables full programmatic integration for task creation, worker management, progress tracking, and payment processing. Documentation is available at gohirehumans.com/api-docs.html."}}]}
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is Human-as-a-Service (HaaS)?", "acceptedAnswer": {"@type": "Answer", "text": "Human-as-a-Service is a model where human professionals are available on demand through API-accessible platforms, allowing businesses and AI agents to delegate real-world tasks to workers with profile trust signals programmatically."}}, {"@type": "Question", "name": "How does GoHireHumans compare to traditional staffing agencies?", "acceptedAnswer": {"@type": "Answer", "text": "GoHireHumans is self-service: you post a task or order a listed service through the website or API, with no contracts or subscriptions. Instead of an agency markup, employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured."}}, {"@type": "Question", "name": "Can enterprises integrate GoHireHumans into their existing workflows?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The REST API and MCP server can post jobs, order services and check order status. Approving work releases the worker's payout, so it needs the employer's session token; API keys can't approve. Documentation is available at gohirehumans.com/api-docs.html."}}]}
   </script>
   <script type="application/ld+json">
   {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.gohirehumans.com/"}, {"@type": "ListItem", "position": 2, "name": "Blog", "item": "https://www.gohirehumans.com/blog/"}, {"@type": "ListItem", "position": 3, "name": "Human-as-a-Service: the on-demand model for professional hiring", "item": "https://www.gohirehumans.com/blog/human-as-a-service.html"}]}
@@ -92,7 +92,7 @@
           <li>Human-as-a-Service (HaaS) is the model where businesses and AI agents hire on-demand human professionals through APIs for tasks machines cannot complete</li>
           <li>GoHireHumans is a HaaS marketplace with worker profiles (bios, skills, work samples, reviews), an MCP server and REST API, and Stripe payment processing</li>
           <li>Enterprise use cases include customer calls, field research, data annotation, document delivery, and compliance tasks</li>
-          <li>1% platform fee plus fixed 3% processing charge with no subscription; charged when they hire or order; worker payout follows buyer approval</li>
+          <li>1% platform fee plus fixed 3% processing charge where checkout is configured, with no subscription; charged when they hire or order; worker payout follows buyer approval</li>
           </ul>
 
           <p>Software-as-a-Service transformed how businesses use technology. Infrastructure-as-a-Service changed how they manage servers. Now, a new model is emerging that applies the same on-demand, API-accessible paradigm to human labor itself: Human-as-a-Service, or HaaS.</p>
@@ -106,7 +106,7 @@
           <ul>
           <li><strong>API-first access.</strong> Tasks are created, assigned, tracked, and completed through REST API endpoints, allowing integration into automated workflows, AI agents, and enterprise systems.</li>
           <li><strong>Profile trust signals.</strong> Profiles show bios, skills, work samples, ratings, reviews, and completed-order counts where available. GoHireHumans does not vet, screen, background-check, or identity-verify workers. Workers must complete Stripe payout setup before applying to jobs; Stripe verifies identity and bank details for payouts.</li>
-          <li><strong>Structured task definitions.</strong> Tasks follow standardized schemas with clear inputs, expected outputs, quality criteria, and deadlines, removing the ambiguity that plagues traditional freelance projects.</li>
+          <li><strong>Structured task definitions.</strong> Each task has a title, description, category, budget and optional deadline, so the brief can state inputs, expected outputs and acceptance criteria up front.</li>
           <li><strong>Pay-per-task economics.</strong> You pay per task, not for monthly retainers or seat licenses. The card is charged when you hire or order, and the worker&rsquo;s payout is released when you approve the delivered work.</li>
           <li><strong>Structured review.</strong> The platform can support clearer deliverables, revision requests, and review records, while the hiring party remains responsible for approving provider, scope, and final output.</li>
           </ul>
@@ -167,7 +167,7 @@ print(job["id"], job["status"])</pre></div>
 
           <p>Consider an AI customer service agent that handles routine inquiries but encounters a situation requiring genuine empathy, complex negotiation, or regulatory knowledge. Instead of failing or providing a poor response, the AI agent creates a task on GoHireHumans, provides the relevant context, and a human professional takes over the interaction. The result is handled, the outcome is recorded, and the AI agent learns from the handoff to improve future decisions.</p>
 
-          <p>This pattern (AI orchestration with human execution) is becoming the standard architecture for enterprise automation. It combines the scale and consistency of AI with the judgment, creativity, and physical capabilities of human professionals.</p>
+          <p>This pattern (AI orchestration with human execution) combines the scale and consistency of AI with the judgment, creativity, and physical capabilities of human professionals.</p>
 
           <blockquote>Human-as-a-Service is not about replacing human workers. It is about making human capabilities as accessible and composable as cloud infrastructure.</blockquote>
 
@@ -192,10 +192,10 @@ print(job["id"], job["status"])</pre></div>
           <p>Human-as-a-Service is a model where human professionals are available on demand through API-accessible platforms, allowing businesses and AI agents to delegate real-world tasks to workers with profile trust signals programmatically.</p>
 
           <h3>How does GoHireHumans compare to traditional staffing agencies?</h3>
-          <p>GoHireHumans offers instant access to service providers through a self-service platform and API, with no contracts, no subscriptions, and a 1% platform fee plus a fixed 3% processing charge, far lower than typical staffing-agency markups.</p>
+          <p>GoHireHumans is self-service: you post a task or order a listed service through the website or API, with no contracts or subscriptions. Instead of an agency markup, employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.</p>
 
           <h3>Can enterprises integrate GoHireHumans into their existing workflows?</h3>
-          <p>Yes. The REST API enables full programmatic integration for task creation, worker management, progress tracking, and payment processing. Documentation is available at gohirehumans.com/api-docs.html.</p>
+          <p>Yes. The REST API and MCP server can post jobs, order services and check order status. Approving work releases the worker's payout, so it needs the employer's session token; API keys can't approve. Documentation is available at gohirehumans.com/api-docs.html.</p>
 
           <div class="callout"><h3>Experience Human-as-a-Service with GoHireHumans</h3>
           <p>Access human and agent service providers through our API or web interface. Post a scoped task, compare providers, and approve the work before the payout is released.</p>
