@@ -1,10 +1,14 @@
 """Replay published job-creation requests locally, with their actual route and auth.
 
 Discovery reads public HTML code containers, never executes their shell/Python code,
-and fails closed on an unparseable request. The real handler uses disposable SQLite;
+and fails closed on an unparseable request. A census of every visible mention of the
+job-collection route then requires each mention to belong to a replayed example or to a
+reviewed, non-request reference, so a request written in any other syntax cannot ship
+unreviewed. The real handler uses disposable SQLite;
 outbound HTTP is blocked and notification/email transports are mocked.
 """
 import ast
+import collections
 import contextlib
 import hashlib
 import html
@@ -51,8 +55,8 @@ PYTHON_REQUEST = re.compile(r"\brequests\.post\s*\(\s*(['\"])(?P<url>[^'\"]+)\1"
 
 
 class DocumentText(HTMLParser):
-    """All text of a public page except JSON-LD and CSS, independent of code-container markup.
-    Block elements become blank lines so a request never runs into the next paragraph."""
+    """Rendered text of a public page (no <script> or <style> content), independent of
+    code-container markup. Block elements become line breaks."""
 
     BLOCK_TAGS = {"address", "article", "aside", "blockquote", "dd", "details", "div", "dl", "dt", "figcaption",
                   "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "li", "main", "nav", "ol",
@@ -63,8 +67,7 @@ class DocumentText(HTMLParser):
         self.parts, self.skip = [], 0
 
     def handle_starttag(self, tag, attrs):
-        attributes = dict(attrs)
-        if tag == "style" or (tag == "script" and (attributes.get("type") or "").lower() == "application/ld+json"):
+        if tag in {"style", "script"}:
             self.skip += 1
         elif tag == "br":
             self.parts.append("\n")
@@ -82,96 +85,116 @@ class DocumentText(HTMLParser):
             self.parts.append(data)
 
 
-# A job-creation request targets a GHH origin, a relative path, or an origin placeholder
-# ($API, ${BASE}, {base_url}, <base-url>); never another site's /jobs endpoint.
-GHH_ORIGIN = r"https?://(?:[\w-]+\.)*gohirehumans[\w-]*(?:\.[\w-]+)*(?::\d+)?"
-ORIGIN_PLACEHOLDER = r"\$\{?[A-Za-z_]\w*\}?|\{[A-Za-z_][\w.]*\}|<[A-Za-z][\w -]*>"
-JOBS_ROUTE = (r"(?:" + GHH_ORIGIN + r"|" + ORIGIN_PLACEHOLDER + r"|(?<![\w.:/$}>-]))"
-              r"/(?:api/v1/)?jobs(?![\w/.-])(?:\?[^\s'\"<>`]*)?")
-# Raw HTTP: the request line, optional header lines and a blank line, then the JSON body.
-HTTP_JOB_REQUEST = re.compile(
-    r"(?<![\w-])POST[ \t]+" + JOBS_ROUTE + r"[ \t]*(?:HTTP/[\d.]+[ \t]*)?"
-    r"(?:\n(?:[ \t]*[A-Za-z][A-Za-z0-9-]*[ \t]*:[^\n]*\n)*(?:[ \t]*\n)*)?[ \t]*[\[{]")
-CURL_COMMAND = re.compile(r"(?<![\w-])curl\b")
-CURL_ROUTE = re.compile(r"(?:^|(?<=[\s'\"=]))" + JOBS_ROUTE + r"(?=$|[\s'\"\\])")
-CURL_POST = re.compile(r"(?<![\w-])(?:-X[ \t]*POST|--request[ \t=]+POST|-d|--data(?:-raw|-binary|-urlencode|-ascii)?"
-                       r"|--json|-F|--form)(?![\w-])")
-CURL_NOT_POST = re.compile(r"(?<![\w-])(?:-X[ \t]*(?!POST\b)[A-Z]+|--request[ \t=]+(?!POST\b)[A-Z]+|-G|--get)(?![\w-])")
-# Client calls: any `.post(...)` (requests, httpx, axios, a session) or fetch(..., {method: "POST"}).
-CLIENT_CALL = re.compile(
-    r"(?<![\w.])(?:[A-Za-z_]\w*\.)?(?P<verb>post|fetch)\s*\(\s*(?:url\s*=\s*)?[fFrRbB]?(?P<quote>['\"`])"
-    r"(?:" + GHH_ORIGIN + r"|" + ORIGIN_PLACEHOLDER + r")?/(?:api/v1/)?jobs(?![\w/.-])(?:\?[^'\"`]*)?(?P=quote)",
-    re.I)
-FETCH_POST = re.compile(r"\bmethod\s*:\s*['\"`]POST['\"`]", re.I)
-INVENTORY_SUFFIXES = {".html", ".htm", ".txt", ".md", ".json", ".xml", ".yaml", ".yml"}
+# Census of the job-collection route. Recognizing request syntaxes one by one cannot be
+# complete (fetch with a quoted "method" key, requests.request, HTTPie, wget, Go, PHP ...), so
+# every visible mention of the route must instead be (a) inside a replayed example or (b) a
+# reviewed reference in REVIEWED_ROUTE_MENTIONS. A new request in any syntax adds an unreviewed
+# mention and fails until it is replayable or reviewed. Keys are the mention plus up to 50
+# characters of context on each side, whitespace-normalized; multiplicity counts.
+ROUTE_MENTION = re.compile(r"/(?:api/v1/)?jobs(?![\w/.-])")
+CENSUS_SUFFIXES = {".html", ".htm", ".txt", ".md", ".json", ".xml", ".yaml", ".yml"}
+CONTEXT = 50
+REVIEWED_ROUTE_MENTIONS = {
+    'agent-onboarding.html': [
+        'an exact category from GET /categories. This POST /jobs request publishes a real listing but does not cre',
+    ],
+    'ai-integration.html': [
+        'POST to /api/v1/jobs with complete task instructions. Write the descri',
+    ],
+    'api-docs.html': [
+        'GET /api/v1/jobs',
+        'GET /api/v1/jobs',
+        'GET /api/v1/jobs?category=phone_call&page=1&per_page=2',
+        'GET /api/v1/me/jobs',
+        'GET /api/v1/me/jobs',
+        'GET /api/v1/me/jobs?status=completed&page=1&per_page=20',
+        'GET/api/v1/me/jobs',
+        'POST /api/v1/jobs',
+        'POST /api/v1/jobs',
+        'POST/api/v1/jobs',
+        'posted, in every status, newest first. The public /api/v1/jobs browse only returns open and reviewing jobs; use ',
+    ],
+    'blog/ai-agent-marketplace-guide.html': [
+        'Draft or post jobs: POST /api/v1/jobs creates a task listing with requirements, budget,',
+    ],
+    'changelog.html': [
+        'ed listing endpoints: GET /me/services and GET /me/jobs return the caller’s own listings in every status,',
+    ],
+    'faq.html': [
+        ' password, authenticate via session, and use POST /api/v1/jobs to create a job listing. Spending, hiring, and pa',
+        'GET /api/v1/jobs: list jobs',
+        'POST /api/v1/jobs: create a job listing',
+    ],
+    'how-it-works.html': [
+        'POST to /api/v1/jobs with the task details. This publishes a listing s',
+    ],
+    'llms-full.txt': [
+        '- `GET /api/v1/me/jobs`, `GET /api/v1/me/services`: your own listings.',
+        '- `POST /api/v1/jobs`: publish a fixed-budget job (write scope or sess',
+        "rl 'https://gohirehumans-production.up.railway.app/api/v1/jobs?category=phone_call&page=1&per_page=2'",
+    ],
+    'llms.txt': [
+        '- Browse jobs: https://www.gohirehumans.com/#/jobs',
+    ],
+    'roadmap.html': [
+        'GET /me/services and GET /me/jobs return the caller’s own listings in every status.',
+        'obs read from the new GET /me/services and GET /me/jobs endpoints, so paused, hired, completed, and cance',
+    ],
+}
 
 
-def call_extent(text, open_paren):
-    """End of a call's argument list, skipping quoted strings (linear scan)."""
-    depth, quote, index = 0, None, open_paren
-    while index < len(text):
-        char = text[index]
-        if quote:
-            if char == "\\":
-                index += 1
-            elif char == quote:
-                quote = None
-        elif char in "'\"`":
-            quote = char
-        elif char in "([{":
-            depth += 1
-        elif char in ")]}":
-            depth -= 1
-            if depth == 0:
-                return index + 1
-        index += 1
-    return len(text)
+def mention_keys(text):
+    keys = []
+    for raw_line in text.splitlines():
+        line = " ".join(raw_line.split())
+        for match in ROUTE_MENTION.finditer(line):
+            keys.append(line[max(0, match.start() - CONTEXT):match.end() + CONTEXT])
+    return keys
 
 
-def job_request_count(text):
-    """Count complete job-creation requests in public text, independent of body length, key order or escaping."""
-    count = 0
-    masked = list(text)
-    starts = [m.start() for m in CURL_COMMAND.finditer(text)]
-    for index, start in enumerate(starts):
-        end = starts[index + 1] if index + 1 < len(starts) else len(text)
-        blank = re.compile(r"\n[ \t]*\n").search(text, start, end)
-        end = blank.start() if blank else end
-        command = text[start:end]
-        if CURL_ROUTE.search(command) and CURL_POST.search(command) and not CURL_NOT_POST.search(command):
-            count += 1
-        masked[start:end] = " " * (end - start)
-    masked = "".join(masked)
-    count += len(HTTP_JOB_REQUEST.findall(masked))
-    for call in CLIENT_CALL.finditer(masked):
-        if call["verb"].lower() == "post":
-            count += 1
-        else:
-            extent = masked[call.start():call_extent(masked, masked.index("(", call.start()))]
-            count += bool(FETCH_POST.search(extent))
-    return count
-
-
-def document_text(path):
-    source = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix in {".html", ".htm"}:
+def document_text(relative, source):
+    if Path(relative).suffix in {".html", ".htm"}:
         parser = DocumentText()
         parser.feed(source)
         return "".join(parser.parts)
     return source
 
 
-def independent_request_inventory():
-    """Per-file request counts across every public text surface, not just parsed code containers."""
-    counts = {}
+def published_sources():
+    """Every public text surface a reader or agent can fetch, keyed by path under frontend/."""
+    sources = {}
     for path in sorted(FRONTEND.rglob("*")):
         relative = path.relative_to(FRONTEND)
-        if not path.is_file() or EXCLUDED.intersection(relative.parts) or path.suffix not in INVENTORY_SUFFIXES:
-            continue
-        count = job_request_count(document_text(path))
-        if count:
-            counts[relative.as_posix()] = count
-    return counts
+        if path.is_file() and not EXCLUDED.intersection(relative.parts) and path.suffix in CENSUS_SUFFIXES:
+            sources[relative.as_posix()] = path.read_text(encoding="utf-8", errors="replace")
+    return sources
+
+
+def route_mention_census(sources):
+    census = {}
+    for relative, source in sources.items():
+        keys = mention_keys(document_text(relative, source))
+        if keys:
+            census[relative] = collections.Counter(keys)
+    return census
+
+
+def census_differences(sources=None):
+    """(unreviewed, stale): mentions no example or review accounts for, and reviewed mentions that vanished."""
+    sources = published_sources() if sources is None else sources
+    expected = {page: collections.Counter(keys) for page, keys in REVIEWED_ROUTE_MENTIONS.items()}
+    for example in published_job_examples(sources):
+        expected.setdefault(example.page, collections.Counter()).update(example.mentions)
+    actual = route_mention_census(sources)
+    unreviewed, stale = {}, {}
+    for page in sorted(set(actual) | set(expected)):
+        extra = actual.get(page, collections.Counter()) - expected.get(page, collections.Counter())
+        missing = expected.get(page, collections.Counter()) - actual.get(page, collections.Counter())
+        if extra:
+            unreviewed[page] = sorted(extra.elements())
+        if missing:
+            stale[page] = sorted(missing.elements())
+    return unreviewed, stale
 
 
 @dataclass
@@ -181,6 +204,7 @@ class JobExample:
     route: str
     auth: str
     payload: dict
+    mentions: tuple = ()
 
 
 class ExampleDiscoveryError(ValueError):
@@ -380,6 +404,11 @@ def discover_job_examples(page, source):
             request_line = line + block[:start].count("\n")
             if kind == "http" and (match["method"] != "POST" or not is_job_creation_url(match["url"])):
                 continue
+            if kind == "http" and not urlsplit(match["url"]).netloc:
+                head = re.split(r"\n[ \t]*\n|\n[ \t]*[\[{]", text, maxsplit=1)[0]
+                host = re.search(r"(?im)^[ \t]*Host[ \t]*:[ \t]*(\S+)", head)
+                if host and "gohirehumans" not in host[1].lower():
+                    continue
             if kind == "python" and not is_job_creation_url(match["url"]):
                 continue
             if kind == "curl":
@@ -406,17 +435,19 @@ def discover_job_examples(page, source):
                 raise ExampleDiscoveryError(
                     f"{page}:{request_line}: {error}; snippet: {text.strip()[:500]!r}"
                 ) from error
-            examples.append(JobExample(page, request_line, route, auth, payload))
+            # Whole lines, so a call that starts mid-line ("response = requests.post(...") keeps its context.
+            line_start = block.rfind("\n", 0, start) + 1
+            examples.append(JobExample(page, request_line, route, auth, payload, tuple(mention_keys(block[line_start:end]))))
     return examples
 
 
-def published_job_examples():
+def published_job_examples(sources=None):
     """Scan every public HTML page deterministically; never silently skip bad bodies."""
+    sources = published_sources() if sources is None else sources
     examples = []
-    for path in sorted(FRONTEND.rglob("*.html")):
-        relative = path.relative_to(FRONTEND)
-        if not EXCLUDED.intersection(relative.parts):
-            examples.extend(discover_job_examples(relative.as_posix(), path.read_text(encoding="utf-8")))
+    for relative in sorted(sources):
+        if Path(relative).suffix == ".html":
+            examples.extend(discover_job_examples(relative, sources[relative]))
     return examples
 
 
@@ -639,69 +670,113 @@ headers={"X-API-Key": os.environ["SESSION_TOKEN"]}, json={"title": "x"})</pre>""
                 example, = discover_job_examples("bearer.html", f'<pre>POST /api/v1/jobs\nAuthorization: Bearer {token}\n\n{{"title": "x"}}</pre>')
                 self.assertEqual(example.auth, "Bearer")
 
-    def test_every_published_request_is_discovered(self):
-        """An independent scan of all public text must agree with the parsed examples page by page."""
-        discovered = {}
+    def test_raw_http_host_header_decides_the_origin(self):
+        body = '{"title": "x"}'
+        foreign = f"<pre>POST /jobs HTTP/1.1\nHost: api.example.com\nAuthorization: Bearer SESSION_TOKEN\n\n{body}</pre>"
+        self.assertEqual(discover_job_examples("foreign-host.html", foreign), [])
+        ghh = foreign.replace("api.example.com", "gohirehumans-production.up.railway.app")
+        example, = discover_job_examples("ghh-host.html", ghh)
+        self.assertEqual(example.route, "/jobs")
+        hostless, = discover_job_examples("hostless.html", f"<pre>POST /jobs\nAuthorization: Bearer SESSION_TOKEN\n\n{body}</pre>")
+        self.assertEqual(hostless.auth, "Bearer")
+
+
+class RouteMentionCensusTests(unittest.TestCase):
+    PAGE = "blog/how-to-find-human-workers-ai-tasks.html"
+    WRONG_BODY = {"description": "x" * 1300, "title": "Inspect a property", "category": "inspections",
+                  "budget_type": "fixed", "budget_amount": 150, "location": "Denver, CO"}
+    # Realistic documentation formats; each sends an API key as Bearer, an invalid category and
+    # an ignored field. None may leave the module green, inside or outside a code container.
+    VARIANTS = {
+        "fetch-quoted-method": 'fetch("{origin}/api/v1/jobs", {{"method": "POST", "headers": {{"Authorization": '
+                               '"Bearer ghh_YOUR_API_KEY", "Content-Type": "application/json"}}, "body": JSON.stringify({body})}})',
+        "requests-request": 'response = requests.request("POST", "{origin}/api/v1/jobs", headers={{"Authorization": '
+                            '"Bearer ghh_YOUR_API_KEY"}}, json={body})',
+        "httpie": "http POST {origin}/api/v1/jobs Authorization:'Bearer ghh_YOUR_API_KEY' <<< '{body}'",
+        "wget": "wget --method=POST --header='Authorization: Bearer ghh_YOUR_API_KEY' --body-data='{body}' {origin}/api/v1/jobs",
+        "axios-config": 'axios({{method: "post", url: `${{BASE}}/api/v1/jobs`, headers: {{Authorization: "Bearer ghh_YOUR_API_KEY"}}, data: {body}}})',
+        "go": 'req, _ := http.NewRequest("POST", "{origin}/api/v1/jobs", bytes.NewBuffer([]byte(`{body}`)))',
+        "raw-http-long": "POST /api/v1/jobs\nAuthorization: Bearer ghh_YOUR_API_KEY\nContent-Type: application/json\n\n{body}",
+        "split-url": 'const url = BASE_URL + "/api/v1/jobs";\nawait fetch(url, {{"method": "POST", body: JSON.stringify({body})}});',
+    }
+
+    def mutate(self, page, snippet, container):
+        sources = published_sources()
+        wrapped = {"pre": "<pre><code>{}</code></pre>", "div": '<div class="example-request">{}</div>',
+                   "p": "<p>{}</p>"}[container].format(html.escape(snippet))
+        sources[page] = sources[page].replace("</main>", wrapped + "</main>", 1)
+        return sources
+
+    def assert_module_fails(self, sources, page):
+        """The mutated page must fail discovery or leave an unreviewed route mention (the census is per page)."""
+        try:
+            unreviewed, _ = census_differences({page: sources[page]})
+        except ExampleDiscoveryError:
+            return
+        self.assertTrue(unreviewed, "a request was added without failing discovery or the census")
+
+    def test_every_route_mention_is_replayed_or_reviewed(self):
+        unreviewed, stale = census_differences()
+        self.assertEqual(unreviewed, {}, "A public page mentions the jobs route outside a replayed example. "
+                         "Make it a replayable example or, if it is not a request, add it to REVIEWED_ROUTE_MENTIONS.")
+        self.assertEqual(stale, {}, "REVIEWED_ROUTE_MENTIONS lists mentions that no longer exist; remove them.")
+
+    def test_every_replayed_example_accounts_for_its_own_mentions(self):
         for example in published_job_examples():
-            discovered[example.page] = discovered.get(example.page, 0) + 1
-        self.assertEqual(independent_request_inventory(), discovered)
+            with self.subTest(page=example.page, line=example.line):
+                self.assertTrue(example.mentions)
 
-    def test_hidden_long_or_reordered_requests_are_counted(self):
-        """Body length, key order, escaping and container markup must not hide a request."""
-        long_body = json.dumps({"description": "x" * 1300, "title": "Hidden", "category": "inspections",
-                                "budget_type": "fixed", "budget_amount": 10, "location": "Denver"})
-        escaped_body = '{\\"description\\": \\"' + "y" * 1500 + '\\", \\"title\\": \\"Hidden\\"}'
-        requests_ = (
-            f"POST /api/v1/jobs\nAuthorization: Bearer ghh_YOUR_API_KEY\nContent-Type: application/json\n\n{long_body}",
-            f"POST {ORIGIN}/jobs\n\n{escaped_body}",
-            f"POST /api/v1/jobs?draft=1 HTTP/1.1\nX-API-Key: ghh_k\n{long_body}",
-            f"curl -X POST \\\n  -H 'X-API-Key: ghh_k' \\\n  -d '{long_body}' \\\n  {ORIGIN}/api/v1/jobs",
-            f"curl $GHH_API/jobs --data '{long_body}'",
-            f"httpx.post(f\"{{BASE_URL}}/api/v1/jobs\", json={long_body})",
-            f"fetch('/api/v1/jobs', {{headers: {{'X-API-Key': key}}, method: 'POST', body: JSON.stringify({long_body})}})",
-        )
-        for request in requests_:
-            for wrapper in ('<div class="example-request" style="white-space:pre-wrap">{}</div>', "<p>{}</p>"):
-                snippet = wrapper.format(html.escape(request))
-                with self.subTest(request=request[:60], wrapper=wrapper[:20]):
-                    parser = DocumentText()
-                    parser.feed(snippet)
-                    self.assertEqual(job_request_count("".join(parser.parts)), 1)
-                    self.assertEqual(discover_job_examples("hidden.html", snippet), [])
-            with self.subTest(request=request[:60], surface=".txt"):
-                self.assertEqual(job_request_count(request), 1)
+    def test_reviewed_references_are_not_requests(self):
+        for page, keys in REVIEWED_ROUTE_MENTIONS.items():
+            for key in keys:
+                with self.subTest(page=page, key=key):
+                    # Read-only references (GET, prose, headings) only: nothing that sends a body or a credential.
+                    self.assertNotRegex(key, r"(?i)X-API-Key|Authorization|Bearer|--data|\s-d\s|-X\s*POST|json=|body:|"
+                                             r"\"title\"|fetch\(|requests\.(?:post|request)|--method|\bhttp\s+POST")
 
-    def test_references_get_requests_and_foreign_hosts_are_not_counted(self):
-        for snippet in (
-            "<p>POST to /api/v1/jobs with the task details.</p>",
-            "<h2>POST /api/v1/jobs</h2><p>Publish a job.</p><table><tr><td>title</td><td>string</td></tr></table>",
-            "<p><code>POST /api/v1/jobs</code> creates a task listing with requirements.</p>",
-            "<p>`POST /api/v1/jobs`: publish a fixed-budget job (write scope or session token).</p>",
-            '<pre>GET /jobs?limit=3</pre><pre>{"jobs": [{"title": "listing"}]}</pre>',
-            '<pre>POST /jobs/12/apply\n{"cover_message": "hi"}</pre>',
-            '<pre>POST https://api.example.com/jobs\n{"title": "Elsewhere"}</pre>',
-            "<pre>curl https://api.example.com/jobs -d '{\"title\": \"Elsewhere\"}'</pre>",
-            f"<pre>curl -X GET {ORIGIN}/jobs</pre>",
-            f"<pre>curl {ORIGIN}/api/v1/jobs?limit=5</pre>",
-            "<pre>requests.post('https://api.example.com/jobs', json={'title': 'Elsewhere'})</pre>",
-            "<pre>fetch('/api/v1/jobs').then(r => r.json())</pre>",
-        ):
-            with self.subTest(reference=snippet):
-                parser = DocumentText()
-                parser.feed(snippet)
-                self.assertEqual(job_request_count("".join(parser.parts)), 0)
+    def test_realistic_request_formats_cannot_ship_unreviewed(self):
+        body = json.dumps(self.WRONG_BODY)
+        for name, template in self.VARIANTS.items():
+            for origin in (ORIGIN, "${GHH_API}"):
+                snippet = template.format(origin=origin, body=body)
+                for container in ("pre", "div", "p"):
+                    with self.subTest(variant=name, origin=origin[:8], container=container):
+                        self.assert_module_fails(self.mutate(self.PAGE, snippet, container), self.PAGE)
+                for suffix in (".txt", ".md"):
+                    with self.subTest(variant=name, origin=origin[:8], surface=suffix):
+                        sources = published_sources()
+                        sources["examples/hidden" + suffix] = snippet
+                        self.assert_module_fails(sources, "examples/hidden" + suffix)
 
-    def test_inventory_mutation_fails_the_published_inventory(self):
-        """A wrong request hidden on a real page (outside code containers) must break the equality check."""
-        page = "stats.html"
-        source = (FRONTEND / page).read_text(encoding="utf-8")
-        hidden = ('<div class="example-request" style="white-space:pre-wrap">' + html.escape(
-            "POST /api/v1/jobs\nAuthorization: Bearer ghh_YOUR_API_KEY\n\n"
-            + json.dumps({"description": "x" * 1300, "title": "Hidden", "category": "inspections"})) + "</div>")
-        parser = DocumentText()
-        parser.feed(source.replace("</main>", hidden + "</main>", 1))
-        self.assertEqual(job_request_count("".join(parser.parts)), 1)
-        self.assertEqual(discover_job_examples(page, source.replace("</main>", hidden + "</main>", 1)), [])
+    def test_a_correct_new_example_is_accounted_for_but_needs_inventory_review(self):
+        good = (f'curl -X POST {ORIGIN}/api/v1/jobs \\\n  -H "X-API-Key: ghh_YOUR_API_KEY" \\\n'
+                f"  -d '{json.dumps({'title': 'Proofread a page', 'category': 'expert_review'})}'")
+        sources = self.mutate("stats.html", good, "pre")
+        self.assertEqual(census_differences(sources), ({}, {}))
+        with self.assertRaisesRegex(AssertionError, "stats.html"):
+            PublishedJobExampleTests().assert_example_inventory(published_job_examples(sources))
+
+    def test_removing_a_reviewed_reference_is_reported_as_stale(self):
+        sources = published_sources()
+        sources["faq.html"] = sources["faq.html"].replace("GET /api/v1/jobs", "GET /api/v1/services")
+        _, stale = census_differences(sources)
+        self.assertIn("faq.html", stale)
+
+    def test_census_ignores_scripts_styles_and_other_routes(self):
+        source = ('<script>fetch("/api/v1/jobs", {method: "POST"})</script><style>/* /jobs */</style>'
+                  '<script type="application/ld+json">{"text": "POST /api/v1/jobs"}</script>'
+                  "<p>See /jobs/12/apply and /api/v1/jobs-archive.</p>")
+        self.assertEqual(route_mention_census({"x.html": source}), {})
+        self.assertEqual(route_mention_census({"x.txt": "POST /api/v1/jobs"}), {"x.txt": collections.Counter(
+            ["POST /api/v1/jobs"])})
+
+    def test_census_is_linear_on_adversarial_input(self):
+        import time
+        for unit in ("/jobs ", "POST /api/v1/jobs\n", "x" * 99 + "/jobs\n", "<p>/jobs</p>"):
+            text = unit * (1_000_000 // len(unit))
+            started = time.perf_counter()
+            route_mention_census({"x.html": text})
+            self.assertLess(time.perf_counter() - started, 10, unit)
 
 
 if __name__ == "__main__":
