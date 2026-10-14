@@ -7,6 +7,7 @@ outbound HTTP is blocked and notification/email transports are mocked.
 import ast
 import contextlib
 import hashlib
+import html
 import io
 import json
 import re
@@ -50,7 +51,12 @@ PYTHON_REQUEST = re.compile(r"\brequests\.post\s*\(\s*(['\"])(?P<url>[^'\"]+)\1"
 
 
 class DocumentText(HTMLParser):
-    """All text of a public page except JSON-LD and CSS, independent of code-container markup."""
+    """All text of a public page except JSON-LD and CSS, independent of code-container markup.
+    Block elements become blank lines so a request never runs into the next paragraph."""
+
+    BLOCK_TAGS = {"address", "article", "aside", "blockquote", "dd", "details", "div", "dl", "dt", "figcaption",
+                  "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "li", "main", "nav", "ol",
+                  "p", "pre", "section", "summary", "table", "td", "th", "tr", "ul"}
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -60,52 +66,109 @@ class DocumentText(HTMLParser):
         attributes = dict(attrs)
         if tag == "style" or (tag == "script" and (attributes.get("type") or "").lower() == "application/ld+json"):
             self.skip += 1
-        if tag in {"br", "p", "div", "pre", "li", "tr"}:
+        elif tag == "br":
             self.parts.append("\n")
+        elif tag in self.BLOCK_TAGS:
+            self.parts.append("\n\n")
 
     def handle_endtag(self, tag):
         if tag in {"style", "script"} and self.skip:
             self.skip -= 1
+        elif tag in self.BLOCK_TAGS:
+            self.parts.append("\n\n")
 
     def handle_data(self, data):
         if not self.skip:
             self.parts.append(data)
 
 
-JOBS_ROUTE = r"(?:https?://[^\s'\"<>`]*)?/(?:api/v1/)?jobs(?![\w/-])"
-POST_TO_JOBS = re.compile(
-    r"\bPOST\s+" + JOBS_ROUTE
-    + r"|\bcurl\b[^\n]*(?:\\\n[^\n]*){0,12}?" + JOBS_ROUTE
-    + r"|requests\.post\s*\(\s*['\"]" + JOBS_ROUTE
-    + r"|\bfetch\s*\(\s*['\"`]" + JOBS_ROUTE, re.I)
-JSON_TITLE_KEY = re.compile(r"[\"']title[\"']\s*:")
-INVENTORY_SUFFIXES = {".html", ".txt", ".md", ".json", ".xml", ".js", ".yaml", ".yml"}
+# A job-creation request targets a GHH origin, a relative path, or an origin placeholder
+# ($API, ${BASE}, {base_url}, <base-url>); never another site's /jobs endpoint.
+GHH_ORIGIN = r"https?://(?:[\w-]+\.)*gohirehumans[\w-]*(?:\.[\w-]+)*(?::\d+)?"
+ORIGIN_PLACEHOLDER = r"\$\{?[A-Za-z_]\w*\}?|\{[A-Za-z_][\w.]*\}|<[A-Za-z][\w -]*>"
+JOBS_ROUTE = (r"(?:" + GHH_ORIGIN + r"|" + ORIGIN_PLACEHOLDER + r"|(?<![\w.:/$}>-]))"
+              r"/(?:api/v1/)?jobs(?![\w/.-])(?:\?[^\s'\"<>`]*)?")
+# Raw HTTP: the request line, optional header lines and a blank line, then the JSON body.
+HTTP_JOB_REQUEST = re.compile(
+    r"(?<![\w-])POST[ \t]+" + JOBS_ROUTE + r"[ \t]*(?:HTTP/[\d.]+[ \t]*)?"
+    r"(?:\n(?:[ \t]*[A-Za-z][A-Za-z0-9-]*[ \t]*:[^\n]*\n)*(?:[ \t]*\n)*)?[ \t]*[\[{]")
+CURL_COMMAND = re.compile(r"(?<![\w-])curl\b")
+CURL_ROUTE = re.compile(r"(?:^|(?<=[\s'\"=]))" + JOBS_ROUTE + r"(?=$|[\s'\"\\])")
+CURL_POST = re.compile(r"(?<![\w-])(?:-X[ \t]*POST|--request[ \t=]+POST|-d|--data(?:-raw|-binary|-urlencode|-ascii)?"
+                       r"|--json|-F|--form)(?![\w-])")
+CURL_NOT_POST = re.compile(r"(?<![\w-])(?:-X[ \t]*(?!POST\b)[A-Z]+|--request[ \t=]+(?!POST\b)[A-Z]+|-G|--get)(?![\w-])")
+# Client calls: any `.post(...)` (requests, httpx, axios, a session) or fetch(..., {method: "POST"}).
+CLIENT_CALL = re.compile(
+    r"(?<![\w.])(?:[A-Za-z_]\w*\.)?(?P<verb>post|fetch)\s*\(\s*(?:url\s*=\s*)?[fFrRbB]?(?P<quote>['\"`])"
+    r"(?:" + GHH_ORIGIN + r"|" + ORIGIN_PLACEHOLDER + r")?/(?:api/v1/)?jobs(?![\w/.-])(?:\?[^'\"`]*)?(?P=quote)",
+    re.I)
+FETCH_POST = re.compile(r"\bmethod\s*:\s*['\"`]POST['\"`]", re.I)
+INVENTORY_SUFFIXES = {".html", ".htm", ".txt", ".md", ".json", ".xml", ".yaml", ".yml"}
 
 
-def job_request_bodies(text):
-    """Count POST-to-jobs markers followed (before the next marker, within 1,200 chars) by a JSON title key."""
-    starts = [m.start() for m in POST_TO_JOBS.finditer(text)]
+def call_extent(text, open_paren):
+    """End of a call's argument list, skipping quoted strings (linear scan)."""
+    depth, quote, index = 0, None, open_paren
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if char == "\\":
+                index += 1
+            elif char == quote:
+                quote = None
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return len(text)
+
+
+def job_request_count(text):
+    """Count complete job-creation requests in public text, independent of body length, key order or escaping."""
     count = 0
+    masked = list(text)
+    starts = [m.start() for m in CURL_COMMAND.finditer(text)]
     for index, start in enumerate(starts):
-        end = min(starts[index + 1] if index + 1 < len(starts) else len(text), start + 1200)
-        if JSON_TITLE_KEY.search(text, start, end):
+        end = starts[index + 1] if index + 1 < len(starts) else len(text)
+        blank = re.compile(r"\n[ \t]*\n").search(text, start, end)
+        end = blank.start() if blank else end
+        command = text[start:end]
+        if CURL_ROUTE.search(command) and CURL_POST.search(command) and not CURL_NOT_POST.search(command):
             count += 1
+        masked[start:end] = " " * (end - start)
+    masked = "".join(masked)
+    count += len(HTTP_JOB_REQUEST.findall(masked))
+    for call in CLIENT_CALL.finditer(masked):
+        if call["verb"].lower() == "post":
+            count += 1
+        else:
+            extent = masked[call.start():call_extent(masked, masked.index("(", call.start()))]
+            count += bool(FETCH_POST.search(extent))
     return count
 
 
+def document_text(path):
+    source = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix in {".html", ".htm"}:
+        parser = DocumentText()
+        parser.feed(source)
+        return "".join(parser.parts)
+    return source
+
+
 def independent_request_inventory():
-    """Per-file request-body counts across every public text surface, not just parsed containers."""
+    """Per-file request counts across every public text surface, not just parsed code containers."""
     counts = {}
     for path in sorted(FRONTEND.rglob("*")):
         relative = path.relative_to(FRONTEND)
         if not path.is_file() or EXCLUDED.intersection(relative.parts) or path.suffix not in INVENTORY_SUFFIXES:
             continue
-        source = path.read_text(encoding="utf-8", errors="replace")
-        if path.suffix == ".html":
-            parser = DocumentText()
-            parser.feed(source)
-            source = "".join(parser.parts)
-        count = job_request_bodies(source)
+        count = job_request_count(document_text(path))
         if count:
             counts[relative.as_posix()] = count
     return counts
@@ -179,7 +242,7 @@ def is_job_creation_url(url):
 # The documented credential must match its header: API keys (ghh_...) go in X-API-Key, and
 # Authorization: Bearer carries a session token from login. The API rejects a key sent as Bearer.
 API_KEY_VALUE = re.compile(r"\bghh_\w+|API_KEY|\bapi[ _-]?key\b", re.I)
-SESSION_VALUE = re.compile(r"session|token\s+from\s+login", re.I)
+SESSION_VALUE = re.compile(r"session|token[\s_-]+from[\s_-]+login|login[\s_-]+token|auth[\s_-]*token", re.I)
 
 
 def auth_class(headers):
@@ -570,31 +633,75 @@ headers={"X-API-Key": os.environ["SESSION_TOKEN"]}, json={"title": "x"})</pre>""
             discover_job_examples("agent-onboarding.html", source.replace(
                 "X-API-Key: ghh_YOUR_API_KEY", "Authorization: Bearer ghh_YOUR_API_KEY", 1))
 
-    def test_every_published_request_body_is_discovered(self):
+    def test_session_placeholders_are_accepted_for_bearer(self):
+        for token in ("TOKEN_FROM_LOGIN", "&lt;token from login&gt;", "SESSION_TOKEN", "GOHIREHUMANS_AUTH_TOKEN"):
+            with self.subTest(token=token):
+                example, = discover_job_examples("bearer.html", f'<pre>POST /api/v1/jobs\nAuthorization: Bearer {token}\n\n{{"title": "x"}}</pre>')
+                self.assertEqual(example.auth, "Bearer")
+
+    def test_every_published_request_is_discovered(self):
         """An independent scan of all public text must agree with the parsed examples page by page."""
         discovered = {}
         for example in published_job_examples():
             discovered[example.page] = discovered.get(example.page, 0) + 1
         self.assertEqual(independent_request_inventory(), discovered)
 
-    def test_independent_scan_sees_requests_outside_code_containers(self):
+    def test_hidden_long_or_reordered_requests_are_counted(self):
+        """Body length, key order, escaping and container markup must not hide a request."""
+        long_body = json.dumps({"description": "x" * 1300, "title": "Hidden", "category": "inspections",
+                                "budget_type": "fixed", "budget_amount": 10, "location": "Denver"})
+        escaped_body = '{\\"description\\": \\"' + "y" * 1500 + '\\", \\"title\\": \\"Hidden\\"}'
+        requests_ = (
+            f"POST /api/v1/jobs\nAuthorization: Bearer ghh_YOUR_API_KEY\nContent-Type: application/json\n\n{long_body}",
+            f"POST {ORIGIN}/jobs\n\n{escaped_body}",
+            f"POST /api/v1/jobs?draft=1 HTTP/1.1\nX-API-Key: ghh_k\n{long_body}",
+            f"curl -X POST \\\n  -H 'X-API-Key: ghh_k' \\\n  -d '{long_body}' \\\n  {ORIGIN}/api/v1/jobs",
+            f"curl $GHH_API/jobs --data '{long_body}'",
+            f"httpx.post(f\"{{BASE_URL}}/api/v1/jobs\", json={long_body})",
+            f"fetch('/api/v1/jobs', {{headers: {{'X-API-Key': key}}, method: 'POST', body: JSON.stringify({long_body})}})",
+        )
+        for request in requests_:
+            for wrapper in ('<div class="example-request" style="white-space:pre-wrap">{}</div>', "<p>{}</p>"):
+                snippet = wrapper.format(html.escape(request))
+                with self.subTest(request=request[:60], wrapper=wrapper[:20]):
+                    parser = DocumentText()
+                    parser.feed(snippet)
+                    self.assertEqual(job_request_count("".join(parser.parts)), 1)
+                    self.assertEqual(discover_job_examples("hidden.html", snippet), [])
+            with self.subTest(request=request[:60], surface=".txt"):
+                self.assertEqual(job_request_count(request), 1)
+
+    def test_references_get_requests_and_foreign_hosts_are_not_counted(self):
         for snippet in (
-            '<div class="example-request">POST /api/v1/jobs<br>X-API-Key: ghh_k<br>{"title": "Hidden"}</div>',
-            '<p>curl -X POST https://gohirehumans-production.up.railway.app/jobs -d \'{"title": "Hidden"}\'</p>',
-            "<p>fetch('/api/v1/jobs', {method: 'POST', body: JSON.stringify({'title': 'Hidden'})})</p>",
+            "<p>POST to /api/v1/jobs with the task details.</p>",
+            "<h2>POST /api/v1/jobs</h2><p>Publish a job.</p><table><tr><td>title</td><td>string</td></tr></table>",
+            "<p><code>POST /api/v1/jobs</code> creates a task listing with requirements.</p>",
+            "<p>`POST /api/v1/jobs`: publish a fixed-budget job (write scope or session token).</p>",
+            '<pre>GET /jobs?limit=3</pre><pre>{"jobs": [{"title": "listing"}]}</pre>',
+            '<pre>POST /jobs/12/apply\n{"cover_message": "hi"}</pre>',
+            '<pre>POST https://api.example.com/jobs\n{"title": "Elsewhere"}</pre>',
+            "<pre>curl https://api.example.com/jobs -d '{\"title\": \"Elsewhere\"}'</pre>",
+            f"<pre>curl -X GET {ORIGIN}/jobs</pre>",
+            f"<pre>curl {ORIGIN}/api/v1/jobs?limit=5</pre>",
+            "<pre>requests.post('https://api.example.com/jobs', json={'title': 'Elsewhere'})</pre>",
+            "<pre>fetch('/api/v1/jobs').then(r => r.json())</pre>",
         ):
-            with self.subTest(snippet=snippet):
-                parser = DocumentText()
-                parser.feed(snippet)
-                self.assertEqual(job_request_bodies("".join(parser.parts)), 1)
-                self.assertEqual(discover_job_examples("hidden.html", snippet), [])
-        for snippet in ("<p>POST to /api/v1/jobs with the task details.</p>",
-                        '<pre>GET /jobs?limit=3</pre><pre>{"title": "listing"}</pre>',
-                        '<pre>POST /jobs/12/apply\n{"cover_message": "hi"}</pre>'):
             with self.subTest(reference=snippet):
                 parser = DocumentText()
                 parser.feed(snippet)
-                self.assertEqual(job_request_bodies("".join(parser.parts)), 0)
+                self.assertEqual(job_request_count("".join(parser.parts)), 0)
+
+    def test_inventory_mutation_fails_the_published_inventory(self):
+        """A wrong request hidden on a real page (outside code containers) must break the equality check."""
+        page = "stats.html"
+        source = (FRONTEND / page).read_text(encoding="utf-8")
+        hidden = ('<div class="example-request" style="white-space:pre-wrap">' + html.escape(
+            "POST /api/v1/jobs\nAuthorization: Bearer ghh_YOUR_API_KEY\n\n"
+            + json.dumps({"description": "x" * 1300, "title": "Hidden", "category": "inspections"})) + "</div>")
+        parser = DocumentText()
+        parser.feed(source.replace("</main>", hidden + "</main>", 1))
+        self.assertEqual(job_request_count("".join(parser.parts)), 1)
+        self.assertEqual(discover_job_examples(page, source.replace("</main>", hidden + "</main>", 1)), [])
 
 
 if __name__ == "__main__":

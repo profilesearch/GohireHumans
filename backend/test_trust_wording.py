@@ -4,6 +4,7 @@ This is a conservative wording guard, not a semantic fact checker. Exceptions
 are clause-local: a competitor name or Stripe mention cannot excuse a GHH claim.
 """
 import ast
+import bisect
 import html
 from html.parser import HTMLParser
 import json
@@ -63,10 +64,10 @@ PATTERNS = (
     r"\b(?:when|once|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b[^.!?;\n]{0,20},\s*(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:(?:receives?|gets?)\s+(?:(?:the|their|its|a|an|listed|full)\s+)*(?:payouts?|payments?|money|funds)|gets?\s+paid|(?:is|are)\s+paid)\b",
     r"\b(?:employers?|buyers?|clients?|you)\s+(?:pays?|covers?)\s+(?:the\s+)?Stripe\s+(?:(?:processing|card|payment|transaction)\s+)?(?:costs?|fees?|charges?)\b",
     r"\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+(?:only\s+)?charged\s+only\s+(?:after|once|when)\b|\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+charged\s+(?:only\s+)?(?:after|once|when)\s+(?:the\s+)?(?:task|work|job|order)\s+is\s+(?:completed|done|approved|finished)\b",
-    r"\binstant(?:ly)?\s+payouts?\b(?!\s+(?:are|is)\s+(?:not|never)\b|\s+(?:aren't|isn't)\b)|\bpay(?:s|ing)?\s+out\s+instantly\b",
+    r"\binstant(?:ly)?\s+payouts?\b(?!\s+(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided|part\s+of)\b)|\bpay(?:s|ing)?\s+out\s+instantly\b",
     # GHH has no listing-report feature: disputes are for order participants, and listing or
     # user reports go to the operations inbox.
-    r"\b(?:suspicious\s+)?listing\s+reporting\b|\breporting\s+(?:systems?|tools?|features?)\b|\breport\s+(?:this|a)\s+(?:listing|profile|user)\s+(?:button|link|feature)\b",
+    r"\b(?:suspicious\s+)?listing\s+reporting\b(?!\s+(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided|part\s+of)\b)|\breporting\s+(?:systems?|tools?|features?)\b(?!\s+(?:(?:are|is)\s+(?:not|never)|aren't|isn't)\s+(?:(?:currently|yet)\s+)?(?:available|offered|supported|provided|part\s+of)\b)|\breport\s+(?:this|a)\s+(?:listing|profile|user)\s+(?:button|link|feature)\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -100,11 +101,14 @@ def public_text(source):
 
 def claim_problems(source):
     text = public_text(source)
+    # Clause boundaries are indexed once, so many matches never rescan the whole prefix.
+    boundaries = [m.end() for m in re.finditer(r"[.!?;\n]", text)]
     problems = []
     for pattern in COMPILED:
         for match in pattern.finditer(text):
             # Use only the preceding clause, not unrelated disclaimers elsewhere.
-            prefix = re.split(r"[.!?;\n]", text[:match.start()])[-1]
+            clause_start = boundaries[bisect.bisect_right(boundaries, match.start()) - 1] if boundaries and boundaries[0] <= match.start() else 0
+            prefix = text[clause_start:match.start()]
             claim = match.group(0)
             clause = prefix + claim
             if re.search(r"\b(?:does not|do not|not|never|no)\s+(?:(?:claim|show|display|offer|provide|a|any)\s+){0,3}$", prefix, re.I):
@@ -356,8 +360,8 @@ SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 
 def fee_snippet_problems(source):
-    """Fee claims in standalone snippets whose own sentence(s) lack the checkout qualifier.
-    A competitor-only sentence is exempt; a sentence that also names GHH is not."""
+    """Fee claims in standalone snippets whose own clause lacks the checkout qualifier.
+    A fee clause whose subject is a competitor is exempt; a clause that also names GHH is not."""
     parser = SnippetFields()
     parser.feed(source)
     fields = list(parser.fields)
@@ -369,10 +373,23 @@ def fee_snippet_problems(source):
             start = max([0] + [m.end() for m in SENTENCE_END.finditer(field, 0, match.start())])
             end_match = SENTENCE_END.search(field, match.end())
             claim = field[start:end_match.end() if end_match else len(field)].strip()
-            if CHECKOUT_QUALIFIER.search(claim):
+            # The qualifier must sit in the fee clause itself: directly after the fee, before any
+            # ", and"/";" that starts a new clause (e.g. "..., and drafts are saved where ...").
+            tail = field[match.end():end_match.end() if end_match else len(field)]
+            clause_tail = re.split(r",\s*(?:and|but|while|so)\s|;|\.\s", tail, maxsplit=1)[0]
+            # A leading qualifier ("Where checkout is configured, buyers pay 1% ...") also binds,
+            # provided no clause break sits between it and the fee.
+            clause_head = re.split(r",\s*(?:and|but|while|so)\s|;|\.\s", field[start:match.start()])[-1]
+            if CHECKOUT_QUALIFIER.search(clause_head + field[match.start():match.end()] + clause_tail):
                 continue
-            if re.search(r"\b" + COMPETITOR + r"\b", claim) and not re.search(
-                    r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b|\bus\b", claim, re.I):
+            # A competitor is exempt only as the fee clause's own subject ("Upwork charges ...",
+            # "Fiverr's fee is ...") or locative frame ("On Fiverr, buyers pay ..."), and never when
+            # the same clause names GHH ("Unlike Fiverr, employers pay ..." is a GHH claim).
+            clause = clause_head + field[match.start():match.end()] + clause_tail
+            if (re.match(r"\s*(?:(?:[Oo]n|[Aa]t)\s+" + COMPETITOR + r"\b|(?:\w+\s+){0,2}?" + COMPETITOR
+                         + r"(?:'s)?\s+(?:\w+\s+){0,3}?(?:charges?|takes?|fees?|commission|pricing|costs?|is|are|"
+                         r"keeps?|adds?)\b)", clause)
+                    and not re.search(r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b|\bus\b", clause, re.I)):
                 continue
             problems.append(claim)
     return problems
@@ -627,6 +644,10 @@ class TrustWordingTests(unittest.TestCase):
             meta("GoHireHumans charges a 1% platform fee. Employers also pay 3% processing."),
             meta("Employers pay 4% in total."),
             meta("A combined 4% fee for employers."),
+            meta("Employers pay 1% plus 3% processing, and drafts are saved where checkout is configured."),
+            meta("Unlike Fiverr, employers pay 1% plus 3% processing."),
+            meta("Compared with Upwork, employers pay 1% plus 3% processing."),
+            meta("Drafts are saved where checkout is configured, and employers pay 1% plus 3% processing."),
             "<meta content='Employers pay 1% plus 3% processing.' property='og:description'>",
             '<meta property="twitter:description" content="Employers pay 1% plus 3% processing.">',
             '<script type="application/ld+json">{"offers": {"description": "Employers pay 1% plus 3% processing."}}</script>',
@@ -637,6 +658,10 @@ class TrustWordingTests(unittest.TestCase):
             meta("Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured."),
             meta("Upwork charges clients up to 7.99% plus a 1% processing fee on some plans."),
             meta("Workers get the listed payout. Employers pay 1% + 3% processing where checkout is configured."),
+            meta("Employers pay 1% plus 3% processing where checkout is configured, and nothing else."),
+            meta("Upwork charges clients 1% plus 3% processing on some plans; GoHireHumans charges 1% plus 3% processing where checkout is configured."),
+            meta("On Fiverr, buyers pay a 5.5% service fee plus 1% processing."),
+            meta("Where checkout is configured, buyers pay a 1% platform fee plus a fixed 3% processing charge."),
         ):
             with self.subTest(control=snippet):
                 self.assertEqual(fee_snippet_problems(snippet), [])
@@ -716,6 +741,9 @@ class TrustWordingTests(unittest.TestCase):
             "When you hire, the worker receives instructions, not payment.",
             "Instant payouts are not available on GoHireHumans.",
             "Instant payouts aren't offered.",
+            "Instant payouts are not available yet.",
+            "Listing reporting is not available on GoHireHumans; email support instead.",
+            "Reporting tools aren't offered; email the operations inbox.",
             "If an order goes wrong, open a dispute from the order page.",
         ):
             with self.subTest(statement=statement):
@@ -724,11 +752,31 @@ class TrustWordingTests(unittest.TestCase):
             "Suspicious listing reporting",
             "Use the dispute and reporting systems to surface concerns.",
             "Click the report this listing button.",
+            "Instant payouts are not delayed on GoHireHumans.",
+            "Instant payouts are never delayed on GoHireHumans.",
+            "Instant payouts are not subject to a waiting period.",
+            "Listing reporting is not hard to find.",
             "When you hire, the worker receives the listed payout.",
             "When you hire, the worker gets paid.",
         ):
             with self.subTest(mutation=mutation):
                 self.assertTrue(claim_problems(mutation))
+
+    def test_claim_problems_runtime_is_linear_on_repeated_claims(self):
+        """claim_problems once re-split the whole prefix per match: 186s on 1e6 chars of repeated claims."""
+        import time
+        for unit in ("Workers get instant payouts. ", "When you hire, the worker receives the listed payout. ",
+                     "GoHireHumans verifies every worker. ", "Instant payouts are not available. "):
+            text = unit * (1_000_000 // len(unit))
+            started = time.perf_counter()
+            problems = claim_problems(text)
+            elapsed = time.perf_counter() - started
+            with self.subTest(unit=unit):
+                self.assertLess(elapsed, 10)
+                if "not available" in unit:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertGreater(len(problems), 1000)
 
     def test_claim_guard_runtime_is_linear_on_adversarial_whitespace(self):
         """Overlapping whitespace quantifiers made one pattern quadratic (over 3s at 1e5 spaces)."""
