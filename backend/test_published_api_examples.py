@@ -49,6 +49,68 @@ CURL_REQUEST = re.compile(r"(?m)^[ \t]*(?:\$[ \t]+)?curl\b")
 PYTHON_REQUEST = re.compile(r"\brequests\.post\s*\(\s*(['\"])(?P<url>[^'\"]+)\1")
 
 
+class DocumentText(HTMLParser):
+    """All text of a public page except JSON-LD and CSS, independent of code-container markup."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts, self.skip = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "style" or (tag == "script" and (attributes.get("type") or "").lower() == "application/ld+json"):
+            self.skip += 1
+        if tag in {"br", "p", "div", "pre", "li", "tr"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in {"style", "script"} and self.skip:
+            self.skip -= 1
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+JOBS_ROUTE = r"(?:https?://[^\s'\"<>`]*)?/(?:api/v1/)?jobs(?![\w/-])"
+POST_TO_JOBS = re.compile(
+    r"\bPOST\s+" + JOBS_ROUTE
+    + r"|\bcurl\b[^\n]*(?:\\\n[^\n]*){0,12}?" + JOBS_ROUTE
+    + r"|requests\.post\s*\(\s*['\"]" + JOBS_ROUTE
+    + r"|\bfetch\s*\(\s*['\"`]" + JOBS_ROUTE, re.I)
+JSON_TITLE_KEY = re.compile(r"[\"']title[\"']\s*:")
+INVENTORY_SUFFIXES = {".html", ".txt", ".md", ".json", ".xml", ".js", ".yaml", ".yml"}
+
+
+def job_request_bodies(text):
+    """Count POST-to-jobs markers followed (before the next marker, within 1,200 chars) by a JSON title key."""
+    starts = [m.start() for m in POST_TO_JOBS.finditer(text)]
+    count = 0
+    for index, start in enumerate(starts):
+        end = min(starts[index + 1] if index + 1 < len(starts) else len(text), start + 1200)
+        if JSON_TITLE_KEY.search(text, start, end):
+            count += 1
+    return count
+
+
+def independent_request_inventory():
+    """Per-file request-body counts across every public text surface, not just parsed containers."""
+    counts = {}
+    for path in sorted(FRONTEND.rglob("*")):
+        relative = path.relative_to(FRONTEND)
+        if not path.is_file() or EXCLUDED.intersection(relative.parts) or path.suffix not in INVENTORY_SUFFIXES:
+            continue
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if path.suffix == ".html":
+            parser = DocumentText()
+            parser.feed(source)
+            source = "".join(parser.parts)
+        count = job_request_bodies(source)
+        if count:
+            counts[relative.as_posix()] = count
+    return counts
+
+
 @dataclass
 class JobExample:
     page: str
@@ -114,13 +176,25 @@ def is_job_creation_url(url):
     )
 
 
+# The documented credential must match its header: API keys (ghh_...) go in X-API-Key, and
+# Authorization: Bearer carries a session token from login. The API rejects a key sent as Bearer.
+API_KEY_VALUE = re.compile(r"\bghh_\w+|API_KEY|\bapi[ _-]?key\b", re.I)
+SESSION_VALUE = re.compile(r"session|token\s+from\s+login", re.I)
+
+
 def auth_class(headers):
-    """Require exactly one documented, supported credential class."""
+    """Require exactly one documented, supported credential class whose value matches it."""
     classes = set()
     for header in headers:
+        value = header.partition(":")[2]
         if re.match(r"\s*X-API-Key\s*:", header, re.I):
+            if not API_KEY_VALUE.search(value) or SESSION_VALUE.search(value):
+                raise ValueError(f"X-API-Key must carry an API key placeholder (ghh_...), not {value.strip()!r}")
             classes.add("X-API-Key")
         if re.match(r"\s*Authorization\s*:\s*Bearer\b", header, re.I):
+            token = re.sub(r"(?i)^\s*Bearer\b", "", value)
+            if API_KEY_VALUE.search(token) or not SESSION_VALUE.search(token):
+                raise ValueError(f"Authorization: Bearer must carry a session token placeholder, not {token.strip()!r}")
             classes.add("Bearer")
     if len(classes) != 1:
         raise ValueError("request needs exactly one X-API-Key or Authorization: Bearer header")
@@ -217,10 +291,12 @@ def parse_python_request(text):
         if key is None:
             raise ValueError("requests.post headers cannot use dictionary expansion")
         name = ast.literal_eval(key)
+        # Keep the documented credential source (literal or e.g. os.environ["GOHIREHUMANS_API_KEY"]).
+        shown = value.value if isinstance(value, ast.Constant) and isinstance(value.value, str) else ast.unparse(value)
         if name.lower() == "x-api-key":
-            header_lines.append("X-API-Key: placeholder")
+            header_lines.append("X-API-Key: " + shown)
         elif name.lower() == "authorization":
-            header_lines.append("Authorization: " + ast.literal_eval(value))
+            header_lines.append("Authorization: " + shown)
     return payload, auth_class(header_lines)
 
 
@@ -286,7 +362,7 @@ class DiscoveryTests(unittest.TestCase):
         for route in ("/jobs", "/api/v1/jobs", ORIGIN + "/jobs", ORIGIN + "/api/v1/jobs"):
             with self.subTest(route=route):
                 source = f'''<div class="code-block"><pre><code>curl -X POST "{route}" \\
--H "X-API-Key: placeholder" --data '{{"title": "Broken",}}'</code></pre></div>'''
+-H "X-API-Key: ghh_placeholder" --data '{{"title": "Broken",}}'</code></pre></div>'''
                 with self.assertRaises(ExampleDiscoveryError) as caught:
                     discover_job_examples("broken-curl.html", source)
                 self.assertIn("broken-curl.html:1:", str(caught.exception))
@@ -297,7 +373,7 @@ class DiscoveryTests(unittest.TestCase):
         for body in ('{"title": }', '', '["not an object"]'):
             with self.subTest(body=body), self.assertRaisesRegex(ExampleDiscoveryError, "broken-http.html"):
                 discover_job_examples("broken-http.html", f'''<pre>POST /jobs
-Authorization: Bearer placeholder
+Authorization: Bearer session-placeholder
 {body}
 // Response 201
 {{"title": "Not the request"}}</pre>''')
@@ -308,7 +384,7 @@ Authorization: Bearer placeholder
                 body = repr({"title": "Braces } and { in strings", "required_skills": [True, False, None]})
                 source = f'''<pre>import json
 response = requests.post("{ORIGIN}/jobs",
-headers={{"X-API-Key": os.environ["KEY"]}},
+headers={{"X-API-Key": os.environ["GOHIREHUMANS_API_KEY"]}},
 {argument.format(body=body)}, timeout=30)
 response.raise_for_status()</pre>'''
                 example, = discover_job_examples("synthetic-python.html", source)
@@ -319,7 +395,7 @@ response.raise_for_status()</pre>'''
     def test_malformed_python_body_fails(self):
         with self.assertRaisesRegex(ExampleDiscoveryError, "broken-python.html"):
             discover_job_examples("broken-python.html", '''<pre>requests.post("/jobs",
-headers={"X-API-Key": "key"}, json={"title": })</pre>''')
+headers={"X-API-Key": "ghh_key"}, json={"title": })</pre>''')
 
     def test_references_gets_and_job_subroutes_are_not_creation_examples(self):
         source = '''<code>POST /api/v1/jobs</code>
@@ -334,7 +410,7 @@ headers={"X-API-Key": "key"}, json={"title": })</pre>''')
 <span>Authorization</span>: <span>Bearer</span> &lt;session&gt;
 {&quot;title&quot;: &quot;First &amp; second&quot;}
 POST /api/v1/jobs
-X-API-Key: placeholder
+X-API-Key: ghh_placeholder
 {"title": "Second"}</code></pre></div>'''
         examples = discover_job_examples("highlighted.html", source)
         self.assertEqual([(e.route, e.auth) for e in examples],
@@ -345,7 +421,7 @@ X-API-Key: placeholder
         for route in ("/jobs", "/api/v1/jobs", ORIGIN + "/jobs", ORIGIN + "/api/v1/jobs"):
             with self.subTest(route=route):
                 example, = discover_job_examples("routes.html", f'''<code>POST {route}
-Authorization: Bearer placeholder
+Authorization: Bearer session-placeholder
 {{"title": "Route test"}}</code>''')
                 self.assertEqual(example.route, route)
                 self.assertEqual(example.auth, "Bearer")
@@ -472,6 +548,53 @@ class PublishedJobExampleTests(unittest.TestCase):
                 return status, body, row
             finally:
                 case.tearDown()
+
+
+class CredentialAndInventoryTests(unittest.TestCase):
+    def test_credential_value_must_match_its_header(self):
+        for headers in (
+            "Authorization: Bearer ghh_YOUR_API_KEY",
+            "Authorization: Bearer YOUR_API_TOKEN",
+            "X-API-Key: &lt;session-token&gt;",
+        ):
+            with self.subTest(headers=headers), self.assertRaisesRegex(ExampleDiscoveryError, "X-API-Key|Bearer"):
+                discover_job_examples("mismatch.html", f'<pre>POST /api/v1/jobs\n{headers}\n\n{{"title": "x"}}</pre>')
+        with self.assertRaisesRegex(ExampleDiscoveryError, "X-API-Key"):
+            discover_job_examples("mismatch.html", """<pre>requests.post("/api/v1/jobs",
+headers={"X-API-Key": os.environ["SESSION_TOKEN"]}, json={"title": "x"})</pre>""")
+
+    def test_moving_a_published_api_key_into_bearer_fails_discovery(self):
+        source = (FRONTEND / "agent-onboarding.html").read_text(encoding="utf-8")
+        self.assertIn("X-API-Key: ghh_YOUR_API_KEY", source)
+        with self.assertRaisesRegex(ExampleDiscoveryError, "Bearer"):
+            discover_job_examples("agent-onboarding.html", source.replace(
+                "X-API-Key: ghh_YOUR_API_KEY", "Authorization: Bearer ghh_YOUR_API_KEY", 1))
+
+    def test_every_published_request_body_is_discovered(self):
+        """An independent scan of all public text must agree with the parsed examples page by page."""
+        discovered = {}
+        for example in published_job_examples():
+            discovered[example.page] = discovered.get(example.page, 0) + 1
+        self.assertEqual(independent_request_inventory(), discovered)
+
+    def test_independent_scan_sees_requests_outside_code_containers(self):
+        for snippet in (
+            '<div class="example-request">POST /api/v1/jobs<br>X-API-Key: ghh_k<br>{"title": "Hidden"}</div>',
+            '<p>curl -X POST https://gohirehumans-production.up.railway.app/jobs -d \'{"title": "Hidden"}\'</p>',
+            "<p>fetch('/api/v1/jobs', {method: 'POST', body: JSON.stringify({'title': 'Hidden'})})</p>",
+        ):
+            with self.subTest(snippet=snippet):
+                parser = DocumentText()
+                parser.feed(snippet)
+                self.assertEqual(job_request_bodies("".join(parser.parts)), 1)
+                self.assertEqual(discover_job_examples("hidden.html", snippet), [])
+        for snippet in ("<p>POST to /api/v1/jobs with the task details.</p>",
+                        '<pre>GET /jobs?limit=3</pre><pre>{"title": "listing"}</pre>',
+                        '<pre>POST /jobs/12/apply\n{"cover_message": "hi"}</pre>'):
+            with self.subTest(reference=snippet):
+                parser = DocumentText()
+                parser.feed(snippet)
+                self.assertEqual(job_request_bodies("".join(parser.parts)), 0)
 
 
 if __name__ == "__main__":

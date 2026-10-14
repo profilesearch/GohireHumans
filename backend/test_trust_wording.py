@@ -60,10 +60,13 @@ PATTERNS = (
     # or order completion and is never instant on hire.
     r"\b(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?|(?:is|are)\s+paid)\s+(?:(?:the|their|its|listed|full|payout|payment|money)\s+)*(?:immediately|instantly|right\s+away|automatically)\s+(?:after|once|when|upon|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b",
     r"\b(?:payouts?|payments?|funds?)\s+(?:is|are)\s+released\s+to\s+(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:immediately\s+)?(?:when|once|as\s+soon\s+as|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
-    r"\b(?:when|once|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b[^.!?;\n]{0,20},\s*(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?\s+paid|gets?|(?:is|are)\s+paid)\b",
-    r"\b(?:employers?|buyers?|clients?|you)\s+(?:pays?|covers?)\s+(?:the\s+)?Stripe\s+(?:processing|card|payment|transaction)?\s*(?:costs?|fees?|charges?)\b",
+    r"\b(?:when|once|as\s+soon\s+as)\s+(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?)\b[^.!?;\n]{0,20},\s*(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:(?:receives?|gets?)\s+(?:(?:the|their|its|a|an|listed|full)\s+)*(?:payouts?|payments?|money|funds)|gets?\s+paid|(?:is|are)\s+paid)\b",
+    r"\b(?:employers?|buyers?|clients?|you)\s+(?:pays?|covers?)\s+(?:the\s+)?Stripe\s+(?:(?:processing|card|payment|transaction)\s+)?(?:costs?|fees?|charges?)\b",
     r"\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+(?:only\s+)?charged\s+only\s+(?:after|once|when)\b|\b(?:your|the\s+employer'?s?|the\s+buyer'?s?)\s+(?:card|payment\s+method)\s+is\s+charged\s+(?:only\s+)?(?:after|once|when)\s+(?:the\s+)?(?:task|work|job|order)\s+is\s+(?:completed|done|approved|finished)\b",
-    r"\binstant(?:ly)?\s+payouts?\b|\bpay(?:s|ing)?\s+out\s+instantly\b",
+    r"\binstant(?:ly)?\s+payouts?\b(?!\s+(?:are|is)\s+(?:not|never)\b|\s+(?:aren't|isn't)\b)|\bpay(?:s|ing)?\s+out\s+instantly\b",
+    # GHH has no listing-report feature: disputes are for order participants, and listing or
+    # user reports go to the operations inbox.
+    r"\b(?:suspicious\s+)?listing\s+reporting\b|\breporting\s+(?:systems?|tools?|features?)\b|\breport\s+(?:this|a)\s+(?:listing|profile|user)\s+(?:button|link|feature)\b",
 )
 COMPILED = tuple(re.compile(pattern, re.I) for pattern in PATTERNS)
 
@@ -305,6 +308,76 @@ EDITED_FAQ_PAGES = (
 )
 
 
+class SnippetFields(HTMLParser):
+    """Meta descriptions (any attribute order or quoting) and JSON-LD blocks, parsed structurally."""
+    NAMES = {"description", "og:description", "twitter:description"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.fields, self.blocks, self.in_json_ld, self.buffer = [], [], False, []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = {key.lower(): value or "" for key, value in attrs}
+        if tag == "meta" and (attributes.get("name") or attributes.get("property") or "").lower() in self.NAMES:
+            self.fields.append(attributes.get("content", ""))
+        elif tag == "script" and attributes.get("type", "").lower() == "application/ld+json":
+            self.in_json_ld, self.buffer = True, []
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.in_json_ld:
+            self.in_json_ld = False
+            self.blocks.append("".join(self.buffer))
+
+    def handle_data(self, data):
+        if self.in_json_ld:
+            self.buffer.append(data)
+
+
+def json_strings(node):
+    if isinstance(node, dict):
+        for value in node.values():
+            yield from json_strings(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from json_strings(value)
+    elif isinstance(node, str):
+        yield node
+
+
+PERCENT = r"(?:\s*%|\s+percent\b)"
+# A GHH fee claim: 1% ... 3%/processing (possibly across a sentence break) or a 4% total.
+FEE_CLAIM = re.compile(
+    r"(?:\b1" + PERCENT + r"|\bone\s+percent\b)[^;]{0,120}?(?:\b3" + PERCENT + r"|\bthree\s+percent\b|\bprocessing\b)"
+    r"|\b4" + PERCENT + r"\s+(?:in\s+)?(?:total|combined|all-in)\b"
+    r"|\b(?:total|combined|all-in)\s+(?:fee\s+)?(?:of\s+)?4" + PERCENT, re.I)
+CHECKOUT_QUALIFIER = re.compile(
+    r"where\s+(?:checkout|(?:card\s+)?payment\s+processing|payments?)\s+(?:is|are)\s+configured", re.I)
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def fee_snippet_problems(source):
+    """Fee claims in standalone snippets whose own sentence(s) lack the checkout qualifier.
+    A competitor-only sentence is exempt; a sentence that also names GHH is not."""
+    parser = SnippetFields()
+    parser.feed(source)
+    fields = list(parser.fields)
+    for block in parser.blocks:
+        fields.extend(json_strings(json.loads(block)))
+    problems = []
+    for field in fields:
+        for match in FEE_CLAIM.finditer(field):
+            start = max([0] + [m.end() for m in SENTENCE_END.finditer(field, 0, match.start())])
+            end_match = SENTENCE_END.search(field, match.end())
+            claim = field[start:end_match.end() if end_match else len(field)].strip()
+            if CHECKOUT_QUALIFIER.search(claim):
+                continue
+            if re.search(r"\b" + COMPETITOR + r"\b", claim) and not re.search(
+                    r"GoHireHumans|\bGHH\b|\bwe\b|\bour\b|\bus\b", claim, re.I):
+                continue
+            problems.append(claim)
+    return problems
+
+
 class TrustWordingTests(unittest.TestCase):
     def test_public_tree_has_no_unsupported_claims(self):
         paths = public_files()
@@ -530,31 +603,6 @@ class TrustWordingTests(unittest.TestCase):
     def test_standalone_fee_snippets_keep_the_checkout_qualifier(self):
         """Meta descriptions and JSON-LD strings are quoted on their own, so any GHH 1% + 3% fee
         statement there must say where checkout (payment processing) is configured."""
-        fee = re.compile(r"(?:\b1\s*%|\bone\s+percent)[^.;]{0,80}?(?:\b3\s*%|processing)", re.I)
-        # The qualifier must name checkout or payment processing; a bare "where configured" can refer to
-        # something else in the same field. Competitors are proper nouns ("freelancer's rate" is not one).
-        qualifier = re.compile(r"where\s+(?:checkout|(?:card\s+)?payment\s+processing|payments?)\s+(?:is|are)\s+configured", re.I)
-        competitor = re.compile(r"\b" + COMPETITOR + r"\b")
-
-        def strings(node):
-            if isinstance(node, dict):
-                for value in node.values():
-                    yield from strings(value)
-            elif isinstance(node, list):
-                for value in node:
-                    yield from strings(value)
-            elif isinstance(node, str):
-                yield node
-
-        def problems(source):
-            fields = [html.unescape(m.group(1)) for m in re.finditer(
-                r'<meta (?:name|property)="(?:description|og:description|twitter:description)" content="([^"]*)"', source)]
-            for block in re.findall(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', source, re.S):
-                fields.extend(strings(json.loads(block)))
-            return [sentence for field in fields if not qualifier.search(field)
-                    for sentence in re.split(r"(?<=[.!?])\s+", field)
-                    if fee.search(sentence) and not competitor.search(sentence)]
-
         checked = 0
         for path in public_files():
             if path.suffix != ".html":
@@ -562,13 +610,36 @@ class TrustWordingTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             checked += 1
             with self.subTest(page=str(path.relative_to(FRONTEND))):
-                self.assertEqual(problems(source), [])
+                self.assertEqual(fee_snippet_problems(source), [])
         self.assertGreater(checked, 100)
         page = (FRONTEND / "categories/graphic-design.html").read_text(encoding="utf-8")
-        self.assertTrue(problems(page.replace("3% processing where checkout is configured.", "3% processing.")))
+        self.assertTrue(fee_snippet_problems(page.replace("3% processing where checkout is configured.", "3% processing.")))
         page = (FRONTEND / "index.html").read_text(encoding="utf-8")
-        self.assertTrue(problems(page.replace(
+        self.assertTrue(fee_snippet_problems(page.replace(
             "3% processing charge where checkout is configured.\"\n    },", "3% processing charge when they pay for work.\"\n    },", 1)))
+
+    def test_fee_snippet_check_binds_the_qualifier_to_the_claim(self):
+        meta = '<meta name="description" content="{}">'.format
+        for snippet in (
+            meta("Employers pay 1% plus 3% processing. Drafts are saved where checkout is configured."),
+            meta("Unlike Fiverr, GoHireHumans charges 1% plus 3% processing."),
+            meta("A 1 percent platform fee plus 3 percent processing."),
+            meta("GoHireHumans charges a 1% platform fee. Employers also pay 3% processing."),
+            meta("Employers pay 4% in total."),
+            meta("A combined 4% fee for employers."),
+            "<meta content='Employers pay 1% plus 3% processing.' property='og:description'>",
+            '<meta property="twitter:description" content="Employers pay 1% plus 3% processing.">',
+            '<script type="application/ld+json">{"offers": {"description": "Employers pay 1% plus 3% processing."}}</script>',
+        ):
+            with self.subTest(snippet=snippet):
+                self.assertTrue(fee_snippet_problems(snippet))
+        for snippet in (
+            meta("Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured."),
+            meta("Upwork charges clients up to 7.99% plus a 1% processing fee on some plans."),
+            meta("Workers get the listed payout. Employers pay 1% + 3% processing where checkout is configured."),
+        ):
+            with self.subTest(control=snippet):
+                self.assertEqual(fee_snippet_problems(snippet), [])
 
     def test_snippet_metadata_is_short_and_consistent(self):
         """Search results cut descriptions at about 160 characters; Open Graph and Twitter repeat the meta."""
@@ -639,6 +710,39 @@ class TrustWordingTests(unittest.TestCase):
         self.assertTrue(claim_problems("Unlike Fiverr, GoHireHumans verifies every worker."))
         self.assertTrue(claim_problems("Toptal screens applicants; Profiles show verification status."))
         self.assertTrue(claim_problems("Unlike Fiverr, profiles show identity signals."))
+
+    def test_review8_truthful_controls_are_allowed(self):
+        for statement in (
+            "When you hire, the worker receives instructions, not payment.",
+            "Instant payouts are not available on GoHireHumans.",
+            "Instant payouts aren't offered.",
+            "If an order goes wrong, open a dispute from the order page.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(claim_problems(statement), [])
+        for mutation in (
+            "Suspicious listing reporting",
+            "Use the dispute and reporting systems to surface concerns.",
+            "Click the report this listing button.",
+            "When you hire, the worker receives the listed payout.",
+            "When you hire, the worker gets paid.",
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertTrue(claim_problems(mutation))
+
+    def test_claim_guard_runtime_is_linear_on_adversarial_whitespace(self):
+        """Overlapping whitespace quantifiers made one pattern quadratic (over 3s at 1e5 spaces)."""
+        import time
+        prefixes = ("Employers pay Stripe", "Employers pay the Stripe processing", "When you hire, the worker",
+                    "Workers receive", "GoHireHumans verifies", "Profiles show", "instant", "listing")
+        for prefix in prefixes:
+            text = prefix + " " * 200000 + "oops"
+            for index, pattern in enumerate(COMPILED):
+                started = time.perf_counter()
+                list(pattern.finditer(text))
+                elapsed = time.perf_counter() - started
+                with self.subTest(prefix=prefix, pattern=index):
+                    self.assertLess(elapsed, 0.5)
 
 
 if __name__ == "__main__":
