@@ -3,6 +3,7 @@
 This is a conservative wording guard, not a semantic fact checker. Exceptions
 are clause-local: a competitor name or Stripe mention cannot excuse a GHH claim.
 """
+import ast
 import html
 from html.parser import HTMLParser
 import json
@@ -45,6 +46,10 @@ PATTERNS = (
     # Payout timing: the employer is charged at hire/order; the worker is paid after approval.
     r"\b(?:the\s+)?(?:workers?|freelancers?|providers?|sellers?)\s+(?:receives?|gets?\s+paid|gets?|(?:is|are)\s+paid(?:\s+out)?)\b(?:\s+(?:the|their|its|a|an|listed|full|payout|payment|money|immediately|instantly|right\s+away|automatically))*\s*(?:when|as\s+soon\s+as|once|upon|at|on)\s+(?:(?:you|the\s+employer|employers?|the\s+client|clients?)\s+(?:hires?|orders?|books?|accepts?)\b|(?:the\s+)?(?:hire|hiring|order|booking|checkout)\b)",
     r"\b(?:payouts?|payments?)\s+(?:to\s+(?:the\s+)?workers?\s+)?(?:is|are)\s+(?:released|sent|made)\s+(?:immediately\s+)?(?:when|as\s+soon\s+as|once|upon|at)\s+(?:you\s+hire|hire|hiring|the\s+order|checkout)\b",
+    # Payout authority: a site admin can also complete an order and release the payout,
+    # so a claim that only the employer's approval pays the worker must name that exception.
+    r"\b(?:(?:is|are|gets?)\s+paid(?:\s+out)?|receives?\s+(?:the\s+|their\s+)?(?:listed\s+)?(?:payout|payment|funds|money)|(?:is|are)\s+(?:released|sent))\b[^.!?;\n]{0,40}\bonly\s+(?:when|after|once|if)\s+(?:you|the\s+employer|employers?|the\s+buyer|buyers?|the\s+client|clients?)\s+(?:\w+\s+){0,2}(?:approves?|releases?|accepts?|signs?\s+off)\b(?![^.!?\n]*\bsite\s+admin)",
+    r"\bonly\s+(?:you|the\s+employer|employers|the\s+buyer|buyers|the\s+client|clients)\s+(?:can|may|will)\s+(?:\w+\s+){0,2}(?:release|trigger|approve)\s+(?:the\s+|a\s+|their\s+)?(?:worker'?s?\s+)?(?:payouts?|payments?|funds)\b(?![^.!?\n]*\bsite\s+admin)",
     # Fees: the processing charge is a fixed 3%, never an unspecified "Stripe" fee.
     r"\b(?:1%|one\s+percent)(?:\s+(?:platform|service))?(?:\s+fee)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?Stripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\b",
     r"\bStripe(?:\s+(?:processing|card|payment))?(?:\s+fees?)?\s*(?:\+|plus|and)\s*(?:a\s+|the\s+)?(?:1%|one\s+percent\b)",
@@ -418,6 +423,12 @@ class TrustWordingTests(unittest.TestCase):
             "Employers pay a 1% platform fee + Stripe processing fees.",
             "Listed payout to worker; employer pays Stripe + 1%",
             "Stripe fees plus 1% for employers.",
+            "The worker is paid only when the employer approves the delivered work with release_payment.",
+            "Workers get paid only after you approve the work.",
+            "The worker receives the listed payout only once the buyer accepts the delivery.",
+            "Payouts are released only when the employer approves.",
+            "Only the employer can release the worker's payout.",
+            "Only you can release payment.",
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -451,9 +462,26 @@ class TrustWordingTests(unittest.TestCase):
             "Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.",
             "Payments run through Stripe where checkout is configured.",
             "Workers receive the listed payout after the employer approves the work.",
+            "The worker is paid only when the employer approves the work with release_payment or a site admin completes the order.",
+            "Only the employer can release payment with release_payment; a site admin can also complete the order.",
+            "Nothing is published or charged until you approve it.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(claim_problems(statement), [])
+
+    def test_mcp_hire_worker_names_every_payout_trigger(self):
+        """Employer approval and site-admin completion both release the payout (api_core /orders/<id>/complete)."""
+        api = (ROOT / "backend/api_core.py").read_text(encoding="utf-8")
+        self.assertIn("order['employer_id'] != user['id'] and not user['is_admin']", api)
+        for relative in ("backend/mcp_server.py", "backend/mcp-package/mcp_server.py"):
+            tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
+            tools = next(ast.literal_eval(node.value) for node in tree.body
+                         if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "TOOLS" for t in node.targets))
+            description = next(tool["description"] for tool in tools if tool["name"] == "hire_worker")
+            with self.subTest(file=relative):
+                self.assertIn("the employer approves the work with release_payment or a site admin completes the order", description)
+                self.assertEqual(claim_problems(description), [])
+                self.assertTrue(claim_problems(description.replace(" or a site admin completes the order", "")))
 
     def test_payout_scoped_stripe_facts_are_allowed(self):
         for statement in (
