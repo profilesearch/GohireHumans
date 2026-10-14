@@ -4,7 +4,8 @@ Discovery reads public HTML code containers, never executes their shell/Python c
 and fails closed on an unparseable request. A census of every visible mention of the
 job-collection route then requires each mention to belong to a replayed example or to a
 reviewed, non-request reference, so a request written in any other syntax cannot ship
-unreviewed. The real handler uses disposable SQLite;
+unreviewed. A replayed example accounts only for the route it sends, so a second request
+in the same code block is still counted. The real handler uses disposable SQLite;
 outbound HTTP is blocked and notification/email transports are mocked.
 """
 import ast
@@ -24,7 +25,7 @@ from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
 from unittest import mock
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import test_deep_audit_regressions as deep_audit
 
@@ -90,8 +91,15 @@ class DocumentText(HTMLParser):
 # every visible mention of the route must instead be (a) inside a replayed example or (b) a
 # reviewed reference in REVIEWED_ROUTE_MENTIONS. A new request in any syntax adds an unreviewed
 # mention and fails until it is replayable or reviewed. Keys are the mention plus up to 50
-# characters of context on each side, whitespace-normalized; multiplicity counts.
-ROUTE_MENTION = re.compile(r"/(?:api/v1/)?jobs(?![\w/.-])")
+# characters of context on each side, whitespace-normalized; multiplicity counts. A replayed
+# example accounts only for the route it actually sends, never for other text in its block.
+# Mentions include the forms the server also routes to job creation: trailing slashes and
+# percent-encoded letters or slashes (the WSGI server decodes the path before routing).
+_SLASH = r"(?:/|%2[Ff])"
+ROUTE_MENTION = re.compile(
+    rf"{_SLASH}+(?:api{_SLASH}+v1{_SLASH}+)?(?:j|%6[Aa])(?:o|%6[Ff])(?:b|%62)(?:s|%73)"
+    rf"(?:(?![\w/.%-])|{_SLASH}+(?=[\s\"'`?#)\]}}>,;\\]|$))"
+)
 CENSUS_SUFFIXES = {".html", ".htm", ".txt", ".md", ".json", ".xml", ".yaml", ".yml"}
 CONTEXT = 50
 REVIEWED_ROUTE_MENTIONS = {
@@ -143,12 +151,25 @@ REVIEWED_ROUTE_MENTIONS = {
 }
 
 
-def mention_keys(text):
-    keys = []
-    for raw_line in text.splitlines():
+def mention_keys(text, start=0, end=None):
+    """Census keys of the route mentions that begin in text[start:end], each with whole-line context."""
+    end = len(text) if end is None else end
+    keys, offset = [], 0
+    for raw_line in text.splitlines(keepends=True):
+        line_start, offset = offset, offset + len(raw_line)
+        if offset <= start or line_start >= end:
+            continue
+        located = [line_start + match.start() for match in ROUTE_MENTION.finditer(raw_line)]
+        if not located:
+            continue
         line = " ".join(raw_line.split())
-        for match in ROUTE_MENTION.finditer(line):
-            keys.append(line[max(0, match.start() - CONTEXT):match.end() + CONTEXT])
+        normalized = list(ROUTE_MENTION.finditer(line))
+        # Whitespace normalization never changes which mentions a line holds, only their columns.
+        if len(normalized) != len(located):
+            raise ValueError(f"route mentions changed under whitespace normalization: {line[:200]!r}")
+        for position, match in zip(located, normalized):
+            if start <= position < end:
+                keys.append(line[max(0, match.start() - CONTEXT):match.end() + CONTEXT])
     return keys
 
 
@@ -255,10 +276,21 @@ class CodeContainers(HTMLParser):
             self.parts.append(data)
 
 
+def server_path_info(path):
+    """The path server.py hands api_core: decoded by the WSGI server, then one /api/v1 prefix
+    removed by its /api/v1/<path> proxy route. api_core then strips trailing slashes and a
+    second /api/v1 prefix itself."""
+    path = unquote(path)
+    return path[len("/api/v1"):] if path.startswith("/api/v1/") else path
+
+
 def is_job_creation_url(url):
-    """Accept only the two creation routes, not job IDs, actions, or other sites."""
+    """Accept every form the server routes to job creation, not job IDs, actions, or other sites."""
     parsed = urlsplit(url)
-    return parsed.path in {"/jobs", "/api/v1/jobs"} and (
+    path = re.sub(r"/{2,}", "/", server_path_info(parsed.path)).rstrip("/")
+    if path.startswith("/api/v1/"):
+        path = path[len("/api/v1"):]
+    return path == "/jobs" and (
         not parsed.netloc or "gohirehumans" in (parsed.hostname or "")
     )
 
@@ -301,6 +333,25 @@ def parse_http_request(text, match):
     if trailing and not trailing.startswith(("#", "//")):
         raise ValueError("unexpected text after JSON request body")
     return payload, auth_class(request[:start.start()].splitlines())
+
+
+def shell_command_end(text):
+    """End of the first shell command: the first newline outside quotes that is not a continuation."""
+    quote, index = None, 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = None if char == "'" else quote
+        elif char == "\\":
+            index += 1  # An escaped character, including a backslash-newline continuation.
+        elif quote == '"':
+            quote = None if char == '"' else quote
+        elif char in "'\"":
+            quote = char
+        elif char == "\n":
+            return index
+        index += 1
+    return len(text)
 
 
 def parse_curl_request(text):
@@ -412,6 +463,8 @@ def discover_job_examples(page, source):
             if kind == "python" and not is_job_creation_url(match["url"]):
                 continue
             if kind == "curl":
+                # Parse this one command only, so text after it is never read as its arguments.
+                text = text[:shell_command_end(text)]
                 # Recognize the target before shlex, so broken quoting cannot hide it.
                 urls = re.findall(r"https?://[^\s'\"<>]+|/(?:api/v1/)?jobs[^\s'\"<>]*", text)
                 if not any(is_job_creation_url(url) for url in urls):
@@ -435,9 +488,15 @@ def discover_job_examples(page, source):
                 raise ExampleDiscoveryError(
                     f"{page}:{request_line}: {error}; snippet: {text.strip()[:500]!r}"
                 ) from error
-            # Whole lines, so a call that starts mid-line ("response = requests.post(...") keeps its context.
-            line_start = block.rfind("\n", 0, start) + 1
-            examples.append(JobExample(page, request_line, route, auth, payload, tuple(mention_keys(block[line_start:end]))))
+            # Credit only the route this request sends. Any other mention in the block, such as
+            # the same request in another client syntax, stays in the census until it is
+            # replayed or reviewed itself.
+            if kind == "curl":
+                found = text.find(route)
+                span = (start + found, start + found + len(route)) if found >= 0 else (0, 0)
+            else:
+                span = match.span("url")
+            examples.append(JobExample(page, request_line, route, auth, payload, tuple(mention_keys(block, *span))))
     return examples
 
 
@@ -628,7 +687,7 @@ class PublishedJobExampleTests(unittest.TestCase):
 
                 with (mock.patch.object(api, "push_notification"), mock.patch.object(api, "send_email"),
                       mock.patch.object(api, "handle_request", side_effect=handle_with_documented_auth)):
-                    status, body = case._request_api("POST", route.path, example.payload,
+                    status, body = case._request_api("POST", server_path_info(route.path), example.payload,
                                                      credential if example.auth == "Bearer" else "")
                 row = None
                 if status == 201:
@@ -777,6 +836,85 @@ class RouteMentionCensusTests(unittest.TestCase):
             started = time.perf_counter()
             route_mention_census({"x.html": text})
             self.assertLess(time.perf_counter() - started, 10, unit)
+
+
+class RouteAliasAndAbsorptionTests(unittest.TestCase):
+    """A second request beside a replayed one, and URL forms the server routes to job creation."""
+    PAGE = RouteMentionCensusTests.PAGE
+    BODY = json.dumps(RouteMentionCensusTests.WRONG_BODY)
+    KEY = "ghh_" + "YOUR_API_KEY"
+    # Paths production hands to the create-job handler: the WSGI server percent-decodes the
+    # path, server.py's /api/v1 proxy strips one prefix and api_core strips trailing slashes.
+    ALIASES = ("/jobs/", "/api/v1/jobs/", "/api/v1/jobs//", "/api/v1/%6Aobs", "/api/v1/%6aobs",
+               "/api%2Fv1%2Fjobs", "/%6A%6F%62%73", "/jobs%2F", "/api/v1/api/v1/jobs")
+    NOT_CREATION = ("/JOBS", "/api/v1/JOBS", "/jobs/12", "/jobs/12/apply", "/api/v1/jobs-archive",
+                    "/api/v1/jobs%2F12", "/jobs/{id}", "/jobs/:id", "/api/v1/jobs/<returned numeric job id>")
+    # One replayed example per request syntax: raw HTTP, Python requests and curl.
+    SINGLE_EXAMPLE_PAGES = ("how-it-works.html", "blog/human-as-a-service.html", "blog/mcp-for-marketplaces.html")
+
+    def test_server_route_aliases_are_creation_routes_and_census_mentions(self):
+        for path in self.ALIASES:
+            with self.subTest(path=path):
+                self.assertTrue(is_job_creation_url(path))
+                self.assertTrue(is_job_creation_url(ORIGIN + path))
+                self.assertTrue(route_mention_census({"x.txt": "POST " + path + "\n"}), path)
+        for path in self.NOT_CREATION:
+            with self.subTest(path=path):
+                self.assertFalse(is_job_creation_url(path))
+                self.assertFalse(is_job_creation_url(ORIGIN + path))
+                self.assertEqual(route_mention_census({"x.txt": "GET " + path + "\n"}), {}, path)
+
+    def test_aliases_create_jobs_through_the_real_handler(self):
+        example = next(e for e in published_job_examples() if e.page == "agent-onboarding.html")
+        for path in ("/api/v1/jobs/", "/jobs/", "/api/v1/%6Aobs", "/api%2Fv1%2Fjobs"):
+            with self.subTest(path=path):
+                PublishedJobExampleTests().assert_example_replays(replace(example, route=ORIGIN + path))
+
+    def test_wrong_requests_on_alias_routes_cannot_ship(self):
+        variants = RouteMentionCensusTests.VARIANTS
+        for path in ("/api/v1/jobs/", "/jobs/", "/api/v1/%6Aobs"):
+            snippets = {name: variants[name].replace("/api/v1/jobs", path).format(origin=ORIGIN, body=self.BODY)
+                        for name in ("raw-http-long", "fetch-quoted-method", "requests-request", "wget")}
+            snippets["curl"] = (f"curl -X POST {ORIGIN}{path} \\\n  -H 'Authorization: Bearer {self.KEY}' \\\n"
+                                f"  -H 'Content-Type: application/json' \\\n  -d '{self.BODY}'")
+            for name, snippet in snippets.items():
+                for container in ("pre", "p"):
+                    with self.subTest(path=path, variant=name, container=container):
+                        sources = RouteMentionCensusTests().mutate(self.PAGE, snippet, container)
+                        RouteMentionCensusTests().assert_module_fails(sources, self.PAGE)
+
+    def append_inside_example_block(self, page, snippet):
+        """Add text after the page's replayed request, inside the same code container."""
+        sources = published_sources()
+        source = sources[page]
+        example, = discover_job_examples(page, source)
+        offset = sum(len(line) for line in source.splitlines(keepends=True)[:example.line - 1])
+        end = min(index for index in (source.find("</code>", offset), source.find("</pre>", offset)) if index >= 0)
+        sources[page] = (source[:end] + "\n\n// The same request from another client\n"
+                         + html.escape(snippet) + source[end:])
+        return sources, example
+
+    def test_a_second_request_beside_a_replayed_example_is_not_absorbed(self):
+        variants = RouteMentionCensusTests.VARIANTS
+        for page in self.SINGLE_EXAMPLE_PAGES:
+            for name in ("fetch-quoted-method", "requests-request", "httpie", "go"):
+                with self.subTest(page=page, variant=name):
+                    snippet = variants[name].format(origin=ORIGIN, body=self.BODY)
+                    sources, example = self.append_inside_example_block(page, snippet)
+                    mutated = discover_job_examples(page, sources[page])
+                    # The original request still replays; the appended one is in the same block.
+                    self.assertEqual([(e.route, e.payload) for e in mutated], [(example.route, example.payload)])
+                    parser = CodeContainers()
+                    parser.feed(sources[page])
+                    self.assertTrue(any("another client" in block and ROUTE_MENTION.search(block)
+                                        for _, block in parser.blocks))
+                    unreviewed, _ = census_differences({page: sources[page]})
+                    self.assertIn(page, unreviewed, "a request beside a replayed example was credited to it")
+
+    def test_each_example_is_credited_only_with_its_own_route(self):
+        for example in published_job_examples():
+            with self.subTest(page=example.page, line=example.line):
+                self.assertEqual(len(example.mentions), 1, example.mentions)
 
 
 if __name__ == "__main__":
