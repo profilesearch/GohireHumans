@@ -10,15 +10,15 @@ from urllib.parse import urlsplit
 
 FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 SITE = "https://www.gohirehumans.com/"
-VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 HIDDEN_CLASSES = {"hidden", "sr-only", "visually-hidden", "d-none", "is-hidden", "invisible"}
 SCHEMA_CONTEXT = "https://schema.org"
 RETIRED_PHRASES = ("escrow", "stripe processing plus 1%", "guaranteed", "vetted", "owners approve each hire")
 # Worker-screening claims GoHireHumans does not make. Stripe payout verification wording stays allowed.
-_PEOPLE = r"(?:workers?|humans?|people|freelancers?|professionals?|providers?|sellers?|testers?|talent|experts?)"
+_PEOPLE = r"(?:workers?|humans?|people|freelancers?|(?:web\s+)?developers?|professionals?|providers?|sellers?|testers?|talent|experts?)"
 _SCREENED = r"(?:verified|vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated|approved)"
 _SCREENED_ONLY = r"(?:vetted|screened|pre-screened|background[- ]checked|certified|trusted|top-rated|approved)"
-_BRAND = r"(?:gohirehumans|we|our\s+team|the\s+platform)"
+_BRAND = r"(?:gohirehumans|ghh|we|our\s+team|the\s+platform)"
 _QUALIFIER = r"(?:all\s+|every\s+|each\s+|its\s+|our\s+|the\s+)?"
 _BE = r"(?:are|is|get|gets|have\s+been|has\s+been)\s+(?:all\s+|always\s+|individually\s+)?"
 # Only *verification* explicitly scoped to Stripe payouts is a true statement and stays allowed.
@@ -342,6 +342,9 @@ class AIAnswerContractGuardTests(unittest.TestCase):
             "All workers are verified.",
             "We vet every freelancer.",
             "Providers have been background-checked.",
+            "All developers are screened by GoHireHumans.",
+            "GoHireHumans vets web developers.",
+            "GHH screens all developers.",
             "We screen all workers via Stripe.",
             "We background-check all workers through Stripe.",
             "Workers are screened by Stripe for payouts.",
@@ -359,6 +362,8 @@ class AIAnswerContractGuardTests(unittest.TestCase):
             "Paid by a person or company that completes the required payout verification.",
             "Workers are verified by Stripe for payouts before they can apply.",
             "Sellers are verified for Stripe payouts.",
+            "Developers are verified by Stripe for payouts.",
+            "Stripe verifies workers' identity for payouts.",
             "Humans who verify what your AI produces.",
         ):
             with self.subTest(text=text):
