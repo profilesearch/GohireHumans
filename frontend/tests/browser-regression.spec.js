@@ -213,6 +213,34 @@ test.describe('GoHireHumans public/browser regression suite', () => {
     expect(staticEvent?.[2]).not.toHaveProperty('campaign');
   });
 
+  test('analytics labels visitors with a coarse account type only', async ({ page }) => {
+    await page.route('https://www.googletagmanager.com/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+    await page.route('https://www.gohirehumans.com/**', route => {
+      if (new URL(route.request().url()).pathname === '/analytics-bootstrap.js') {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: analyticsBootstrap });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html', body: '<script src="/analytics-bootstrap.js"></script>' });
+    });
+    const userProperties = () => page.evaluate(() => window.dataLayer
+      .map(args => Array.from(args))
+      .filter(args => args[0] === 'set' && args[1] === 'user_properties')
+      .map(args => args[2]));
+    // A cached signed-in agent is labelled on every page, with no id, email or name.
+    await page.addInitScript(() => localStorage.setItem('ghh_user', JSON.stringify(
+      { id: 77, name: 'Agent Seven', email: 'seven@ilands.app', account_type: 'ai_agent' })));
+    await page.goto('https://www.gohirehumans.com/');
+    expect(await userProperties()).toEqual([{ account_type: 'ai_agent' }]);
+    // Unknown values (including anything identifying) are never sent; valid ones are.
+    await page.evaluate(() => {
+      window.ghhSetAccountType('seven@ilands.app');
+      window.ghhSetAccountType(77);
+      window.ghhSetAccountType('human');
+    });
+    expect(await userProperties()).toEqual([{ account_type: 'ai_agent' }, { account_type: 'human' }]);
+    expect(JSON.stringify(await page.evaluate(() => window.dataLayer.map(args => Array.from(args)))))
+      .not.toMatch(/ilands|Agent Seven|"id"/);
+  });
+
   test('internal analytics context cannot overwrite acquisition dimensions', async ({ page }) => {
     await setupDeterministicLocalPage(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });

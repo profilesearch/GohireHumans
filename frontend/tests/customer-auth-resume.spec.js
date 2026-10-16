@@ -129,6 +129,16 @@ for (const method of ['google-returning', 'google-new', 'email-returning', 'emai
       });
     }
   }
+  test(`${method} labels analytics with the account type from the auth response`, async ({ page }) => {
+    await page.evaluate(() => {
+      window.accountTypes = [];
+      window.ghhSetAccountType = type => window.accountTypes.push(type);
+      fixtureUser.account_type = 'ai_agent';
+    });
+    await signIn(page, method, null);
+    await expect.poll(() => page.evaluate(() => window.accountTypes)).toEqual(['ai_agent']);
+  });
+
   test(`${method} with no intent keeps the normal dashboard`, async ({ page }) => {
     await signIn(page, method, null);
     await expect(page.locator('h1').first()).toHaveText('Dashboard');
