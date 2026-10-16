@@ -2923,6 +2923,18 @@ def is_agent_account(db, user_id):
                       [user_id]).fetchone() is not None
 
 
+ANALYTICS_ACCOUNT_TYPES = ('human', 'ai_agent', 'internal')
+
+
+def analytics_account_type(db, user_id, is_admin=0):
+    """Coarse, non-identifying label the site sets as a GA4 user property so
+    staff and AI-agent browsing can be separated from human visitors. Only one
+    of ANALYTICS_ACCOUNT_TYPES is ever returned; never an id, email or name."""
+    if is_admin:
+        return 'internal'
+    return 'ai_agent' if is_agent_account(db, user_id) else 'human'
+
+
 def service_hidden_for_unverified_agent(db, service_id):
     """Fail closed: hidden unless the service is positively visible."""
     row = db.execute(f"""SELECT CASE WHEN {public_service_visibility_sql()} THEN 1 ELSE 0 END AS visible
@@ -10925,7 +10937,8 @@ def _handle_routes(db):
             "token": token,
             "referral_code": ref_code,
             "worker_profile": None,
-            "employer_profile": None
+            "employer_profile": None,
+            "account_type": analytics_account_type(db, user_id),
         }, 201)
 
     elif path == "/auth/password-reset/available" and method == "GET":
@@ -11097,6 +11110,7 @@ def _handle_routes(db):
         ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user['id']]).fetchone()
         user_data['worker_profile'] = row_to_dict(wp)
         user_data['employer_profile'] = row_to_dict(ep)
+        user_data['account_type'] = analytics_account_type(db, user['id'], user['is_admin'])
 
         return json_response(user_data)
 
@@ -11178,6 +11192,7 @@ def _handle_routes(db):
         user_data['worker_profile'] = row_to_dict(wp)
         user_data['employer_profile'] = row_to_dict(ep)
         user_data['is_new_user'] = is_new_google_user
+        user_data['account_type'] = analytics_account_type(db, user_id, user['is_admin'])
 
         return json_response(user_data, 200 if existing else 201)
 
@@ -11205,6 +11220,7 @@ def _handle_routes(db):
         ep = db.execute("SELECT * FROM employer_profiles WHERE user_id = ?", [user['id']]).fetchone()
         ud['worker_profile'] = row_to_dict(wp)
         ud['employer_profile'] = row_to_dict(ep)
+        ud['account_type'] = analytics_account_type(db, user['id'], ud.get('is_admin'))
         return json_response(ud)
 
     elif path == "/profile" and method == "PUT":
