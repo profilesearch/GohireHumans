@@ -4176,14 +4176,44 @@ async function renderPayments() {
     const workerReady = statusData.worker_ready === true && !['simulated', 'test', 'disabled'].includes(workerMode);
     if (returnRole) paymentSetupEvent(returnRole, 'status_observed', returnRole === 'worker' ? workerMode : employerMode,
       (returnRole === 'worker' ? workerReady : employerReady) ? 'ready' : 'not_ready');
-    const applyReturnId = workerReady ? applyPayoutReturnId() : null;
+    const payoutAcct = statusData.worker_payout_status?.account_id;
+    const intent = applyPayoutReturnId(), applyReturnId = workerReady ? intent : null, workerFirst = !workerReady && (intent || payoutAcct);
     const historyUnavailable = historyData === null;
     // escrow_history = funded orders; fees_paid are part of those charges.
     const history = Array.isArray(historyData?.escrow_history) ? historyData.escrow_history : [];
 
+    const employerCard = `<div class="card">
+<div class="empty-state-icon" aria-hidden="true">${I.card}</div>
+<div class="card-title">Pay for Services &amp; Jobs</div>
+<p class="card-text mt-1 mb-4">Set up a payment method to hire workers and order services.</p>
+${employerReady ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Payment method active</span></div>` : ''}
+<button class="btn btn-${workerFirst ? 'secondary' : 'primary'} btn-sm" onclick="setupEmployerPayment(this)">
+${employerReady ? 'Update Payment Method' : 'Set Up Payment Method'}
+</button>
+</div>`;
+    const workerCard = `<div class="card">
+<div class="empty-state-icon" aria-hidden="true">${I.bank}</div>
+<div class="card-title">Receive Payments</div>
+<p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. Finish payout setup before applying to jobs. Setup is free through Stripe; nothing is charged.</p>
+${!workerReady && !payoutAcct && countries.length ? `<p class="text-xs mb-3" data-payout-countries>Payouts are available in ${countries.length === 1 ? esc(countries[0].name) : 'the countries listed below'}. If you're elsewhere, you can't apply to jobs yet.</p>` : ''}
+${workerReady ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>` : ''}
+${countries.length > 1 ? `<div class="mb-3" style="max-width:100%;min-width:0">
+<label for="payoutCountry" style="display:block;margin-bottom:var(--space-2)">Payout country</label>
+<select id="payoutCountry" class="form-input" style="width:100%;max-width:100%" ${payoutAcct ? 'disabled' : ''}>
+${countries.map(c => `<option value="${esc(c.code)}" ${c.code === payoutCountry ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+</select>
+<p class="text-xs mt-2">Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.</p>
+${payoutAcct ? '<p class="text-xs mt-1">Your payout country is fixed for this account. Contact support to change it.</p>' : ''}
+</div>` : ''}
+${countries.length === 1 && !payoutAcct ? `<span hidden data-payout-country="${esc(countries[0].code)}"></span>` : ''}
+<button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
+${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
+</button>
+</div>`;
     appShell(`
       <h1 class="page-title">Payments</h1>
       ${applyReturnId ? `<div class="callout mb-4" role="status"><strong>You can apply now</strong><p>Your payouts are ready.</p><a class="btn btn-primary" href="#/jobs/${applyReturnId}?apply=1" onclick="consumeApplyPayoutReturn(${Number(applyReturnId)})">Back to job to apply</a></div>` : ''}
+      ${workerFirst && intent ? `<div class="callout mb-4" role="status"><strong>Connect your bank account to apply</strong></div>` : ''}
       <p class="page-desc">Manage payment methods and worker payout setup. Workers receive the listed payout after accepted work is completed, reviewed, and released through GoHireHumans.</p>
       <div class="safety-notice">
         <div class="safety-notice-icon">${I.shield}</div>
@@ -4211,39 +4241,7 @@ async function renderPayments() {
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-4);margin-bottom:var(--space-6)">
-        <div class="card">
-          <div class="empty-state-icon" aria-hidden="true">${I.card}</div>
-          <div class="card-title">Pay for Services &amp; Jobs</div>
-          <p class="card-text mt-1 mb-4">Set up a payment method to hire workers and order services.</p>
-          ${employerReady
-            ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Payment method active</span></div>`
-            : ''}
-          <button class="btn btn-primary btn-sm" onclick="setupEmployerPayment(this)">
-            ${employerReady ? 'Update Payment Method' : 'Set Up Payment Method'}
-          </button>
-        </div>
-        <div class="card">
-          <div class="empty-state-icon" aria-hidden="true">${I.bank}</div>
-          <div class="card-title">Receive Payments</div>
-          <p class="card-text mt-1 mb-4">Connect your bank account to receive payouts for accepted work after the buyer reviews and releases payment. Finish payout setup before applying to jobs. Setup is free through Stripe; nothing is charged.</p>
-          ${!workerReady && !statusData.worker_payout_status?.account_id && countries.length ? `<p class="text-xs mb-3" data-payout-countries>Payouts are available in ${countries.length === 1 ? esc(countries[0].name) : 'the countries listed below'}. If you're elsewhere, you can't apply to jobs yet.</p>` : ''}
-          ${workerReady
-            ? `<div class="mb-3"><span class="badge badge-completed">${I.check} Bank account connected</span></div>`
-            : ''}
-          ${countries.length > 1 ? `<div class="mb-3" style="max-width:100%;min-width:0">
-            <label for="payoutCountry" style="display:block;margin-bottom:var(--space-2)">Payout country</label>
-            <select id="payoutCountry" class="form-input" style="width:100%;max-width:100%" ${statusData.worker_payout_status?.account_id ? 'disabled' : ''}>
-              ${countries.map(c => `<option value="${esc(c.code)}" ${c.code === payoutCountry ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-            </select>
-            <p class="text-xs mt-2">Payouts are sent in your local currency by Stripe; Stripe may charge a cross-border fee.</p>
-            ${statusData.worker_payout_status?.account_id ? '<p class="text-xs mt-1">Your payout country is fixed for this account. Contact support to change it.</p>' : ''}
-          </div>` : ''}
-          ${countries.length === 1 && !statusData.worker_payout_status?.account_id
-            ? `<span hidden data-payout-country="${esc(countries[0].code)}"></span>` : ''}
-          <button class="btn btn-primary btn-sm" onclick="setupWorkerPayment(this)">
-            ${workerReady ? 'Update Bank Account' : 'Connect Bank Account'}
-          </button>
-        </div>
+${workerFirst ? workerCard + employerCard : employerCard + workerCard}
       </div>
 
       <h2 class="dash-section-title">Transaction History</h2>
