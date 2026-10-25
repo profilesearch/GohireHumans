@@ -117,6 +117,51 @@ test('ready worker is not shown the country eligibility note', async ({ page }) 
   await expect(page.locator('[data-payout-countries]')).toHaveCount(0);
 });
 
+// Workers sent here to apply must see payout setup first: 6 of 6 employer card forms opened from this
+// page in October were cancelled, by people who had come to set up payouts (GA4, Oct 5-24).
+const TITLES = { 'Receive Payments': 'worker', 'Pay for Services & Jobs': 'employer' };
+async function cardOrder(page) {
+  return (await page.locator('.card-title').allTextContents()).map(t => TITLES[t.trim()]).filter(Boolean);
+}
+const payCard = (page, title) => page.locator('.card').filter({ has: page.locator('.card-title', { hasText: title }) });
+const pendingCallout = page => page.locator('.callout', { hasText: 'Connect your bank account to apply' });
+
+test('worker who came to apply sees payout setup first and highlighted', async ({ page }) => {
+  await boot(page, { route: '/#/payments', intent: '33' });
+  await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+  expect(await cardOrder(page)).toEqual(['worker', 'employer']);
+  const callout = pendingCallout(page);
+  await expect(callout).toHaveAttribute('role', 'status');
+  await expect(callout).toContainText('Connect your bank account to apply');
+  await expect(callout).not.toContainText('card');
+  await expect(payCard(page, 'Receive Payments').getByRole('button', { name: 'Connect Bank Account', exact: true })).toHaveClass(/btn-primary/);
+  await expect(payCard(page, 'Pay for Services & Jobs').getByRole('button', { name: 'Set Up Payment Method', exact: true })).toHaveClass(/btn-secondary/);
+});
+
+test('worker with a payout account started but not finished also sees payout setup first', async ({ page }) => {
+  const state = await boot(page, { route: '/#/payments' });
+  await page.route('**/payments/status', route => route.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ employer_ready: false, worker_ready: false, worker_payout_status: { connected: false, account_id: 'acct_123', country: 'US', mode: 'live' } }) }));
+  await page.evaluate(() => renderPayments());
+  await expect.poll(() => cardOrder(page)).toEqual(['worker', 'employer']);
+  await expect(pendingCallout(page)).toHaveCount(0);
+  expect(state.posts).toBe(0);
+});
+
+test('buyer with no worker context keeps the payment-method card first', async ({ page }) => {
+  await boot(page, { route: '/#/payments' });
+  await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+  expect(await cardOrder(page)).toEqual(['employer', 'worker']);
+  await expect(pendingCallout(page)).toHaveCount(0);
+  await expect(payCard(page, 'Pay for Services & Jobs').getByRole('button', { name: 'Set Up Payment Method', exact: true })).toHaveClass(/btn-primary/);
+});
+
+test('ready worker returning to apply gets the return CTA, not the pending callout', async ({ page }) => {
+  await boot(page, { route: '/#/payments', ready: true, intent: '33' });
+  await expect(returnCTA(page)).toBeVisible();
+  await expect(pendingCallout(page)).toHaveCount(0);
+});
+
 for (const intent of ['0', '-1', '33.5', '033', '33junk', '33\n', '9007199254740992', '#/jobs/33', '<img src=x>']) {
   test(`malformed payout return intent is ignored: ${JSON.stringify(intent)}`, async ({ page }) => {
     await boot(page, { route: '/#/payments', ready: true, intent });
