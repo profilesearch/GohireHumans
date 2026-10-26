@@ -127,6 +127,27 @@ class ApplyRequiresPayoutTests(unittest.TestCase):
         api = (root / "backend/api_core.py").read_text().lower()
         self.assertNotIn("takes a few minutes through stripe", api)
 
+    def test_worker_listing_guides_state_the_order_prerequisite(self):
+        # Service checkout refuses sellers whose Stripe payouts aren't ready (fund_escrow_stripe 409),
+        # so worker guides that pitch listing must not imply a listing is orderable straight away.
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent / "frontend"
+        required = {
+            "earn/get-paid-for-human-tasks.html": "buyers cannot order your service listings until setup is finished",
+            "blog/where-to-list-services-online.html": "buyers can order a listing only after it is done",
+            "blog/best-platforms-advertise-side-gig.html": "Buyers can order only after you finish free Stripe payout setup",
+            "hire/voice-over.html": "Buyers can order it only after you finish Stripe payout setup",
+        }
+        for path, snippet in required.items():
+            with self.subTest(path=path):
+                self.assertIn(snippet.lower(), (root / path).read_text().lower())
+        stale = ("employers may order directly", "deliverable that a buyer may order.")
+        for path in required:
+            text = (root / path).read_text().lower()
+            for phrase in stale:
+                with self.subTest(path=path, phrase=phrase):
+                    self.assertNotIn(phrase, text)
+
     def test_ready_detail_has_no_requirement(self):
         self.payout("stripe_connect_active")
         body = self.detail()
