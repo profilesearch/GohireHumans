@@ -60,6 +60,15 @@ SHARED_PHRASES = (
 )
 FORBIDDEN = ("escrow", "guarantee", "vetted", "verified", "top-rated", "instant", "available now",
              "in minutes", "risk-free")
+# Worker-side block at the end of each buyer page. Service checkout refuses sellers without a
+# payout-ready Stripe account, so the block must say so instead of implying listing alone sells.
+SELLER_SECTION = 'id="list-your-service"'
+SELLER_PHRASES = (
+    "Listing a fixed-price service on GoHireHumans is free.",
+    "Buyers can order it only after you finish Stripe payout setup",
+    "nothing is charged to set it up",
+)
+SELLER_LINKS = ("/#/post-service", "/earn/get-paid-for-human-tasks.html")
 # Pages Google has crawled recently (URL Inspection, 2026-10-25) that must link to the new pages.
 BLOG = "blog/how-to-find-human-workers-ai-tasks.html"  # crawled 2026-10-25
 INBOUND = {
@@ -228,6 +237,27 @@ def page_problems(path, source, spec, categories):
         problems.append(f"only {examples} example drafts")
     if drafts < examples + 2:
         problems.append("hero and closing draft CTAs")
+    problems += seller_problems(source, page)
+    return problems
+
+
+def seller_problems(source, page):
+    """The worker CTA exists once, sits after the buyer close, and states the payout prerequisite."""
+    problems = []
+    if source.count(SELLER_SECTION) != 1:
+        return [f"seller section count {source.count(SELLER_SECTION)}"]
+    start = source.index(SELLER_SECTION)
+    if "Describe a different task" not in source or start < source.rindex("Describe a different task"):
+        problems.append("seller section must follow the buyer closing CTA")
+    section = source[start:source.index("</section>", start)]
+    for phrase in SELLER_PHRASES:
+        if phrase not in section:
+            problems.append(f"seller section missing {phrase!r}")
+    for href in SELLER_LINKS:
+        if sum(1 for a in page.anchors if a["href"] == href) != 1:
+            problems.append(f"expected exactly one link to {href}")
+        elif f'href="{href}"' not in section:
+            problems.append(f"{href} link outside the seller section")
     return problems
 
 
@@ -316,6 +346,17 @@ class TaskDemandContractGuardTests(unittest.TestCase):
         found = self.problems(claim)
         self.assertTrue(any("vetted" in p for p in found), found)
         self.assertTrue(any("guarantee" in p for p in found), found)
+
+    def test_seller_section_drift_is_caught(self):
+        start = self.source.index(SELLER_SECTION)
+        section = self.source[start:self.source.index("</section>", start)]
+        no_prereq = self.source.replace(SELLER_PHRASES[1], "Buyers can order it right away", 1)
+        self.assertIn(f"seller section missing {SELLER_PHRASES[1]!r}", self.problems(no_prereq))
+        moved = self.source.replace(section, "", 1).replace("<main id=\"main-content\" tabindex=\"-1\">",
+                                                            "<main id=\"main-content\" tabindex=\"-1\">" + section, 1)
+        self.assertIn("seller section must follow the buyer closing CTA", self.problems(moved))
+        doubled = self.source.replace("</main>", '<a href="/#/post-service">Post</a></main>', 1)
+        self.assertIn("expected exactly one link to /#/post-service", self.problems(doubled))
 
     def test_missing_safety_rule_and_wrong_lastmod_are_caught(self):
         mutated = self.source.replace("imitate a real person", "sound like anyone")
