@@ -57,6 +57,11 @@ test('browse labels only the listing that is not taking orders', async ({ page }
   await expect(cards).toHaveCount(2);
   await expect(cards.filter({ hasText: 'Waiting proofreading' })).toContainText('Not taking orders yet');
   await expect(cards.filter({ hasText: 'Ready proofreading' })).not.toContainText('Not taking orders yet');
+  // The badge must sit fully inside its card (it was clipped at 3 cards per row on desktop).
+  const box = await cards.filter({ hasText: 'Waiting proofreading' }).boundingBox();
+  const badge = await cards.filter({ hasText: 'Waiting proofreading' }).getByText('Not taking orders yet').boundingBox();
+  expect(badge.x + badge.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+  expect(badge.x).toBeGreaterThanOrEqual(box.x - 0.5);
   expect(errors).toEqual([]);
   expect(writes).toEqual([]);
 });
