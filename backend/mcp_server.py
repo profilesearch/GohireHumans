@@ -631,6 +631,16 @@ def _service_price_label(service):
 
 
 NOT_TAKING_ORDERS = "Not taking orders yet: the seller has not finished payout setup."
+LISTING_PAUSED = "Not taking orders: this listing is paused."
+
+
+def _service_order_note(s):
+    """Why a listing can't be ordered, or None. Paused beats payout setup."""
+    if s.get('accepting_orders') is not False:
+        return None
+    if s.get('status') and s.get('status') != 'active':
+        return LISTING_PAUSED
+    return NOT_TAKING_ORDERS
 
 
 def handle_search_services(args):
@@ -659,8 +669,8 @@ def handle_search_services(args):
     for s in services[:limit]:
         output += f"**{s.get('title', 'Untitled')}** (ID: {s.get('id', 'N/A')})\n"
         output += f"  Category: {s.get('category', 'N/A')} | Price: {_service_price_label(s)}\n"
-        if s.get('accepting_orders') is False:
-            output += f"  {NOT_TAKING_ORDERS}\n"
+        if _service_order_note(s):
+            output += f"  {_service_order_note(s)}\n"
         output += f"  {s.get('description', '')[:200]}\n"
         output += f"  Provider: {_service_worker_name(s)}\n\n"
 
@@ -681,8 +691,8 @@ def handle_get_service_details(args):
     output += f"**Price:** {_service_price_label(s)}\n"
     output += f"**Provider:** {_service_worker_name(s)}\n"
     output += f"**Rating:** {_service_rating(s)}\n"
-    if s.get('accepting_orders') is False:
-        output += f"**Orders:** {NOT_TAKING_ORDERS}\n"
+    if _service_order_note(s):
+        output += f"**Orders:** {_service_order_note(s)}\n"
     output += "\n"
     output += f"## Description\n{s.get('description', 'No description')}\n\n"
 

@@ -12789,22 +12789,26 @@ def _handle_routes(db):
         # Existing idempotent operations can still be inspected/reconciled under
         # their original funding checks. Never begin a new checkout for an
         # ineligible seller, even when malformed inputs would otherwise return 400.
+        # Only a valid operation identity is ever bound into the replay lookup.
+        try:
+            replay_key = validated_idempotency_key(body.get('idempotency_key')) if isinstance(body, dict) else None
+        except ValueError:
+            replay_key = None
+        def existing_replay():
+            return replay_key is not None and db.execute(
+                'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
+                [user['id'], service_id, replay_key],
+            ).fetchone() is not None
         seller_eligible = db.execute(
             f'SELECT 1 FROM services s JOIN users u ON u.id=s.worker_id '
             f'WHERE s.id=? AND {eligible_account_sql()}', [service_id],
         ).fetchone()
-        if not seller_eligible and not db.execute(
-            'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
-            [user['id'], service_id, body.get('idempotency_key') if isinstance(body, dict) else None],
-        ).fetchone():
+        if not seller_eligible and not existing_replay():
             return error_response("Service not found or unavailable", 404)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
         seller = db.execute('SELECT worker_id FROM services WHERE id=?', [service_id]).fetchone()
-        if seller and not worker_payout_ready(db, seller['worker_id']) and not db.execute(
-            'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
-            [user['id'], service_id, body.get('idempotency_key') if isinstance(body, dict) else None],
-        ).fetchone():
+        if seller and not worker_payout_ready(db, seller['worker_id']) and not existing_replay():
             return error_response(SERVICE_SELLER_PAYOUT_ERROR, 409, code=SERVICE_SELLER_PAYOUT_CODE)
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))

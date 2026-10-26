@@ -1868,9 +1868,9 @@ async function renderServiceDetail(id) {
         ? ''
       : !listingActive
         ? `<p class="svc-order-note">This service is ${esc(svc.status)} and is not accepting orders right now.</p>`
-      : notReady
+      : notReady && !localStorage.getItem(serviceCheckoutStorageKey(state.user?.id, id))
         ? `<p class="svc-order-note"><strong>Not taking orders yet.</strong> The seller has not finished payout setup.</p>`
-        : `<button class="btn btn-primary btn-lg" onclick="handleOrderService(${Number(id)})">Order This Service</button>${!['fixed','hourly'].includes(svc.pricing_type) ? `<p class="svc-order-note">Custom pricing: agree on a fixed price with the provider before ordering.</p>` : ''}`;
+        : `<button class="btn btn-primary btn-lg" onclick="handleOrderService(${Number(id)})">${notReady ? 'Resume saved order' : 'Order This Service'}</button>${!['fixed','hourly'].includes(svc.pricing_type) ? `<p class="svc-order-note">Custom pricing: agree on a fixed price with the provider before ordering.</p>` : ''}`;
     const deliveryLabel = serviceDeliveryLabel(svc.delivery_time_days);
     const deliveryMeta = deliveryLabel ? `<div class="svc-order-meta-item">${I.clock} <span>${deliveryLabel}</span></div>` : '';
     const reviewFacts = workerReviewFacts(svc);

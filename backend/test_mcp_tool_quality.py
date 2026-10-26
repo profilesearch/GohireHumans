@@ -252,6 +252,11 @@ class BackendBehaviourBehindDescriptions(unittest.TestCase):
         self.assertNotIn(note, ready)
         self.assertEqual(listing.count(note), 1)
         self.assertIn('https://www.gohirehumans.com/#/services/12', ready)
+        # A paused listing from a payout-ready seller must not blame payout setup.
+        with self.as_api():
+            paused = self.mcp.handle_get_service_details({'service_id': '14'})[0]['text']
+        self.assertNotIn(note, paused)
+        self.assertIn('**Orders:** Not taking orders: this listing is paused.', paused)
 
     def test_hourly_custom_and_paused_listings_are_described_honestly(self):
         with self.as_api():

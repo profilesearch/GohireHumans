@@ -181,6 +181,16 @@ class ServiceOrderReadinessTests(unittest.TestCase):
                                     {'idempotency_key': KEY}, 'tok-3')
         self.assertNotEqual(body.get('code'), 'seller_payout_setup_required', body)
 
+    def test_malformed_keys_for_a_not_ready_seller_are_clean_client_errors(self):
+        # The replay lookup must never bind an unvalidated value into SQL (base returned 400).
+        for key in ({'a': 1}, ['x'], 2 ** 70, 12345, None, 'short'):
+            with self.subTest(key=key), mock.patch.object(self.core, 'fund_escrow_stripe') as fund:
+                status, body = self.request('POST', f"/services/{self.pending['id']}/order",
+                                            {'idempotency_key': key}, 'tok-3')
+                self.assertIn(status, (400, 409), body)
+                fund.assert_not_called()
+        self.assertEqual(self.order_count(), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

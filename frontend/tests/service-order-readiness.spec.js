@@ -9,21 +9,30 @@ const ready = { ...base, id: 501, worker_id: 7, title: 'Ready proofreading', acc
 const waiting = { ...base, id: 502, worker_id: 8, title: 'Waiting proofreading', accepting_orders: false };
 const ownerNotice = 'Buyers cannot order this listing until you finish payout setup. Setup is free and nothing is charged: open Payments and connect your bank account.';
 
-async function stub(page, viewer) {
-  const errors = [], writes = [];
+async function stub(page, viewer, saved = null) {
+  const errors = [], writes = [], bodies = [], quotes = [];
   page.on('pageerror', e => errors.push(e.message));
-  await page.addInitScript(v => {
+  await page.addInitScript(([v, rec]) => {
     window.GOHIREHUMANS_API_URL = location.origin + '/fixture';
     if (v) {
       sessionStorage.setItem('ghh_token', 'fixture-' + v);
       localStorage.setItem('ghh_user', JSON.stringify({ id: v === 'seller' ? 8 : 9, name: v }));
     }
-  }, viewer);
+    if (rec && !sessionStorage.getItem('saved-seeded')) {
+      sessionStorage.setItem('saved-seeded', '1');
+      localStorage.setItem(`ghh_service_checkout_v1:${rec.buyer_id}:${rec.service_id}`, JSON.stringify(rec));
+    }
+  }, [viewer, saved]);
   await page.route('**/*', async route => {
     const req = route.request();
     const url = new URL(req.url());
     if (url.origin !== `http://127.0.0.1:${process.env.PW_PORT || 4173}`) return route.abort();
+    if (saved && req.method() === 'POST' && url.pathname === '/fixture/services/502/order') {
+      bodies.push(req.postDataJSON());
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 93 }) });
+    }
     if (req.method() !== 'GET') { writes.push(url.pathname); return route.abort(); }
+    if (url.pathname.endsWith('/quote')) quotes.push(url.pathname);
     if (url.pathname === '/config.js') return route.fulfill({ contentType: 'application/javascript', body: "window.GOHIREHUMANS_API_URL=location.origin+'/fixture';" });
     if (url.pathname.startsWith('/fixture')) {
       const path = url.pathname.slice('/fixture'.length);
@@ -38,7 +47,7 @@ async function stub(page, viewer) {
     }
     return route.continue();
   });
-  return { errors, writes };
+  return { errors, writes, bodies, quotes };
 }
 
 test('browse labels only the listing that is not taking orders', async ({ page }) => {
@@ -79,6 +88,24 @@ test('seller sees why buyers cannot order, with a link to Payments', async ({ pa
   await expect(page.locator('.form-page')).toContainText(ownerNotice);
   await page.goto('/#/post-service');
   await expect(page.locator('.form-page')).toContainText('Buyers can order your listing once you finish free payout setup in Payments.');
+  expect(errors).toEqual([]);
+  expect(writes).toEqual([]);
+});
+
+test('a buyer can still finish a saved checkout after the seller stops taking orders', async ({ page }) => {
+  // Response loss: the order may already exist. Only the exact saved request may be retried.
+  const quote = { service_id: 502, pricing_type: 'fixed', currency: 'usd', hours: null, base_amount_cents: 2500,
+    processing_fee_cents: 75, platform_fee_cents: 25, total_charge_cents: 2600, quote_token: 'b'.repeat(64) };
+  const payload = { notes: 'Saved notes', quote_token: quote.quote_token, idempotency_key: 'service-order-0123456789abcdef' };
+  const saved = { version: 1, buyer_id: '9', service_id: '502', title: 'Waiting proofreading', quote, payload };
+  const { errors, writes, bodies, quotes } = await stub(page, 'buyer', saved);
+  await page.goto('/#/services/502');
+  await expect(page.getByRole('button', { name: 'Order This Service' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Resume saved order' }).click();
+  await page.getByRole('button', { name: 'Place Order', exact: true }).click();
+  await expect.poll(() => bodies.length).toBe(1);
+  expect(bodies[0]).toEqual(payload);
+  expect(quotes).toEqual([]);
   expect(errors).toEqual([]);
   expect(writes).toEqual([]);
 });
