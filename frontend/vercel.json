@@ -379,6 +379,21 @@
       "permanent": true
     },
     {
+      "source": "/hire/voice-over",
+      "destination": "/hire/voice-over.html",
+      "permanent": true
+    },
+    {
+      "source": "/hire/subtitles-captions",
+      "destination": "/hire/subtitles-captions.html",
+      "permanent": true
+    },
+    {
+      "source": "/hire/short-video-creators",
+      "destination": "/hire/short-video-creators.html",
+      "permanent": true
+    },
+    {
       "source": "/hire/lead-researchers",
       "destination": "/hire/lead-researchers.html",
       "permanent": true

@@ -74,6 +74,10 @@ For scoping a first order, not a record of completed customer work:
 - AI-output review: https://www.gohirehumans.com/use-cases/hire-human-to-review-ai-output.html
 - Website QA: https://www.gohirehumans.com/use-cases/website-qa-task.html
 - Lead research: https://www.gohirehumans.com/use-cases/lead-research-microtask.html
+- Website and app testing: https://www.gohirehumans.com/hire/website-testers.html
+- Human voice over: https://www.gohirehumans.com/hire/voice-over.html
+- Subtitles and captions: https://www.gohirehumans.com/hire/subtitles-captions.html
+- Short phone videos: https://www.gohirehumans.com/hire/short-video-creators.html
 
 ## High-Intent Use Case Pages
 
