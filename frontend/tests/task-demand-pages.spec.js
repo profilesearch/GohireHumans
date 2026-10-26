@@ -82,4 +82,23 @@ for (const path of pages) {
       expect(evidence.analytics.length).toBeGreaterThan(0);
     });
   }
+
+  // The worker block sits after the buyer close; its listing link must reach the sign-in that
+  // resumes Post a Service, and its guide link must reach the worker payout page. No writes.
+  test(`${path} worker block links to listing and payout guide`, async ({ page }) => {
+    const evidence = await isolate(page, false);
+    await page.goto(path);
+    const block = page.locator('#list-your-service');
+    await expect(block.getByRole('heading', { level: 2 })).toHaveText('Do this kind of work? List your service');
+    await expect(block).toContainText('Buyers can order it only after you finish Stripe payout setup');
+    await block.getByRole('link', { name: 'List a service' }).click();
+    // Account routes send anonymous visitors to sign-in, which resumes Post a Service afterwards.
+    await expect(page.locator('.auth2-title')).toHaveText('Welcome back');
+    expect(await page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('redirect'))).toBe('post-service');
+    await page.goto(path);
+    await page.locator('#list-your-service').getByRole('link', { name: 'How workers get paid' }).click();
+    await expect(page).toHaveURL(/\/earn\/get-paid-for-human-tasks\.html$/);
+    expect(evidence.errors).toEqual([]);
+    expect(evidence.mutations).toEqual([]);
+  });
 }

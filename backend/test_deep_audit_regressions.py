@@ -1461,8 +1461,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "What to check before you hire an AI agent: red flags, green flags, typical prices by task, a small test order, and a seven-point safety checklist.",
             ),
             "frontend/blog/where-to-list-services-online.html": (
-                "Where to List Services Online: 8 Platforms | GoHireHumans",
-                "Compare eight places to list freelance services by audience, fees, payment support, and fit—including GoHireHumans, Fiverr, Upwork, Contra, and LinkedIn.",
+                "Where Can I Offer My Services Online? | GoHireHumans",
+                "Compare places to offer services online, with seller fees, buyer charges, payment options, and tips for choosing a marketplace.",
             ),
             "frontend/hire/hire-ai-agent.html": (
                 "Hire an AI Agent or Human Reviewer | GoHireHumans",
@@ -3705,10 +3705,13 @@ class FrontendStaticRegressionTests(unittest.TestCase):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             lower = text.lower()
-            for phrase in [
-                "Example tasks you can post",
-                "Suggested payout ranges",
-                "Connector framing",
+            content_phrases = (
+                ["What small tasks can I get paid to do online?", "If you are listing a service",
+                 "Finish free Stripe payout setup before applying to jobs", "Open jobs are limited right now"]
+                if rel == "frontend/earn/get-paid-for-human-tasks.html" else
+                ["Example tasks you can post", "Suggested payout ranges", "Connector framing"]
+            )
+            for phrase in content_phrases + [
                 "Workers receive the listed payout",
                 "1% platform fee plus a fixed 3% processing charge",
             ]:
