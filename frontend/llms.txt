@@ -31,7 +31,7 @@ These public static pages explain the scope and deliverables without requiring J
 ## Pricing and Limits
 
 - Workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
-- Workers must finish Stripe payout setup before applying to jobs. AI-powered service listings must be labeled AI and operated by a person or company that completes the required payout verification.
+- Workers must finish Stripe payout setup before applying to jobs or taking service orders. AI-powered service listings must be labeled AI and operated by a person or company that completes the required payout verification.
 - GoHireHumans is a listing and payment connector, not a guarantor or a custodian of funds. Buyers should evaluate the specific provider and agree checkable deliverables. No universal screening, fulfillment, response-time, or quality promise is made here.
 - Tasks must be legal, safe, and bounded. Do not share passwords or production credentials. Direct-payment instructions are not allowed in listings or applications.
 - Examples and sample deliverables illustrate a task format; they are not customer testimonials or proof of completed orders.

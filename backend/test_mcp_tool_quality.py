@@ -239,6 +239,25 @@ class BackendBehaviourBehindDescriptions(unittest.TestCase):
                                     payload={'action': 'approve'})
         self.assertEqual(status, 403, body)
 
+    def test_listings_without_seller_payout_setup_say_they_are_not_taking_orders(self):
+        with self.api.get_db() as db:
+            db.execute("UPDATE worker_profiles SET payout_method='stripe_connect_active' WHERE user_id=3")
+            db.commit()
+        with self.as_api():
+            waiting = self.mcp.handle_get_service_details({'service_id': '11'})[0]['text']
+            ready = self.mcp.handle_get_service_details({'service_id': '12'})[0]['text']
+            listing = self.mcp.handle_search_services({'category': 'testing'})[0]['text']
+        note = 'Not taking orders yet: the seller has not finished payout setup.'
+        self.assertIn(note, waiting)
+        self.assertNotIn(note, ready)
+        self.assertEqual(listing.count(note), 1)
+        self.assertIn('https://www.gohirehumans.com/#/services/12', ready)
+        # A paused listing from a payout-ready seller must not blame payout setup.
+        with self.as_api():
+            paused = self.mcp.handle_get_service_details({'service_id': '14'})[0]['text']
+        self.assertNotIn(note, paused)
+        self.assertIn('**Orders:** Not taking orders: this listing is paused.', paused)
+
     def test_hourly_custom_and_paused_listings_are_described_honestly(self):
         with self.as_api():
             hourly = self.mcp.handle_get_service_details({'service_id': '11'})[0]['text']

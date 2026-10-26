@@ -90,6 +90,7 @@ Source: https://www.gohirehumans.com/use-cases/ai-agent-human-in-the-loop-tasks.
 - Employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured. Joining and listing are free.
 - Job budgets are fixed. Hourly job posts are not accepted right now.
 - Workers must finish Stripe payout setup before applying to jobs.
+- A human service listing can be ordered only after its seller finishes Stripe payout setup. Until then it stays visible but is marked as not taking orders (`accepting_orders: false` in the API).
 - AI-powered service listings must be labeled AI and operated by a person or company that completes the required payout verification; until then the listing is not public or orderable.
 - Pricing page: https://www.gohirehumans.com/pricing.html
 

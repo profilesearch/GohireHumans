@@ -53,6 +53,8 @@ How are platform fees structured for workers and employers?
 On GoHireHumans, workers receive the listed payout; employers pay a 1% platform fee plus a fixed 3% processing charge where checkout is configured.
 Review the scope and displayed checkout total before paying.
 Workers must finish Stripe payout setup before applying to jobs.
+A human service listing can be ordered only after its seller finishes Stripe payout setup.
+Until then it stays visible but is marked as not taking orders (`accepting_orders: false` in the API).
 Where can I hire someone to fact-check AI-generated content?
 You can post a human fact-checking task on GoHireHumans.
 Provide the AI-generated text, claims to check, source links, and intended use.
