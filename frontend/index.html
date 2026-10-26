@@ -598,8 +598,8 @@ function aiServiceDisclosure(service) {
   return service.provider_type === 'ai' ? '<p class="ai-service-disclosure">Delivered by an AI agent. Ordering requires completed Stripe payout setup.</p>' : '';
 }
 function aiListingNotice(service) {
-  return service.visibility === 'hidden_unverified_agent'
-    ? `<p class="app-notice app-notice--rule" role="status">${esc(service.notice || 'This AI listing will stay hidden until your Stripe payout account is verified.')}</p>` : '';
+  const n = service.visibility === 'hidden_unverified_agent' ? service.notice || 'This AI listing will stay hidden until your Stripe payout account is verified.' : service.order_notice;
+  return n ? `<p class="app-notice app-notice--rule" role="status">${esc(n)}${service.order_notice ? ' <a href="#/payments">Open Payments</a>' : ''}</p>` : '';
 }
 function workerReviewFacts(service) {
   const rawCount = service && service.worker_review_count;
@@ -1787,7 +1787,7 @@ function serviceCard(s) {
     <a class="svc-card" href="#/services/${esc(String(s.id))}">
       <div class="svc-card-header">
         <div class="svc-card-cat">${esc(formatCategory(s.category))}</div>
-        ${providerBadge(s)}
+        ${providerBadge(s)}${s.accepting_orders === false ? '<span class="badge badge-paused">Not taking orders yet</span>' : ''}
       </div>
       <div class="svc-card-body">
         <h3 class="svc-card-title">${esc(s.title)}</h3>
@@ -1860,13 +1860,16 @@ async function renderServiceDetail(id) {
     document.title = `${svc.title || 'Service'} · GoHireHumans`;
     const isOwnService = isSignedIn() && String(state.user.id) === String(svc.worker_id);
     const listingActive = !svc.status || svc.status === 'active';
+    const notReady = listingActive && svc.accepting_orders === false;
     // Custom pricing keeps the button; checkout explains, no POST.
     const orderBtn = isOwnService
-      ? `<p class="svc-order-note">This is your own listing. Manage it from <a href="#/my-services">My Services</a>.</p>`
+      ? `<p class="svc-order-note">This is your own listing. Manage it from <a href="#/my-services">My Services</a>.${notReady ? ' Buyers can order it once you finish free payout setup in <a href="#/payments">Payments</a>.' : ''}</p>`
       : svc.visibility === 'hidden_unverified_agent'
         ? ''
       : !listingActive
         ? `<p class="svc-order-note">This service is ${esc(svc.status)} and is not accepting orders right now.</p>`
+      : notReady
+        ? `<p class="svc-order-note"><strong>Not taking orders yet.</strong> The seller has not finished payout setup.</p>`
         : `<button class="btn btn-primary btn-lg" onclick="handleOrderService(${Number(id)})">Order This Service</button>${!['fixed','hourly'].includes(svc.pricing_type) ? `<p class="svc-order-note">Custom pricing: agree on a fixed price with the provider before ordering.</p>` : ''}`;
     const deliveryLabel = serviceDeliveryLabel(svc.delivery_time_days);
     const deliveryMeta = deliveryLabel ? `<div class="svc-order-meta-item">${I.clock} <span>${deliveryLabel}</span></div>` : '';
@@ -1874,97 +1877,97 @@ async function renderServiceDetail(id) {
     const paymentsLive = Boolean(window.GOHIREHUMANS_PAYMENTS_LIVE);
 
     document.getElementById('app').innerHTML = `
-      ${renderPublicNav('services')}
-      <div class="detail-page">
-        <a class="detail-back" href="#/services">${I.back} Back to services</a>
-        <div class="detail-body mt-4">
-          <div class="detail-content">
-            <div class="mb-6">
-              <div class="cluster mb-3">${providerBadge(svc)}<div class="badge badge-open">${esc(formatCategory(svc.category))}</div></div>
-              ${aiServiceDisclosure(svc)}
-              ${aiListingNotice(svc)}
-              <h1 class="detail-title">${esc(svc.title)}</h1>
-              <div class="svc-worker-row">
-                <div class="avatar-md" aria-hidden="true">${esc((svc.worker_name||'?').slice(0,2).toUpperCase())}</div>
-                <div>
-                  <div class="svc-worker-name">${esc(svc.worker_name || 'Worker')}</div>
-                  <div class="svc-worker-sub">${workerReviewSummary(svc)}</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="card mb-4">
-              <div class="card-header"><div class="card-title">About This Service</div></div>
-              <div class="detail-text">${esc(svc.description)}</div>
-            </div>
-
-            ${svc.includes ? `<div class="card mb-4">
-              <div class="card-header"><div class="card-title">What's Included</div></div>
-              <div class="detail-text">${esc(svc.includes)}</div>
-            </div>` : ''}
-
-            ${svc.tags && safeParseJSON(svc.tags,[]).length ? `<div class="card mb-4">
-              <div class="card-header"><div class="card-title">Tags</div></div>
-              <div class="cluster">${safeParseJSON(svc.tags,[]).map(t=>`<span class="badge badge-open">${esc(t)}</span>`).join('')}</div>
-            </div>` : ''}
-
-            ${reviews.length ? `<div class="card">
-              <div class="card-header"><div class="card-title">Reviews (${reviews.length})</div></div>
-              <div class="reviews-list">
-                ${reviews.map(r => `<div class="review-item">
-                  <div class="review-header">
-                    <div class="avatar-sm" aria-hidden="true">${esc((r.reviewer_name||'?').slice(0,2).toUpperCase())}</div>
-                    <div>
-                      <div class="review-name">${esc(r.reviewer_name || 'User')}</div>
-                      <div>${stars(r.rating)}</div>
-                    </div>
-                    <div class="review-time">${relativeDate(r.created_at)}</div>
-                  </div>
-                  ${r.review ? `<p class="review-text">${esc(r.review)}</p>` : ''}
-                </div>`).join('')}
-              </div>
-            </div>` : ''}
-          </div>
-
-          <div class="detail-sidebar">
-            <div class="card svc-order-card">
-              <div class="svc-price-big">${formatPrice(svc)}</div>
-              ${svc.pricing_type === 'hourly' ? `<div class="detail-pricing-sub">per hour</div>` : ''}
-              <div class="svc-order-meta">
-                ${deliveryMeta}
-                ${reviewFacts.countKnown && reviewFacts.ratingKnown && reviewFacts.count > 0 ? `<div class="svc-order-meta-item">★ <span>${reviewFacts.rating.toFixed(1)} rating (${reviewFacts.count} review${reviewFacts.count === 1 ? '' : 's'})</span></div>` : ''}
-              </div>
-              ${orderBtn}
-              <p class="svc-order-note">Payment status is tracked through the configured workflow after buyer review.</p>
-              ${paymentsLive ? `<div class="app-notice app-notice--rule">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span>Secured by Stripe</span>
-                <span>&bull;</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                <span>Payment review</span>
-              </div>` : ''}
-            </div>
-
-            <div class="card">
-              <div class="card-title mb-3">${svc.provider_type === 'ai' ? 'About This AI Service' : svc.provider_type === 'human' ? 'About the Seller' : 'About the Provider'}</div>
-              ${svc.provider_type === 'ai' ? `
-              <div class="mb-3">
-                ${svc.ai_model ? `<div class="detail-kv"><strong>Model:</strong> ${esc(svc.ai_model)}</div>` : ''}
-                ${svc.fulfillment_type === 'api' ? `<div class="detail-kv"><strong>Fulfillment:</strong> Automated via API</div>` : `<div class="detail-kv"><strong>Fulfillment:</strong> Human-managed AI</div>`}
-                ${svc.avg_response_time ? `<div class="detail-kv"><strong>Response time:</strong> ${esc(svc.avg_response_time)}</div>` : ''}
-              </div>` : ''}
-              <div class="svc-seller-row">
-                <div class="avatar-lg" aria-hidden="true">${esc((svc.worker_name||'?').slice(0,2).toUpperCase())}</div>
-                <div>
-                  <div class="svc-seller-name">${esc(svc.worker_name||'Worker')}</div>
-                  ${svc.worker_bio ? `<p class="text-xs text-muted mt-1">${esc(svc.worker_bio)}</p>` : ''}
-                </div>
-              </div>
-            </div>
+${renderPublicNav('services')}
+<div class="detail-page">
+  <a class="detail-back" href="#/services">${I.back} Back to services</a>
+  <div class="detail-body mt-4">
+    <div class="detail-content">
+      <div class="mb-6">
+        <div class="cluster mb-3">${providerBadge(svc)}<div class="badge badge-open">${esc(formatCategory(svc.category))}</div></div>
+        ${aiServiceDisclosure(svc)}
+        ${aiListingNotice(svc)}
+        <h1 class="detail-title">${esc(svc.title)}</h1>
+        <div class="svc-worker-row">
+          <div class="avatar-md" aria-hidden="true">${esc((svc.worker_name||'?').slice(0,2).toUpperCase())}</div>
+          <div>
+            <div class="svc-worker-name">${esc(svc.worker_name || 'Worker')}</div>
+            <div class="svc-worker-sub">${workerReviewSummary(svc)}</div>
           </div>
         </div>
       </div>
-      ${publicFooter()}`;
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">About This Service</div></div>
+        <div class="detail-text">${esc(svc.description)}</div>
+      </div>
+
+      ${svc.includes ? `<div class="card mb-4">
+        <div class="card-header"><div class="card-title">What's Included</div></div>
+        <div class="detail-text">${esc(svc.includes)}</div>
+      </div>` : ''}
+
+      ${svc.tags && safeParseJSON(svc.tags,[]).length ? `<div class="card mb-4">
+        <div class="card-header"><div class="card-title">Tags</div></div>
+        <div class="cluster">${safeParseJSON(svc.tags,[]).map(t=>`<span class="badge badge-open">${esc(t)}</span>`).join('')}</div>
+      </div>` : ''}
+
+      ${reviews.length ? `<div class="card">
+        <div class="card-header"><div class="card-title">Reviews (${reviews.length})</div></div>
+        <div class="reviews-list">
+          ${reviews.map(r => `<div class="review-item">
+            <div class="review-header">
+              <div class="avatar-sm" aria-hidden="true">${esc((r.reviewer_name||'?').slice(0,2).toUpperCase())}</div>
+              <div>
+                <div class="review-name">${esc(r.reviewer_name || 'User')}</div>
+                <div>${stars(r.rating)}</div>
+              </div>
+              <div class="review-time">${relativeDate(r.created_at)}</div>
+            </div>
+            ${r.review ? `<p class="review-text">${esc(r.review)}</p>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+
+    <div class="detail-sidebar">
+      <div class="card svc-order-card">
+        <div class="svc-price-big">${formatPrice(svc)}</div>
+        ${svc.pricing_type === 'hourly' ? `<div class="detail-pricing-sub">per hour</div>` : ''}
+        <div class="svc-order-meta">
+          ${deliveryMeta}
+          ${reviewFacts.countKnown && reviewFacts.ratingKnown && reviewFacts.count > 0 ? `<div class="svc-order-meta-item">★ <span>${reviewFacts.rating.toFixed(1)} rating (${reviewFacts.count} review${reviewFacts.count === 1 ? '' : 's'})</span></div>` : ''}
+        </div>
+        ${orderBtn}
+        <p class="svc-order-note">Payment status is tracked through the configured workflow after buyer review.</p>
+        ${paymentsLive ? `<div class="app-notice app-notice--rule">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Secured by Stripe</span>
+          <span>&bull;</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Payment review</span>
+        </div>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-title mb-3">${svc.provider_type === 'ai' ? 'About This AI Service' : svc.provider_type === 'human' ? 'About the Seller' : 'About the Provider'}</div>
+        ${svc.provider_type === 'ai' ? `
+        <div class="mb-3">
+          ${svc.ai_model ? `<div class="detail-kv"><strong>Model:</strong> ${esc(svc.ai_model)}</div>` : ''}
+          ${svc.fulfillment_type === 'api' ? `<div class="detail-kv"><strong>Fulfillment:</strong> Automated via API</div>` : `<div class="detail-kv"><strong>Fulfillment:</strong> Human-managed AI</div>`}
+          ${svc.avg_response_time ? `<div class="detail-kv"><strong>Response time:</strong> ${esc(svc.avg_response_time)}</div>` : ''}
+        </div>` : ''}
+        <div class="svc-seller-row">
+          <div class="avatar-lg" aria-hidden="true">${esc((svc.worker_name||'?').slice(0,2).toUpperCase())}</div>
+          <div>
+            <div class="svc-seller-name">${esc(svc.worker_name||'Worker')}</div>
+            ${svc.worker_bio ? `<p class="text-xs text-muted mt-1">${esc(svc.worker_bio)}</p>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+${publicFooter()}`;
   } catch(err) {
     if (!isCurrent()) return;
     document.getElementById('app').innerHTML = `
@@ -3000,42 +3003,42 @@ async function renderMyServices() {
         : '';
 
     appShell(`
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">My Services</h1>
-          <p class="page-desc">${total ? `${total} listing${total === 1 ? '' : 's'} across every status.` : 'Manage your service listings.'}</p>
+<div class="page-header">
+  <div>
+    <h1 class="page-title">My Services</h1>
+    <p class="page-desc">${total ? `${total} listing${total === 1 ? '' : 's'} across every status.` : 'Manage your service listings.'}</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-primary" href="#/post-service">${I.plus} Post a Service</a></div>
+</div>
+${mySvcs.length ? `
+  <div class="task-list">
+    ${mySvcs.map(s => `
+      <div class="task-card">
+        <div class="task-card-header">
+          <div class="task-card-title"><a href="#/services/${esc(String(s.id))}">${esc(s.title)}</a></div>
+          ${statusBadge(s.status)} ${providerBadge(s)}
         </div>
-        <div class="page-actions"><a class="btn btn-primary" href="#/post-service">${I.plus} Post a Service</a></div>
-      </div>
-      ${mySvcs.length ? `
-        <div class="task-list">
-          ${mySvcs.map(s => `
-            <div class="task-card">
-              <div class="task-card-header">
-                <div class="task-card-title"><a href="#/services/${esc(String(s.id))}">${esc(s.title)}</a></div>
-                ${statusBadge(s.status)} ${providerBadge(s)}
-              </div>
-              ${aiListingNotice(s)}
-              <div class="task-card-meta">
-                <span>${I.dollar} ${formatPrice(s)}</span>
-                ${serviceDeliveryLabel(s.delivery_time_days) ? `<span>${I.clock} ${serviceDeliveryLabel(s.delivery_time_days)}</span>` : ''}
-                <span>${workerReviewSummary(s)}</span>
-              </div>
-              <div class="task-card-actions">
-                <a class="btn btn-secondary btn-sm" href="#/edit-service/${esc(String(s.id))}">${I.edit} Edit</a>
-                <a class="btn btn-ghost btn-sm" href="#/services/${esc(String(s.id))}">${I.eye} View</a>
-                ${statusAction(s)}
-                <button class="btn btn-ghost btn-sm" onclick="deleteService(${jsArg(s.id)})" aria-label="Delete ${esc(s.title)}">${I.trash} Delete</button>
-              </div>
-            </div>`).join('')}
+        ${aiListingNotice(s)}
+        <div class="task-card-meta">
+          <span>${I.dollar} ${formatPrice(s)}</span>
+          ${serviceDeliveryLabel(s.delivery_time_days) ? `<span>${I.clock} ${serviceDeliveryLabel(s.delivery_time_days)}</span>` : ''}
+          <span>${workerReviewSummary(s)}</span>
         </div>
-        <nav class="pagination" aria-label="Pagination">${pagerHtml(page, totalPages, p => `#/my-services?page=${p}`)}</nav>` : `
-        <div class="empty-state">
-          <div class="empty-state-icon" aria-hidden="true">${I.services}</div>
-          <h2>You have not posted any services yet</h2>
-          <p>Describe a clear, bounded offer with a price and a delivery time. Paused listings stay here until you resume them.</p>
-          <a class="btn btn-primary" href="#/post-service">Post a Service</a>
-        </div>`}
+        <div class="task-card-actions">
+          <a class="btn btn-secondary btn-sm" href="#/edit-service/${esc(String(s.id))}">${I.edit} Edit</a>
+          <a class="btn btn-ghost btn-sm" href="#/services/${esc(String(s.id))}">${I.eye} View</a>
+          ${statusAction(s)}
+          <button class="btn btn-ghost btn-sm" onclick="deleteService(${jsArg(s.id)})" aria-label="Delete ${esc(s.title)}">${I.trash} Delete</button>
+        </div>
+      </div>`).join('')}
+  </div>
+  <nav class="pagination" aria-label="Pagination">${pagerHtml(page, totalPages, p => `#/my-services?page=${p}`)}</nav>` : `
+  <div class="empty-state">
+    <div class="empty-state-icon" aria-hidden="true">${I.services}</div>
+    <h2>You have not posted any services yet</h2>
+    <p>Describe a clear, bounded offer with a price and a delivery time. Paused listings stay here until you resume them.</p>
+    <a class="btn btn-primary" href="#/post-service">Post a Service</a>
+  </div>`}
     `, 'my-services');
   } catch(err) {
     if (!isCurrent()) return;
@@ -3086,7 +3089,7 @@ function renderPostService(editId = null) {
       <div class="form-page">
         <h1 class="page-title">${editId ? 'Edit Service' : 'Post a Service'}</h1>
         <p class="page-desc">${editId ? 'Update your service listing.' : 'Offer your skills on GoHireHumans.'}</p>
-        <p class="form-help">AI services must be labeled as AI. Their operator must complete Stripe payout setup; this is not worker vetting.</p>
+        <p class="form-help">Buyers can order your listing once you finish free payout setup in <a href="#/payments">Payments</a>. AI services must be labeled as AI. Their operator must complete Stripe payout setup; this is not worker vetting.</p>
         ${aiListingNotice(e)}
         <form onsubmit="handlePostService(event,${editId||'null'})">
           <div class="form-group">

@@ -2865,6 +2865,14 @@ def ensure_db_initialized():
 
 AI_LISTING_NOTICE = "This AI listing will stay hidden until your Stripe payout account is verified."
 AI_LISTING_ORDER_ERROR = "This AI listing is not yet verified for payouts"
+# Human listings stay public while the seller finishes payout setup, but they
+# cannot be quoted or ordered (Billy decision 2026-10-26). Funding still
+# re-checks the live Stripe account; this is the early, processor-free gate.
+SERVICE_SELLER_PAYOUT_ERROR = ("This seller has not finished payout setup yet, "
+                               "so this service is not taking orders.")
+SERVICE_SELLER_PAYOUT_CODE = "seller_payout_setup_required"
+SERVICE_ORDER_NOTICE = ("Buyers cannot order this listing until you finish payout setup. "
+                        "Setup is free and nothing is charged: open Payments and connect your bank account.")
 
 
 def agent_platform_domains():
@@ -2950,6 +2958,11 @@ def service_policy_response(db, row, *, owner_view=False):
         if owner_view and service_hidden_for_unverified_agent(db, row['id']):
             result['notice'] = AI_LISTING_NOTICE
             result['visibility'] = 'hidden_unverified_agent'
+    seller_ready = worker_payout_ready(db, row['worker_id'])
+    result['accepting_orders'] = bool(seller_ready and row['status'] == 'active')
+    if (owner_view and not seller_ready and row['status'] == 'active'
+            and result.get('visibility') != 'hidden_unverified_agent'):
+        result['order_notice'] = SERVICE_ORDER_NOTICE
     return result
 
 
@@ -11437,7 +11450,8 @@ def _handle_routes(db):
                 JOIN users u ON s.worker_id = u.id
                 LEFT JOIN worker_profiles wp ON s.worker_id = wp.user_id
                 WHERE {where}
-                ORDER BY s.avg_rating DESC, s.total_reviews DESC, s.created_at DESC
+                ORDER BY CASE WHEN COALESCE(wp.payout_method,'')='stripe_connect_active' THEN 0 ELSE 1 END,
+                    s.avg_rating DESC, s.total_reviews DESC, s.created_at DESC
                 LIMIT ? OFFSET ?""",
             values + [per_page, offset]
         ).fetchall()
@@ -12751,6 +12765,8 @@ def _handle_routes(db):
             return error_response("You cannot order your own service", 403)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
+        if not worker_payout_ready(db, svc['worker_id']):
+            return error_response(SERVICE_SELLER_PAYOUT_ERROR, 409, code=SERVICE_SELLER_PAYOUT_CODE)
         # Keep explicit empty quantities invalid rather than silently defaulting.
         quote_inputs = dict(urllib.parse.parse_qsl(
             getattr(_request_ctx, 'query_string', ''), keep_blank_values=True
@@ -12784,6 +12800,12 @@ def _handle_routes(db):
             return error_response("Service not found or unavailable", 404)
         if service_hidden_for_unverified_agent(db, service_id):
             return error_response(AI_LISTING_ORDER_ERROR, 409)
+        seller = db.execute('SELECT worker_id FROM services WHERE id=?', [service_id]).fetchone()
+        if seller and not worker_payout_ready(db, seller['worker_id']) and not db.execute(
+            'SELECT 1 FROM orders WHERE employer_id=? AND service_id=? AND creation_idempotency_key=?',
+            [user['id'], service_id, body.get('idempotency_key') if isinstance(body, dict) else None],
+        ).fetchone():
+            return error_response(SERVICE_SELLER_PAYOUT_ERROR, 409, code=SERVICE_SELLER_PAYOUT_CODE)
         try:
             creation_idempotency_key = validated_idempotency_key(body.get("idempotency_key"))
             creation_request_fingerprint = service_order_creation_request_fingerprint(
