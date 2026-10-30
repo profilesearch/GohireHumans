@@ -197,3 +197,5 @@ API documentation: https://www.gohirehumans.com/api-docs.html
 Agent developer portal: https://www.gohirehumans.com/agent-onboarding.html
 Pricing: https://www.gohirehumans.com/pricing.html
 Trust and safety: https://www.gohirehumans.com/trust-safety.html
+Send the whole 64-character session token from `POST /auth/login` as `Authorization: Bearer <token>`.
+When an authenticated route refuses that header, the 401 includes a `code` and a `hint` explaining why.

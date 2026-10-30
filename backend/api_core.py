@@ -3679,10 +3679,29 @@ def json_response(data, status=200):
     print(json.dumps(data, default=str))
 
 
+SESSION_AUTH_HINTS = {
+    "authentication_required": "Send your session token as 'Authorization: Bearer <token>' "
+                               "(from POST /api/v1/auth/login), or an API key in the 'X-API-Key' header.",
+    "authorization_scheme_unsupported": "Use 'Authorization: Bearer <token>'. A bare token or any other "
+                                        "scheme is not accepted.",
+    "session_token_malformed": "Session tokens are 64 hexadecimal characters, exactly as returned in the "
+                               "'token' field of POST /api/v1/auth/login. Send the whole value.",
+    "session_token_invalid": "This session token is unknown or expired, or the account cannot sign in. "
+                             "Log in again with POST /api/v1/auth/login and use the new token.",
+    "api_key_invalid": "The X-API-Key value is unknown, revoked or expired, or its account cannot sign in.",
+}
+
+
 def error_response(message, status=400, *, code=None):
     data = {"error": message}
     if code is not None:
         data["code"] = code
+    elif int(status) == 401:
+        # Tell API clients why a credential was refused (never echoing it).
+        failure = getattr(_request_ctx, "session_auth_failure", None)
+        if failure in SESSION_AUTH_HINTS:
+            data["code"] = failure
+            data["hint"] = SESSION_AUTH_HINTS[failure]
     json_response(data, status)
 
 
@@ -4157,16 +4176,27 @@ def job_hire_creation_request_fingerprint(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def bearer_token(auth_header):
+    """The token from an 'Authorization: Bearer <token>' header; the scheme is case-insensitive (RFC 7235)."""
+    scheme, _, token = (auth_header or '').strip().partition(' ')
+    if scheme.lower() != 'bearer':
+        return None
+    return token.strip() or None
+
+
+SESSION_TOKEN_RE = re.compile(r'[0-9a-f]{64}')
+
+
 def authenticate_session(db):
-    token = None
-    auth_header = getattr(_request_ctx, 'http_authorization', '')
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
+    auth_header = getattr(_request_ctx, 'http_authorization', '') or ''
+    token = bearer_token(auth_header)
 
     # NOTE: Token via query string removed for security (URL leakage via referrer/logs)
     # Tokens must be passed via Authorization: Bearer <token> header only.
 
     if not token:
+        _request_ctx.session_auth_failure = (
+            'authorization_scheme_unsupported' if auth_header.strip() else 'authentication_required')
         return None
 
     row = db.execute(
@@ -4179,7 +4209,10 @@ def authenticate_session(db):
     if row:
         user = db.execute("SELECT * FROM users WHERE id = ?", [row['user_id']]).fetchone()
         if user and eligible_account(user):
+            _request_ctx.session_auth_failure = None
             return row_to_dict(user)
+    _request_ctx.session_auth_failure = (
+        'session_token_invalid' if SESSION_TOKEN_RE.fullmatch(token) else 'session_token_malformed')
     return None
 
 
@@ -4326,7 +4359,17 @@ def recover_abandoned_api_key_accounting(cutoff="-1 hour"):
 
 
 def authenticate(db):
-    return authenticate_session(db) or authenticate_api_key(db)
+    user = authenticate_session(db)
+    if user:
+        return user
+    user = authenticate_api_key(db)
+    if user:
+        _request_ctx.session_auth_failure = None
+        return user
+    if (getattr(_request_ctx, 'session_auth_failure', None) == 'authentication_required'
+            and (getattr(_request_ctx, 'http_x_api_key', '') or '').strip()):
+        _request_ctx.session_auth_failure = 'api_key_invalid'
+    return None
 
 
 ALLOWED_API_KEY_SCOPES = {
@@ -10608,6 +10651,7 @@ def issue_dispute_refund(db, order_id, admin_id):
 
 def handle_request():
     install_sensitive_logging_filters()
+    _request_ctx.session_auth_failure = None
     # If server.py already set thread-local context, skip os.environ fallback.
     # Only populate from os.environ for direct CGI mode (not used in production).
     if not hasattr(_request_ctx, 'request_method'):
@@ -11107,6 +11151,11 @@ def _handle_routes(db):
             audit(db, user['id'], "login_blocked_suspended", "user", user['id'])
             db.commit()
             return error_response("Account suspended", 403)
+        if not user['is_active']:
+            record_login_failure(email)
+            audit(db, user['id'], "login_blocked_inactive", "user", user['id'])
+            db.commit()
+            return error_response("Account deactivated", 403)
 
         clear_login_failures(email)
         token = generate_session_token()
@@ -11167,6 +11216,8 @@ def _handle_routes(db):
                 return error_response("Account banned", 403)
             if existing['is_suspended']:
                 return error_response("Account suspended", 403)
+            if not existing['is_active']:
+                return error_response("Account deactivated", 403)
             user_id = existing['id']
             is_new_google_user = False
             # Update google_sub if not set
@@ -11210,8 +11261,7 @@ def _handle_routes(db):
         return json_response(user_data, 200 if existing else 201)
 
     elif path == "/auth/logout" and method == "POST":
-        auth_header = getattr(_request_ctx, 'http_authorization', '')
-        token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+        token = bearer_token(getattr(_request_ctx, 'http_authorization', ''))
         if token:
             db.execute("DELETE FROM sessions WHERE token = ?", [token])
             db.commit()
