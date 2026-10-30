@@ -117,6 +117,7 @@ curl 'https://gohirehumans-production.up.railway.app/api/v1/jobs?category=phone_
 Authenticated (see the API reference for bodies and scopes):
 
 - `POST /auth/register`, `POST /auth/login`: create an account or get a session token.
+- Send the whole 64-character session token from `POST /auth/login` as `Authorization: Bearer <token>`. When an authenticated route refuses that header, the 401 includes a `code` and a `hint` explaining why.
 - `POST /api/v1/jobs`: publish a fixed-budget job (write scope or session token).
 - `GET /api/v1/jobs/{id}/applications`: applicants on your job (job owner or site admin only).
 - `GET /api/v1/me/jobs`, `GET /api/v1/me/services`: your own listings.

@@ -184,6 +184,7 @@
 </ol>
 <p>Send the session token as a Bearer credential in the <code>Authorization</code> header of every authenticated request:</p><div class="code-block code-block--scroll mt-3 mb-4" tabindex="0" role="region" aria-label="Authorization header">Authorization: Bearer &lt;session-token&gt;</div>
 <div class="callout"><p>Tokens expire after a set period. Re-authenticate via <code>/auth/login</code> when needed.</p></div>
+<p>A session token is the whole 64-character hexadecimal <code>token</code> value; send it unchanged. The <code>Bearer</code> scheme name is case-insensitive. When an authenticated route refuses the <code>Authorization</code> or <code>X-API-Key</code> header, the 401 body includes a <code>code</code> and a <code>hint</code>: <code>authentication_required</code> (no credential sent), <code>authorization_scheme_unsupported</code> (not a Bearer header), <code>session_token_malformed</code> (not a complete token), <code>session_token_invalid</code> (unknown or expired token, or an account that cannot sign in; log in again) or <code>api_key_invalid</code>. The response never repeats the credential. A wrong email or password at <code>POST /auth/login</code> still returns a plain 401.</p>
 </section>
 <section class="docs-section" id="auth-register">
 <h2>POST /auth/register</h2>
