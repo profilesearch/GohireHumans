@@ -1445,8 +1445,8 @@ class BackendRegressionTests(unittest.TestCase):
                 "What marketplace verification covers, what GoHireHumans does not check, and how to review profiles, ratings, reviews, and work samples before hiring.",
             ),
             "frontend/blog/alternatives-to-toptal.html": (
-                "8 Toptal Alternatives by Price (2026) | GoHireHumans",
-                "Toptal builds an unpublished markup into its rates. Compare 8 alternatives by rates, client fees, and markup, including Upwork, Fiverr Pro, and Arc.dev.",
+                "Toptal Alternatives for Senior Devs, by Price | GoHireHumans",
+                "Need a cheaper Toptal alternative for hiring senior developers? Compare 8 options by hourly rate, client fee, and markup: Arc.dev, Gun.io, Upwork, and more.",
             ),
             "frontend/blog/freelance-vs-full-time-2026.html": (
                 "True Cost of Freelancers vs Employees (2026) | GoHireHumans",
@@ -1535,8 +1535,11 @@ class BackendRegressionTests(unittest.TestCase):
         # retired titles/descriptions must be gone from every public file.
         site = "https://www.gohirehumans.com"
         retitled = {
-            "alternatives-to-toptal": ("8 Toptal Alternatives by Price (2026)", "Best Toptal Alternatives in 2026",
-                                       "Compare eight Toptal alternatives by rates, fees, and fit",
+            # Retitled again 2026-11-08 after the 28-day readout; both earlier titles/descriptions stay retired.
+            "alternatives-to-toptal": ("Toptal Alternatives for Senior Devs, by Price",
+                                       ("8 Toptal Alternatives by Price (2026)", "Best Toptal Alternatives in 2026"),
+                                       ("Compare 8 alternatives by rates, client fees, and markup",
+                                        "Compare eight Toptal alternatives by rates, fees, and fit"),
                                        ["fiverr-vs-upwork-vs-gohirehumans"]),
             "verified-freelancer-marketplace": ("What Freelancer Verification Means", "How to Verify a Freelancer: 4 Trust Signals",
                                                 "Check four practical trust signals before hiring a freelancer",
@@ -1605,10 +1608,14 @@ class BackendRegressionTests(unittest.TestCase):
             for sibling in siblings:
                 sibling_text = (frontend / "blog" / f"{sibling}.html").read_text(encoding="utf-8")
                 self.assertIn(f'href="/blog/{slug}.html">{title}</a>', sibling_text, f"{slug}: link label in {sibling}")
+            # A slug retitled more than once lists every retired title/description as a tuple.
+            retired_titles = (old_title,) if isinstance(old_title, str) else (old_title or ())
+            retired_descs = (old_desc_prefix,) if isinstance(old_desc_prefix, str) else old_desc_prefix
             for other, body in corpus.items():
-                if old_title:
-                    self.assertNotIn(old_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
-                self.assertNotIn(old_desc_prefix, body, f"{slug}: retired description still in {other.relative_to(REPO_ROOT)}")
+                for retired_title in retired_titles:
+                    self.assertNotIn(retired_title, body, f"{slug}: retired title still in {other.relative_to(REPO_ROOT)}")
+                for retired_desc in retired_descs:
+                    self.assertNotIn(retired_desc, body, f"{slug}: retired description still in {other.relative_to(REPO_ROOT)}")
 
     def test_phase2_ui_flow_polish_invariants(self):
         text = (REPO_ROOT / "frontend/index.html").read_text(encoding="utf-8", errors="ignore")
