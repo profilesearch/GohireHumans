@@ -4663,24 +4663,32 @@ def _erasure_peer_rows(db, target):
     return found, sorted(set(blockers))
 
 
-_ERASURE_SETUP_KINDS = ('account_create', 'account_link_create', 'admin_payout_binding_reset')
+_ERASURE_CUSTOMER_KINDS = ('customer_create', 'setup_intent_create', 'payment_method_attach', 'customer_modify')
+_ERASURE_SETUP_KINDS = ('account_create', 'account_link_create', 'admin_payout_binding_reset',
+                        *_ERASURE_CUSTOMER_KINDS, 'admin_payment_customer_delete')
+_ERASURE_LOCK_KINDS = ('admin_payout_binding_reset', 'admin_payment_customer_delete')
 
 
 def _erasure_setup_operations(db, target):
     """The target's payment setup log: (closed, rewrites, unscrubbable).
 
     The rows are kept as processor records. They stop blocking erasure only when
-    every row is final and every Stripe account in them was deleted by an admin
-    reset: a committed reset row exists only after Stripe returned deleted=true,
-    so a binding cleared without deletion keeps blocking. Anything else fails
-    closed. A rewrite replaces the account_create binding email and the keys
-    derived from it; any other copy of the email left in a row blocks instead.
+    every row is final and every Stripe account or customer in them was deleted
+    by an admin reset/delete: a committed reset or delete row exists only after
+    Stripe returned deleted=true, so a binding cleared without deletion keeps
+    blocking. Anything else fails closed. A rewrite replaces the binding email
+    and name and the keys derived from them; any other copy of the email left in
+    a row blocks instead.
     """
     target_id = target['id']
     rows = db.execute('SELECT * FROM payment_setup_operations WHERE user_id=? ORDER BY id', [target_id]).fetchall()
-    deleted = {row['processor_object_id'] for row in rows
-               if row['operation_kind'] == 'admin_payout_binding_reset' and row['status'] == 'committed'
-               and row['manual_review_required'] == 0 and row['processor_object_id']}
+
+    def confirmed(kind):
+        return {row['processor_object_id'] for row in rows
+                if row['operation_kind'] == kind and row['status'] == 'committed'
+                and row['manual_review_required'] == 0 and row['processor_object_id']}
+    deleted = confirmed('admin_payout_binding_reset')
+    deleted_customers = confirmed('admin_payment_customer_delete')
     email = (target['email'] or '').casefold()
     closed, rewrites, unscrubbable = True, [], False
     for row in rows:
@@ -4690,15 +4698,22 @@ def _erasure_setup_operations(db, target):
         except (TypeError, ValueError):
             binding = None
         binding = binding if isinstance(binding, dict) else None
+        customer = (binding or {}).get('customer_id')
+        retired = 'admin_payment_customer_delete' if kind in _ERASURE_CUSTOMER_KINDS else 'admin_payout_binding_reset'
         if (kind not in _ERASURE_SETUP_KINDS or row['status'] not in ('committed', 'failed')
                 or row['manual_review_required'] != 0
-                or (committed and kind != 'admin_payout_binding_reset'
-                    and row['error_code'] != 'admin_payout_binding_reset')
+                or (committed and kind not in _ERASURE_LOCK_KINDS and row['error_code'] != retired)
                 or (committed and kind == 'account_create' and row['processor_object_id'] not in deleted)
-                or (kind == 'account_link_create' and (binding or {}).get('account_id') not in deleted)):
+                or (kind == 'account_link_create' and (binding or {}).get('account_id') not in deleted)
+                or (committed and kind == 'customer_create' and row['processor_object_id'] not in deleted_customers)
+                or (kind in _ERASURE_CUSTOMER_KINDS and kind != 'customer_create'
+                    and (not isinstance(customer, str) or customer not in deleted_customers))):
             closed = False
-        if binding is not None and 'email' in binding:
-            binding['email'] = f'erased-user-{target_id}@erased.invalid'
+        if binding is not None and ('email' in binding or 'name' in binding):
+            if 'email' in binding:
+                binding['email'] = f'erased-user-{target_id}@erased.invalid'
+            if 'name' in binding:
+                binding['name'] = 'Deleted user'
             binding_json, fingerprint = _payment_setup_binding_digest(binding)
             key = f'payment-setup:{target_id}:{kind}:erased-{row["id"]}'
             values.update(request_binding_json=binding_json, request_fingerprint=fingerprint,
@@ -4741,6 +4756,9 @@ def _erasure_plan(db, target):
     account = db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=?', [target_id]).fetchone()
     if account and (account['payout_account_id'] or '').startswith('acct_') and not account['payout_account_id'].startswith('acct_sim_'):
         blockers.append('stripe_account_present')
+    customer = db.execute('SELECT stripe_customer_id FROM employer_profiles WHERE user_id=?', [target_id]).fetchone()
+    if customer and (customer[0] or '').startswith('cus_') and not customer[0].startswith('cus_sim_'):
+        blockers.append('stripe_customer_present')
     setup_closed, setup_rewrites, setup_unscrubbable = _erasure_setup_operations(db, target)
     anonymized['payment_setup_operations'] = len(setup_rewrites)
     blockers.extend(table for table, count in retained.items()
@@ -14377,11 +14395,21 @@ def _handle_routes(db):
                 ).fetchone()
                 customer_id = (ep["stripe_customer_id"] if ep else "") or ""
                 if not customer_id:
+                    customer_binding = {"email": user["email"], "name": user["name"], "user_id": user["id"]}
+                    deleted_count = db.execute(
+                        """SELECT COUNT(*) FROM payment_setup_operations WHERE user_id=?
+                           AND operation_kind='customer_create'
+                           AND error_code='admin_payment_customer_delete'""", [user["id"]]
+                    ).fetchone()[0]
+                    if deleted_count:
+                        # An admin delete must not replay the deleted customer's create
+                        # fingerprint or reuse its Stripe idempotency key.
+                        customer_binding["delete_generation"] = deleted_count
                     customer_result, _ = _payment_setup_operation(
                         db,
                         user["id"],
                         "customer_create",
-                        {"email": user["email"], "name": user["name"], "user_id": user["id"]},
+                        customer_binding,
                         lambda key: stripe.Customer.create(
                             email=user["email"], name=user["name"],
                             metadata={"user_id": str(user["id"])}, idempotency_key=key,
@@ -15945,6 +15973,179 @@ def _handle_routes(db):
             return json_response(response)
         finally:
             binding_lock.release()
+
+    elif re.fullmatch(r'/admin/users/\d+/payment-customer/delete', path) and method == 'POST':
+        admin = authenticate(db)
+        if not admin or not admin['is_admin']:
+            return error_response('Admin access required', 403)
+        target_id = int(path.split('/')[3])
+        body = get_body() or {}
+        if not isinstance(body, dict) or type(body.get('dry_run', True)) is not bool:
+            return error_response('dry_run must be a boolean', 400)
+        step_error, step_status = require_admin_step_up(db, admin, body, 'admin_payment_customer_delete')
+        if step_error:
+            return error_response(step_error, step_status)
+        dry_run = body.get('dry_run', True)
+        profile = db.execute('SELECT stripe_customer_id FROM employer_profiles WHERE user_id=?', [target_id]).fetchone()
+        customer_id = profile['stripe_customer_id'] if profile else None
+        if not isinstance(customer_id, str) or not customer_id.startswith('cus_') or customer_id.startswith('cus_sim_'):
+            return error_response('No live payment customer to delete', 409)
+        suffix = customer_id[-6:]
+        if not dry_run and body.get('confirm_customer_suffix') != suffix:
+            return error_response('confirm_customer_suffix does not match the bound customer', 409)
+        if not stripe_configured():
+            return error_response('Stripe is not configured', 503)
+
+        def local_blockers(own_lock_id=None):
+            blockers = []
+            user_row = db.execute('SELECT is_active FROM users WHERE id=?', [target_id]).fetchone()
+            if not user_row or user_row['is_active']:
+                blockers.append('active_user')
+            if db.execute(
+                """SELECT (EXISTS(SELECT 1 FROM orders WHERE employer_id=?1)
+                        OR EXISTS(SELECT 1 FROM funding_attempts WHERE employer_id=?1)
+                        OR EXISTS(SELECT 1 FROM refund_attempts WHERE employer_id=?1)
+                        OR EXISTS(SELECT 1 FROM payout_release_attempts WHERE employer_id=?1)
+                        OR EXISTS(SELECT 1 FROM order_completion_operations WHERE employer_id=?1))""",
+                [target_id],
+            ).fetchone()[0]:
+                blockers.append('financial_history')
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind='admin_payment_customer_delete' AND status='unknown'
+                   AND id IS NOT ? LIMIT 1""",
+                [target_id, own_lock_id],
+            ).fetchone():
+                blockers.append('delete_in_progress')
+            if db.execute(
+                """SELECT 1 FROM payment_setup_operations WHERE user_id=?
+                   AND operation_kind!='admin_payment_customer_delete'
+                   AND (status IN ('prepared','unknown') OR manual_review_required=1) LIMIT 1""",
+                [target_id],
+            ).fetchone():
+                blockers.append('setup_frozen')
+            return blockers
+
+        blockers = local_blockers()
+        result = {'dry_run': dry_run, 'eligible': False, 'blockers': blockers,
+                  'customer_id_suffix': suffix, 'will_delete_stripe_customer': True}
+
+        def block(name):
+            if name not in blockers:
+                blockers.append(name)
+        # No Stripe I/O when local evidence alone disqualifies the customer.
+        if not blockers:
+            db.commit()  # Authentication/step-up must not hold a writer across Stripe I/O.
+            try:
+                customer = stripe.Customer.retrieve(customer_id)
+            except Exception:
+                customer = None
+            if customer is None or stripe_attr(customer, 'deleted'):
+                block('customer_unverified')
+            else:
+                if stripe_attr(customer, 'id') != customer_id:
+                    block('customer_id_mismatch')
+                if stripe_attr(stripe_attr(customer, 'metadata', {}), 'user_id') != str(target_id):
+                    block('customer_owner_mismatch')
+                balance = stripe_attr(customer, 'balance')
+                if type(balance) is not int:
+                    block('customer_unverified')
+                elif balance != 0:
+                    block('nonzero_customer_balance')
+            for resource in (stripe.PaymentIntent, stripe.Charge):
+                try:
+                    payments = stripe_attr(resource.list(customer=customer_id, limit=1), 'data')
+                    if not isinstance(payments, list):
+                        raise ValueError('malformed payment list')
+                    if payments:
+                        block('stripe_payments_present')
+                except Exception:
+                    block('payments_unverified')
+        result['eligible'] = not blockers
+        if dry_run:
+            return json_response(result)
+        if blockers:
+            return json_response(result, 409)
+
+        # The unresolved lock row freezes the user's payment setup
+        # (_payment_setup_profile_is_frozen) from before the delete until the local clear.
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            still_bound = db.execute('SELECT 1 FROM employer_profiles WHERE user_id=? AND stripe_customer_id=?',
+                                     [target_id, customer_id]).fetchone()
+            late_blockers = local_blockers()
+            if not still_bound or late_blockers:
+                db.rollback()
+                result.update({'eligible': False, 'blockers': late_blockers or ['binding_changed']})
+                return json_response(result, 409)
+            lock_key = f"admin-payment-customer-delete:{target_id}:{secrets.token_hex(12)}"
+            lock_id = db.execute(
+                """INSERT INTO payment_setup_operations
+                   (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                    processor_idempotency_key,status,processor_object_id,manual_review_required,error_code)
+                   VALUES (?,'admin_payment_customer_delete',?,?,?,?,'unknown',?,1,'admin_payment_customer_delete_in_progress')""",
+                [lock_key, target_id, hashlib.sha256(customer_id.encode()).hexdigest(),
+                 json.dumps({'customer_id_suffix': suffix}), lock_key + ':v1', customer_id],
+            ).lastrowid
+            db.commit()
+        except Exception:
+            if db.in_transaction:
+                db.rollback()
+            raise
+
+        def release_lock():
+            # Stripe definitively did not delete: nothing changed, drop the lock.
+            db.execute('DELETE FROM payment_setup_operations WHERE id=? AND status=?', [lock_id, 'unknown'])
+            db.commit()
+
+        try:
+            deleted = stripe.Customer.delete(customer_id)
+        except stripe.InvalidRequestError:
+            release_lock()
+            return error_response('Stripe customer could not be deleted; binding unchanged', 409)
+        except STRIPE_ERROR:
+            # Outcome unknown: the lock row stays unresolved, freezing setup for review.
+            return error_response('Stripe customer deletion could not be verified; binding unchanged', 503)
+        if stripe_attr(deleted, 'deleted') is not True:
+            release_lock()
+            return error_response('Stripe customer deletion could not be verified; binding unchanged', 409)
+
+        details = {'old_customer_suffix': suffix, 'stripe_deleted': True}
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            changed = db.execute(
+                """UPDATE employer_profiles SET stripe_customer_id=NULL,payment_method_id=NULL
+                   WHERE user_id=? AND stripe_customer_id=?""",
+                [target_id, customer_id],
+            )
+            if changed.rowcount != 1 or local_blockers(own_lock_id=lock_id):
+                db.rollback()
+                audit(db, admin['id'], 'admin_payment_customer_delete_binding_changed', 'user', target_id, details)
+                db.commit()
+                return json_response({'error': 'binding_changed', 'stripe_deleted': True}, 409)
+            # Keep the ledger, but retire the deleted customer's identities so setup
+            # never replays them and erasure can prove the customer is gone.
+            db.execute(
+                """UPDATE payment_setup_operations SET error_code='admin_payment_customer_delete',
+                       updated_at=datetime('now') WHERE user_id=?1 AND status IN ('committed','failed')
+                       AND ((operation_kind='customer_create' AND processor_object_id=?2)
+                         OR (operation_kind IN ('setup_intent_create','payment_method_attach','customer_modify')
+                             AND CASE WHEN json_valid(request_binding_json)
+                                      THEN json_extract(request_binding_json,'$.customer_id')=?2
+                                      ELSE 0 END))""",
+                [target_id, customer_id],
+            )
+            db.execute("""UPDATE payment_setup_operations SET status='committed',manual_review_required=0,
+                              error_code='admin_payment_customer_delete',committed_at=datetime('now'),
+                              updated_at=datetime('now')
+                          WHERE id=? AND status='unknown'""", [lock_id])
+            audit(db, admin['id'], 'admin_payment_customer_delete', 'user', target_id, details)
+            db.commit()
+        except Exception:
+            if db.in_transaction:
+                db.rollback()
+            raise
+        return json_response({'ok': True, 'dry_run': False, 'stripe_deleted': True, 'customer_id_suffix': suffix})
 
     elif path == '/admin/payout-readiness/sync' and method == 'POST':
         user = authenticate(db)

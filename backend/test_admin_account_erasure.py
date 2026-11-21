@@ -612,3 +612,159 @@ class AdminAccountErasureClosedPayoutTests(AdminAccountErasureTests):
                     self.assertEqual(db.execute(sql, [values[name]]).rowcount, 1)
                     db.commit()
                 self.assert_blocked('payment_setup_operations_unscrubbable')
+
+
+class AdminAccountErasureClosedCustomerTests(AdminAccountErasureClosedPayoutTests):
+    """A buyer whose Stripe Customer an admin delete removed (Stripe confirmed
+    deleted=true) can be erased; the retained setup log loses the email and name."""
+
+    CUSTOMER = 'cus_closed_654321'
+    RETIRED = 'admin_payment_customer_delete'
+
+    def seed_customer_closed(self, user_id=2, customer=None, create_binding=None):
+        """The ledger setup-employer + confirm-setup-employer plus a confirmed customer delete leave."""
+        customer = customer or self.CUSTOMER
+        create_binding = create_binding or {'email': self.EMAIL, 'name': self.NAME, 'user_id': user_id}
+        with self.core.get_db() as db:
+            db.execute('INSERT OR IGNORE INTO employer_profiles(user_id) VALUES (?)', [user_id])
+            self.setup_row(db, user_id, 'customer_create', create_binding, processor_object_id=customer,
+                           result={'customer_id': customer, 'processor_object_id': customer}, error_code=self.RETIRED)
+            self.setup_row(db, user_id, 'setup_intent_create', {'customer_id': customer, 'payment_method_types': ['card']},
+                           processor_object_id='seti_closed', result={'processor_object_id': 'seti_closed', 'setup_intent_id': 'seti_closed'},
+                           error_code=self.RETIRED)
+            self.setup_row(db, user_id, 'payment_method_attach', {'customer_id': customer, 'payment_method_id': 'pm_closed'},
+                           processor_object_id='pm_closed', result={'payment_method_id': 'pm_closed', 'processor_object_id': 'pm_closed'},
+                           error_code=self.RETIRED)
+            self.setup_row(db, user_id, 'customer_modify', {'customer_id': customer, 'default_payment_method': 'pm_closed'},
+                           processor_object_id=customer,
+                           result={'customer_id': customer, 'payment_method_id': 'pm_closed', 'processor_object_id': customer},
+                           error_code=self.RETIRED)
+            lock_key = f'admin-payment-customer-delete:{user_id}:{"cd" * 12}'
+            db.execute("""INSERT INTO payment_setup_operations
+                (operation_key,operation_kind,user_id,request_fingerprint,request_binding_json,
+                 processor_idempotency_key,status,processor_object_id,manual_review_required,error_code,committed_at)
+                VALUES (?,'admin_payment_customer_delete',?,?,?,?,'committed',?,0,?,datetime('now'))""",
+                [lock_key, user_id, hashlib.sha256(customer.encode()).hexdigest(),
+                 json.dumps({'customer_id_suffix': customer[-6:]}), lock_key + ':v1', customer, self.RETIRED])
+            db.commit()
+
+    def seed_both(self):
+        with self.core.get_db() as db:
+            db.execute('DELETE FROM payment_setup_operations')
+            db.commit()
+        self.seed_closed()
+        self.seed_customer_closed()
+
+    def test_live_stripe_customer_blocks_erasure(self):
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO employer_profiles(user_id,stripe_customer_id,payment_method_id) VALUES (2,'cus_live_erasure1','pm_live')")
+            db.commit()
+        self.assert_blocked('stripe_customer_present')
+        with self.core.get_db() as db:
+            db.execute("UPDATE employer_profiles SET stripe_customer_id='cus_sim_erasure1' WHERE user_id=2")
+            db.commit()
+        status, body = self.erase()
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body['eligible'], body)
+
+    def test_end_to_end_customer_delete_then_erasure(self):
+        from types import SimpleNamespace
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=1 WHERE id=2')
+            db.commit()
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Customer, 'create', return_value=SimpleNamespace(id=self.CUSTOMER)), \
+             mock.patch.object(self.core.stripe.SetupIntent, 'create',
+                               return_value=SimpleNamespace(id='seti_e2e', client_secret='seti_e2e_secret')), \
+             mock.patch.object(self.core.stripe.PaymentMethod, 'attach', return_value=SimpleNamespace(id='pm_e2e')), \
+             mock.patch.object(self.core.stripe.Customer, 'modify', return_value=SimpleNamespace(id=self.CUSTOMER)):
+            status, body = self.request('POST', '/payments/setup-employer', {}, 'old-session')
+            self.assertEqual(status, 200, body)
+            status, body = self.request('POST', '/payments/confirm-setup-employer', {'payment_method_id': 'pm_e2e'}, 'old-session')
+            self.assertEqual(status, 200, body)
+        with self.core.get_db() as db:
+            binding = db.execute("SELECT request_binding_json FROM payment_setup_operations WHERE operation_kind='customer_create'").fetchone()[0]
+            self.assertIn(self.EMAIL, binding)
+            self.assertIn(self.NAME, binding)
+            db.execute('UPDATE users SET is_active=0 WHERE id=2')
+            db.commit()
+        self.assert_blocked('stripe_customer_present')
+        with mock.patch.object(self.core, 'stripe_configured', return_value=True), \
+             mock.patch.object(self.core.stripe.Customer, 'retrieve',
+                               return_value={'id': self.CUSTOMER, 'balance': 0, 'metadata': {'user_id': '2'}}), \
+             mock.patch.object(self.core.stripe.PaymentIntent, 'list', return_value={'data': []}), \
+             mock.patch.object(self.core.stripe.Charge, 'list', return_value={'data': []}), \
+             mock.patch.object(self.core.stripe.Customer, 'delete', return_value={'id': self.CUSTOMER, 'deleted': True}) as delete:
+            status, body = self.request('POST', '/admin/users/2/payment-customer/delete',
+                                        {'admin_password': self.ADMIN_PASSWORD, 'dry_run': False,
+                                         'confirm_customer_suffix': '654321'})
+            self.assertEqual(status, 200, body)
+            delete.assert_called_once_with(self.CUSTOMER)
+        status, body = self.erase()
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body['eligible'], body)
+        self.assertEqual(body['will_anonymize']['payment_setup_operations'], 1)
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        self.assert_no_identity_text()
+        with self.core.get_db() as db:
+            kinds = [r[0] for r in db.execute('SELECT operation_kind FROM payment_setup_operations WHERE user_id=2 ORDER BY id')]
+            self.assertEqual(kinds, ['customer_create', 'setup_intent_create', 'payment_method_attach',
+                                     'customer_modify', 'admin_payment_customer_delete'])
+            create = db.execute("SELECT request_binding_json FROM payment_setup_operations WHERE operation_kind='customer_create'").fetchone()[0]
+            self.assertEqual(json.loads(create), {'email': 'erased-user-2@erased.invalid', 'name': 'Deleted user', 'user_id': 2})
+
+    def test_closed_payout_and_customer_rows_allow_erasure_and_unclosed_rows_block(self):
+        self.seed_both()
+        before = self.dump()
+        status, body = self.erase()
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body['eligible'], body)
+        self.assertEqual(body['will_anonymize']['payment_setup_operations'], 2)
+        self.assertEqual(body['retained']['payment_setup_operations'], 9)
+        self.assertEqual(self.dump(), before)
+        create = "operation_kind='customer_create'"
+        delete = "operation_kind='admin_payment_customer_delete'"
+        cases = {
+            'customer_create_not_retired': f"UPDATE payment_setup_operations SET error_code=NULL WHERE {create}",
+            'customer_create_retired_by_payout_reset': f"UPDATE payment_setup_operations SET error_code='admin_payout_binding_reset' WHERE {create}",
+            'no_committed_delete_row': f"DELETE FROM payment_setup_operations WHERE {delete}",
+            'delete_row_for_other_customer': f"UPDATE payment_setup_operations SET processor_object_id='cus_other_000001' WHERE {delete}",
+            'delete_row_in_flight': f"UPDATE payment_setup_operations SET status='unknown',manual_review_required=1 WHERE {delete}",
+            'setup_intent_for_undeleted_customer': "UPDATE payment_setup_operations SET request_binding_json='{\"customer_id\":\"cus_other_000001\"}' WHERE operation_kind='setup_intent_create'",
+            'failed_setup_intent_for_undeleted_customer': "UPDATE payment_setup_operations SET status='failed',request_binding_json='{\"customer_id\":\"cus_other_000001\"}' WHERE operation_kind='setup_intent_create'",
+            'non_string_customer_id': "UPDATE payment_setup_operations SET request_binding_json='{\"customer_id\":[\"cus_closed_654321\"]}' WHERE operation_kind='customer_modify'",
+            'payment_method_attach_non_json': "UPDATE payment_setup_operations SET request_binding_json='not json' WHERE operation_kind='payment_method_attach'",
+            'payment_method_attach_json_array': "UPDATE payment_setup_operations SET request_binding_json='[\"cus_closed_654321\"]' WHERE operation_kind='payment_method_attach'",
+            'customer_modify_not_retired': "UPDATE payment_setup_operations SET error_code=NULL WHERE operation_kind='customer_modify'",
+            'customer_row_manual_review': "UPDATE payment_setup_operations SET manual_review_required=1 WHERE operation_kind='setup_intent_create'",
+        }
+        for name, sql in cases.items():
+            with self.subTest(case=name):
+                self.seed_both()
+                with self.core.get_db() as db:
+                    self.assertGreaterEqual(db.execute(sql).rowcount, 1)
+                    db.commit()
+                self.assert_blocked()
+        self.seed_both()
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body['anonymized']['payment_setup_operations'], 2)
+        self.assert_no_identity_text()
+
+    def test_name_only_binding_is_rewritten(self):
+        self.seed_customer_closed(create_binding={'name': self.NAME, 'user_id': 2})
+        status, body = self.erase()
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body['eligible'], body)
+        self.assertEqual(body['will_anonymize']['payment_setup_operations'], 1)
+        status, body = self.erase(dry_run=False, confirm_email=self.EMAIL)
+        self.assertEqual(status, 200, body)
+        self.assert_no_identity_text()
+        with self.core.get_db() as db:
+            row = db.execute("SELECT * FROM payment_setup_operations WHERE operation_kind='customer_create'").fetchone()
+        expected = json.dumps({'name': 'Deleted user', 'user_id': 2}, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+        self.assertEqual(row['request_binding_json'], expected)
+        self.assertEqual(row['request_fingerprint'], hashlib.sha256(expected.encode('utf-8')).hexdigest())
+        self.assertEqual(row['operation_key'], f"payment-setup:2:customer_create:erased-{row['id']}")
+        self.assertEqual(row['processor_idempotency_key'], row['operation_key'] + ':v1')
