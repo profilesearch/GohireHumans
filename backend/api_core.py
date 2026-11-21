@@ -4663,6 +4663,59 @@ def _erasure_peer_rows(db, target):
     return found, sorted(set(blockers))
 
 
+_ERASURE_SETUP_KINDS = ('account_create', 'account_link_create', 'admin_payout_binding_reset')
+
+
+def _erasure_setup_operations(db, target):
+    """The target's payment setup log: (closed, rewrites, unscrubbable).
+
+    The rows are kept as processor records. They stop blocking erasure only when
+    every row is final and every Stripe account in them was deleted by an admin
+    reset: a committed reset row exists only after Stripe returned deleted=true,
+    so a binding cleared without deletion keeps blocking. Anything else fails
+    closed. A rewrite replaces the account_create binding email and the keys
+    derived from it; any other copy of the email left in a row blocks instead.
+    """
+    target_id = target['id']
+    rows = db.execute('SELECT * FROM payment_setup_operations WHERE user_id=? ORDER BY id', [target_id]).fetchall()
+    deleted = {row['processor_object_id'] for row in rows
+               if row['operation_kind'] == 'admin_payout_binding_reset' and row['status'] == 'committed'
+               and row['manual_review_required'] == 0 and row['processor_object_id']}
+    email = (target['email'] or '').casefold()
+    closed, rewrites, unscrubbable = True, [], False
+    for row in rows:
+        kind, committed, values = row['operation_kind'], row['status'] == 'committed', dict(row)
+        try:
+            binding = json.loads(row['request_binding_json'])
+        except (TypeError, ValueError):
+            binding = None
+        binding = binding if isinstance(binding, dict) else None
+        if (kind not in _ERASURE_SETUP_KINDS or row['status'] not in ('committed', 'failed')
+                or row['manual_review_required'] != 0
+                or (committed and kind != 'admin_payout_binding_reset'
+                    and row['error_code'] != 'admin_payout_binding_reset')
+                or (committed and kind == 'account_create' and row['processor_object_id'] not in deleted)
+                or (kind == 'account_link_create' and (binding or {}).get('account_id') not in deleted)):
+            closed = False
+        if binding is not None and 'email' in binding:
+            binding['email'] = f'erased-user-{target_id}@erased.invalid'
+            binding_json, fingerprint = _payment_setup_binding_digest(binding)
+            key = f'payment-setup:{target_id}:{kind}:erased-{row["id"]}'
+            values.update(request_binding_json=binding_json, request_fingerprint=fingerprint,
+                          operation_key=key, processor_idempotency_key=f'{key}:v1')
+            rewrites.append((row['id'], row['request_binding_json'], binding_json, fingerprint, key))
+        for value in values.values():
+            if not isinstance(value, str) or not email:
+                continue
+            try:
+                decoded = json.dumps(json.loads(value), ensure_ascii=False)
+            except (TypeError, ValueError):
+                decoded = ''
+            if email in value.casefold() or email in decoded.casefold():
+                unscrubbable = True
+    return closed, rewrites, unscrubbable
+
+
 def _erasure_plan(db, target):
     target_id, values = target['id'], (target['id'], target['email'])
     deleted = {table: db.execute(f'SELECT count(*) FROM {table} WHERE {where}',
@@ -4688,7 +4741,12 @@ def _erasure_plan(db, target):
     account = db.execute('SELECT payout_account_id FROM worker_profiles WHERE user_id=?', [target_id]).fetchone()
     if account and (account['payout_account_id'] or '').startswith('acct_') and not account['payout_account_id'].startswith('acct_sim_'):
         blockers.append('stripe_account_present')
-    blockers.extend(table for table, count in retained.items() if count)
+    setup_closed, setup_rewrites, setup_unscrubbable = _erasure_setup_operations(db, target)
+    anonymized['payment_setup_operations'] = len(setup_rewrites)
+    blockers.extend(table for table, count in retained.items()
+                    if count and not (table == 'payment_setup_operations' and setup_closed))
+    if setup_unscrubbable:
+        blockers.append('payment_setup_operations_unscrubbable')
     if db.execute('SELECT 1 FROM referrals WHERE (referrer_id=? OR referred_id=?) AND reward_amount!=0 LIMIT 1', [target_id, target_id]).fetchone():
         blockers.append('referral_reward_present')
     # Opaque send intents (hashes, provider ids, no address or content) are kept
@@ -4703,7 +4761,7 @@ def _erasure_plan(db, target):
     blockers.extend(peer_blockers)
     for table, rows in peer_rows.items():
         anonymized[f'peer_{table}'] = len(rows)
-    return deleted, anonymized, retained, blockers, audit_rows, peer_rows
+    return deleted, anonymized, retained, blockers, audit_rows, peer_rows, setup_rewrites
 
 
 def send_email(to_email, subject, html_body, idempotency_key=None):
@@ -6041,6 +6099,12 @@ def _payment_setup_profile_is_frozen(db, user_id):
     ).fetchone()
 
 
+def _payment_setup_binding_digest(binding):
+    """Canonical setup-ledger binding JSON and its sha256 request fingerprint."""
+    binding_json = json.dumps(binding, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return binding_json, hashlib.sha256(binding_json.encode("utf-8")).hexdigest()
+
+
 def _durable_payment_setup_result(result):
     """Return the non-secret identity subset permitted in the setup ledger."""
     if not isinstance(result, dict):
@@ -6065,8 +6129,7 @@ def _payment_setup_operation(
     apply_result=None, replay_processor_call=None, replay_result_builder=None,
 ):
     """Serialize one exact setup identity in-process; durable state handles restarts."""
-    binding_json = json.dumps(binding, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    fingerprint = hashlib.sha256(binding_json.encode("utf-8")).hexdigest()
+    binding_json, fingerprint = _payment_setup_binding_digest(binding)
     operation_key = f"payment-setup:{user_id}:{operation_kind}:{fingerprint}"
     with _payment_setup_inflight_registry_lock:
         entry = _payment_setup_inflight_operations.get(operation_key)
@@ -6163,8 +6226,7 @@ def _payment_setup_operation_serialized(
     apply_result=None, replay_processor_call=None, replay_result_builder=None,
 ):
     """Run one replay-safe setup operation without a SQLite writer over I/O."""
-    binding_json = json.dumps(binding, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    fingerprint = hashlib.sha256(binding_json.encode("utf-8")).hexdigest()
+    binding_json, fingerprint = _payment_setup_binding_digest(binding)
     operation_key = f"payment-setup:{user_id}:{operation_kind}:{fingerprint}"
     processor_key = f"{operation_key}:v1"
 
@@ -15620,6 +15682,14 @@ def _handle_routes(db):
             return error_response('dry_run and delete_stripe_account must be booleans', 400)
         if not isinstance(attest_account_missing, bool):
             return error_response('attest_account_missing must be a boolean', 400)
+        # Opt-in: the owner asked to close an onboarded account. It skips the
+        # onboarding checks, so it needs a deactivated user and Stripe proof that
+        # no transfer ever reached the account.
+        owner_requested_closure = body.get('owner_requested_closure', False)
+        if not isinstance(owner_requested_closure, bool):
+            return error_response('owner_requested_closure must be a boolean', 400)
+        if owner_requested_closure and not delete_stripe_account:
+            return error_response('owner_requested_closure requires delete_stripe_account', 400)
         profile = db.execute(
             'SELECT payout_account_id,payout_account_country FROM worker_profiles WHERE user_id=?',
             [target_id],
@@ -15675,6 +15745,12 @@ def _handle_routes(db):
                 [target_id],
             ).fetchone():
                 blockers.append('setup_operation_pending')
+            if owner_requested_closure:
+                # Funding and hiring refuse inactive workers, so no order can be
+                # funded while the closure runs; re-checked under every lock.
+                user_row = db.execute('SELECT is_active FROM users WHERE id=?', [target_id]).fetchone()
+                if not user_row or user_row['is_active']:
+                    blockers.append('active_user')
             return blockers
 
         # A live reset holds the worker's setup lock exclusive from its first check
@@ -15694,6 +15770,8 @@ def _handle_routes(db):
                       'details_submitted': None, 'payouts_enabled': None,
                       'will_delete_stripe_account': delete_stripe_account,
                       'stripe_account_missing': False}
+            if owner_requested_closure:
+                result['owner_requested_closure'] = True
             account_missing = False
             # No Stripe I/O when local evidence alone disqualifies the binding.
             if not blockers:
@@ -15725,12 +15803,13 @@ def _handle_routes(db):
                         blockers.append('account_country_mismatch')
                     if stripe_attr(stripe_attr(acct, 'metadata', {}), 'user_id') != str(target_id):
                         blockers.append('account_owner_mismatch')
-                    for field in ('details_submitted', 'payouts_enabled', 'charges_enabled'):
-                        if stripe_attr(acct, field) is not False:
-                            blockers.append(field)
-                    capabilities = stripe_attr(acct, 'capabilities', {}) or {}
-                    if stripe_attr(capabilities, 'transfers') == 'active':
-                        blockers.append('transfers_active')
+                    if not owner_requested_closure:
+                        for field in ('details_submitted', 'payouts_enabled', 'charges_enabled'):
+                            if stripe_attr(acct, field) is not False:
+                                blockers.append(field)
+                        capabilities = stripe_attr(acct, 'capabilities', {}) or {}
+                        if stripe_attr(capabilities, 'transfers') == 'active':
+                            blockers.append('transfers_active')
                     try:
                         balance = stripe.Balance.retrieve(stripe_account=account_id)
                         buckets = [stripe_attr(balance, key) for key in ('available', 'pending')]
@@ -15750,6 +15829,16 @@ def _handle_routes(db):
                     except Exception:
                         # Unexpected SDK/response failures cannot prove zero balance.
                         blockers.append('balance_unverified')
+                    if owner_requested_closure:
+                        # Platform-key lookup (no stripe_account header), no writer held.
+                        try:
+                            transfers = stripe_attr(stripe.Transfer.list(destination=account_id, limit=1), 'data')
+                            if not isinstance(transfers, list):
+                                raise ValueError('malformed transfer list')
+                            if transfers:
+                                blockers.append('stripe_transfers_present')
+                        except Exception:
+                            blockers.append('transfers_unverified')
             result['eligible'] = not blockers
             if dry_run:
                 return json_response(result)
@@ -15841,15 +15930,19 @@ def _handle_routes(db):
                 if account_missing:
                     details['stripe_account_missing'] = True
                     details['stripe_account_missing_attested'] = True
+                if owner_requested_closure:
+                    details['owner_requested_closure'] = True
                 audit(db, admin['id'], 'admin_payout_binding_reset', 'user', target_id, details)
                 db.commit()
             except Exception:
                 if db.in_transaction:
                     db.rollback()
                 raise
-            return json_response({'ok': True, 'dry_run': False, 'stripe_deleted': stripe_deleted,
-                                  'stripe_account_missing': account_missing,
-                                  'account_id_suffix': suffix})
+            response = {'ok': True, 'dry_run': False, 'stripe_deleted': stripe_deleted,
+                        'stripe_account_missing': account_missing, 'account_id_suffix': suffix}
+            if owner_requested_closure:
+                response['owner_requested_closure'] = True
+            return json_response(response)
         finally:
             binding_lock.release()
 
@@ -15993,7 +16086,7 @@ def _handle_routes(db):
                 if not dry_run:
                     db.rollback()
                 return error_response('user_not_found', 409)
-            deleted, anonymized, retained, blockers, audit_rows, peer_rows = _erasure_plan(db, target)
+            deleted, anonymized, retained, blockers, audit_rows, peer_rows, setup_rewrites = _erasure_plan(db, target)
             result = {'dry_run': dry_run, 'user_id': target_id, 'eligible': not blockers,
                       'blockers': blockers, 'will_delete': deleted,
                       'will_anonymize': anonymized, 'retained': retained}
@@ -16019,6 +16112,13 @@ def _handle_routes(db):
                                   [_ERASURE_APPLICATION_NOTICE_REPLACEMENT, row_id,
                                    planned_message]).rowcount != 1:
                         raise RuntimeError(f'Account erasure count changed: peer {table}')
+            for row_id, planned_json, binding_json, fingerprint, key in setup_rewrites:
+                if db.execute("""UPDATE payment_setup_operations SET request_binding_json=?, request_fingerprint=?,
+                                 operation_key=?, processor_idempotency_key=?
+                                 WHERE id=? AND user_id=? AND request_binding_json=?""",
+                              [binding_json, fingerprint, key, f'{key}:v1', row_id, target_id,
+                               planned_json]).rowcount != 1:
+                    raise RuntimeError('Account erasure count changed: payment_setup_operations')
             for table, where in _ERASURE_DELETIONS.items():
                 affected = db.execute(f'DELETE FROM {table} WHERE {where}',
                                       values if '?2' in where else values[:1]).rowcount

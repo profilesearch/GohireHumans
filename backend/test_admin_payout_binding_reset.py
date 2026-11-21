@@ -1082,3 +1082,261 @@ class AdminPayoutBindingResetMissingAccountTests(AdminPayoutBindingResetTests):
             self.assertFalse(body['stripe_account_missing'])
             delete.assert_not_called()
         self.assertEqual(self.snapshot(), before)
+
+
+class AdminPayoutBindingResetOwnerClosureTests(AdminPayoutBindingResetTests):
+    """owner_requested_closure: delete an onboarded account the owner asked to close,
+    once the user is deactivated and Stripe proves no money ever reached it."""
+
+    def onboarded(self, **changes):
+        fields = dict(details_submitted=True, payouts_enabled=True, charges_enabled=True,
+                      capabilities={'transfers': 'active'})
+        fields.update(changes)
+        return self.account(**fields)
+
+    def set_active(self, active):
+        with self.core.get_db() as db:
+            db.execute('UPDATE users SET is_active=? WHERE id=3', (active,))
+            db.commit()
+
+    def closure_mocks(self, account=None, balance=None, transfers=None):
+        account = self.onboarded() if account is None else account
+        transfers = {'data': []} if transfers is None else transfers
+        return self.mocks(account, balance) + (
+            mock.patch.object(self.core.stripe.Transfer, 'list', return_value=transfers),)
+
+    def close(self, **changes):
+        return self.reset(dry_run=False, confirm_account_suffix='123456', owner_requested_closure=True, **changes)
+
+    def test_onboarded_inactive_owner_closure_is_eligible_then_deleted(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers as transfers:
+            status, body = self.reset(owner_requested_closure=True)
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body['eligible'], body)
+            self.assertEqual(body['blockers'], [])
+            self.assertIs(body['owner_requested_closure'], True)
+            self.assertTrue(body['details_submitted'])
+            self.assertTrue(body['payouts_enabled'])
+            # Platform key: no stripe_account header on the transfer lookup.
+            transfers.assert_called_once_with(destination=self.ACCOUNT, limit=1)
+            delete.assert_not_called()
+            self.assertEqual(self.snapshot(), before)
+            status, body = self.close()
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body['stripe_deleted'])
+            self.assertIs(body['owner_requested_closure'], True)
+            delete.assert_called_once_with(self.ACCOUNT)
+        with self.core.get_db() as db:
+            row = db.execute('SELECT payout_account_id,payout_method,payout_account_country,payout_service_agreement,payout_method_details FROM worker_profiles WHERE user_id=3').fetchone()
+            self.assertEqual(tuple(row), (None, 'pending_setup', None, None, None))
+            audit = db.execute("SELECT details FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()
+            self.assertEqual(json.loads(audit[0]), {'old_account_suffix': '123456', 'old_country': 'US',
+                                                    'stripe_deleted': True, 'owner_requested_closure': True})
+            reset_row = db.execute("""SELECT status,manual_review_required,processor_object_id FROM payment_setup_operations
+                                      WHERE user_id=3 AND operation_kind='admin_payout_binding_reset'""").fetchall()
+            self.assertEqual([tuple(r) for r in reset_row], [('committed', 0, self.ACCOUNT)])
+
+    def test_active_target_is_refused_before_any_stripe_call(self):
+        self.prepare()
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete, p_transfers as transfers:
+            status, body = self.reset(owner_requested_closure=True)
+            self.assertEqual(status, 200, body)
+            self.assertFalse(body['eligible'])
+            self.assertEqual(body['blockers'], ['active_user'])
+            self.assertIs(body['owner_requested_closure'], True)
+            status, body = self.close()
+            self.assertEqual(status, 409, body)
+            self.assertIn('active_user', body['blockers'])
+            retrieve.assert_not_called()
+            balance.assert_not_called()
+            transfers.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_onboarded_account_without_flag_keeps_onboarding_blockers(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers as transfers:
+            for extra in ({}, {'owner_requested_closure': False}):
+                with self.subTest(extra=extra):
+                    status, body = self.reset(**extra)
+                    self.assertEqual(status, 200, body)
+                    self.assertEqual(body['blockers'], ['details_submitted', 'payouts_enabled',
+                                                        'charges_enabled', 'transfers_active'])
+                    self.assertNotIn('owner_requested_closure', body)
+                    status, body = self.reset(dry_run=False, confirm_account_suffix='123456', **extra)
+                    self.assertEqual(status, 409, body)
+            transfers.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_transfer_history_or_unverifiable_transfers_refuse(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+        cases = [
+            ({'data': [{'id': 'tr_1'}]}, None, 'stripe_transfers_present'),
+            (SimpleNamespace(data=[SimpleNamespace(id='tr_1')]), None, 'stripe_transfers_present'),
+            (None, stripe.APIConnectionError('offline'), 'transfers_unverified'),
+            (None, RuntimeError('invalid Stripe response'), 'transfers_unverified'),
+            ({'data': None}, None, 'transfers_unverified'),
+            ({}, None, 'transfers_unverified'),
+            ({'data': 'tr_1'}, None, 'transfers_unverified'),
+        ]
+        for value, failure, blocker in cases:
+            with self.subTest(value=value, failure=failure):
+                p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+                with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers as transfers:
+                    transfers.return_value = value
+                    transfers.side_effect = failure
+                    status, body = self.reset(owner_requested_closure=True)
+                    self.assertEqual(status, 200, body)
+                    self.assertFalse(body['eligible'])
+                    self.assertEqual(body['blockers'], [blocker])
+                    status, body = self.close()
+                    self.assertEqual(status, 409, body)
+                    self.assertIn(blocker, body['blockers'])
+                    delete.assert_not_called()
+                self.assertEqual(self.snapshot(), before)
+
+    def test_other_safety_checks_still_block_with_flag(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+        cases = [
+            (self.onboarded(), {'available': [{'amount': 100}], 'pending': []}, 'nonzero_balance'),
+            (self.onboarded(), {'available': [], 'pending': [], 'connect_reserved': [{'amount': 5}]}, 'nonzero_balance'),
+            (self.onboarded(), {'available': [], 'pending': None}, 'balance_unverified'),
+            (self.onboarded(metadata={'user_id': '42'}), None, 'account_owner_mismatch'),
+            (self.onboarded(id='acct_other'), None, 'account_id_mismatch'),
+            (self.onboarded(country='DE'), None, 'account_country_mismatch'),
+        ]
+        for account, balance_value, blocker in cases:
+            with self.subTest(blocker=blocker, balance=balance_value):
+                p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks(account, balance_value)
+                with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers:
+                    status, body = self.reset(owner_requested_closure=True)
+                    self.assertEqual(status, 200, body)
+                    self.assertFalse(body['eligible'])
+                    self.assertIn(blocker, body['blockers'])
+                    self.assertEqual(self.close()[0], 409)
+                    delete.assert_not_called()
+                self.assertEqual(self.snapshot(), before)
+        with self.core.get_db() as db:
+            db.execute("INSERT INTO orders (type,worker_id,employer_id,status,total_amount) VALUES ('service_order',3,4,'completed',25)")
+            db.commit()
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve as retrieve, p_balance, p_delete as delete, p_transfers as transfers:
+            status, body = self.close()
+            self.assertEqual(status, 409, body)
+            self.assertIn('financial_history', body['blockers'])
+            retrieve.assert_not_called()
+            transfers.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot()[0][0], self.ACCOUNT)
+
+    def test_flag_must_be_boolean_and_requires_delete(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+        acquired = []
+        real_acquire = self.core._PayoutBindingLock.acquire
+
+        def record(lock, exclusive):
+            acquired.append(exclusive)
+            return real_acquire(lock, exclusive)
+
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve as retrieve, p_balance as balance, p_delete as delete, p_transfers as transfers, \
+             mock.patch.object(self.core._PayoutBindingLock, 'acquire', record):
+            for bad in ('true', 1, 0, None, [], {}):
+                for dry_run in (True, False):
+                    with self.subTest(value=bad, dry_run=dry_run):
+                        status, body = self.reset(dry_run=dry_run, confirm_account_suffix='123456',
+                                                  owner_requested_closure=bad)
+                        self.assertEqual(status, 400, body)
+                        self.assertEqual(body['error'], 'owner_requested_closure must be a boolean')
+            for dry_run in (True, False):
+                status, body = self.reset(dry_run=dry_run, confirm_account_suffix='123456',
+                                          delete_stripe_account=False, owner_requested_closure=True)
+                self.assertEqual(status, 400, body)
+                self.assertEqual(body['error'], 'owner_requested_closure requires delete_stripe_account')
+            retrieve.assert_not_called()
+            balance.assert_not_called()
+            transfers.assert_not_called()
+            delete.assert_not_called()
+        self.assertEqual(acquired, [])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_transfer_lookup_runs_without_a_writer_lock(self):
+        self.prepare()
+        self.set_active(0)
+        route_connections = []
+        real_get_db = self.core.get_db
+
+        def track_db():
+            conn = real_get_db()
+            route_connections.append(conn)
+            return conn
+        seen = []
+
+        def probe(**kwargs):
+            seen.append(kwargs)
+            self.assertFalse(route_connections[-1].in_transaction)
+            with sqlite3.connect(self.core._get_db_path(), timeout=0.2) as contender:
+                contender.execute('BEGIN IMMEDIATE')
+                contender.rollback()
+            return {'data': []}
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with mock.patch.object(self.core, 'get_db', side_effect=track_db), p_config, p_retrieve, \
+             p_balance, p_delete as delete, p_transfers as transfers:
+            transfers.side_effect = probe
+            status, body = self.close()
+            self.assertEqual(status, 200, body)
+            delete.assert_called_once_with(self.ACCOUNT)
+        self.assertEqual(seen, [{'destination': self.ACCOUNT, 'limit': 1}])
+
+    def test_reactivation_during_delete_prevents_local_clear(self):
+        self.prepare()
+        self.set_active(0)
+
+        def reactivate_then_deleted(*args):
+            self.set_active(1)
+            return {'deleted': True}
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers:
+            delete.side_effect = reactivate_then_deleted
+            status, body = self.close()
+            delete.assert_called_once_with(self.ACCOUNT)
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body, {'error': 'binding_changed', 'stripe_deleted': True})
+        self.assertEqual(self.snapshot()[0][0], self.ACCOUNT)
+        with self.core.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM audit_log WHERE action='admin_payout_binding_reset_binding_changed'").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM audit_log WHERE action='admin_payout_binding_reset'").fetchone()[0], 0)
+
+    def test_reactivation_before_delete_is_caught_under_the_writer_lock(self):
+        self.prepare()
+        self.set_active(0)
+        before = self.snapshot()
+
+        def reactivate_during_lookup(**kwargs):
+            self.set_active(1)
+            return {'data': []}
+        p_config, p_retrieve, p_balance, p_delete, p_transfers = self.closure_mocks()
+        with p_config, p_retrieve, p_balance, p_delete as delete, p_transfers as transfers:
+            transfers.side_effect = reactivate_during_lookup
+            status, body = self.close()
+            self.assertEqual(status, 409, body)
+            self.assertEqual(body['blockers'], ['active_user'])
+            delete.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse(self.core._payment_setup_profile_is_frozen(self.core.get_db(), 3))
